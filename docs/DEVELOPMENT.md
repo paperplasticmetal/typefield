@@ -23,4 +23,11 @@
 - Maintain sandbox compatibility and explicit user-selected file access. Adobe support is script export only.
 - Update both version plists. App bundle display name remains FontShelf; release ZIPs carry versions.
 
+## Local release workflow
+
+- Use `/Applications/FontShelf.app` as the single canonical local app. Do not create numbered FontShelf app copies or ZIPs unless they are explicitly requested.
+- For each completed fix or feature, run the relevant checks, commit the source and documentation, and push the commit to `origin` so GitHub remains the durable reference.
+- For each user-visible build, update both version plists, the changelog and status notes, then run `./install-local.sh`. The script builds, runs the native regression suite and updates the canonical Applications copy.
+- Never replace an unreadable library or workspace while installing a build. App data remains in Application Support and is separate from the app bundle.
+
 Keep source-only changes separate from generated artifacts. The `.gitignore` excludes local output and private state. Use Xcode's complete bundle for distribution rather than relying on the source-only Swift package.

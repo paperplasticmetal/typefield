@@ -23,6 +23,8 @@ function mock(failFont = false, failText = false) {
   const reverse = exportSelection({ root: { name: 'Round trip' }, currentPage: { selection: [frame] }, mixed: Symbol('mixed') });
   assert.equal(reverse.frames[0].elements[0].x, 40); assert.equal(reverse.frames[0].elements[0].y, 60);
   assert.equal(reverse.frames[0].elements[0].fontSize, 72); assert.match(reverse.warnings.join(' '), /Logo.*not supported/);
+  const oversized = { ...frame, name: 'Too wide', width: 10001 };
+  assert.throws(() => exportSelection({ root: { name: 'Round trip' }, currentPage: { selection: [oversized] }, mixed: Symbol('mixed') }), /10,000/);
   assert.throws(() => exportSelection({ currentPage: { selection: [] } }), /Select/);
   console.log('PASS: editable layers, typography, missing-font fallback, validation and rollback. Figma API mocked; live editor validation remains separate.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

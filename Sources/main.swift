@@ -117,8 +117,9 @@ final class Library: ObservableObject {
     var autoActivatedStamps: [String: FontFileStamp] = [:]
     lazy var studio = StudioStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("spaces.json"))
     func pairSelection(_ names: [String]) {
+        guard !studio.readBlocked else { message = studio.error; return }
         let active = studio.state.spaces.first(where: { $0.id == studio.focusedSpace })?.id
-        let space = active ?? studio.state.spaces.first?.id ?? studio.addSpace("My projects")
+        guard let space = active ?? studio.state.spaces.first?.id ?? studio.addSpace("My projects") else { message = studio.error; return }
         _ = studio.addBoard(space: space, fonts: names)
         workspace = true
     }

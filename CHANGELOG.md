@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.21.0 — 2026-09-20
+
+- Added per-typeboard canvas selection to typography summaries, with every canvas selected initially and a checkbox row for choosing any subset.
+- Combined the selected canvases in plain-text, Markdown and clipboard summary output while preserving each canvas's name and format.
+- Added multi-page type-system PDF export, with one generated specimen page per selected canvas using that canvas's fonts, axes, OpenType features, colors and typography scale.
+- Added regression coverage for multi-canvas summary scope, generated specimen settings and PDF page count.
+- Standardized local releases on `/Applications/FontShelf.app` through `install-local.sh` so verified builds update one stable app instead of producing numbered copies.
+- Completed and regression-tested the focused fixes from the September 19–20 Luna QA pass.
+
 ## 0.20.0 — 2026-09-19
 
 - Added Font Health to Library tools plus per-family **Inspect font file…** access and a File-menu entry.

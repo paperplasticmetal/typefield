@@ -315,6 +315,15 @@ struct CanvasTypographySummary {
     }
 }
 
+struct TypographySummaryDocument {
+    let summaries: [CanvasTypographySummary]
+    var fonts: [String] { Set(summaries.flatMap(\.fonts)).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+    func text(_ detail: TypographySummaryDetail, markdown: Bool = false) -> String {
+        summaries.map { $0.text(detail, markdown: markdown).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .joined(separator: "\n\n") + "\n"
+    }
+}
+
 enum StudioFontCollection {
     static func fontNames(in direction: TypeDirection) -> Set<String> {
         Set(CanvasTypographySummary(canvas: direction.name, direction: direction).fonts)

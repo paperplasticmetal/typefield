@@ -5,9 +5,9 @@ function paint(c) {
   return [{ type: 'SOLID', color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
 }
 function validate(data) {
-  if (!data || data.format !== 'fontshelf-figma' || data.version !== 1 || !Array.isArray(data.frames) || !data.frames.length || data.frames.length > 100) throw Error('Unsupported FontShelf layout.');
+  if (!data || data.format !== 'fontshelf-figma' || data.version !== 1 || !Array.isArray(data.frames) || !data.frames.length || data.frames.length > 30) throw Error('Unsupported FontShelf layout.');
   for (const frame of data.frames) {
-    if (!number(frame.width, 1, 100000) || !number(frame.height, 1, 100000) || typeof frame.name !== 'string' || !Array.isArray(frame.elements) || frame.elements.length > 5000) throw Error('Invalid frame.');
+    if (!number(frame.width, 1, 10000) || !number(frame.height, 1, 100000) || typeof frame.name !== 'string' || !Array.isArray(frame.elements) || frame.elements.length > 5000) throw Error('Invalid frame.');
     paint(frame.paper);
     for (const e of frame.elements) {
       if (!['x', 'y'].every(k => number(e[k], 0, 100000)) || !['width', 'height'].every(k => number(e[k], 1, 100000))) throw Error('Invalid layer bounds.');
@@ -73,6 +73,7 @@ function exportSelection(api) {
     return paint ? { ...paint.color, a: opacity * (paint.opacity === undefined ? 1 : paint.opacity) } : null;
   }
   const frames = selected.map(root => {
+    if (!number(root.width, 1, 10000) || !number(root.height, 1, 100000)) throw Error('Frame "' + root.name + '" exceeds FontShelf limits: width must be 1–10,000 px and height must be 1–100,000 px. Resize the frame or export a smaller selection.');
     const elements = [], origin = root.absoluteTransform;
     if (Math.abs(origin[0][1]) > .001 || Math.abs(origin[1][0]) > .001) throw Error('Unrotate the selected frame before exporting: ' + root.name);
     function visit(node, parentOpacity) {

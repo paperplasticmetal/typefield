@@ -29,14 +29,14 @@ struct StudioView: View {
                 HStack(spacing: 12) {
                     ShelfEditableName(name: space.displayName, onRename: { setSpaceName(space.id, $0) }).font(.system(size: 22, weight: .semibold)).frame(minHeight: 30)
                     Spacer()
-                    Button("New typeboard") { boardID = store.addBoard(space: space.id, fonts: library.compared.map { library.chosenFace($0).name }) }
+                    Button("New typeboard") { boardID = store.addBoard(space: space.id, fonts: library.compared.map { library.chosenFace($0).name }) }.disabled(store.readBlocked)
                     Menu {
                         Button("Rename space…") { renameSpace(space) }
-                        Button("Import Figma typeboard…") { importFigma() }
+                        Button("Import Figma typeboard…") { importFigma() }.disabled(store.readBlocked)
                         Button("Create font collection…") { createCollection(from: space) }.disabled(space.boards.isEmpty)
                         Button("Developer handoff…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
                         Button("Export space…") { exportSpace(space) }
-                        Button("Import space…") { importSpace() }
+                        Button("Import space…") { importSpace() }.disabled(store.readBlocked)
                         Divider()
                         Button("Delete space…", role: .destructive) { confirmDelete = true }
                     } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Space actions").accessibilityLabel("Space actions")
@@ -47,7 +47,7 @@ struct StudioView: View {
                         store.removeBoard(space: space.id, id: board.id); boardID = store.focusedBoard
                     }).id(board.id)
                 } else {
-                    VStack(spacing: 14) { Image(systemName: "rectangle.3.group").font(.system(size: 38)); Text("No typeboards").font(.title2); Button("Create typeboard") { boardID = store.addBoard(space: space.id) } }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 14) { Image(systemName: "rectangle.3.group").font(.system(size: 38)); Text("No typeboards").font(.title2); Button("Create typeboard") { boardID = store.addBoard(space: space.id) }.disabled(store.readBlocked) }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 VStack(spacing: 16) {
@@ -65,13 +65,13 @@ struct StudioView: View {
             TextField("Project or client name", text: $newName)
             Button("Create") {
                 let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-                spaceID = store.addSpace(name); boardID = store.addBoard(space: spaceID!, fonts: library.compared.map { library.chosenFace($0).name })
+                if let created = store.addSpace(name) { spaceID = created; boardID = store.addBoard(space: created, fonts: library.compared.map { library.chosenFace($0).name }) }
                 newName = ""
             }
             Button("Cancel", role: .cancel) { newName = "" }
         }
         .alert("Delete this space and its typeboards?", isPresented: $confirmDelete) {
-            Button("Delete", role: .destructive) { if let space { store.state.spaces.removeAll { $0.id == space.id }; store.save(); spaceID = nil; boardID = nil } }
+            Button("Delete", role: .destructive) { if let space { store.state.spaces.removeAll { $0.id == space.id }; store.focusedSpace = nil; store.focusedBoard = nil; store.save(); spaceID = nil; boardID = nil } }
             Button("Cancel", role: .cancel) {}
         }
         .alert("Delete “\(deletingBoard?.board.name ?? "typeboard")”?", isPresented: Binding(get: { deletingBoard != nil }, set: { if !$0 { deletingBoard = nil } })) {
@@ -99,7 +99,7 @@ struct StudioView: View {
                     }
                 }
             }
-            Menu("Import…") { Button("Space…") { importSpace() }; Button("Figma typeboard JSON…") { importFigma() }; Button("Using a native .fig file…") { figFileHelp() } }.menuStyle(.borderlessButton).fixedSize().padding(.bottom, 12)
+            Menu("Import…") { Button("Space…") { importSpace() }.disabled(store.readBlocked); Button("Figma typeboard JSON…") { importFigma() }.disabled(store.readBlocked); Button("Using a native .fig file…") { figFileHelp() } }.menuStyle(.borderlessButton).fixedSize().padding(.bottom, 12)
         }.padding(.horizontal, 12)
     }
     func renameSpace(_ target: DesignSpace) {
@@ -131,6 +131,7 @@ struct StudioView: View {
         do { try JSONEncoder().encode(space).write(to: url, options: .atomic) } catch { store.error = error.localizedDescription }
     }
     func importSpace() {
+        guard !store.readBlocked else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -142,13 +143,14 @@ struct StudioView: View {
         } catch { store.error = "Space could not be imported: " + error.localizedDescription }
     }
     func importFigma() {
+        guard !store.readBlocked else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         panel.message = "In the FontShelf Figma bridge, export selected frames to FontShelf, then choose that JSON file. Native .fig files are not supported."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 20_000_000 else { throw CocoaError(.fileReadTooLarge) }
             let imported = try FigmaLayoutImporter.board(data: Data(contentsOf: url), fonts: library.allFaces)
-            let target = space?.id ?? store.addSpace("Figma imports")
+            guard let target = space?.id ?? store.addSpace("Figma imports") else { return }
             guard let index = store.state.spaces.firstIndex(where: { $0.id == target }) else { return }
             store.state.spaces[index].boards.append(imported); store.focusedSpace = target; store.focusedBoard = imported.id; store.save(); spaceID = target; boardID = imported.id
         } catch { store.error = "Figma layout could not be imported: " + error.localizedDescription }
@@ -219,7 +221,9 @@ struct TypeBoardEditor: View {
     init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], onSave: @escaping (TypeBoard, String) -> Void, onDelete: @escaping () -> Void) {
         self.library = library; self.savedBoard = savedBoard; self.projectName = projectName; self.projectBoards = projectBoards; self.onSave = onSave; self.onDelete = onDelete
         _board = State(initialValue: savedBoard)
-        _shownCanvasIDs = State(initialValue: Set([savedBoard.selectedDirection ?? savedBoard.directions.first?.id].compactMap { $0 }))
+        let initialCanvasIDs = Set([savedBoard.selectedDirection ?? savedBoard.directions.first?.id].compactMap { $0 })
+        _shownCanvasIDs = State(initialValue: initialCanvasIDs)
+        _summaryCanvasIDs = State(initialValue: Set(savedBoard.directions.map(\.id)))
     }
     @State private var role = TypeRole.display
     @State private var fontSearch = ""
@@ -233,6 +237,7 @@ struct TypeBoardEditor: View {
     @State private var showFontPicker = false
     @State private var showFontSummary = false
     @State private var fontSummaryDetail = TypographySummaryDetail.roles
+    @State private var summaryCanvasIDs: Set<UUID>
     @State private var draggedSection: String?
     @State private var selectedSection: String?
     @State private var abID: UUID?
@@ -242,12 +247,16 @@ struct TypeBoardEditor: View {
     var direction: TypeDirection { board.directions[directionIndex] }
     var visibleDirections: [TypeDirection] { board.directions.filter { shownCanvasIDs.contains($0.id) || $0.id == direction.id } }
     var showingAllCanvases: Bool { !board.directions.isEmpty && Set(board.directions.map(\.id)).isSubset(of: shownCanvasIDs) }
-    var importedLayerIndex: Int? { guard direction.canvas == .imported else { return nil }; return direction.importedLayout?.layers.firstIndex { $0.id == selectedSection && $0.style != nil } ?? direction.importedLayout?.layers.firstIndex { $0.style != nil } }
+    var importedLayerIndex: Int? { guard direction.canvas == .imported else { return nil }; return direction.importedLayout?.textLayerIndex(selectedID: selectedSection) }
+    var importedNonTextSelected: Bool { direction.canvas == .imported && importedLayerIndex == nil }
     var selectedText: CanvasElement? { guard let selectedTextID else { return nil }; return CanvasPlan(direction: direction).elements.first { $0.textID == selectedTextID } }
     var style: TypeStyle { if let index = importedLayerIndex, let style = direction.importedLayout?.layers[index].style { return style }; return selectedText?.style ?? direction.style(role) }
-    var fontSummary: CanvasTypographySummary { CanvasTypographySummary(canvas: board.canvasName(direction), direction: direction) }
+    var selectedSummaryDirections: [TypeDirection] { board.directions.filter { summaryCanvasIDs.contains($0.id) } }
+    var fontSummary: TypographySummaryDocument { TypographySummaryDocument(summaries: selectedSummaryDirections.map { CanvasTypographySummary(canvas: board.canvasName($0), direction: $0) }) }
+    var visibleFontCount: Int { TypographySummaryDocument(summaries: visibleDirections.map { CanvasTypographySummary(canvas: board.canvasName($0), direction: $0) }).fonts.count }
     var editingTitle: String { if let index = importedLayerIndex { return direction.importedLayout?.layers[index].name ?? "Text layer" }; return role.rawValue }
     func setStyle(_ style: TypeStyle) {
+        if direction.canvas == .imported && importedLayerIndex == nil { return }
         if let index = importedLayerIndex { board.directions[directionIndex].importedLayout?.layers[index].style = style }
         else if let selectedTextID, let selectedText {
             var shared = style; shared.text = direction.style(role).text
@@ -266,12 +275,12 @@ struct TypeBoardEditor: View {
                 ShelfEditableName(name: board.name, onRename: { name in board.name = name; save("Rename Typeboard"); return true }).font(.headline).frame(minWidth: 110)
                 Spacer(minLength: 12)
                 Menu("Add canvas") {
-                    Button("Blank canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; save("Add Canvas") }
-                    Button("Duplicate current canvas") { let copy = direction.copy(name: board.nextCanvasName); board.directions.append(copy); board.selectedDirection = copy.id; save("Duplicate Canvas") }
+                    Button("Blank canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; summaryCanvasIDs.insert(canvas.id); save("Add Canvas") }
+                    Button("Duplicate current canvas") { let copy = direction.copy(name: board.nextCanvasName); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save("Duplicate Canvas") }
                 }.fixedSize()
-                Button { showFontSummary.toggle() } label: { Label("\(fontSummary.fonts.count) fonts used", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
+                Button { openFontSummary() } label: { Label("\(visibleFontCount) fonts used", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
                 Menu("Export") {
-                    Button("Typography summary…") { showFontSummary = true }
+                    Button("Typography summary…") { openFontSummary() }
                     Button("Developer handoff…") {
                         do { if let folder = try DeveloperHandoff.selectFolder(title: board.name, boards: [board], catalog: library.families) { status = "Developer handoff exported. Open index.html for the specimen; README explains font setup."; NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
                         catch { status = "Handoff export failed: " + error.localizedDescription }
@@ -283,7 +292,7 @@ struct TypeBoardEditor: View {
                 Menu {
                     Button("Save checkpoint") { var values = board.checkpoints ?? []; values.append(DirectionCheckpoint(direction: direction)); board.checkpoints = Array(values.suffix(50)); save(); status = "Checkpoint saved" }
                     Menu("Restore checkpoint as canvas") {
-                        ForEach((board.checkpoints ?? []).reversed()) { checkpoint in Button(checkpoint.direction.name + " · " + checkpoint.date.formatted(date: .abbreviated, time: .shortened)) { let copy = checkpoint.direction.copy(name: checkpoint.direction.name + " restored"); board.directions.append(copy); board.selectedDirection = copy.id; save() } }
+                        ForEach((board.checkpoints ?? []).reversed()) { checkpoint in Button(checkpoint.direction.name + " · " + checkpoint.date.formatted(date: .abbreviated, time: .shortened)) { let copy = checkpoint.direction.copy(name: checkpoint.direction.name + " restored"); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save() } }
                     }.disabled((board.checkpoints ?? []).isEmpty)
                     Button("Add shortlist as candidates") { board.candidates = Array(Set(board.candidates + library.compared.map { library.chosenFace($0).name })).sorted(); save() }
                     Menu("Create font collection") {
@@ -292,7 +301,7 @@ struct TypeBoardEditor: View {
                         Button("From this project…") { createCollection(.project) }
                     }
                     Divider()
-                    Button("Delete canvas", role: .destructive) { let id = direction.id; board.directions.removeAll { $0.id == id }; shownCanvasIDs.remove(id); board.selectedDirection = board.directions.first?.id; if let selected = board.selectedDirection { shownCanvasIDs.insert(selected) }; abID = nil; save("Delete Canvas") }.disabled(board.directions.count < 2)
+                    Button("Delete canvas", role: .destructive) { let id = direction.id; board.directions.removeAll { $0.id == id }; shownCanvasIDs.remove(id); summaryCanvasIDs.remove(id); board.selectedDirection = board.directions.first?.id; if let selected = board.selectedDirection { shownCanvasIDs.insert(selected); if summaryCanvasIDs.isEmpty { summaryCanvasIDs.insert(selected) } }; abID = nil; save("Delete Canvas") }.disabled(board.directions.count < 2)
                     Button("Delete typeboard…", role: .destructive) { showDelete = true }
                 } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Typeboard actions").accessibilityLabel("Typeboard actions")
             }.padding(14).fixedSize(horizontal: false, vertical: true)
@@ -428,6 +437,9 @@ struct TypeBoardEditor: View {
                 Text("Click a role to select its first use on the canvas. Drag any role onto the canvas to add its saved sample text.").font(.caption2).foregroundStyle(.secondary)
                 }
                 Divider()
+                if importedNonTextSelected {
+                    Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary)
+                } else {
                 Text(editingTitle).font(.headline)
                 if selectedTextID != nil && direction.canvas != .imported { Text("Editing the selected text. Font and spacing changes apply to its shared type role.").font(.caption).foregroundStyle(.secondary) }
                 Button { showFontPicker = true } label: { HStack { VStack(alignment: .leading, spacing: 4) { Text("Font").font(.caption).foregroundStyle(.secondary); Text(style.fontName).lineLimit(2) }; Spacer(); Image(systemName: "magnifyingglass") }.padding(10).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
@@ -458,9 +470,10 @@ struct TypeBoardEditor: View {
                 Text(selectedTextID == nil ? "Sample text" : "Selected text").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: styleBinding(\.text)).frame(height: 100).overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
                 }
+                }
                 Divider()
                 if let warnings = direction.importWarnings, !warnings.isEmpty { DisclosureGroup("Import notes (\(warnings.count))") { Text(warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) } }
-                colorPicker("Text", key: \.ink); colorPicker("Background", key: \.paper); if direction.canvas != .imported { colorPicker("Accent", key: \.accent) }
+                if !importedNonTextSelected { colorPicker("Text", key: \.ink) }; colorPicker("Background", key: \.paper); if direction.canvas != .imported { colorPicker("Accent", key: \.accent) }
                 Text("Canvas notes").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: directionBinding(\.notes)).frame(height: 75)
             }.padding(14)
@@ -517,19 +530,40 @@ struct TypeBoardEditor: View {
         }
     }
     func chooseFont(_ name: String) { var s = style; s.fontName = name; s.axes = library.pro.axes[name] ?? [:]; s.features = library.pro.features[name] ?? [:]; setStyle(s); save("Change Font") }
+    func openFontSummary() {
+        showFontSummary = true
+    }
     var fontSummaryPopover: some View {
         let summary = fontSummary
         return VStack(alignment: .leading, spacing: 14) {
-            HStack { VStack(alignment: .leading, spacing: 3) { Text("Fonts used").font(.headline); Text(board.canvasName(direction) + " · " + direction.canvas.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Done") { showFontSummary = false }.keyboardShortcut(.cancelAction) }
+            HStack { VStack(alignment: .leading, spacing: 3) { Text("Typography summary").font(.headline); Text("\(selectedSummaryDirections.count) of \(board.directions.count) canvases · \(summary.fonts.count) fonts").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Done") { showFontSummary = false }.keyboardShortcut(.cancelAction) }
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Canvases to include").font(.caption).foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(board.directions) { canvas in
+                            Toggle(board.canvasName(canvas), isOn: Binding(get: { summaryCanvasIDs.contains(canvas.id) }, set: { included in
+                                if included { summaryCanvasIDs.insert(canvas.id) }
+                                else if summaryCanvasIDs.count > 1 { summaryCanvasIDs.remove(canvas.id) }
+                            })).toggleStyle(.checkbox).disabled(summaryCanvasIDs.count == 1 && summaryCanvasIDs.contains(canvas.id))
+                        }
+                    }
+                }
+            }
             Picker("Detail", selection: $fontSummaryDetail) { ForEach(TypographySummaryDetail.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented).labelsHidden()
             ScrollView { Text(summary.text(fontSummaryDetail)).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8)).frame(minHeight: 180, maxHeight: 320)
             HStack {
                 Button("Copy") { let pasteboard = NSPasteboard.general; pasteboard.clearContents(); pasteboard.setString(summary.text(fontSummaryDetail), forType: .string); status = "Typography summary copied" }
                 Spacer()
                 Menu { Button("From this canvas…") { createCollection(.canvas) }; Button("From this typeboard…") { createCollection(.typeboard) }; Button("From this project…") { createCollection(.project) } } label: { Label("Collection", systemImage: "folder.badge.plus") }.fixedSize()
-                Menu("Export") { Button("Plain text…") { exportFontSummary(markdown: false) }; Button("Markdown…") { exportFontSummary(markdown: true) } }.fixedSize()
+                Menu("Export") {
+                    Button("Plain text…") { exportFontSummary(markdown: false) }
+                    Button("Markdown…") { exportFontSummary(markdown: true) }
+                    Divider()
+                    Button("Type system PDF…") { exportTypeSystemPDF() }
+                }.fixedSize()
             }
-            Text("Only text styles visible on this canvas are included. Full settings adds size, line height, tracking, variable axes and OpenType features.").font(.caption).foregroundStyle(.secondary)
+            Text("Each selected canvas contributes its visible text styles. Full settings adds size, line height, tracking, variable axes and OpenType features. Type system PDF creates one specimen page per selected canvas using its chosen typography.").font(.caption).foregroundStyle(.secondary)
         }.padding(18).frame(width: 540)
     }
     enum CollectionScope { case canvas, typeboard, project }
@@ -559,10 +593,19 @@ struct TypeBoardEditor: View {
     func exportFontSummary(markdown: Bool) {
         let panel = NSSavePanel(), suffix = markdown ? "md" : "txt"
         panel.allowedContentTypes = [UTType(filenameExtension: suffix) ?? .plainText]
-        panel.nameFieldStringValue = board.name + " — " + board.canvasName(direction) + " typography." + suffix
+        let scope = selectedSummaryDirections.count == 1 ? board.canvasName(selectedSummaryDirections[0]) : "\(selectedSummaryDirections.count) canvases"
+        panel.nameFieldStringValue = board.name + " — " + scope + " typography." + suffix
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try fontSummary.text(fontSummaryDetail, markdown: markdown).write(to: url, atomically: true, encoding: .utf8); status = "Typography summary exported" }
         catch { status = "Typography summary export failed: " + error.localizedDescription }
+    }
+    func exportTypeSystemPDF() {
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — type systems.pdf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try TypeSystemPDFExporter.data(directions: selectedSummaryDirections).write(to: url, options: .atomic)
+            status = "Type system PDF exported with \(selectedSummaryDirections.count) canvas \(selectedSummaryDirections.count == 1 ? "page" : "pages")"
+        } catch { status = "Type system PDF export failed: " + error.localizedDescription }
     }
     func numeric(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 4) { HStack { Text(title); Spacer(); TextField(title, value: Binding(get: { value.wrappedValue }, set: { if $0.isFinite { value.wrappedValue = min(range.upperBound, max(range.lowerBound, $0)) } }), format: .number.precision(.fractionLength(0...2))).multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 65).onSubmit { NSApp.keyWindow?.makeFirstResponder(nil) }; Text(unit).foregroundStyle(.secondary) }.font(.caption); Slider(value: value, in: range) }
@@ -576,7 +619,7 @@ struct TypeBoardEditor: View {
         }
     }
     func colorPicker(_ title: String, key: WritableKeyPath<TypeDirection, String>) -> some View {
-        ColorPicker(title, selection: Binding(get: { Color(nsColor: NSColor(hex: key == \TypeDirection.ink ? importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink : direction[keyPath: key])) }, set: { if key == \TypeDirection.ink, let index = importedLayerIndex { board.directions[directionIndex].importedLayout?.layers[index].color = NSColor($0).rgbHex } else { board.directions[directionIndex][keyPath: key] = NSColor($0).rgbHex }; save() }), supportsOpacity: false)
+        ColorPicker(title, selection: Binding(get: { Color(nsColor: NSColor(hex: key == \TypeDirection.ink ? importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink : direction[keyPath: key])) }, set: { if key == \TypeDirection.ink && importedNonTextSelected { return }; if key == \TypeDirection.ink, let index = importedLayerIndex { board.directions[directionIndex].importedLayout?.layers[index].color = NSColor($0).rgbHex } else { board.directions[directionIndex][keyPath: key] = NSColor($0).rgbHex }; save() }), supportsOpacity: false)
     }
     func exportPDF() {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — " + direction.name + ".pdf"
@@ -922,6 +965,44 @@ struct CanvasPreview: NSViewRepresentable {
 
 extension CanvasPlan {
     func text(at point: NSPoint) -> CanvasElement? { elements.last { $0.text != nil && $0.rect.contains(point) } }
+}
+
+enum TypeSystemPDFExporter {
+    static func specimenDirection(from source: TypeDirection) -> TypeDirection {
+        var direction = source
+        direction.canvas = .specimen
+        direction.width = min(1200, max(768, source.width))
+        direction.blocks = nil
+        direction.addedBlocks = nil
+        direction.sectionOrder = nil
+        direction.hiddenSections = nil
+        direction.importedLayout = nil
+        direction.importWarnings = nil
+        direction.textOverrides = nil
+        return direction
+    }
+    static func data(directions: [TypeDirection]) throws -> Data {
+        guard !directions.isEmpty else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Select at least one canvas."]) }
+        let pages: [(Data, CGRect)] = directions.map { source in
+            let plan = CanvasPlan(direction: specimenDirection(from: source))
+            let view = CanvasNativeView(plan: plan)
+            return (view.dataWithPDF(inside: view.bounds), CGRect(origin: .zero, size: plan.size))
+        }
+        let result = NSMutableData()
+        guard let consumer = CGDataConsumer(data: result as CFMutableData) else { throw NSError(domain: "FontShelf", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create the PDF destination."]) }
+        var defaultBox = pages[0].1
+        guard let context = CGContext(consumer: consumer, mediaBox: &defaultBox, nil) else { throw NSError(domain: "FontShelf", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not create the PDF document."]) }
+        for (data, box) in pages {
+            guard let provider = CGDataProvider(data: data as CFData), let document = CGPDFDocument(provider), let page = document.page(at: 1) else { throw NSError(domain: "FontShelf", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not render a type system page."]) }
+            var mediaBox = box
+            let pageInfo = [kCGPDFContextMediaBox: NSData(bytes: &mediaBox, length: MemoryLayout<CGRect>.size)] as CFDictionary
+            context.beginPDFPage(pageInfo)
+            context.drawPDFPage(page)
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return result as Data
+    }
 }
 
 enum StudioFontFilter {

@@ -84,7 +84,7 @@ enum StudioChecks {
         defer { try? FileManager.default.removeItem(at: root) }
         try handoff(catalog: catalog, parent: root)
         let store = StudioStore(url: root.appendingPathComponent("spaces.json"))
-        let space = store.addSpace("Client"), boardID = store.addBoard(space: space, fonts: ["Georgia", "Helvetica"])!
+        let space = store.addSpace("Client")!, boardID = store.addBoard(space: space, fonts: ["Georgia", "Helvetica"])!
         var board = store.state.spaces[0].boards[0]
         try verify(board.canvasName(board.directions[0]) == "Canvas 1")
         var legacyBoard = board; legacyBoard.directions[0].name = "Direction A copy"
@@ -120,6 +120,16 @@ enum StudioChecks {
         let summary = CanvasTypographySummary(canvas: "Canvas 1", direction: summaryDirection)
         try verify(summary.fonts.contains("Georgia") && summary.fonts.contains("Courier") && summary.text(.roles).contains("Body: Courier"), "Canvas font summary must report fonts actually used by role")
         try verify(summary.text(.full).contains("tracking 1.5 px") && summary.text(.fonts, markdown: true).contains("`Courier`"), "Typography summary detail levels")
+        var secondSummaryDirection = summaryDirection
+        secondSummaryDirection.name = "Canvas 2"
+        secondSummaryDirection.styles[TypeRole.heading.rawValue]!.fontName = "Helvetica"
+        let summaryDocument = TypographySummaryDocument(summaries: [summary, CanvasTypographySummary(canvas: "Canvas 2", direction: secondSummaryDirection)])
+        try verify(summaryDocument.text(.roles).contains("Canvas 1") && summaryDocument.text(.roles).contains("Canvas 2") && summaryDocument.fonts.contains("Helvetica"), "Selected-canvas typography summary must include every chosen canvas")
+        let generatedSpecimen = TypeSystemPDFExporter.specimenDirection(from: secondSummaryDirection)
+        try verify(generatedSpecimen.canvas == .specimen && generatedSpecimen.style(.body).fontName == "Courier" && generatedSpecimen.style(.heading).fontName == "Helvetica", "Generated type system must preserve the selected canvas typography")
+        let typeSystemPDF = try TypeSystemPDFExporter.data(directions: [summaryDirection, secondSummaryDirection])
+        let typeSystemDocument = CGDataProvider(data: typeSystemPDF as CFData).flatMap(CGPDFDocument.init)
+        try verify(typeSystemDocument?.numberOfPages == 2, "Type system export must create one PDF page per selected canvas")
         var scopedBoard = TypeBoard(); scopedBoard.directions = [summaryDirection, TypeDirection()]
         try verify(StudioFontCollection.fontNames(in: summaryDirection) == Set(summary.fonts), "Canvas collection font scope")
         try verify(StudioFontCollection.fontNames(in: scopedBoard).isSuperset(of: ["Courier", "Georgia", "Helvetica"]), "Typeboard collection font scope")
@@ -212,12 +222,23 @@ enum StudioChecks {
         try verify(restored.state.spaces[0].boards.first == edited && restored.focusedBoard == edited.id, "Deleted typeboard was not recovered")
         restored.undoManager.redo()
         try verify(restored.state.spaces[0].boards.isEmpty, "Redo deletion did not remove the typeboard")
+        restored.focusedSpace = space; restored.focusedBoard = edited.id
+        restored.state.spaces.removeAll { $0.id == space }
+        try verify(restored.save(), "Deleting a space should save a normalized selection")
+        let normalized = StudioStore(url: restored.url)
+        try verify(normalized.focusedSpace == nil && normalized.focusedBoard == nil, "Deleted space focus must not persist")
         let corruptURL = root.appendingPathComponent("corrupt.json"), corrupt = Data("broken".utf8)
         try corrupt.write(to: corruptURL)
         let broken = StudioStore(url: corruptURL)
-        _ = broken.addSpace("Do not overwrite")
-        try verify(broken.readBlocked && !broken.save())
+        let blockedSpaceCount = broken.state.spaces.count
+        try verify(broken.addSpace("Do not overwrite") == nil, "Read-blocked creation must return failure")
+        try verify(broken.readBlocked && broken.state.spaces.count == blockedSpaceCount && !broken.save(), "Read-blocked workspace must reject new spaces")
+        try verify(broken.addBoard(space: UUID()) == nil && broken.state.spaces.count == blockedSpaceCount, "Read-blocked workspace must reject new typeboards")
         let unchanged = try Data(contentsOf: corruptURL); try verify(unchanged == corrupt)
+        let shape = ImportedLayer(name: "Shape", x: 0, y: 0, width: 100, height: 100, color: "FFFFFF")
+        let text = ImportedLayer(name: "Text", x: 0, y: 0, width: 100, height: 40, color: "000000", style: TypeStyle(fontName: "Helvetica", size: 18, text: "Text"))
+        let importedLayout = ImportedLayout(width: 100, height: 100, layers: [shape, text])
+        try verify(importedLayout.textLayerIndex(selectedID: shape.id) == nil && importedLayout.textLayerIndex(selectedID: nil) == 1, "Selecting an imported shape must not redirect to the first text layer")
         var invalid = duplicate; invalid.width = -1
         try verify(!invalid.isValid)
         var invalidText = duplicate; invalidText.styles[TypeRole.body.rawValue]!.lineHeight = -4

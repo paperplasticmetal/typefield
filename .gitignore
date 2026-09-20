@@ -22,3 +22,6 @@ pro-library.json
 folder-access.json
 temporary-activations.json
 spaces.json
+
+# Private local continuation history
+.context/

@@ -1,13 +1,13 @@
 # Build and verification status
 
-Current source: **0.20.0, build 28**. Updated 2026-09-19.
+Current source: **0.21.0, build 29**. Updated 2026-09-20.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
-| Layout checks | 2,640 cases across 528 available styles on the audit machine |
-| Xcode Release build, 0.20.0 | Passed |
+| Layout checks | 21,260 cases across 4,252 available styles on the release machine |
+| Xcode Release build, 0.21.0 | Passed |
 | Spaces and canvas regression checks | Passed: independent directions, checkpoints, imported layers, persistence and 28 canvas/viewport combinations |
 | Live folder watcher and session activation | Passed with a temporary copy of an existing Google font; visibility checked in a separate process, then deactivated and removed |
 | New designer UI | Website desktop/mobile comparison and Unicode lookup/metrics inspected locally |
@@ -16,6 +16,7 @@ Current source: **0.20.0, build 28**. Updated 2026-09-19.
 | 0.18 interaction checks | Developer handoff package contents/type-checking and inline project/typeboard/collection renaming verified. |
 | 0.19 interaction checks | Stable multi-canvas visibility, one-action solo/hide, font-summary detail levels and role-to-canvas selection verified. Canvas/typeboard/project collection scopes, family deduplication and no-overwrite behavior are regression-tested. Role-drop model and payloads are regression-tested; the physical drag gesture still needs hands-on verification. |
 | 0.20 font health | Local scanner UI and severity/fix workflow inspected across 2,624 user/watched files. Malformed-name fixture repair, duplicate removal, identity preservation, SFNT checksum rebuilding and in-memory Core Text validation of a real rebuilt font pass. No real user font was modified; App Store sandbox in-place-repair access remains unverified. |
+| 0.21 typography exports | Automated checks cover selected-canvas combined summaries, generated type-system settings and one PDF page per selected canvas. Native picker and installed-app smoke check passed locally. |
 | Figma bridge | Mocked API suite passed; live outbound editable frames and reverse selected-frame JSON import verified, including editing, movement/Undo and relaunch persistence |
 | Unsigned archive and asset catalog, 0.12.3 | Passed; archive not checked into source |
 | Sandbox/hardened-runtime clean launch and installed-font export, 0.12.3 | Passed |

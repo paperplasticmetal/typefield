@@ -18,9 +18,17 @@ enum ProChecks {
         try corrupt.write(to: corruptURL)
         let broken = Library(storageURL: corruptURL)
         broken.saved.collections["Must not overwrite"] = ["Test"]
+        broken.selection = "collection:Must not overwrite"
+        precondition(!broken.renameCollection("Must not overwrite", to: "Renamed"), "Unreadable library permitted a collection rename")
+        precondition(broken.saved.collections["Must not overwrite"] == ["Test"] && broken.saved.collections["Renamed"] == nil && broken.selection == "collection:Must not overwrite", "Failed collection rename was not rolled back")
         broken.save()
         let retained = try Data(contentsOf: corruptURL)
         precondition(retained == corrupt && broken.librarySaveBlocked, "Unreadable library was overwritten")
+        broken.pro.tags = ["existing": ["keep"]]
+        broken.proSaveBlocked = true
+        let previousTags = broken.pro.tags
+        precondition(!broken.mergeTagBackup(["imported": ["tag"]]), "Unreadable pro settings permitted a tag import")
+        precondition(broken.pro.tags == previousTags, "Failed tag import was not rolled back")
         let journal = root.appendingPathComponent("bad-activation.json")
         try corrupt.write(to: journal)
         let manager = ActivationManager(journal: journal)

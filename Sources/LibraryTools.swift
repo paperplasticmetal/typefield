@@ -98,9 +98,26 @@ extension Library {
         let name = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let members = saved.collections[old], !name.isEmpty, name == old || saved.collections[name] == nil else { return false }
         guard name != old else { return true }
+        let previousCollections = saved.collections
+        let previousSelection = selection
         saved.collections[name] = members; saved.collections.removeValue(forKey: old)
         if selection == "collection:" + old { selection = "collection:" + name }
-        return save()
+        guard save() else {
+            saved.collections = previousCollections
+            selection = previousSelection
+            return false
+        }
+        return true
+    }
+
+    @discardableResult func mergeTagBackup(_ tags: [String: Set<String>]) -> Bool {
+        let previous = pro.tags
+        for (name, values) in tags { pro.tags[name, default: []].formUnion(values) }
+        guard savePro() else {
+            pro.tags = previous
+            return false
+        }
+        return true
     }
 }
 
@@ -185,7 +202,14 @@ struct TagEditorView: View {
     func restore() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let tags = try JSONDecoder().decode([String: Set<String>].self, from: Data(contentsOf: url)); for (name, values) in tags { library.pro.tags[name, default: []].formUnion(values) }; library.savePro(); status = "Merged tags for \(tags.count) styles." } catch { status = error.localizedDescription }
+        do {
+            let tags = try JSONDecoder().decode([String: Set<String>].self, from: Data(contentsOf: url))
+            guard library.mergeTagBackup(tags) else {
+                status = library.message.isEmpty ? "Could not save tag settings." : library.message
+                return
+            }
+            status = "Merged tags for \(tags.count) styles."
+        } catch { status = error.localizedDescription }
     }
 }
 struct FamilyEditorView: View {

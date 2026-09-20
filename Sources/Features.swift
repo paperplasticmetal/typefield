@@ -79,7 +79,7 @@ struct CompareView: View {
     @Environment(\.dismiss) var dismiss
     var body: some View {
         VStack(spacing: 16) {
-            HStack { Text("Shortlist").font(.title2); Spacer(); Text("\(library.compared.count) families").foregroundStyle(.secondary); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { Text("Shortlist").font(.title2); Spacer(); Text("\(library.compared.count) \(library.compared.count == 1 ? "family" : "families")").foregroundStyle(.secondary); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
             HStack { TextField("Preview text", text: $preview); Slider(value: $size, in: 16...160).frame(width: 140); Text("\(Int(size)) pt").frame(width: 45) }
             ScrollView {
                 VStack(spacing: 18) {

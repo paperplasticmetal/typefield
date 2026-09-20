@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.20.0 (build 28).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.21.0 (build 29).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Developer handoff:** In a typeboard, choose **Export → Developer handoff…** for all its canvases, or use the space actions menu to export the whole project. One folder contains `@font-face` declarations, axes/features, CSS variables and suggested fluid `clamp()` scales, fallback stacks, preload examples, font-display guidance, Tailwind v3/v4 setup, versioned token JSON, SwiftUI and Compose starter definitions, and a standalone printable HTML specimen. Font binaries are never bundled: supply licensed web/app assets at the manifest paths. The README documents defaults and native integration work; the specimen is a typography reference, not a pixel-perfect layout export.
 
@@ -12,7 +12,7 @@ Native macOS font browsing, previews, and organization, built with SwiftUI, AppK
 
 Spaces contain typeboards, and typeboards contain canvases. Selecting another canvas keeps the current comparison visible; use **Only this**, each comparison's close button, or the **Shown** menu to hide it again. **Show all** displays every canvas, while Quick A/B solos two same-size alternatives for rapid switching. **Add canvas** creates a blank canvas or duplicates the current one. Click text or a type role to locate and edit its exact canvas use; drag a role onto the active canvas to add its saved sample text and settings. The font chooser includes collections, favorites, categories (including your overrides), and #tag search. Pinch over the canvas viewport, or use ⌘ + mouse-wheel scrolling, to zoom; ordinary scrolling pans and the zoom menu returns to Fit.
 
-Each canvas toolbar shows the number of fonts actually used. Open it for a compact font-only list, a font-and-role map, or full typography specifications with size, line height, tracking, variable axes and OpenType features; copy or export the result as plain text or Markdown. The same panel can create a Library collection from the active canvas, its complete typeboard, or the entire project, deduplicated by font family. Website, product UI, editorial and poster formats use purpose-specific compositions rather than the same generic stack.
+Each canvas toolbar opens a typography summary for the typeboard. Every canvas starts selected, and a visible checkbox row lets you include any subset before copying or exporting a compact font-only list, a font-and-role map, or full typography specifications with size, line height, tracking, variable axes and OpenType features. Export plain text or Markdown, or generate a multi-page type-system PDF whose specimen pages retain each selected canvas's chosen fonts and settings. The same panel can create a Library collection from the active canvas, its complete typeboard, or the entire project, deduplicated by font family. Website, product UI, editorial and poster formats use purpose-specific compositions rather than the same generic stack.
 
 **Live folders:** Add font folder explains recursive watching in the picker, then opens the folder manager. **Live folders** is always accessible in the Library sidebar. Watching updates additions, replacements and removals while the app is open; activation for other apps remains a separate opt-in.
 
@@ -51,11 +51,11 @@ Requirements: an Apple Silicon Mac, full **Xcode 26 or later** selected as the a
 ```sh
 git clone https://github.com/paperplasticmetal/fontshelf.git
 cd fontshelf
-./build.sh
-open dist/FontShelf.app
+./install-local.sh
+open /Applications/FontShelf.app
 ```
 
-The build creates an ad-hoc-signed local app and runs the built-in regression checks. No paid Apple account is required for this local build. To run the checks again:
+The installer builds and verifies an ad-hoc-signed local app, then updates the stable `/Applications/FontShelf.app` copy. This avoids accumulating numbered app bundles; opening FontShelf from Applications launches the latest installed build. Pass another destination path to `install-local.sh` when needed. No paid Apple account is required for this local build. To run the checks again:
 
 ```sh
 dist/FontShelf.app/Contents/MacOS/FontShelf --self-test

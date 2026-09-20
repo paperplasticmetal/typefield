@@ -115,6 +115,12 @@ struct ImportedLayout: Codable, Equatable {
     var width: Double
     var height: Double
     var layers: [ImportedLayer]
+    /// Use the first text layer only for the initial inspector state. A
+    /// selected shape must not redirect edits to an unrelated text layer.
+    func textLayerIndex(selectedID: String?) -> Int? {
+        if let selectedID { return layers.firstIndex { $0.id == selectedID && $0.style != nil } }
+        return layers.firstIndex { $0.style != nil }
+    }
     var isValid: Bool {
         width.isFinite && height.isFinite && (1...10000).contains(width) && (1...100000).contains(height) && layers.count <= 5000 && Set(layers.map(\.id)).count == layers.count && layers.allSatisfy { layer in
             [layer.x, layer.y, layer.width, layer.height, layer.opacity, layer.radius].allSatisfy(\.isFinite) && abs(layer.x) <= 100000 && abs(layer.y) <= 100000 && (0.01...100000).contains(layer.width) && (0.01...100000).contains(layer.height) && (0...1).contains(layer.opacity) && (0...10000).contains(layer.radius) && (layer.style.map { $0.size.isFinite && (1...1000).contains($0.size) && $0.text.utf8.count <= 200000 && $0.tracking.isFinite && abs($0.tracking) <= 100 && ($0.lineHeight.map { $0.isFinite && (1...2000).contains($0) } ?? true) && $0.axes.values.allSatisfy(\.isFinite) && [$0.paragraphSpacing, $0.indent, $0.wordSpacing].allSatisfy { $0.map { $0.isFinite && abs($0) <= 1000 } ?? true } } ?? true)
@@ -177,6 +183,12 @@ final class StudioStore: ObservableObject {
         guard !readBlocked else { return false }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let focusedSpace, let space = state.spaces.first(where: { $0.id == focusedSpace }) {
+                if let focusedBoard, !space.boards.contains(where: { $0.id == focusedBoard }) { self.focusedBoard = nil }
+            } else {
+                focusedSpace = nil
+                focusedBoard = nil
+            }
             state.selectedSpace = focusedSpace; state.selectedBoard = focusedBoard
             let data = try JSONEncoder().encode(state)
             try LibraryBackupTools.preserve(url)
@@ -186,11 +198,13 @@ final class StudioStore: ObservableObject {
             try data.write(to: url, options: .atomic); savedAt = Date(); error = ""; return true
         } catch { self.error = "Spaces could not be saved: " + error.localizedDescription; return false }
     }
-    func addSpace(_ name: String) -> UUID {
+    func addSpace(_ name: String) -> UUID? {
+        guard !readBlocked else { return nil }
         let space = DesignSpace(name: name.isEmpty ? "Untitled space" : name)
         state.spaces.append(space); focusedSpace = space.id; focusedBoard = nil; save(); return space.id
     }
     func addBoard(space: UUID, fonts: [String] = []) -> UUID? {
+        guard !readBlocked else { return nil }
         guard let i = state.spaces.firstIndex(where: { $0.id == space }) else { return nil }
         var number = state.spaces[i].boards.count + 1
         while state.spaces[i].boards.contains(where: { $0.name == "Typeboard \(number)" }) { number += 1 }
