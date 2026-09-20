@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.22.0 — 2026-09-20
+
+- Removed an unnecessary second installed-font catalog scan from ordinary cold launches and skipped the post-registration rescan when watched folders made no catalog changes.
+- Reused variable-font facts already collected during catalog reads and original-family classifications during regrouping instead of reopening every style.
+- Added bounded caches for immutable Core Text fonts and rendered canvas plans, with invalidation whenever the font catalog changes and size limits for unusually large imported layouts.
+- Reduced repeated full-library filtering and chosen-face resolution during SwiftUI redraws, and cached Core Text line layout between sizing and drawing passes.
+- Avoided rebuilding canvas accessibility summaries on every selection or zoom update and bounded the summary size for very large imported layouts.
+- Added a read-only `--performance-audit` covering catalog scan, library filtering and cold-versus-cached canvas planning.
+
 ## 0.21.0 — 2026-09-20
 
 - Added per-typeboard canvas selection to typography summaries, with every canvas selected initially and a checkbox row for choosing any subset.

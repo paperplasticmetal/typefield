@@ -41,16 +41,18 @@ struct SavedLibrary: Codable {
 
 enum FontCatalog {
     static var registeredFiles: [String: FontFileStamp] = [:]
-    static func reconcileFolders(_ folders: [String]) {
+    @discardableResult static func reconcileFolders(_ folders: [String]) -> Bool {
+        var changed = false
         for (path, stamp) in registeredFiles {
             let inScope = folders.contains { FontFolderSnapshot.contains(path, root: $0) }
             if !inScope || FontFileStamp.read(URL(fileURLWithPath: path)) != stamp {
                 let url = URL(fileURLWithPath: path)
-                if CTFontManagerGetScopeForURL(url as CFURL) == .process { CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil) }
+                if CTFontManagerGetScopeForURL(url as CFURL) == .process { changed = CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil) || changed }
                 registeredFiles.removeValue(forKey: path)
             }
         }
-        for path in folders { _ = registerFolder(path) }
+        for path in folders { changed = registerFolder(path) > 0 || changed }
+        return changed
     }
     static func category(_ font: CTFont) -> Category {
         let traits = CTFontGetSymbolicTraits(font).rawValue
@@ -69,6 +71,8 @@ enum FontCatalog {
         switch (traits >> 28) & 15 { case 1,2,3,4,5,7: return .serif; case 8: return .sans; case 9: return .display; case 10: return .script; case 12: return .symbol; default: return knownFontCategories[CTFontCopyFamilyName(font) as String] ?? .other }
     }
     static func scan() -> [Family] {
+        OpenType.clearFontCache()
+        CanvasPlanCache.removeAll()
         let descriptors = CTFontCollectionCreateMatchingFontDescriptors(CTFontCollectionCreateFromAvailableFonts(nil)) as? [CTFontDescriptor] ?? []
         var groups: [String: [Face]] = [:]
         var seen = Set<String>()
@@ -86,7 +90,7 @@ enum FontCatalog {
             let sorted = faces.sorted { $0.style.localizedStandardCompare($1.style) == .orderedAscending }
             let rep = sorted.first(where: { ["Regular", "Book", "Roman", "Normal"].contains($0.style) }) ?? sorted[0]
             let font = CTFontCreateWithName(rep.name as CFString, 24, nil)
-            let variable = sorted.contains { !(CTFontCopyVariationAxes(CTFontCreateWithName($0.name as CFString, 24, nil)) as? [Any] ?? []).isEmpty }
+            let variable = sorted.contains { $0.facts.variable }
             return Family(name: name, faces: sorted, automaticCategory: category(font), variable: variable, writingSystems: sorted.reduce(into: []) { $0.formUnion($1.writingSystems) })
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
@@ -166,8 +170,8 @@ final class Library: ObservableObject {
         families = groups.map { name, faces in
             let sorted = faces.sorted { $0.style.localizedStandardCompare($1.style) == .orderedAscending }
             let rep = sorted.first(where: { $0.name == pro.mainPreviews[name] }) ?? sorted.first(where: { $0.style == "Regular" }) ?? sorted[0]
-            let font = CTFontCreateWithName(rep.name as CFString, 24, nil)
-            return Family(name: name, faces: sorted, automaticCategory: FontCatalog.category(font), variable: sorted.contains { !(CTFontCopyVariationAxes(CTFontCreateWithName($0.name as CFString, 24, nil)) as? [Any] ?? []).isEmpty }, writingSystems: sorted.reduce(into: []) { $0.formUnion($1.writingSystems) })
+            let category = originalFamilies.first(where: { $0.name == rep.originalFamily })?.automaticCategory ?? .other
+            return Family(name: name, faces: sorted, automaticCategory: category, variable: sorted.contains { $0.facts.variable }, writingSystems: sorted.reduce(into: []) { $0.formUnion($1.writingSystems) })
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     func editFamily(names: Set<String>, target: String?) {
@@ -251,11 +255,16 @@ final class Library: ObservableObject {
         let accessibleFolders = folders
         let showInstalledFirst = originalFamilies.isEmpty
         DispatchQueue.global(qos: .userInitiated).async {
-            if showInstalledFirst {
+            if showInstalledFirst && register && !accessibleFolders.isEmpty {
                 let installed = FontCatalog.scan()
                 DispatchQueue.main.async { self.originalFamilies = installed; self.regroup() }
+                if !FontCatalog.reconcileFolders(accessibleFolders) {
+                    DispatchQueue.main.async { self.acceptCatalog(installed); self.applyFolderActivation(); if self.folderStatus == "Changes detected; refreshing…" { self.folderStatus = "Up to date" }; self.finishLoading() }
+                    return
+                }
+            } else if register {
+                FontCatalog.reconcileFolders(accessibleFolders)
             }
-            if register { FontCatalog.reconcileFolders(accessibleFolders) }
             let result = FontCatalog.scan()
             DispatchQueue.main.async { self.acceptCatalog(result); self.applyFolderActivation(); if self.folderStatus == "Changes detected; refreshing…" { self.folderStatus = "Up to date" }; self.finishLoading() }
         }
@@ -326,16 +335,28 @@ struct FontPreview: NSViewRepresentable {
     @AppStorage("customPreviewColors") var customColors = false
     @AppStorage("previewInkHex") var inkHex = "EEEEEE"
     @AppStorage("previewPaperHex") var paperHex = "202020"
+    struct Configuration: Equatable {
+        let text: String, name: String, ink: String, paper: String?, appearance: String, previewName: String?
+        let previewHash: UInt?
+        let size: Double, wraps: Bool, baseline: Double?
+        let variations: [Int: Double], features: [String: Int]
+    }
+    final class Coordinator { var configuration: Configuration? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> BaselineTextView { BaselineTextView() }
     func updateNSView(_ view: BaselineTextView, context: Context) {
+        let resolvedInk = ink ?? (customColors ? NSColor(hex: inkHex) : .labelColor)
+        let resolvedPaper = ink == nil && customColors ? NSColor(hex: paperHex) : nil
+        let configuration = Configuration(text: text, name: name, ink: resolvedInk.rgbHex, paper: resolvedPaper?.rgbHex, appearance: NSApp.effectiveAppearance.name.rawValue, previewName: previewFont.map { $0.postScriptName as String? } ?? nil, previewHash: previewFont.map(CFHash), size: size, wraps: wraps, baseline: baseline, variations: variations, features: features)
+        guard configuration != context.coordinator.configuration else { return }
+        context.coordinator.configuration = configuration
         view.text = text
         view.font = previewFont.map { CTFontCreateWithGraphicsFont($0, size, nil, nil) } ?? OpenType.font(name: name, size: size, axes: variations, features: features)
-        view.ink = ink ?? (customColors ? NSColor(hex: inkHex) : .labelColor)
-        view.paper = ink == nil && customColors ? NSColor(hex: paperHex) : nil
+        view.ink = resolvedInk
+        view.paper = resolvedPaper
         view.wraps = wraps
         view.baseline = baseline
-        view.needsDisplay = true
-        view.invalidateIntrinsicContentSize()
+        view.invalidateContent()
         view.setAccessibilityLabel(text)
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: BaselineTextView, context: Context) -> CGSize? {
@@ -362,10 +383,11 @@ struct ContentView: View {
             if library.workspace {
                 StudioView(library: library, store: library.studio)
             } else { VStack(spacing: 0) {
+                let visibleFamilies = library.filtered
                 topControls
-                libraryContent
+                libraryContent(visibleFamilies)
                 Divider()
-                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(library.filtered.count) \(library.filtered.count == 1 ? "family" : "families")"); Text("·"); Text("\(library.families.reduce(0) { $0 + $1.faces.count }) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
+                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families")"); Text("·"); Text("\(library.families.reduce(0) { $0 + $1.faces.count }) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
             } }
         }
         .background(ShelfPalette.canvas)
@@ -465,10 +487,10 @@ struct ContentView: View {
 
         }
     }
-    @ViewBuilder var libraryContent: some View {
+    @ViewBuilder func libraryContent(_ visibleFamilies: [Family]) -> some View {
                 if library.loading && library.families.isEmpty { ProgressView("Reading your fonts…").frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else if metadataView { MetadataTable(library: library) }
-                else if library.filtered.isEmpty {
+                else if visibleFamilies.isEmpty {
                     VStack(spacing: 12) { Image(systemName: "text.magnifyingglass").font(.system(size: 38)).foregroundStyle(.secondary); Text(library.selection == "Last Import" && library.saved.lastImportNames == nil ? "No imports yet" : "No matching fonts").font(.title2); Text(library.selection == "Last Import" && library.saved.lastImportNames == nil ? "Your next font-folder import or Google Fonts download will appear here." : "Try a different search or filter, or add fonts to this collection.").foregroundStyle(.secondary)
                         Button("Clear filters") { library.search = ""; library.source = "All sources"; library.variableOnly = false; library.advanced = AdvancedFilter(); library.tagQuery = TagQuery(); library.writing = nil; library.requireCoverage = false; library.selection = "All Fonts" }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -477,16 +499,17 @@ struct ContentView: View {
                         let width = max(1, geometry.size.width - 32)
                         let cardWidth = PreviewLayout.cardWidth(text: preview == "{family}" ? "Font family" : preview, size: size, available: width)
                         let columns = grid ? max(1, Int((width + 10) / (cardWidth + 10))) : 1
-                        let families = library.filtered
+                        let families = visibleFamilies
                         ScrollView {
                             LazyVStack(spacing: 10) {
                                 ForEach(Array(stride(from: 0, to: families.count, by: columns)), id: \.self) { start in
                                     let row = Array(families[start..<min(start + columns, families.count)])
-                                    let baseline = rowBaseline(row)
+                                    let faces = row.map { library.chosenFace($0) }
+                                    let baseline = rowBaseline(faces)
                                     HStack(alignment: .top, spacing: 10) {
                                         ForEach(0..<columns, id: \.self) { column in
                                             if start + column < families.count {
-                                                card(families[start + column], baseline: baseline).frame(maxWidth: .infinity, maxHeight: .infinity)
+                                                card(families[start + column], face: faces[column], baseline: baseline).frame(maxWidth: .infinity, maxHeight: .infinity)
                                             } else {
                                                 Color.clear.frame(maxWidth: .infinity)
                                             }
@@ -596,11 +619,11 @@ struct ContentView: View {
             LibrarySearchView(library: library).focused($searchFocused).frame(minWidth: 220, idealWidth: 290, maxWidth: 350)
         }.padding(.horizontal, 20).padding(.vertical, 18)
     }
-    func rowBaseline(_ families: [Family]) -> Double {
-        let names = families.map { library.chosenFace($0).name } + (library.overlayName.isEmpty ? [] : [library.overlayName])
+    func rowBaseline(_ faces: [Face]) -> Double {
+        let names = faces.map(\.name) + (library.overlayName.isEmpty ? [] : [library.overlayName])
         return ceil(names.map { CTFontGetAscent(OpenType.font(name: $0, size: size, axes: library.pro.axes[$0] ?? [:], features: library.pro.features[$0] ?? [:])) }.max() ?? size) + 4
     }
-    func card(_ family: Family, baseline: Double) -> some View {
+    func card(_ family: Family, face: Face, baseline: Double) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Button { if library.selectedFamilies.contains(family.name) { library.selectedFamilies.remove(family.name) } else { library.selectedFamilies.insert(family.name) } } label: { Image(systemName: library.selectedFamilies.contains(family.name) ? "checkmark.circle.fill" : "circle").font(.system(size: 16)).frame(width: 28, height: 28) }.buttonStyle(.plain).help("Select family for batch actions")
@@ -617,12 +640,11 @@ struct ContentView: View {
                 Spacer(minLength: 0)
                 Button { library.favorite(family) } label: { Image(systemName: library.saved.favorites.contains(family.name) ? "star.fill" : "star").foregroundStyle(library.saved.favorites.contains(family.name) ? ShelfPalette.ink : Color.primary).font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Toggle favorite")
                 Button { library.compare(family) } label: { Image(systemName: library.comparison.contains(family.name) ? "checkmark.square.fill" : "plus.square").font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Add or remove from shortlist — open Shortlist in the sidebar")
-                Button { library.overlayName = library.chosenFace(family).name } label: {
-                    Text("AB").font(.system(size: 13, weight: .bold)).foregroundStyle(library.overlayName == library.chosenFace(family).name ? Color.cyan : Color.primary).frame(width: 30, height: 30)
+                Button { library.overlayName = face.name } label: {
+                    Text("AB").font(.system(size: 13, weight: .bold)).foregroundStyle(library.overlayName == face.name ? Color.cyan : Color.primary).frame(width: 30, height: 30)
                 }.buttonStyle(.plain).help("Compare this font over every preview in the library").accessibilityLabel("Use \(family.name) as library overlay")
                 Menu { actions(family) } label: { Image(systemName: "ellipsis").font(.system(size: 17)) }.shelfIconMenu().help("Font actions")
             }
-            let face = library.chosenFace(family)
             if !library.overlayName.isEmpty {
                 OverlayPreview(text: preview == "{family}" ? family.name : preview, candidate: face.name, reference: library.overlayName, size: size, library: library, baseline: baseline).allowsHitTesting(false)
             } else {
@@ -812,6 +834,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 
+enum PerformanceAudit {
+    private static func measure(iterations: Int, _ work: () -> Int) -> (milliseconds: Double, checksum: Int) {
+        let start = CFAbsoluteTimeGetCurrent()
+        var checksum = 0
+        for _ in 0..<iterations { autoreleasepool { checksum &+= work() } }
+        return ((CFAbsoluteTimeGetCurrent() - start) * 1_000 / Double(iterations), checksum)
+    }
+
+    static func run() {
+        let scanStart = CFAbsoluteTimeGetCurrent()
+        let catalog = FontCatalog.scan()
+        let scanMilliseconds = (CFAbsoluteTimeGetCurrent() - scanStart) * 1_000
+
+        let library = Library(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-performance-audit-" + UUID().uuidString + "/library.json"))
+        library.families = catalog
+        library.search = "a"
+        let filtering = measure(iterations: 100) { library.filtered.reduce(0) { $0 &+ $1.faces.count } }
+
+        var direction = TypeDirection(name: "Performance audit", fonts: ["Helvetica", "Times-Roman"])
+        direction.canvas = .editorial
+        direction.width = 1_200
+        let direct = measure(iterations: 20) { CanvasPlan(direction: direction).elements.count }
+        CanvasPlanCache.removeAll()
+        _ = CanvasPlanCache.plan(for: direction)
+        let cached = measure(iterations: 200) { CanvasPlanCache.plan(for: direction).elements.count }
+        precondition(direct.checksum / 20 == cached.checksum / 200, "Cached canvas plan changed its output")
+
+        print(String(format: "PERF catalog scan: %.2f ms (%d families, %d styles)", scanMilliseconds, catalog.count, catalog.reduce(0) { $0 + $1.faces.count }))
+        print(String(format: "PERF library filter: %.3f ms/pass", filtering.milliseconds))
+        print(String(format: "PERF canvas plan: %.3f ms uncached, %.6f ms cached (%.1fx faster)", direct.milliseconds, cached.milliseconds, direct.milliseconds / max(0.000_001, cached.milliseconds)))
+    }
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--font-available"), CommandLine.arguments.count > index + 1 {
     let names = CTFontManagerCopyAvailablePostScriptNames() as? [String] ?? []
     exit(names.contains(CommandLine.arguments[index + 1]) ? 0 : 1)
@@ -821,6 +876,8 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
 } else if let index = CommandLine.arguments.firstIndex(of: "--handoff-fixture"), CommandLine.arguments.count > index + 1 {
     do { print(try StudioChecks.handoff(catalog: FontCatalog.scan(), parent: URL(fileURLWithPath: CommandLine.arguments[index + 1])).path) }
     catch { fputs("Handoff check failed: \(error.localizedDescription)\n", stderr); exit(1) }
+} else if CommandLine.arguments.contains("--performance-audit") {
+    PerformanceAudit.run()
 } else if CommandLine.arguments.contains("--self-test") {
     for pointSize in [52.0, 131.0] {
         let views = ["Helvetica", "Times-Roman"].map { name -> BaselineTextView in

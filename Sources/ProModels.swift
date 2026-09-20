@@ -25,8 +25,8 @@ struct FontFacts {
     let monospace: Bool
     static func read(_ font: CTFont) -> FontFacts {
         var weight = 400
-        if let data = CTFontCopyTable(font, 0x4f532f32, []) as Data?, data.count > 5 { let value = Int(data[4]) * 256 + Int(data[5]); weight = (1...1000).contains(value) ? value : 400 }
         let table = CTFontCopyTable(font, 0x4f532f32, []) as Data?
+        if let table, table.count > 5 { let value = Int(table[4]) * 256 + Int(table[5]); weight = (1...1000).contains(value) ? value : 400 }
         let width = table.flatMap { OpenType.u16($0, 6) } ?? 5
         // Core Text stores raw table tags in this CFArray, not Objective-C objects.
         var tables = Set<UInt32>()
@@ -37,6 +37,15 @@ struct FontFacts {
     }
 }
 enum OpenType {
+    private final class CachedFont: NSObject {
+        let value: CTFont
+        init(_ value: CTFont) { self.value = value }
+    }
+    private static let fontCache: NSCache<NSString, CachedFont> = {
+        let cache = NSCache<NSString, CachedFont>()
+        cache.countLimit = 384
+        return cache
+    }()
     static func u16(_ data: Data, _ offset: Int) -> Int? {
         guard offset >= 0, offset + 1 < data.count else { return nil }
         return Int(data[offset]) << 8 | Int(data[offset + 1])
@@ -57,12 +66,19 @@ enum OpenType {
     }
     static let names = ["liga":"Standard ligatures", "dlig":"Discretionary ligatures", "hlig":"Historical ligatures", "calt":"Contextual alternates", "salt":"Stylistic alternates", "smcp":"Small capitals", "c2sc":"Capitals to small capitals", "onum":"Oldstyle figures", "lnum":"Lining figures", "tnum":"Tabular figures", "pnum":"Proportional figures", "frac":"Fractions", "ordn":"Ordinals", "zero":"Slashed zero", "swsh":"Swashes", "kern":"Kerning", "locl":"Localized forms", "case":"Case-sensitive forms", "sups":"Superscript", "subs":"Subscript", "rvrn":"Required variation alternates", "rlig":"Required ligatures", "ccmp":"Glyph composition", "mark":"Mark positioning", "mkmk":"Mark-to-mark positioning", "vert":"Vertical forms", "vkrn":"Vertical kerning"]
     static func label(_ tag: String) -> String { names[tag] ?? (tag.hasPrefix("ss") ? "Stylistic set \(tag.suffix(2))" : tag.hasPrefix("cv") ? "Character variant \(tag.suffix(2))" : "Font-defined feature") }
+    static func clearFontCache() { fontCache.removeAllObjects() }
     static func font(name: String, size: Double, axes: [Int: Double] = [:], features: [String: Int] = [:]) -> CTFont {
+        let axisKey = axes.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value.bitPattern)" }.joined(separator: ",")
+        let featureKey = features.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        let key = "\(name)|\(size.bitPattern)|\(axisKey)|\(featureKey)" as NSString
+        if let cached = fontCache.object(forKey: key) { return cached.value }
         let base = CTFontCreateWithName(name as CFString, size, nil)
         var attributes: [CFString: Any] = [:]
         if !axes.isEmpty { attributes[kCTFontVariationAttribute] = axes }
         if !features.isEmpty { attributes[kCTFontFeatureSettingsAttribute] = features.map { [kCTFontOpenTypeFeatureTag: $0.key, kCTFontOpenTypeFeatureValue: $0.value] as [CFString: Any] } }
-        return CTFontCreateCopyWithAttributes(base, size, nil, CTFontDescriptorCreateWithAttributes(attributes as CFDictionary))
+        let font = CTFontCreateCopyWithAttributes(base, size, nil, CTFontDescriptorCreateWithAttributes(attributes as CFDictionary))
+        fontCache.setObject(CachedFont(font), forKey: key)
+        return font
     }
 }
 struct AdvancedFilter: Equatable {

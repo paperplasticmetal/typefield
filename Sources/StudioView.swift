@@ -249,7 +249,7 @@ struct TypeBoardEditor: View {
     var showingAllCanvases: Bool { !board.directions.isEmpty && Set(board.directions.map(\.id)).isSubset(of: shownCanvasIDs) }
     var importedLayerIndex: Int? { guard direction.canvas == .imported else { return nil }; return direction.importedLayout?.textLayerIndex(selectedID: selectedSection) }
     var importedNonTextSelected: Bool { direction.canvas == .imported && importedLayerIndex == nil }
-    var selectedText: CanvasElement? { guard let selectedTextID else { return nil }; return CanvasPlan(direction: direction).elements.first { $0.textID == selectedTextID } }
+    var selectedText: CanvasElement? { guard let selectedTextID else { return nil }; return CanvasPlanCache.plan(for: direction).elements.first { $0.textID == selectedTextID } }
     var style: TypeStyle { if let index = importedLayerIndex, let style = direction.importedLayout?.layers[index].style { return style }; return selectedText?.style ?? direction.style(role) }
     var selectedSummaryDirections: [TypeDirection] { board.directions.filter { summaryCanvasIDs.contains($0.id) } }
     var fontSummary: TypographySummaryDocument { TypographySummaryDocument(summaries: selectedSummaryDirections.map { CanvasTypographySummary(canvas: board.canvasName($0), direction: $0) }) }
@@ -372,7 +372,7 @@ struct TypeBoardEditor: View {
     func hideCanvas(_ id: UUID) { guard id != direction.id else { return }; shownCanvasIDs.remove(id) }
     func swapAB() { guard let id = abID, board.directions.contains(where: { $0.id == id && $0.canvas == direction.canvas && $0.width == direction.width }) else { return }; abID = direction.id; board.selectedDirection = id; shownCanvasIDs = [id]; save() }
     func moveSection(_ source: String, _ target: String, _ before: Bool) {
-        let plan = CanvasPlan(direction: direction)
+        let plan = CanvasPlanCache.plan(for: direction)
         if direction.canvas == .imported, var layout = direction.importedLayout, source != target, let index = layout.layers.firstIndex(where: { $0.id == source }) {
             let layer = layout.layers.remove(at: index)
             if let destination = layout.layers.firstIndex(where: { $0.id == target }) { layout.layers.insert(layer, at: destination + (before ? 0 : 1)); board.directions[directionIndex].importedLayout = layout; selectedSection = source; save("Reorder Layers") }; return
@@ -381,7 +381,7 @@ struct TypeBoardEditor: View {
     }
     func selectRole(_ item: TypeRole) {
         role = item; fontSearch = ""; inspectorTab = "Typography"
-        if let element = CanvasPlan(direction: direction).elements.first(where: { $0.role == item && $0.text != nil }) { selectedSection = element.sectionID; selectedTextID = element.textID }
+        if let element = CanvasPlanCache.plan(for: direction).elements.first(where: { $0.role == item && $0.text != nil }) { selectedSection = element.sectionID; selectedTextID = element.textID }
         else { selectedSection = nil; selectedTextID = nil }
     }
     func addRole(_ item: TypeRole, target: String?, before: Bool) {
@@ -389,7 +389,7 @@ struct TypeBoardEditor: View {
             let layer = ImportedLayer(name: item.rawValue, x: 24, y: 24, width: max(1, direction.width - 48), height: item.size * 2, color: direction.ink, style: direction.style(item))
             board.directions[directionIndex].importedLayout?.layers.append(layer); selectedSection = layer.id; selectedTextID = nil; save("Add Text Layer"); return
         }
-        let current = CanvasPlan(direction: direction).sections.map(\.id)
+        let current = CanvasPlanCache.plan(for: direction).sections.map(\.id)
         let id = board.directions[directionIndex].insert(item, target: target, before: before, visible: current)
         selectedSection = id; selectedTextID = nil; role = item; inspectorTab = "Typography"; save("Add \(item.rawValue)")
     }
@@ -401,7 +401,7 @@ struct TypeBoardEditor: View {
     }
     func canvas(_ direction: TypeDirection, scale: Double) -> some View {
         let zoom = scale
-        let plan = CanvasPlan(direction: direction)
+        let plan = CanvasPlanCache.plan(for: direction)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Button { selectCanvas(direction.id) } label: { HStack { Text(board.canvasName(direction)); if direction.id == self.direction.id { Text("Editing").foregroundStyle(Color.accentColor) } else { Text("Click to edit").foregroundStyle(.secondary) } }.contentShape(Rectangle()) }.font(.caption).buttonStyle(.plain)
@@ -414,7 +414,8 @@ struct TypeBoardEditor: View {
         }
     }
     var inspector: some View {
-        ScrollView {
+        let plan = CanvasPlanCache.plan(for: direction)
+        return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 TextField("Canvas name", text: Binding(get: { board.canvasName(direction) }, set: { board.directions[directionIndex].name = $0; save() })).textFieldStyle(.roundedBorder)
                 Picker("Inspector", selection: $inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
@@ -428,7 +429,7 @@ struct TypeBoardEditor: View {
                 Text("TYPE ROLES").font(.caption).foregroundStyle(.secondary)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
                 ForEach(TypeRole.allCases) { item in
-                    let count = CanvasPlan(direction: direction).elements.filter { $0.role == item && $0.text != nil }.count
+                    let count = plan.elements.filter { $0.role == item && $0.text != nil }.count
                     Button { selectRole(item) } label: {
                         HStack { Text(item.rawValue).font(.caption).fontWeight(.medium); Spacer(); Text(count == 0 ? "Add" : "\(count)× · \(Int(direction.style(item).size))").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(9).background(role == item ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 7)).contentShape(Rectangle())
                     }.buttonStyle(.plain).onDrag { NSItemProvider(object: (direction.id.uuidString + "|role|" + item.rawValue) as NSString) }.help(count == 0 ? "Drag onto the canvas to add this role" : "Click to locate this role; drag to add another")
@@ -513,9 +514,9 @@ struct TypeBoardEditor: View {
     var layoutSections: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Text("ARRANGEMENT").font(.caption).foregroundStyle(.secondary); Spacer(); Menu { ForEach(TypeRole.allCases) { item in Button(item.rawValue) {
-                addRole(item, target: CanvasPlan(direction: direction).sections.last?.id, before: false)
+                addRole(item, target: CanvasPlanCache.plan(for: direction).sections.last?.id, before: false)
             } }; if !(direction.hiddenSections ?? []).isEmpty { Button("Restore removed sections") { board.directions[directionIndex].hiddenSections = nil; save() } } } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add section").accessibilityLabel("Add section") }
-            let plan = CanvasPlan(direction: direction)
+            let plan = CanvasPlanCache.plan(for: direction)
             GeometryReader { geometry in
                 ZStack(alignment: .topTrailing) {
                     CanvasPreview(plan: CanvasPlan(arrangement: plan.sections, width: geometry.size.width), directionID: direction.id, selectedSection: selectedSection, onSelect: { selectedSection = $0 }, onMove: moveSection)
@@ -624,7 +625,7 @@ struct TypeBoardEditor: View {
     func exportPDF() {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — " + direction.name + ".pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let plan = CanvasPlan(direction: direction); let view = CanvasNativeView(plan: plan); try view.dataWithPDF(inside: view.bounds).write(to: url, options: .atomic); status = "PDF exported" } catch { status = "Export failed: " + error.localizedDescription }
+        do { let plan = CanvasPlanCache.plan(for: direction); let view = CanvasNativeView(plan: plan); try view.dataWithPDF(inside: view.bounds).write(to: url, options: .atomic); status = "PDF exported" } catch { status = "Export failed: " + error.localizedDescription }
     }
     func exportFigma() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
@@ -674,11 +675,49 @@ struct CanvasElement {
     var textID: String?
 }
 struct CanvasSection: Identifiable { var id: String; var title: String; var rect: CGRect }
+enum CanvasPlanCache {
+    private struct Entry { let direction: TypeDirection; let plan: CanvasPlan; var used: UInt64 }
+    private static let lock = NSLock()
+    private static var entries: [UUID: Entry] = [:]
+    private static var clock: UInt64 = 0
+    static func plan(for direction: TypeDirection) -> CanvasPlan {
+        lock.lock()
+        clock &+= 1
+        let used = clock
+        if var entry = entries[direction.id], entry.direction == direction {
+            entry.used = used
+            entries[direction.id] = entry
+            lock.unlock()
+            return entry.plan
+        }
+        lock.unlock()
+        let plan = CanvasPlan(direction: direction)
+        lock.lock()
+        let textLength = plan.elements.reduce(0) { $0 + ($1.text?.length ?? 0) }
+        if plan.elements.count <= 1_000 && textLength <= 200_000 { entries[direction.id] = Entry(direction: direction, plan: plan, used: used) }
+        if entries.count > 16, let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key { entries.removeValue(forKey: oldest) }
+        lock.unlock()
+        return plan
+    }
+    static func removeAll() {
+        lock.lock()
+        entries.removeAll(keepingCapacity: true)
+        lock.unlock()
+    }
+}
 struct CanvasPlan {
     var elements: [CanvasElement] = []
     var sections: [CanvasSection] = []
     var size: CGSize = .zero
     var paper: NSColor
+    var accessibilityText = "Typography canvas"
+    mutating func updateAccessibilityText() {
+        var result = ""
+        for value in elements.compactMap({ $0.text?.string }) where result.count < 4_000 {
+            result += (result.isEmpty ? "" : ". ") + String(value.prefix(4_000 - result.count))
+        }
+        if !result.isEmpty { accessibilityText = result }
+    }
     init(arrangement: [CanvasSection], width: Double) {
         paper = .clear; size = CGSize(width: width, height: Double(arrangement.count) * 42)
         for (index, section) in arrangement.enumerated() {
@@ -687,6 +726,7 @@ struct CanvasPlan {
             let text = NSAttributedString(string: "≡   " + section.title, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor])
             elements.append(CanvasElement(rect: CGRect(x: 10, y: y + 13, width: max(1, width - 42), height: 20), text: text, sectionID: section.id))
         }
+        updateAccessibilityText()
     }
     init(direction d: TypeDirection) {
         paper = NSColor(hex: d.paper)
@@ -703,6 +743,7 @@ struct CanvasPlan {
                 sections.append(CanvasSection(id: layer.id, title: layer.name, rect: rect))
                 size.height = max(size.height, rect.maxY)
             }
+            updateAccessibilityText()
             return
         }
         let w = min(1600, max(320, d.width)), margin = w < 500 ? 24.0 : 56.0, usable = w - margin * 2
@@ -857,6 +898,7 @@ struct CanvasPlan {
             part.rect.origin.y = y; sections.append(part); y += part.rect.height
         }
         size = CGSize(width: w, height: max(480, y + margin))
+        updateAccessibilityText()
     }
 }
 final class CanvasNativeView: NSView {
@@ -959,8 +1001,10 @@ struct CanvasPreview: NSViewRepresentable {
     var onAddRole: ((TypeRole, String?, Bool) -> Void)?
     var onTranslate: ((String, Double, Double) -> Void)?
     var onTextSelect: ((CanvasElement) -> Void)?
+    final class Coordinator { var accessibilityText = "" }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> CanvasNativeView { CanvasNativeView(plan: plan) }
-    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onTextSelect = onTextSelect; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.setAccessibilityElement(true); view.setAccessibilityLabel(plan.elements.compactMap { $0.text?.string }.joined(separator: ". ")); view.needsDisplay = true }
+    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onTextSelect = onTextSelect; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.setAccessibilityElement(true); if context.coordinator.accessibilityText != plan.accessibilityText { context.coordinator.accessibilityText = plan.accessibilityText; view.setAccessibilityLabel(plan.accessibilityText) }; view.needsDisplay = true }
 }
 
 extension CanvasPlan {

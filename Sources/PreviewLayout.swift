@@ -32,12 +32,13 @@ struct OverlayPreview: View {
 
 /// Draws Core Text lines at explicit baselines, without NSTextField's font-specific cell insets.
 final class BaselineTextView: NSView {
-    var text = ""
-    var font = CTFontCreateWithName("Helvetica" as CFString, 16, nil)
-    var ink = NSColor.labelColor
-    var paper: NSColor?
-    var wraps = false
-    var baseline: Double?
+    var text = "" { didSet { if text != oldValue { invalidateContent() } } }
+    var font = CTFontCreateWithName("Helvetica" as CFString, 16, nil) { didSet { invalidateContent() } }
+    var ink = NSColor.labelColor { didSet { if !ink.isEqual(oldValue) { invalidateContent() } } }
+    var paper: NSColor? { didSet { needsDisplay = true } }
+    var wraps = false { didSet { if wraps != oldValue { invalidateContent() } } }
+    var baseline: Double? { didSet { if baseline != oldValue { invalidateContent() } } }
+    private var cachedLayout: (width: Double, content: Lines)?
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setAccessibilityElement(true)
@@ -50,7 +51,13 @@ final class BaselineTextView: NSView {
         var advance: Double
         var height: Double
     }
+    func invalidateContent() {
+        cachedLayout = nil
+        needsDisplay = true
+        invalidateIntrinsicContentSize()
+    }
     func layout(width: Double) -> Lines {
+        if let cachedLayout, cachedLayout.width == width { return cachedLayout.content }
         let string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: ink])
         let setter = CTTypesetterCreateWithAttributedString(string)
         var lines: [CTLine] = []
@@ -67,7 +74,9 @@ final class BaselineTextView: NSView {
             CTLineGetTypographicBounds(line, nil, &descent, nil)
             return max(descent, -CTLineGetBoundsWithOptions(line, .useGlyphPathBounds).minY)
         }.max() ?? CTFontGetDescent(font)
-        return Lines(lines: lines, first: first, advance: advance, height: ceil(first + Double(max(0, lines.count - 1)) * advance + lastDescent + 6))
+        let result = Lines(lines: lines, first: first, advance: advance, height: ceil(first + Double(max(0, lines.count - 1)) * advance + lastDescent + 6))
+        cachedLayout = (width, result)
+        return result
     }
     override func draw(_ dirtyRect: NSRect) {
         if let paper { paper.setFill(); bounds.fill() }
