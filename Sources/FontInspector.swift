@@ -179,6 +179,110 @@ struct FontSwitchView: View {
         }.padding(22)
     }
 }
+struct SimilarFontsView: View {
+    @ObservedObject var library: Library
+    let family: Family
+    let reference: Face
+    let preview: String
+    @Environment(\.dismiss) private var dismiss
+    var results: [FontSimilarityResult] { library.similarFamilies(to: reference, limit: 16) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Similar in my library").font(.title3)
+                    Text("Ranked only from fonts already on this Mac using category, width, weight, x-height, proportions, PANOSE metadata, script coverage, and your visual labels. Results are ordered—not fake match percentages.").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if reference.facts.widthClass < 5 { Label("Narrow", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right").font(.caption) }
+                if reference.facts.panoseIndicatesHighContrast { Label("High contrast · metadata", systemImage: "circle.lefthalf.filled").font(.caption) }
+            }
+            HStack(spacing: 8) {
+                Text("Your visual labels").font(.caption).foregroundStyle(.secondary)
+                visualLabel("Soft", tag: "visual/soft")
+                visualLabel("Geometric", tag: "visual/geometric")
+                visualLabel("Editorial", tag: "visual/editorial")
+                Text("Labels are searchable tags and influence local similarity where appropriate.").font(.caption2).foregroundStyle(.secondary)
+            }
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(results) { result in
+                        HStack(alignment: .top, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 7) {
+                                HStack { Text(result.family.name).font(.headline); Text("· " + result.face.style).foregroundStyle(.secondary); Spacer(); Text(library.category(result.family).rawValue).font(.caption).foregroundStyle(.secondary) }
+                                FontPreview(text: preview, name: result.face.name, size: 29, wraps: true).frame(minHeight: 44).allowsHitTesting(false)
+                                Text(result.reasons.isEmpty ? "Closest available local metrics" : result.reasons.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            VStack(alignment: .trailing, spacing: 7) {
+                                Button("Inspect") { open(result.family) }
+                                Button(library.comparison.contains(result.family.name) ? "Shortlisted" : "Shortlist") { library.compare(result.family) }
+                                Button("New typeboard") { library.pairSelection([reference.name, result.face.name]); dismiss() }
+                            }.fixedSize()
+                        }.padding(14).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    if results.isEmpty { Text("No other local families are available to compare.").foregroundStyle(.secondary).padding(30).frame(maxWidth: .infinity) }
+                }
+            }
+        }.padding(18)
+    }
+    func visualLabel(_ label: String, tag: String) -> some View {
+        let active = family.faces.contains { library.pro.tags[$0.name]?.contains(tag) == true }
+        return Button { setTag(tag, enabled: !active) } label: { HStack(spacing: 4) { if active { Image(systemName: "checkmark") }; Text(label) } }.buttonStyle(.bordered).tint(active ? .accentColor : nil)
+    }
+    func setTag(_ tag: String, enabled: Bool) {
+        let previous = library.pro.tags
+        for face in family.faces { if enabled { library.pro.tags[face.name, default: []].insert(tag) } else { library.pro.tags[face.name]?.remove(tag); if library.pro.tags[face.name]?.isEmpty == true { library.pro.tags.removeValue(forKey: face.name) } } }
+        if !library.savePro() { library.pro.tags = previous }
+    }
+    func open(_ family: Family) { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { library.detail = family } }
+}
+
+struct FontDiscoveryView: View {
+    @ObservedObject var library: Library
+    let eligibleFamilies: [Family]
+    let preview: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var currentScope = true
+    @State private var includeSystemFonts = false
+    @State private var seed: UInt64 = 1
+    var results: [FontDiscoveryResult] { library.discoveryCandidates(in: currentScope ? eligibleFamilies : nil, includeSystemFonts: includeSystemFonts, seed: seed, limit: 16) }
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) { Text("Rediscover your library").font(.title2); Text("Local fonts you have never explicitly applied come first, followed by the least recently used. Opening or previewing a font never counts as use.").foregroundStyle(.secondary) }
+                Spacer(); Button("Another mix") { seed &+= 1 }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(20)
+            HStack(spacing: 16) { Toggle("Use current library filters", isOn: $currentScope).toggleStyle(.checkbox); Toggle("Include system fonts", isOn: $includeSystemFonts).toggleStyle(.checkbox); Spacer(); Text("\(results.count) local families").font(.caption).foregroundStyle(.secondary) }.padding(.horizontal, 20).padding(.bottom, 14)
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    ForEach(results) { result in
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 7) {
+                                HStack { Text(result.family.name).font(.headline); Text("· " + result.face.style).foregroundStyle(.secondary); Spacer(); Text(usage(result)).font(.caption).foregroundStyle(.secondary) }
+                                FontPreview(text: preview, name: result.face.name, size: 31, wraps: true).frame(minHeight: 46).allowsHitTesting(false)
+                                Text(result.currentCanvasCount == 0 ? "Not used in a current canvas" : "Used in \(result.currentCanvasCount) current canvas\(result.currentCanvasCount == 1 ? "" : "es")").font(.caption).foregroundStyle(.secondary)
+                            }
+                            VStack(alignment: .trailing, spacing: 7) {
+                                Button("Inspect") { open(result.family) }
+                                Button(library.comparison.contains(result.family.name) ? "Shortlisted" : "Shortlist") { library.compare(result.family) }
+                                Button("New typeboard") { library.pairSelection([result.face.name]); dismiss() }
+                            }.fixedSize()
+                        }.padding(14).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    if results.isEmpty { Text(currentScope ? "No fonts match the current library filters. Turn off the scope filter to rediscover the full local library." : "No eligible local fonts found.").foregroundStyle(.secondary).padding(40) }
+                }.padding(20)
+            }
+        }.frame(width: 900, height: min(760, (NSScreen.main?.visibleFrame.height ?? 900) - 100))
+    }
+    func usage(_ result: FontDiscoveryResult) -> String {
+        if let date = result.lastAppliedAt { return "Last applied " + date.formatted(date: .abbreviated, time: .omitted) + " · \(result.applicationCount)×" }
+        return "Never explicitly applied"
+    }
+    func open(_ family: Family) { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { library.detail = family } }
+}
+
 struct DetailView: View {
     @ObservedObject var library: Library
     let family: Family
@@ -205,17 +309,18 @@ struct DetailView: View {
     }
     var body: some View {
         VStack(spacing: 14) {
-            HStack { Text(family.name).font(.title2); Spacer(); Button("Export font…") { if let result = FontExporter.export([face]) { exportStatus = result } }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { Text(family.name).font(.title2); Spacer(); Button("Find similar") { tab = "Similar" }; Button("Export font…") { if let result = FontExporter.export([face]) { exportStatus = result } }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
             HStack {
                 ShelfDropdown(title: "Style", selection: $chosen, options: family.faces.map { ($0.style, $0.name) }).frame(width: 300)
                 Button("Use as main preview") { library.pro.mainPreviews[family.name] = face.name; library.savePro() }
                 Button("Compare in library") { library.overlayName = face.name; dismiss() }
                 Spacer(); Text(library.category(family).rawValue).foregroundStyle(.secondary)
             }
-            Picker("Inspector", selection: $tab) { ForEach(["All styles", "Preview", "Glyphs", "Waterfall", "Body layout", "OpenType", "Context", "Adobe scripts"], id: \.self) { Text($0) } }.pickerStyle(.segmented).labelsHidden()
+            Picker("Inspector", selection: $tab) { ForEach(["All styles", "Preview", "Similar", "Glyphs", "Waterfall", "Body layout", "OpenType", "Context", "Adobe scripts"], id: \.self) { Text($0) } }.pickerStyle(.segmented).labelsHidden()
             Group {
                 switch tab {
                 case "Glyphs": GlyphBrowser(face: face, axes: axesBinding.wrappedValue)
+                case "Similar": SimilarFontsView(library: library, family: family, reference: face, preview: preview)
                 case "Waterfall": WaterfallView(face: face, text: preview, axes: axesBinding.wrappedValue, features: featureBinding.wrappedValue)
                 case "All styles":
                     VStack {

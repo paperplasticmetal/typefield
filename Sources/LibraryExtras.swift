@@ -32,6 +32,14 @@ enum LibraryBackupTools {
         library.saved.favorites.formUnion(backup.library.favorites)
         for (key, values) in backup.library.collections { library.saved.collections[key, default: []].formUnion(values) }
         library.saved.overrides.merge(backup.library.overrides) { existing, _ in existing }
+        if let importedUsage = backup.library.fontUsage {
+            var usage = library.saved.fontUsage ?? [:]
+            for (name, imported) in importedUsage {
+                if let existing = usage[name] { usage[name] = FontUsageRecord(lastAppliedAt: max(existing.lastAppliedAt, imported.lastAppliedAt), applicationCount: max(existing.applicationCount, imported.applicationCount)) }
+                else { usage[name] = imported }
+            }
+            library.saved.fontUsage = usage
+        }
         library.pro.familyOverrides.merge(backup.pro.familyOverrides) { existing, _ in existing }
         library.pro.mainPreviews.merge(backup.pro.mainPreviews) { existing, _ in existing }
         library.pro.notes.merge(backup.pro.notes) { existing, _ in existing }

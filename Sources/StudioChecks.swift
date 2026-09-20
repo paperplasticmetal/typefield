@@ -48,17 +48,17 @@ enum StudioChecks {
         defer { manager.clear(restore: false); CTFontManagerUnregisterFontsForURL(target as CFURL, .process, nil); try? FileManager.default.removeItem(at: root) }
         func check(_ condition: Bool, _ message: String) throws { if !condition { throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) } }
         let watcher = FolderWatcher()
-        var changes = 0
-        watcher.configure(roots: [root.path]) { _ in changes += 1 }
+        var initialized = false, changes = 0
+        watcher.configure(roots: [root.path], initialized: { _ in initialized = true }) { _ in changes += 1 }
         func wait(_ predicate: () -> Bool) -> Bool {
             let end = Date().addingTimeInterval(10)
             while !predicate() && Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
             return predicate()
         }
-        try check(wait { changes > 0 }, "Initial folder scan did not finish")
-        let initial = changes
+        try check(wait { initialized }, "Initial folder scan did not finish")
+        try check(changes == 0, "Initial folder scan must not trigger a redundant library reload")
         try FileManager.default.copyItem(at: source, to: target)
-        try check(wait { changes > initial }, "Watcher did not detect a new font")
+        try check(wait { changes > 0 }, "Watcher did not detect a new font")
         let count = FontCatalog.registerFolder(root.path)
         try check(count == 1 && CTFontManagerGetScopeForURL(target as CFURL) == .process, "Font did not register for preview")
         _ = try manager.activate(target)
@@ -93,12 +93,34 @@ enum StudioChecks {
         var textCanvas = TypeDirection()
         let originalPlan = CanvasPlan(direction: textCanvas)
         let textElement = originalPlan.elements.first { $0.role == .label }!
-        try verify(originalPlan.text(at: NSPoint(x: textElement.rect.midX, y: textElement.rect.midY))?.role == .label, "Exact text hit-test must select UI label, not first role in section")
+        let preciseTextBounds = originalPlan.textBounds(for: textElement)
+        try verify(originalPlan.text(at: NSPoint(x: preciseTextBounds.midX, y: preciseTextBounds.midY))?.textID == textElement.textID, "Exact text hit-test must select the clicked text element")
+        let trailingWhitespace = NSPoint(x: textElement.rect.maxX - 1, y: textElement.rect.midY)
+        if !preciseTextBounds.contains(trailingWhitespace) { try verify(originalPlan.text(at: trailingWhitespace)?.textID != textElement.textID, "Text hit-testing must not treat the full section-width layout box as glyph content") }
+        var indentedCanvas = textCanvas; indentedCanvas.styles[TypeRole.label.rawValue]!.indent = 80; indentedCanvas.styles[TypeRole.label.rawValue]!.text = "Indented label"
+        let indentedPlan = CanvasPlan(direction: indentedCanvas)
+        let indentedElement = indentedPlan.elements.first { $0.role == .label }!
+        let indentedBounds = indentedPlan.textBounds(for: indentedElement)
+        try verify(indentedBounds.minX >= indentedElement.rect.minX + 70 && indentedPlan.text(at: NSPoint(x: indentedBounds.midX, y: indentedBounds.midY))?.textID == indentedElement.textID, "Text hit-testing must follow the rendered first-line indent")
+        try verify(indentedPlan.text(at: NSPoint(x: indentedElement.rect.minX + 5, y: indentedBounds.midY))?.textID != indentedElement.textID, "Blank space before an indented line must not select its text")
+        let centeredEditor = CanvasNativeView.editorFrame(textRect: CGRect(x: 140, y: 10, width: 20, height: 20), alignment: .center, zoom: 1, bounds: CGRect(x: 0, y: 0, width: 300, height: 100))
+        let rightEditor = CanvasNativeView.editorFrame(textRect: CGRect(x: 270, y: 10, width: 20, height: 20), alignment: .right, zoom: 1, bounds: CGRect(x: 0, y: 0, width: 300, height: 100))
+        try verify(abs(centeredEditor.midX - 150) < 0.01 && abs(rightEditor.maxX - 293) < 0.01, "Minimum-size inline editors must preserve centered and right-aligned text anchors")
         let textID = textElement.textID!
-        textCanvas.textOverrides = [textID: "Explore the studio"]
+        textCanvas.setCanvasText("Explore the studio", textID: textID)
         let textData = try JSONEncoder().encode(textCanvas)
         let decodedTextCanvas = try JSONDecoder().decode(TypeDirection.self, from: textData)
         try verify(CanvasPlan(direction: decodedTextCanvas).elements.first { $0.textID == textID }?.text?.string == "Explore the studio", "Selected text override must persist and render")
+        let sharedLabelText = textCanvas.style(.label).text
+        textCanvas.setCanvasText(sharedLabelText, textID: textID)
+        try verify(textCanvas.textOverrides?[textID] == sharedLabelText && CanvasPlan(direction: textCanvas).elements.first { $0.textID == textID }?.text?.string == sharedLabelText, "An explicit edit matching the shared role sample must not revert to a template-specific default")
+        let emptyEditorColor = CanvasNativeView.editorTextColor(NSAttributedString(string: ""), fallback: .systemOrange)
+        try verify(emptyEditorColor.isEqual(NSColor.systemOrange), "Empty canvas text must use a safe editor color instead of reading outside the string")
+        try verify(TypeDirection.acceptsCanvasText(String(repeating: "a", count: TypeDirection.maximumTextBytes)) && !TypeDirection.acceptsCanvasText(String(repeating: "a", count: TypeDirection.maximumTextBytes + 1)), "Direct canvas edits must enforce the persisted workspace text limit")
+        var importedTextCanvas = TypeDirection(); importedTextCanvas.canvas = .imported
+        importedTextCanvas.importedLayout = ImportedLayout(width: 320, height: 200, layers: [ImportedLayer(name: "Hero", x: 10, y: 10, width: 280, height: 80, color: "222222", style: TypeStyle(fontName: "Helvetica", size: 24, text: "Original"))])
+        let importedLayerID = importedTextCanvas.importedLayout!.layers[0].id
+        try verify(importedTextCanvas.setImportedText("Edited directly", layerID: importedLayerID) && CanvasPlan(direction: importedTextCanvas).elements.first?.text?.string == "Edited directly", "Imported canvas text must support direct edits by layer")
         let canvasA = UUID(), canvasB = UUID(), canvasC = UUID()
         var visible = CanvasVisibility.solo(canvasA)
         visible = CanvasVisibility.selecting(canvasB, from: canvasA, shown: visible)
@@ -130,6 +152,44 @@ enum StudioChecks {
         let typeSystemPDF = try TypeSystemPDFExporter.data(directions: [summaryDirection, secondSummaryDirection])
         let typeSystemDocument = CGDataProvider(data: typeSystemPDF as CFData).flatMap(CGPDFDocument.init)
         try verify(typeSystemDocument?.numberOfPages == 2, "Type system export must create one PDF page per selected canvas")
+        var webBoard = TypeBoard(); webBoard.name = "Web audit"; webBoard.directions = [summaryDirection, secondSummaryDirection]
+        let webCoverage = CharacterSet.alphanumerics.union(.punctuationCharacters)
+        func webFace(_ name: String, family: String = "Georgia", variable: Bool = false, weight: Int = 400, italic: Bool = false, axisRanges: [Int: ClosedRange<Double>] = [:]) -> WebFontAssetFace { WebFontAssetFace(postScriptName: name, familyName: family, coverage: webCoverage, writingSystems: [.latin], glyphCount: 1_000, variable: variable, weight: weight, italic: italic, axisRanges: axisRanges) }
+        let helveticaAsset = WebFontAsset(url: root.appendingPathComponent("Helvetica.woff2"), byteCount: 9_000, faces: [webFace("Helvetica", family: "Helvetica")])
+        let staticA = WebFontAsset(url: root.appendingPathComponent("Georgia-Regular.woff2"), byteCount: 8_000, faces: [webFace("GeorgiaStaticRegular", weight: 400)])
+        let staticB = WebFontAsset(url: root.appendingPathComponent("Georgia-Bold.woff2"), byteCount: 9_500, faces: [webFace("GeorgiaStaticBold", weight: 700)])
+        let variableAsset = WebFontAsset(url: root.appendingPathComponent("Georgia-Variable.woff2"), byteCount: 13_000, faces: [webFace("Georgia", variable: true, axisRanges: [WebFontAxis.weight: 300...700])])
+        let webReport = WebFontAuditAnalyzer.report(board: webBoard, canvasIDs: [summaryDirection.id], fontNames: ["Georgia"], catalog: catalog, assets: [variableAsset, staticA, staticB, helveticaAsset])
+        try verify(webReport.rows.count == 1 && webReport.knownBytes == 13_000 && webReport.canvasCount == 1, "Web audit must scope exact WOFF2 totals to chosen canvases and styles")
+        try verify(webReport.excludedBytes >= helveticaAsset.byteCount && webReport.comparisons.first?.staticCount == 1 && webReport.comparisons.first?.staticBytes == 8_000, "Variable comparisons must total only static styles selected on the chosen canvases")
+        try verify(webReport.rows[0].coverageSource == .exactWebAsset && webReport.rows[0].glyphCount == 1_000, "Coverage and glyph totals must identify the exact unambiguous WOFF2 source")
+        try verify(!webReport.text.contains(root.path) && webReport.rows[0].fallback.maxWidthDelta.isFinite, "Copied web audit must omit local paths and keep finite fallback metrics")
+        let duplicateGeorgiaAsset = WebFontAsset(url: root.appendingPathComponent("Georgia-Variable-Copy.woff2"), byteCount: 12_500, faces: [webFace("Georgia", variable: true, axisRanges: [WebFontAxis.weight: 300...700])])
+        let ambiguousWebReport = WebFontAuditAnalyzer.report(board: webBoard, canvasIDs: [summaryDirection.id], fontNames: ["Georgia"], catalog: catalog, assets: [variableAsset, duplicateGeorgiaAsset, staticA])
+        try verify(ambiguousWebReport.knownBytes == 0 && ambiguousWebReport.ambiguousAssetNames == ["Georgia"] && ambiguousWebReport.rows[0].asset == nil, "Duplicate PostScript matches must be reported as ambiguous and excluded from transfer totals")
+        try verify(ambiguousWebReport.rows[0].coverageSource == .desktopSource && ambiguousWebReport.rows[0].glyphCount == nil, "Ambiguous WOFF2 files must not masquerade as exact web coverage")
+        let missingWebReport = WebFontAuditAnalyzer.report(board: webBoard, canvasIDs: [summaryDirection.id], fontNames: ["Georgia"], catalog: catalog, assets: [])
+        try verify(missingWebReport.knownBytes == 0 && missingWebReport.missingAssetNames == ["Georgia"], "Missing WOFF2 assets must remain explicit instead of producing an estimated total")
+        try verify(missingWebReport.rows[0].coverageSource == .desktopSource && missingWebReport.rows[0].subsetOpportunity.contains("unambiguous WOFF2"), "Desktop-only coverage must be labeled and must not fabricate a WOFF2 subsetting estimate")
+        let incompatibleVariable = WebFontAsset(url: root.appendingPathComponent("Georgia-Variable-500-700.woff2"), byteCount: 11_000, faces: [webFace("Georgia", variable: true, weight: 500, axisRanges: [WebFontAxis.weight: 500...700])])
+        let incompatibleAxisReport = WebFontAuditAnalyzer.report(board: webBoard, canvasIDs: [summaryDirection.id], fontNames: ["Georgia"], catalog: catalog, assets: [incompatibleVariable, staticA])
+        try verify(incompatibleAxisReport.comparisons.isEmpty && incompatibleAxisReport.knownBytes == 0 && incompatibleAxisReport.rows[0].asset == nil && incompatibleAxisReport.rows[0].assetIncompatible && incompatibleAxisReport.incompatibleAssetNames == ["Georgia"], "A WOFF2 outside the selected style axis range must not be counted or presented as a compatible replacement")
+        var extremeAxisDirection = summaryDirection; extremeAxisDirection.styles[TypeRole.display.rawValue]!.axes[WebFontAxis.weight] = 1e300
+        var extremeAxisBoard = webBoard; extremeAxisBoard.directions = [extremeAxisDirection]
+        let extremeAxisReport = WebFontAuditAnalyzer.report(board: extremeAxisBoard, canvasIDs: [extremeAxisDirection.id], fontNames: ["Georgia"], catalog: catalog, assets: [variableAsset])
+        try verify(extremeAxisReport.knownBytes == 0 && extremeAxisReport.incompatibleAssetNames == ["Georgia"], "Extreme finite axis values must be handled safely and rejected when outside the asset range")
+        var widthAxisDirection = summaryDirection; widthAxisDirection.styles[TypeRole.display.rawValue]!.axes[WebFontAxis.width] = 90
+        var widthAxisBoard = webBoard; widthAxisBoard.directions = [widthAxisDirection]
+        let widthAxisReport = WebFontAuditAnalyzer.report(board: widthAxisBoard, canvasIDs: [widthAxisDirection.id], fontNames: ["Georgia"], catalog: catalog, assets: [variableAsset, staticA])
+        try verify(widthAxisReport.comparisons.isEmpty, "Static-size comparisons must be suppressed when the selected instance uses an axis the static metadata cannot match")
+        var slantAxisDirection = summaryDirection; slantAxisDirection.styles[TypeRole.display.rawValue]!.axes[WebFontAxis.slant] = -5
+        var slantAxisBoard = webBoard; slantAxisBoard.directions = [slantAxisDirection]
+        let slantedVariable = WebFontAsset(url: root.appendingPathComponent("Georgia-Slanted-Variable.woff2"), byteCount: 13_000, faces: [webFace("Georgia", variable: true, axisRanges: [WebFontAxis.weight: 300...700, WebFontAxis.slant: -10...0])])
+        let staticItalic = WebFontAsset(url: root.appendingPathComponent("Georgia-Italic.woff2"), byteCount: 8_500, faces: [webFace("GeorgiaStaticItalic", italic: true)])
+        let slantAxisReport = WebFontAuditAnalyzer.report(board: slantAxisBoard, canvasIDs: [slantAxisDirection.id], fontNames: ["Georgia"], catalog: catalog, assets: [slantedVariable, staticItalic])
+        try verify(slantAxisReport.knownBytes == slantedVariable.byteCount && slantAxisReport.comparisons.isEmpty, "A continuous slant instance must not be labeled exactly equivalent to a Boolean static italic face")
+        try verify(WebTextScript.names(in: "Hello Ελληνικά العربية 漢字").contains("Latin") && WebTextScript.names(in: "Hello Ελληνικά العربية 漢字").contains("Han"), "Web audit script classification")
+        try verify(CanvasPlan(direction: TypeDirection()).elements.contains { $0.textKind == .buttonLabel }, "Canvas plan must identify real button labels for fallback width testing")
         var scopedBoard = TypeBoard(); scopedBoard.directions = [summaryDirection, TypeDirection()]
         try verify(StudioFontCollection.fontNames(in: summaryDirection) == Set(summary.fonts), "Canvas collection font scope")
         try verify(StudioFontCollection.fontNames(in: scopedBoard).isSuperset(of: ["Courier", "Georgia", "Helvetica"]), "Typeboard collection font scope")
@@ -324,9 +384,14 @@ enum StudioChecks {
         let longPDF = SpecimenExporter.data(faces: [sample], library: library, sample: String(repeating: "Long preview text with complete words. ", count: 100))
         try verify((CGDataProvider(data: longPDF as CFData).flatMap { CGPDFDocument($0) }?.numberOfPages ?? 0) > 1, "Long specimens must paginate")
         library.saved.collections["Keep"] = [catalog[0].name]
-        let backup = LibraryBackup(library: library.saved, pro: library.pro, spaces: store.state)
+        let usageName = catalog[0].representative.name
+        library.saved.fontUsage = [usageName: FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 20), applicationCount: 4)]
+        var importedLibrary = library.saved
+        importedLibrary.fontUsage = [usageName: FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 30), applicationCount: 2)]
+        let backup = LibraryBackup(library: importedLibrary, pro: library.pro, spaces: store.state)
         try LibraryBackupTools.merge(backup, into: library)
         try verify(library.saved.collections["Keep"] == [catalog[0].name])
+        try verify(library.saved.fontUsage?[usageName] == FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 30), applicationCount: 4), "Backup merge must keep the newest use date without double-counting applications")
         try verify(library.studio.state.spaces[0].id != store.state.spaces[0].id)
         try verify(FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path))
         print("PASS: typography and legacy decoding, section reorder/removal, Figma layout payload, search tokens, independent directions and relaunch persistence, corrupt workspace preservation, nested AND/OR/NOT tags, recursive folder changes, Unicode lookup/SVG, \(plans) responsive canvases, specimen PDF and backup merge.")

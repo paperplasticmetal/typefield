@@ -203,7 +203,7 @@ enum CanvasDragPayload {
 
 extension TypeDirection {
     var isValid: Bool {
-        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (importedLayout?.isValid ?? (canvas != .imported)) && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy { $0.utf8.count <= 200000 } } ?? true) && TypeRole.allCases.allSatisfy { role in
+        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (importedLayout?.isValid ?? (canvas != .imported)) && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy(Self.acceptsCanvasText) } ?? true) && TypeRole.allCases.allSatisfy { role in
             guard let s = styles[role.rawValue] else { return false }
             return s.size.isFinite && (8...160).contains(s.size) && s.leading.isFinite && (1...2.5).contains(s.leading) && s.tracking.isFinite && (-3...12).contains(s.tracking) && s.axes.values.allSatisfy(\.isFinite) && (s.lineHeight.map { $0.isFinite && (8...400).contains($0) } ?? true) && [s.paragraphSpacing, s.indent].allSatisfy { $0.map { $0.isFinite && (0...200).contains($0) } ?? true } && (s.wordSpacing.map { $0.isFinite && (-3...40).contains($0) } ?? true)
         }
@@ -236,12 +236,14 @@ struct TypeBoardEditor: View {
     @State private var status = ""
     @State private var showFontPicker = false
     @State private var showFontSummary = false
+    @State private var showWebFontAudit = false
     @State private var fontSummaryDetail = TypographySummaryDetail.roles
     @State private var summaryCanvasIDs: Set<UUID>
     @State private var draggedSection: String?
     @State private var selectedSection: String?
     @State private var abID: UUID?
     @State private var inspectorTab = "Typography"
+    @State private var discoveryNonce: UInt64 = 0
     @FocusState private var fontSearchFocused: Bool
     var directionIndex: Int { board.directions.firstIndex { $0.id == board.selectedDirection } ?? 0 }
     var direction: TypeDirection { board.directions[directionIndex] }
@@ -261,7 +263,7 @@ struct TypeBoardEditor: View {
         else if let selectedTextID, let selectedText {
             var shared = style; shared.text = direction.style(role).text
             board.directions[directionIndex].styles[role.rawValue] = shared
-            if style.text != selectedText.style?.text { var overrides = direction.textOverrides ?? [:]; overrides[selectedTextID] = style.text; board.directions[directionIndex].textOverrides = overrides }
+            if style.text != selectedText.style?.text { board.directions[directionIndex].setCanvasText(style.text, textID: selectedTextID) }
         } else { board.directions[directionIndex].styles[role.rawValue] = style }
     }
     var faces: [Face] { StudioFontFilter.faces(library: library, collection: fontCollection, category: fontCategory, search: fontSearch) }
@@ -281,6 +283,7 @@ struct TypeBoardEditor: View {
                 Button { openFontSummary() } label: { Label("\(visibleFontCount) fonts used", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
                 Menu("Export") {
                     Button("Typography summary…") { openFontSummary() }
+                    Button("Web-font performance…") { showWebFontAudit = true }
                     Button("Developer handoff…") {
                         do { if let folder = try DeveloperHandoff.selectFolder(title: board.name, boards: [board], catalog: library.families) { status = "Developer handoff exported. Open index.html for the specimen; README explains font setup."; NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
                         catch { status = "Handoff export failed: " + error.localizedDescription }
@@ -358,6 +361,7 @@ struct TypeBoardEditor: View {
                 }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
             }
         }.alert("Delete this typeboard?", isPresented: $showDelete) { Button("Delete", role: .destructive, action: onDelete); Button("Cancel", role: .cancel) {} }
+        .sheet(isPresented: $showWebFontAudit) { WebFontAuditView(board: board, library: library, initialCanvasIDs: summaryCanvasIDs) }
         .onChange(of: savedBoard) { value in if value != board { board = value; shownCanvasIDs = CanvasVisibility.prune(shownCanvasIDs, valid: Set(value.directions.map(\.id)), selected: value.selectedDirection ?? value.directions.first?.id) } }
         .onChange(of: role) { _ in library.studio.endUndoCoalescing() }
         .onChange(of: selectedSection) { _ in library.studio.endUndoCoalescing() }
@@ -408,10 +412,27 @@ struct TypeBoardEditor: View {
                 Spacer()
                 if direction.id != self.direction.id { Button { hideCanvas(direction.id) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.secondary).help("Hide " + board.canvasName(direction)).accessibilityLabel("Hide " + board.canvasName(direction)) }
                 else if visibleDirections.count > 1 { Button("Only this") { showOnlyCurrent() }.buttonStyle(.borderless).font(.caption).help("Hide the other canvases") }
-            }
-            CanvasPreview(plan: plan, zoom: zoom, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, onSelect: { id in selectedSection = id; selectedTextID = nil }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.canvas == .imported ? moveLayer : nil, onTextSelect: { element in selectedSection = element.sectionID; selectedTextID = element.textID; if let item = element.role { role = item }; inspectorTab = "Typography" })
+            }.frame(width: plan.size.width * zoom)
+            CanvasPreview(plan: plan, zoom: zoom, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, selectedTextID: direction.id == self.direction.id ? selectedTextID : nil, onSelect: { id in selectedSection = id; selectedTextID = nil; inspectorTab = "Arrangement" }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.canvas == .imported ? moveLayer : nil, onTextSelect: { element in selectText(element) }, onTextEdit: direction.id == self.direction.id ? { element, text in editText(element, text, directionID: direction.id) } : nil)
                 .frame(width: plan.size.width * zoom, height: plan.size.height * zoom).shadow(color: .black.opacity(0.12), radius: 12, y: 4)
         }
+    }
+    func selectText(_ element: CanvasElement) {
+        selectedSection = element.sectionID
+        selectedTextID = element.textID
+        if let item = element.role { role = item }
+        inspectorTab = "Typography"
+    }
+    func editText(_ element: CanvasElement, _ text: String, directionID: UUID) {
+        guard let index = board.directions.firstIndex(where: { $0.id == directionID }) else { return }
+        guard TypeDirection.acceptsCanvasText(text) else { status = "Canvas text must be smaller than 200 KB"; return }
+        if board.directions[index].canvas == .imported {
+            guard board.directions[index].setImportedText(text, layerID: element.sectionID) else { return }
+        } else {
+            guard let textID = element.textID, element.role != nil else { return }
+            board.directions[index].setCanvasText(text, textID: textID)
+        }
+        save("Edit Canvas Text")
     }
     var inspector: some View {
         let plan = CanvasPlanCache.plan(for: direction)
@@ -434,6 +455,7 @@ struct TypeBoardEditor: View {
                         HStack { Text(item.rawValue).font(.caption).fontWeight(.medium); Spacer(); Text(count == 0 ? "Add" : "\(count)× · \(Int(direction.style(item).size))").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(9).background(role == item ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 7)).contentShape(Rectangle())
                     }.buttonStyle(.plain).onDrag { NSItemProvider(object: (direction.id.uuidString + "|role|" + item.rawValue) as NSString) }.help(count == 0 ? "Drag onto the canvas to add this role" : "Click to locate this role; drag to add another")
                 }
+                Text("Double-click text on the canvas to edit it in place. Press ⌘Return to finish or Escape to cancel.").font(.caption).foregroundStyle(.secondary)
                 }
                 Text("Click a role to select its first use on the canvas. Drag any role onto the canvas to add its saved sample text.").font(.caption2).foregroundStyle(.secondary)
                 }
@@ -490,6 +512,7 @@ struct TypeBoardEditor: View {
                 ShelfDropdown(title: "Category", selection: $fontCategory, options: ["All categories"] .map { ($0, $0) } + Category.allCases.map { ($0.rawValue, $0.rawValue) })
             }
             HStack { Text("\(faces.count) styles").font(.caption).foregroundStyle(.secondary); Spacer(); if fontCollection != "All fonts" || fontCategory != "All categories" || !fontSearch.isEmpty { Button("Clear filters") { fontCollection = "All fonts"; fontCategory = "All categories"; fontSearch = "" }.font(.caption) } }
+            Button { chooseDiscoveryFont() } label: { Label("Try a local font I haven’t used recently", systemImage: "shuffle") }.buttonStyle(.borderless).disabled(faces.isEmpty)
             if !board.candidates.isEmpty {
                 Menu("Pairing candidates (\(board.candidates.count))") {
                     ForEach(board.candidates, id: \.self) { name in Button(name) { chooseFont(name) } }
@@ -530,7 +553,14 @@ struct TypeBoardEditor: View {
             Text(direction.canvas == .imported ? "Drag here to change layer stacking order; drag on the canvas to move a layer." : "Drag sections here or on the canvas.").font(.caption2).foregroundStyle(.secondary)
         }
     }
-    func chooseFont(_ name: String) { var s = style; s.fontName = name; s.axes = library.pro.axes[name] ?? [:]; s.features = library.pro.features[name] ?? [:]; setStyle(s); save("Change Font") }
+    func chooseFont(_ name: String) { let changed = style.fontName != name; var s = style; s.fontName = name; s.axes = library.pro.axes[name] ?? [:]; s.features = library.pro.features[name] ?? [:]; setStyle(s); save("Change Font"); if changed && library.studio.error.isEmpty { _ = library.recordFontUse(name) } }
+    func chooseDiscoveryFont() {
+        let allowed = Set(faces.map(\.name))
+        let eligible = library.families.filter { !$0.faces.allSatisfy { !allowed.contains($0.name) } }
+        discoveryNonce &+= 1
+        let preferred = library.discoveryCandidates(in: eligible, includeSystemFonts: false, seed: discoveryNonce, limit: 1).first ?? library.discoveryCandidates(in: eligible, includeSystemFonts: true, seed: discoveryNonce, limit: 1).first
+        if let preferred { chooseFont(preferred.face.name); fontSearch = ""; status = "Trying \(preferred.family.name) · \(preferred.face.style) from your local library" }
+    }
     func openFontSummary() {
         showFontSummary = true
     }
@@ -555,6 +585,7 @@ struct TypeBoardEditor: View {
             ScrollView { Text(summary.text(fontSummaryDetail)).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8)).frame(minHeight: 180, maxHeight: 320)
             HStack {
                 Button("Copy") { let pasteboard = NSPasteboard.general; pasteboard.clearContents(); pasteboard.setString(summary.text(fontSummaryDetail), forType: .string); status = "Typography summary copied" }
+                Button("Web cost…") { showFontSummary = false; DispatchQueue.main.async { showWebFontAudit = true } }
                 Spacer()
                 Menu { Button("From this canvas…") { createCollection(.canvas) }; Button("From this typeboard…") { createCollection(.typeboard) }; Button("From this project…") { createCollection(.project) } } label: { Label("Collection", systemImage: "folder.badge.plus") }.fixedSize()
                 Menu("Export") {
@@ -664,6 +695,7 @@ struct StudioSplitPosition: NSViewRepresentable {
     func updateNSView(_ view: Anchor, context: Context) {}
 }
 
+enum CanvasTextKind { case text, buttonLabel }
 struct CanvasElement {
     var rect: CGRect
     var text: NSAttributedString?
@@ -673,6 +705,7 @@ struct CanvasElement {
     var style: TypeStyle?
     var role: TypeRole?
     var textID: String?
+    var textKind: CanvasTextKind = .text
 }
 struct CanvasSection: Identifiable { var id: String; var title: String; var rect: CGRect }
 enum CanvasPlanCache {
@@ -710,6 +743,7 @@ struct CanvasPlan {
     var sections: [CanvasSection] = []
     var size: CGSize = .zero
     var paper: NSColor
+    var ink: NSColor
     var accessibilityText = "Typography canvas"
     mutating func updateAccessibilityText() {
         var result = ""
@@ -719,7 +753,7 @@ struct CanvasPlan {
         if !result.isEmpty { accessibilityText = result }
     }
     init(arrangement: [CanvasSection], width: Double) {
-        paper = .clear; size = CGSize(width: width, height: Double(arrangement.count) * 42)
+        paper = .clear; ink = .labelColor; size = CGSize(width: width, height: Double(arrangement.count) * 42)
         for (index, section) in arrangement.enumerated() {
             let y = Double(index) * 42
             sections.append(CanvasSection(id: section.id, title: section.title, rect: CGRect(x: 0, y: y, width: width, height: 42)))
@@ -730,6 +764,7 @@ struct CanvasPlan {
     }
     init(direction d: TypeDirection) {
         paper = NSColor(hex: d.paper)
+        ink = NSColor(hex: d.ink)
         if d.canvas == .imported {
             size = CGSize(width: d.width, height: d.importedLayout?.height ?? 480)
             for layer in d.importedLayout?.layers ?? [] where !(d.hiddenSections ?? []).contains(layer.id) {
@@ -747,7 +782,7 @@ struct CanvasPlan {
             return
         }
         let w = min(1600, max(320, d.width)), margin = w < 500 ? 24.0 : 56.0, usable = w - margin * 2
-        let ink = NSColor(hex: d.ink), accent = NSColor(hex: d.accent)
+        let ink = self.ink, accent = NSColor(hex: d.accent)
         var y = margin
         var currentID = "", currentTitle = "", sectionStart = margin, elementStart = 0
         var textCounts: [TypeRole: Int] = [:]
@@ -771,7 +806,7 @@ struct CanvasPlan {
             return height
         }
         func rule() { elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.18))); y += 26 }
-        func button(_ label: String? = nil, x: Double? = nil, width: Double? = nil) { let bx = x ?? margin, bw = width ?? usable, start = y; let h = text(.label, label, x: bx + 18, at: start + 13, width: bw - 36); elements.insert(CanvasElement(rect: CGRect(x: bx, y: start, width: bw, height: h + 26), color: accent, radius: 7), at: elements.count - 1); y = start + h + 50 }
+        func button(_ label: String? = nil, x: Double? = nil, width: Double? = nil) { let bx = x ?? margin, bw = width ?? usable, start = y, textIndex = elements.count; let h = text(.label, label, x: bx + 18, at: start + 13, width: bw - 36); elements[textIndex].textKind = .buttonLabel; elements.insert(CanvasElement(rect: CGRect(x: bx, y: start, width: bw, height: h + 26), color: accent, radius: 7), at: textIndex); y = start + h + 50 }
         switch d.canvas {
         case .imported: break
         case .custom:
@@ -901,18 +936,43 @@ struct CanvasPlan {
         updateAccessibilityText()
     }
 }
+final class CanvasInlineTextView: NSTextView {
+    var commit: (() -> Void)?
+    var cancel: (() -> Void)?
+    private var completionScheduled = false
+    private func schedule(_ action: (() -> Void)?) {
+        guard !completionScheduled, let action else { return }
+        completionScheduled = true
+        DispatchQueue.main.async(execute: action)
+    }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { schedule(cancel); return }
+        if event.keyCode == 36 && event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) { schedule(commit); return }
+        super.keyDown(with: event)
+    }
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { schedule(commit) }
+        return accepted
+    }
+}
 final class CanvasNativeView: NSView {
     var plan: CanvasPlan
     var zoom = 1.0
     var directionID: UUID?
     var selectedSection: String?
+    var selectedTextID: String?
     var onSelect: ((String) -> Void)?
     var onMove: ((String, String, Bool) -> Void)?
     var onAddRole: ((TypeRole, String?, Bool) -> Void)?
     var onTranslate: ((String, Double, Double) -> Void)?
     var onTextSelect: ((CanvasElement) -> Void)?
+    var onTextEdit: ((CanvasElement, String) -> Void)?
     private var insertionY: Double?
     private var translation = NSPoint.zero
+    private weak var inlineEditor: CanvasInlineTextView?
+    private var editingElement: CanvasElement?
+    private var activeTextEdit: ((CanvasElement, String) -> Void)?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     init(plan: CanvasPlan) { self.plan = plan; super.init(frame: CGRect(origin: .zero, size: plan.size)); registerForDraggedTypes([.string]) }
@@ -936,7 +996,10 @@ final class CanvasNativeView: NSView {
             let target = dropTarget(at: point)
             if next.type == .leftMouseUp {
                 let local = NSPoint(x: origin.x / zoom, y: origin.y / zoom)
-                if !moved, let text = plan.text(at: local), let onTextSelect { onTextSelect(text) }
+                if !moved, let text = plan.text(at: local) {
+                    onTextSelect?(text)
+                    if event.clickCount >= 2, onTextEdit != nil { beginEditing(text) }
+                }
                 else { onSelect?(item.id) }
                 if moved, bounds.contains(point) { if let onTranslate { onTranslate(item.id, (point.x - origin.x) / zoom, (point.y - origin.y) / zoom) } else if let target { onMove?(item.id, target.id, point.y / zoom < target.rect.midY) } }
                 return
@@ -948,6 +1011,83 @@ final class CanvasNativeView: NSView {
                 needsDisplay = true; displayIfNeeded()
             }
         }
+    }
+    private func beginEditing(_ element: CanvasElement) {
+        finishEditing(commit: true)
+        guard let window, let attributed = element.text else { return }
+        let editor = CanvasInlineTextView(frame: editorFrame(for: element))
+        editor.string = element.style?.text ?? attributed.string
+        editor.isRichText = false
+        editor.isAutomaticQuoteSubstitutionEnabled = false
+        editor.isAutomaticDashSubstitutionEnabled = false
+        editor.isAutomaticTextReplacementEnabled = false
+        editor.allowsUndo = true
+        editor.drawsBackground = true
+        editor.backgroundColor = plan.paper.blended(withFraction: 0.06, of: .controlAccentColor) ?? plan.paper
+        editor.textColor = Self.editorTextColor(attributed, fallback: plan.ink)
+        editor.font = (element.style?.font as NSFont?).map { NSFont(descriptor: $0.fontDescriptor, size: max(11, $0.pointSize * zoom)) ?? $0 } ?? .systemFont(ofSize: max(11, 14 * zoom))
+        editor.alignment = element.style?.alignment?.native ?? .left
+        editor.textContainerInset = NSSize(width: 4, height: 3)
+        editor.isVerticallyResizable = false
+        editor.isHorizontallyResizable = false
+        editor.autoresizingMask = []
+        editor.wantsLayer = true
+        editor.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        editor.layer?.borderWidth = 2
+        editor.layer?.cornerRadius = 4
+        editingElement = element
+        activeTextEdit = onTextEdit
+        inlineEditor = editor
+        editor.commit = { [weak self] in self?.finishEditing(commit: true) }
+        editor.cancel = { [weak self] in self?.finishEditing(commit: false) }
+        addSubview(editor)
+        window.makeFirstResponder(editor)
+        editor.selectAll(nil)
+    }
+    static func editorTextColor(_ attributed: NSAttributedString, fallback: NSColor) -> NSColor {
+        guard attributed.length > 0 else { return fallback }
+        return attributed.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor ?? fallback
+    }
+    static func editorFrame(textRect: NSRect, alignment: TextAlignmentOption, zoom: Double, bounds: NSRect) -> NSRect {
+        let tight = NSRect(x: textRect.minX * zoom - 3, y: textRect.minY * zoom - 3, width: textRect.width * zoom + 6, height: textRect.height * zoom + 6)
+        let width = min(bounds.width, max(90, tight.width)), height = min(bounds.height, max(32, tight.height))
+        let extra = width - tight.width
+        let proposedX: Double
+        switch alignment {
+        case .left, .justified: proposedX = tight.minX
+        case .center: proposedX = tight.minX - extra / 2
+        case .right: proposedX = tight.minX - extra
+        }
+        let x = min(max(bounds.minX, proposedX), bounds.maxX - width)
+        let y = min(max(bounds.minY, tight.minY), bounds.maxY - height)
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+    private func editorFrame(for element: CanvasElement) -> NSRect {
+        let textRect = plan.textBounds(for: element)
+        return Self.editorFrame(textRect: textRect, alignment: element.style?.alignment ?? .left, zoom: zoom, bounds: bounds)
+    }
+    private func finishEditing(commit shouldCommit: Bool) {
+        guard let editor = inlineEditor, let element = editingElement else { return }
+        let value = editor.string
+        let edit = activeTextEdit
+        editor.commit = nil
+        editor.cancel = nil
+        inlineEditor = nil
+        editingElement = nil
+        activeTextEdit = nil
+        if window?.firstResponder === editor { window?.makeFirstResponder(self) }
+        editor.removeFromSuperview()
+        if shouldCommit { edit?(element, value) }
+    }
+    func endInlineEditing(commit: Bool) { finishEditing(commit: commit) }
+    func synchronizeInlineEditor() {
+        guard let editor = inlineEditor, let editingElement else { return }
+        let current = plan.elements.first { candidate in
+            if let textID = editingElement.textID { return candidate.textID == textID }
+            return candidate.sectionID == editingElement.sectionID && candidate.text != nil
+        }
+        guard let current else { finishEditing(commit: false); return }
+        editor.frame = editorFrame(for: current)
     }
     private func dropTarget(at point: NSPoint) -> CanvasSection? {
         if let hit = section(at: point) { return hit }
@@ -985,7 +1125,13 @@ final class CanvasNativeView: NSView {
             if let color = element.color { color.setFill(); NSBezierPath(roundedRect: element.rect, xRadius: element.radius, yRadius: element.radius).fill() }
             element.text?.draw(with: element.rect, options: [.usesLineFragmentOrigin, .usesFontLeading])
         }
-        if directionID != nil, let selected = plan.sections.first(where: { $0.id == selectedSection }) {
+        if directionID != nil, let textID = selectedTextID, let selected = plan.elements.first(where: { $0.textID == textID }) {
+            let source = plan.textBounds(for: selected).offsetBy(dx: translation.x, dy: translation.y)
+            let requestedInset = 1 / max(0.1, zoom)
+            let insetX = min(requestedInset, max(0, source.width / 2 - 0.5))
+            let insetY = min(requestedInset, max(0, source.height / 2 - 0.5))
+            NSColor.controlAccentColor.withAlphaComponent(0.85).setStroke(); let border = NSBezierPath(roundedRect: source.insetBy(dx: insetX, dy: insetY), xRadius: 3 / zoom, yRadius: 3 / zoom); border.lineWidth = 2 / zoom; border.stroke()
+        } else if directionID != nil, let selected = plan.sections.first(where: { $0.id == selectedSection }) {
             NSColor.controlAccentColor.withAlphaComponent(0.7).setStroke(); let border = NSBezierPath(rect: selected.rect.offsetBy(dx: translation.x, dy: translation.y).insetBy(dx: 1 / zoom, dy: 0)); border.lineWidth = 1 / zoom; border.stroke()
         }
         if let insertionY { NSColor.controlAccentColor.setFill(); NSRect(x: 0, y: insertionY, width: plan.size.width, height: 3 / zoom).fill() }
@@ -996,19 +1142,55 @@ struct CanvasPreview: NSViewRepresentable {
     var zoom = 1.0
     var directionID: UUID?
     var selectedSection: String?
+    var selectedTextID: String?
     var onSelect: ((String) -> Void)?
     var onMove: ((String, String, Bool) -> Void)?
     var onAddRole: ((TypeRole, String?, Bool) -> Void)?
     var onTranslate: ((String, Double, Double) -> Void)?
     var onTextSelect: ((CanvasElement) -> Void)?
+    var onTextEdit: ((CanvasElement, String) -> Void)?
     final class Coordinator { var accessibilityText = "" }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> CanvasNativeView { CanvasNativeView(plan: plan) }
-    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onTextSelect = onTextSelect; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.setAccessibilityElement(true); if context.coordinator.accessibilityText != plan.accessibilityText { context.coordinator.accessibilityText = plan.accessibilityText; view.setAccessibilityLabel(plan.accessibilityText) }; view.needsDisplay = true }
+    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.selectedTextID = selectedTextID; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onTextSelect = onTextSelect; view.onTextEdit = onTextEdit; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.synchronizeInlineEditor(); view.setAccessibilityElement(true); if context.coordinator.accessibilityText != plan.accessibilityText { context.coordinator.accessibilityText = plan.accessibilityText; view.setAccessibilityLabel(plan.accessibilityText) }; view.needsDisplay = true }
+    static func dismantleNSView(_ view: CanvasNativeView, coordinator: Coordinator) { DispatchQueue.main.async { view.endInlineEditing(commit: true) } }
 }
 
 extension CanvasPlan {
-    func text(at point: NSPoint) -> CanvasElement? { elements.last { $0.text != nil && $0.rect.contains(point) } }
+    func textBounds(for element: CanvasElement) -> CGRect {
+        guard let text = element.text else { return element.rect }
+        let local: CGRect
+        if text.length == 0 {
+            let width = min(element.rect.width, 12)
+            let x: CGFloat
+            switch element.style?.alignment ?? .left {
+            case .left, .justified: x = 0
+            case .center: x = (element.rect.width - width) / 2
+            case .right: x = element.rect.width - width
+            }
+            local = CGRect(x: x, y: 0, width: width, height: min(element.rect.height, 2))
+        } else {
+            let storage = NSTextStorage(attributedString: text)
+            let layout = NSLayoutManager(); layout.usesFontLeading = true
+            let container = NSTextContainer(containerSize: CGSize(width: max(1, element.rect.width), height: max(1, element.rect.height)))
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container); storage.addLayoutManager(layout); layout.ensureLayout(for: container)
+            local = layout.usedRect(for: container)
+        }
+        let positioned = local.offsetBy(dx: element.rect.minX, dy: element.rect.minY)
+        return positioned.insetBy(dx: -5, dy: -3).intersection(element.rect)
+    }
+    func text(at point: NSPoint) -> CanvasElement? {
+        var result: (element: CanvasElement, area: CGFloat, index: Int)?
+        for (index, element) in elements.enumerated() where element.text != nil {
+            guard element.rect.contains(point) else { continue }
+            let bounds = textBounds(for: element)
+            guard bounds.contains(point) else { continue }
+            let area = bounds.width * bounds.height
+            if result == nil || area < result!.area || (area == result!.area && index > result!.index) { result = (element, area, index) }
+        }
+        return result?.element
+    }
 }
 
 enum TypeSystemPDFExporter {

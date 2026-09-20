@@ -34,16 +34,26 @@ final class FolderWatcher {
     private var roots: [String] = []
     private var last: [String: FontFileStamp]?
     private var errors: [String] = []
-    func configure(roots: [String], changed: @escaping ([String]) -> Void) {
+    func configure(roots: [String], initialized: (([String]) -> Void)? = nil, changed: @escaping ([String]) -> Void) {
         queue.async { [weak self] in
             guard let self, self.roots != roots || self.timer == nil else { return }
             self.timer?.cancel(); self.timer = nil; self.roots = roots; self.last = nil
-            guard !roots.isEmpty else { return }
+            self.errors = []
+            guard !roots.isEmpty else {
+                self.last = [:]
+                if let initialized { DispatchQueue.main.async { initialized([]) } }
+                return
+            }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: .now(), repeating: 3, leeway: .milliseconds(500))
             timer.setEventHandler { [weak self] in
                 guard let self else { return }
                 let current = FontFolderSnapshot.read(roots)
+                guard self.last != nil else {
+                    self.last = current.files; self.errors = current.errors
+                    if let initialized { DispatchQueue.main.async { initialized(current.errors) } }
+                    return
+                }
                 let differs = self.last != current.files || self.errors != current.errors
                 self.last = current.files; self.errors = current.errors
                 if differs { DispatchQueue.main.async { changed(current.errors) } }
@@ -56,11 +66,18 @@ final class FolderWatcher {
 
 extension Library {
     func configureWatcher() {
-        folderWatcher.configure(roots: resolvedFolders) { [weak self] errors in
-            guard let self else { return }
-            self.folderStatus = errors.isEmpty ? "Changes detected; refreshing…" : errors.joined(separator: "\n")
-            self.reload(register: true)
-        }
+        folderWatcher.configure(
+            roots: resolvedFolders,
+            initialized: { [weak self] errors in
+                guard let self, !errors.isEmpty else { return }
+                self.folderStatus = errors.joined(separator: "\n")
+            },
+            changed: { [weak self] errors in
+                guard let self else { return }
+                self.folderStatus = errors.isEmpty ? "Changes detected; refreshing…" : errors.joined(separator: "\n")
+                self.reload(register: true)
+            }
+        )
     }
     func applyFolderActivation() {
         let roots = (saved.autoActivateFolders ?? []).compactMap { try? folderAccess.restore($0) }
@@ -164,6 +181,7 @@ struct FontSearchQuery {
         case "condensed": return facts.widthClass < 5
         case "normal-width": return facts.widthClass == 5
         case "expanded": return facts.widthClass > 5
+        case "high-contrast": return facts.panoseIndicatesHighContrast
         case "small-xheight": return facts.xHeightRatio < 0.45
         case "medium-xheight": return (0.45...0.55).contains(facts.xHeightRatio)
         case "large-xheight": return facts.xHeightRatio > 0.55
@@ -225,7 +243,7 @@ struct LibrarySearchView: View {
                     Divider()
                     Text("WEIGHT").font(.caption).foregroundStyle(.secondary)
                     HStack { preset("Light", "light"); preset("Regular", "regular"); preset("Medium", "medium"); preset("Bold", "bold"); preset("Black", "black") }
-                    HStack { preset("Condensed", "condensed"); preset("Normal", "normal-width"); preset("Expanded", "expanded") }
+                    HStack { preset("Condensed", "condensed"); preset("Normal", "normal-width"); preset("Expanded", "expanded"); preset("High contrast", "high-contrast") }
                     HStack { preset("Upright", "upright"); preset("Italic", "italic") }
                     HStack { preset("Monospace", "monospace"); preset("Color", "color"); preset("Bitmap", "bitmap") }
                     Text("X-HEIGHT").font(.caption).foregroundStyle(.secondary)

@@ -19,21 +19,40 @@ struct FontFacts {
     let features: [String]
     let widthClass: Int
     let xHeightRatio: Double
+    let capHeightRatio: Double
+    let ascenderRatio: Double
+    let descenderRatio: Double
+    let averageAdvanceRatio: Double
+    let panose: [UInt8]
     let variable: Bool
     let color: Bool
     let bitmap: Bool
     let monospace: Bool
+    /// PANOSE contrast is meaningful here only for Latin text families.
+    var panoseContrast: Int? {
+        guard panose.count == 10, panose[0] == 2, panose[4] >= 2 else { return nil }
+        return Int(panose[4])
+    }
+    var panoseIndicatesHighContrast: Bool { (panoseContrast ?? 0) >= 8 }
     static func read(_ font: CTFont) -> FontFacts {
         var weight = 400
         let table = CTFontCopyTable(font, 0x4f532f32, []) as Data?
         if let table, table.count > 5 { let value = Int(table[4]) * 256 + Int(table[5]); weight = (1...1000).contains(value) ? value : 400 }
         let width = table.flatMap { OpenType.u16($0, 6) } ?? 5
+        let panose = table.map { $0.count >= 42 ? Array($0[32..<42]) : [] } ?? []
+        let size = max(1, Double(CTFontGetSize(font)))
+        let sample = Array("HOnoxam0123".utf16)
+        var glyphs = [CGGlyph](repeating: 0, count: sample.count)
+        var advances = [CGSize](repeating: .zero, count: sample.count)
+        let mapped = CTFontGetGlyphsForCharacters(font, sample, &glyphs, sample.count) && !glyphs.contains(0)
+        if mapped { CTFontGetAdvancesForGlyphs(font, .horizontal, glyphs, &advances, glyphs.count) }
+        let averageAdvance = mapped ? advances.reduce(0) { $0 + Double($1.width) } / Double(max(1, advances.count)) / size : 0
         // Core Text stores raw table tags in this CFArray, not Objective-C objects.
         var tables = Set<UInt32>()
         if let available = CTFontCopyAvailableTables(font, []) {
             for index in 0..<CFArrayGetCount(available) { tables.insert(UInt32(truncatingIfNeeded: UInt(bitPattern: CFArrayGetValueAtIndex(available, index)))) }
         }
-        return FontFacts(weight: weight, italic: CTFontGetSymbolicTraits(font).contains(.traitItalic), glyphCount: CTFontGetGlyphCount(font), foundry: CTFontCopyName(font, kCTFontManufacturerNameKey) as String? ?? "", features: OpenType.tags(font), widthClass: width, xHeightRatio: CTFontGetXHeight(font) / max(1, CTFontGetSize(font)), variable: !(CTFontCopyVariationAxes(font) as? [Any] ?? []).isEmpty, color: !tables.isDisjoint(with: [0x434F4C52, 0x43424454, 0x73626978, 0x53564720]), bitmap: !tables.isDisjoint(with: [0x45424454, 0x43424454, 0x73626978]), monospace: CTFontGetSymbolicTraits(font).contains(.traitMonoSpace))
+        return FontFacts(weight: weight, italic: CTFontGetSymbolicTraits(font).contains(.traitItalic), glyphCount: CTFontGetGlyphCount(font), foundry: CTFontCopyName(font, kCTFontManufacturerNameKey) as String? ?? "", features: OpenType.tags(font), widthClass: width, xHeightRatio: Double(CTFontGetXHeight(font)) / size, capHeightRatio: Double(CTFontGetCapHeight(font)) / size, ascenderRatio: Double(CTFontGetAscent(font)) / size, descenderRatio: abs(Double(CTFontGetDescent(font))) / size, averageAdvanceRatio: averageAdvance, panose: panose, variable: !(CTFontCopyVariationAxes(font) as? [Any] ?? []).isEmpty, color: !tables.isDisjoint(with: [0x434F4C52, 0x43424454, 0x73626978, 0x53564720]), bitmap: !tables.isDisjoint(with: [0x45424454, 0x43424454, 0x73626978]), monospace: CTFontGetSymbolicTraits(font).contains(.traitMonoSpace))
     }
 }
 enum OpenType {

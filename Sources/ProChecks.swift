@@ -12,6 +12,11 @@ enum ProChecks {
         library.acceptCatalog([])
         precondition(library.families.isEmpty, "Empty refresh retained stale fonts")
         library.acceptCatalog(catalog)
+        let overlayReference = catalog[0].representative.name
+        library.toggleOverlay(overlayReference)
+        precondition(library.overlayName == overlayReference, "A/B did not activate the selected reference")
+        library.toggleOverlay(overlayReference)
+        precondition(library.overlayName.isEmpty, "Clicking the active A/B reference did not turn the overlay off")
         let corruptURL = root.appendingPathComponent("corrupt/library.json")
         try FileManager.default.createDirectory(at: corruptURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let corrupt = Data("invalid-json".utf8)
@@ -40,6 +45,11 @@ enum ProChecks {
         try FileManager.default.createDirectory(at: badAccess, withIntermediateDirectories: true)
         try corrupt.write(to: badAccess.appendingPathComponent("folder-access.json"))
         do { _ = try FolderAccess(directory: badAccess).restore("/unused"); preconditionFailure("Unreadable folder permissions were silently ignored") } catch {}
+        let managedAccess = FolderAccess(directory: root.appendingPathComponent("managed"))
+        let managedChild = root.appendingPathComponent("managed/Google Fonts/example").path
+        let restoredManagedChild = try managedAccess.restore(managedChild)
+        precondition(restoredManagedChild == managedChild, "App-managed folders unexpectedly require a bookmark")
+        do { _ = try managedAccess.restore(root.appendingPathComponent("external-fonts").path); preconditionFailure("An external folder without a bookmark was accessed") } catch {}
         print("PASS: empty refresh and corrupt library, activation journal, and folder-permission protection.")
         let samples = ["", "i can feel", "अक्षर 日本語 العربية", "a\n\nb\r\nc", "👩🏽‍💻 é " + String(repeating: "W", count: 60)]
         var layouts = 0
@@ -113,7 +123,59 @@ enum ProChecks {
             glyphs(OpenType.font(name: face.name, size: 24, features: ["liga": 1])) != glyphs(OpenType.font(name: face.name, size: 24, features: ["liga": 0]))
         }
         precondition(changesGlyphs, "Ligature controls did not change shaped glyphs in any supported font")
+        try intelligenceChecks(library: library, catalog: catalog)
         print("PASS: family merge/split with collection preservation, stable tags, saved axes/features, OpenType parsing, duplicate hashes/name collisions, original-file export and advanced filters.")
+    }
+
+    static func intelligenceChecks(library: Library, catalog: [Family]) throws {
+        let panose = [UInt8](arrayLiteral: 2, 2, 6, 3, 8, 2, 2, 2, 2, 4)
+        let reference = FontSignature(category: .serif, weight: 400, widthClass: 5, italic: false, monospace: false, xHeightRatio: 0.50, capHeightRatio: 0.72, ascenderRatio: 0.80, descenderRatio: 0.20, averageAdvanceRatio: 0.56, panose: panose, writingSystems: [.latin], visualTags: ["visual/soft"])
+        let close = FontSignature(category: .serif, weight: 425, widthClass: 5, italic: false, monospace: false, xHeightRatio: 0.51, capHeightRatio: 0.73, ascenderRatio: 0.81, descenderRatio: 0.20, averageAdvanceRatio: 0.57, panose: panose, writingSystems: [.latin], visualTags: ["visual/soft"])
+        let far = FontSignature(category: .sans, weight: 800, widthClass: 2, italic: true, monospace: true, xHeightRatio: 0.68, capHeightRatio: 0.91, ascenderRatio: 1.1, descenderRatio: 0.35, averageAdvanceRatio: 0.9, panose: [2, 11, 9, 8, 2, 8, 8, 8, 8, 9], writingSystems: [.cyrillic], visualTags: ["visual/geometric"])
+        let closeAssessment = LibraryIntelligence.assess(reference, close)
+        let farAssessment = LibraryIntelligence.assess(reference, far)
+        precondition(closeAssessment.distance < farAssessment.distance, "Local similarity did not prefer the closer deterministic signature")
+        precondition(closeAssessment.reasons.contains("Similar x-height") && closeAssessment.reasons.contains("Similar stroke contrast"), "Similarity explanations omitted measured matches")
+
+        guard catalog.count >= 4 else { preconditionFailure("Intelligence checks require four local families") }
+        let referenceFamily = catalog[0]
+        let ranked = LibraryIntelligence.similarFamilies(to: referenceFamily.representative, referenceCategory: referenceFamily.automaticCategory, catalog: catalog, limit: 8)
+        precondition(!ranked.isEmpty && ranked.allSatisfy { $0.family.name != referenceFamily.name }, "Similar-family results included the source family")
+        precondition(zip(ranked, ranked.dropFirst()).allSatisfy { $0.distance <= $1.distance }, "Similar-family results were not distance ordered")
+        let localNames = Set(catalog.map(\.name))
+        precondition(ranked.allSatisfy { localNames.contains($0.family.name) }, "Similar-family results escaped the local catalog")
+
+        let scoped = Array(catalog.prefix(4))
+        let old = Date(timeIntervalSinceReferenceDate: 10_000)
+        let recent = Date(timeIntervalSinceReferenceDate: 20_000)
+        let usage = [
+            scoped[0].representative.name: FontUsageRecord(lastAppliedAt: old, applicationCount: 1),
+            scoped[1].representative.name: FontUsageRecord(lastAppliedAt: recent, applicationCount: 2),
+            "RemoteOnly-Regular": FontUsageRecord(lastAppliedAt: .distantPast, applicationCount: 1)
+        ]
+        let current = [scoped[2].representative.name: 3]
+        let discovery = LibraryIntelligence.leastRecentlyUsed(catalog: scoped, usage: usage, currentUseCounts: current, seed: 17, limit: 4)
+        let repeated = LibraryIntelligence.leastRecentlyUsed(catalog: scoped, usage: usage, currentUseCounts: current, seed: 17, limit: 4)
+        precondition(discovery.map(\.id) == repeated.map(\.id), "Discovery was not deterministic for a fixed seed")
+        precondition(discovery.count == 4 && Set(discovery.map(\.id)).isSubset(of: Set(scoped.map(\.name))), "Discovery returned a non-catalog family")
+        precondition(discovery.first?.family.name == scoped[3].name, "Discovery did not prefer an unused, unreferenced family")
+        precondition(discovery.first(where: { $0.family.name == scoped[0].name }).flatMap(\.lastAppliedAt) == old, "Discovery lost recorded application history")
+
+        let legacyJSON = Data(#"{"favorites":[],"overrides":{},"collections":{},"folders":[]}"#.utf8)
+        let legacyLibrary = try JSONDecoder().decode(SavedLibrary.self, from: legacyJSON)
+        precondition(legacyLibrary.fontUsage == nil, "Legacy libraries did not decode without usage history")
+        let usedFace = scoped[0].representative
+        precondition(library.recordFontUse(usedFace.name, at: old), "Could not record local font use")
+        precondition(library.recordFontUses([usedFace.name, usedFace.name], at: recent), "Could not update local font use")
+        precondition(library.fontUsage(for: usedFace.name) == FontUsageRecord(lastAppliedAt: recent, applicationCount: 2), "Font usage did not deduplicate one application event or retain its newest date")
+        precondition(!library.recordFontUse("RemoteOnly-Regular", at: recent), "Usage history accepted a font outside the current local catalog")
+        let restored = Library(storageURL: library.saveURL)
+        precondition(restored.fontUsage(for: usedFace.name) == library.fontUsage(for: usedFace.name), "Font usage did not survive persistence")
+        let previous = library.saved.fontUsage
+        library.librarySaveBlocked = true
+        precondition(!library.recordFontUse(scoped[1].representative.name, at: recent) && library.saved.fontUsage == previous, "Failed usage persistence was not rolled back")
+        library.librarySaveBlocked = false
+        print("PASS: deterministic local similarity, explainable rankings, catalog-only discovery, and backward-compatible usage history.")
     }
     static func glyphs(_ font: CTFont) -> [CGGlyph] {
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: "office affine fi fl ffi", attributes: [.font: font as NSFont]))

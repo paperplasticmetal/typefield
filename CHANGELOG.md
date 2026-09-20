@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.23.0 — 2026-09-20
+
+- Added direct canvas text editing on double-click, with Command-Return to save and Escape to cancel; hardened empty, oversized and focus-changing edits so they cannot crash the canvas or overwrite a newer selection.
+- Added a selected-canvas web-font cost audit with exact WOFF2 file weights, known download totals, character/script coverage provenance, compatible variable-versus-static comparisons, fallback x-height/wrapping/control-width probes and removable-style estimates.
+- Made missing and ambiguous web assets explicit and excluded them from exact byte totals instead of substituting unrelated desktop data; serialized and debounced analysis so stale work cannot replace the current selection.
+- Added local-only **Find similar** recommendations with explainable visual/metadata signals and **Rediscover** suggestions biased toward fonts that have not been used recently.
+- Stopped watched folders with missing or revoked security-scoped bookmarks from repeatedly probing protected locations, eliminated the resulting macOS permission-prompt loop, and deduplicated reauthorization notices per launch.
+- Aligned each comparison header's **Only this** and close controls with its canvas edge across all Spaces canvas formats.
+- Made the active Library **A/B** reference button a true toggle: clicking it again ends the overlay comparison.
+- Made canvas clicks target the exact heading, caption or display text under the pointer, with a tight selection/editor outline instead of selecting the full section.
+- Removed the watcher's redundant startup refresh while preserving live add, replacement and deletion detection.
+- Extended validation for canvas editing limits, local intelligence, web-cost calculations, protected-folder recovery and responsive canvas layouts.
+
 ## 0.22.0 — 2026-09-20
 
 - Removed an unnecessary second installed-font catalog scan from ordinary cold launches and skipped the post-registration rescan when watched folders made no catalog changes.

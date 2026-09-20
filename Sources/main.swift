@@ -37,6 +37,8 @@ struct SavedLibrary: Codable {
     var lastImportDate: Date?
     var lastImportSource: String?
     var autoActivateFolders: Set<String>?
+    var fontUsage: [String: FontUsageRecord]?
+    var webAssetFolders: [String]?
 }
 
 enum FontCatalog {
@@ -124,7 +126,8 @@ final class Library: ObservableObject {
         guard !studio.readBlocked else { message = studio.error; return }
         let active = studio.state.spaces.first(where: { $0.id == studio.focusedSpace })?.id
         guard let space = active ?? studio.state.spaces.first?.id ?? studio.addSpace("My projects") else { message = studio.error; return }
-        _ = studio.addBoard(space: space, fonts: names)
+        guard studio.addBoard(space: space, fonts: names) != nil else { message = studio.error; return }
+        if !names.isEmpty { _ = recordFontUses(names) }
         workspace = true
     }
     @Published var families: [Family] = []
@@ -141,6 +144,7 @@ final class Library: ObservableObject {
     var queuedReload = false
     var queuedRegistration = false
     var resolvedFolders: [String] = []
+    var reportedFolderAccessFailures: Set<String> = []
     var proSaveBlocked = false
     var proURL: URL { saveURL.deletingLastPathComponent().appendingPathComponent("pro-library.json") }
     var allFaces: [Face] { families.flatMap(\.faces) }
@@ -205,6 +209,7 @@ final class Library: ObservableObject {
     @Published var comparison: [String] = []
     @Published var overlayName = ""
     @Published var showCompare = false
+    func toggleOverlay(_ postScriptName: String) { overlayName = overlayName == postScriptName ? "" : postScriptName }
     func chosenFace(_ family: Family) -> Face {
         let query = FontSearchQuery(search)
         let matching = family.faces.filter { face in
@@ -244,7 +249,11 @@ final class Library: ObservableObject {
         var folders: [String] = []
         for path in saved.folders {
             do { folders.append(try folderAccess.restore(path)) }
-            catch { message = "Folder access expired. Choose the folder again with Add font folder. " + error.localizedDescription }
+            catch {
+                if reportedFolderAccessFailures.insert(path).inserted {
+                    message = "Folder access needs to be renewed. Open Live folders and choose \(URL(fileURLWithPath: path).lastPathComponent) again."
+                }
+            }
         }
         resolvedFolders = folders
         configureWatcher()
@@ -305,6 +314,7 @@ final class Library: ObservableObject {
         panel.message = "Add this folder and watch it live. Fonts in its subfolders are included, and additions, replacements and removals update automatically every three seconds while FontShelf is open. Nothing is installed or moved."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try folderAccess.remember(url) } catch { message = "Could not retain folder access: " + error.localizedDescription; return }
+        reportedFolderAccessFailures.remove(url.path)
         if !saved.folders.contains(url.path) { saved.folders.append(url.path); save() }
         if !resolvedFolders.contains(url.path) { resolvedFolders.append(url.path) }
         openTools("Folders")
@@ -376,6 +386,7 @@ struct ContentView: View {
     @State var showCollection = false
     @State var showColors = false
     @State var showTagFilters = false
+    @State var showDiscovery = false
     @FocusState private var searchFocused: Bool
     var body: some View {
         HStack(spacing: 12) {
@@ -411,6 +422,7 @@ struct ContentView: View {
         .onChange(of: preview) { value in library.requiredText = value == "{family}" ? "" : value; if value == "{family}" { library.requireCoverage = false } }
         .sheet(isPresented: $library.showTools) { LibraryToolsView(library: library) }
         .sheet(isPresented: $library.showCompare) { CompareView(library: library, preview: preview, size: size) }
+        .sheet(isPresented: $showDiscovery) { FontDiscoveryView(library: library, eligibleFamilies: library.filtered, preview: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
         .sheet(item: $library.detail) { family in DetailView(library: library, family: family, preview: preview == "{family}" ? family.name : preview, size: size) }
         .alert("New collection", isPresented: $showCollection) {
             TextField("Collection name", text: $collectionName)
@@ -604,6 +616,7 @@ struct ContentView: View {
                 ShelfEditableName(name: name, onRename: { library.renameCollection(name, to: $0) }).font(.system(size: 25, weight: .semibold)).frame(minWidth: 110)
             } else { Text(library.selection.replacingOccurrences(of: "tag:", with: "")).font(.system(size: 25, weight: .semibold)) }
             Spacer()
+            Button("Rediscover", systemImage: "shuffle") { showDiscovery = true }.help("Find local fonts you have not applied recently")
             Button("New typeboard", systemImage: "text.badge.plus") { library.pairSelection(library.compared.map { library.chosenFace($0).name }) }.help("Create a typeboard in the current space using your shortlisted fonts")
             Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").popover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
             Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").popover(isPresented: $showColors) { PreviewColorsView() }
@@ -640,9 +653,9 @@ struct ContentView: View {
                 Spacer(minLength: 0)
                 Button { library.favorite(family) } label: { Image(systemName: library.saved.favorites.contains(family.name) ? "star.fill" : "star").foregroundStyle(library.saved.favorites.contains(family.name) ? ShelfPalette.ink : Color.primary).font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Toggle favorite")
                 Button { library.compare(family) } label: { Image(systemName: library.comparison.contains(family.name) ? "checkmark.square.fill" : "plus.square").font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Add or remove from shortlist — open Shortlist in the sidebar")
-                Button { library.overlayName = face.name } label: {
+                Button { library.toggleOverlay(face.name) } label: {
                     Text("AB").font(.system(size: 13, weight: .bold)).foregroundStyle(library.overlayName == face.name ? Color.cyan : Color.primary).frame(width: 30, height: 30)
-                }.buttonStyle(.plain).help("Compare this font over every preview in the library").accessibilityLabel("Use \(family.name) as library overlay")
+                }.buttonStyle(.plain).help(library.overlayName == face.name ? "Turn off the library overlay" : "Compare this font over every preview in the library").accessibilityLabel(library.overlayName == face.name ? "Turn off \(family.name) library overlay" : "Use \(family.name) as library overlay")
                 Menu { actions(family) } label: { Image(systemName: "ellipsis").font(.system(size: 17)) }.shelfIconMenu().help("Font actions")
             }
             if !library.overlayName.isEmpty {
