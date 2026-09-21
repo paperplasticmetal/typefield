@@ -21,6 +21,7 @@ struct FontLabRemixSheet: View {
     @State private var autoName = ""
     @State private var preview: FontLabRemixResult?
     @State private var previewBusy = true
+    @State private var previewRecipe: FontLabRemixRecipe?
     @State private var previewFailure = ""
 
     init(faces: [Face], suggestedNames: [String], onCreate: @escaping (FontLabRemixResult) -> Bool) {
@@ -137,8 +138,13 @@ struct FontLabRemixSheet: View {
                 if let preview {
                     FontLabPreviewCanvas(text: "Hamburgefontsiv 08&", glyphs: preview.project.glyphs, metrics: preview.project.metrics)
                         .frame(height: 94).opacity(previewBusy ? 0.4 : 1)
+                    if let sourceB = preview.provenance.sourceBCharacters {
+                        let sourceA = preview.project.characters.filter { preview.project.glyphs[$0]?.strokes.isEmpty == false && !sourceB.contains($0) }
+                        Text("A: " + sourceA.joined(separator: " ") + "     B: " + sourceB.joined(separator: " "))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                     if !preview.preservedCharacters.isEmpty {
-                        Text("Structure preserved from source \(blendAmount < 0.5 ? "A" : "B"): " + preview.preservedCharacters.joined(separator: " "))
+                        Text("\(preview.preservedCharacters.count) of \(preview.project.completedCount) preview glyphs keep source \(preview.provenance.blendAmount < 0.5 ? "A" : "B")’s shape with combined proportions: " + preview.preservedCharacters.joined(separator: " "))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 } else {
@@ -188,7 +194,7 @@ struct FontLabRemixSheet: View {
     private var canGenerate: Bool {
         !primaryName.isEmpty && !secondaryName.isEmpty &&
             !projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && projectName.count <= 200 &&
-            rightsConfirmed
+            rightsConfirmed && !previewBusy && preview != nil && previewRecipe == recipe
     }
 
     private func selectedFace(_ name: String) -> Face? { faces.first { $0.name == name } }
@@ -221,8 +227,8 @@ struct FontLabRemixSheet: View {
         guard !Task.isCancelled else { return }
         previewBusy = false
         switch generated {
-        case let .success(result): preview = result
-        case let .failure(error): preview = nil; previewFailure = error.localizedDescription
+        case let .success(result): preview = result; previewRecipe = requestedRecipe
+        case let .failure(error): preview = nil; previewRecipe = nil; previewFailure = error.localizedDescription
         }
     }
 

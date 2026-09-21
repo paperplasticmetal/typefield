@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.30.0 — 2026-09-21
+
+- Replaced perimeter-point morphing with aligned silhouette distance-field blending. Glyphs with incompatible counter positions, low shape overlap or damaged output topology keep a source shape fitted to the combined proportions; the preview reports exactly which glyphs use this fallback.
+- Replaced Interleave’s repeated sinusoidal deformation with **Splice**, a single smooth transition from A’s lower shape to B’s upper shape. Existing saved projects remain intact.
+- Fixed Alternate glyphs assigning nearly every Latin character to the same face. At 50% it now alternates A/B through the alphabet; other balances distribute B’s share evenly. Source assignments are stable between previews and full projects, visible in the preview and saved with provenance.
+- Normalized source sizes using the actual Latin starter outlines, so large global descent metrics in multilingual fonts no longer shrink one source’s letters.
+- Added an explicit incompatibility message for capital-only versus true-lowercase sources, and disabled creation until the current recipe has a successful preview.
+- Expanded geometry regressions and disposable visual specimens to cover source distribution, counter positions, raster orientation, straight stems, width/weight contrasts and all three methods. This remains an editable starter generator; unrelated font designs cannot reliably become production-quality interpolated masters.
+
 ## 0.29.0 — 2026-09-21
 
 - Rebuilt Font Lab combination around continuous filled contours instead of horizontal pen strips. Adaptive curve sampling, spatial contour matching and counter-aware fallback produce smoother edges, more stable stems and intact bowls. Incompatible glyph structures retain the dominant source and are identified in the preview.

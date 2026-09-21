@@ -16,7 +16,7 @@ enum FontLabRemixMode: String, Codable, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .blend: return "Blend"
-        case .interleave: return "Interleave"
+        case .interleave: return "Splice"
         case .alternate: return "Alternate glyphs"
         }
     }
@@ -24,11 +24,11 @@ enum FontLabRemixMode: String, Codable, CaseIterable, Identifiable {
     var explanation: String {
         switch self {
         case .blend:
-            return "Morphs matching contours while preserving open counters."
+            return "Blends aligned silhouettes; retains a source shape when structures differ."
         case .interleave:
-            return "Varies the blend in broad, smoothly connected horizontal bands."
+            return "Joins A’s lower shape to B’s upper shape with one smooth transition."
         case .alternate:
-            return "Chooses one source face per character with a repeatable pattern."
+            return "Alternates A and B through the alphabet at 50%; the slider sets B’s share."
         }
     }
 }
@@ -99,6 +99,7 @@ struct FontLabRemixProvenance: Codable, Equatable {
     var generatorName = FontLabRemixProvenance.generator
     var distributionNotice = FontLabRemixProvenance.licenseNotice
     var preservedCharacters: [String]? = nil
+    var sourceBCharacters: [String]? = nil
 
     var isValid: Bool {
         (2...3).contains(sourcePostScriptNames.count) &&
@@ -106,11 +107,12 @@ struct FontLabRemixProvenance: Codable, Equatable {
             blendAmount.isFinite && (0...1).contains(blendAmount) &&
             !generatorName.isEmpty && generatorName.count <= 200 &&
             !distributionNotice.isEmpty && distributionNotice.count <= 2_000 &&
-            (preservedCharacters.map { $0.count <= 2_000 && $0.allSatisfy { $0.count == 1 } } ?? true)
+            (preservedCharacters.map { $0.count <= 2_000 && $0.allSatisfy { $0.count == 1 } } ?? true) &&
+            (sourceBCharacters.map { $0.count <= 2_000 && $0.allSatisfy { $0.count == 1 } } ?? true)
     }
 
     var summary: String {
-        "Editable local remix of \(sourcePostScriptNames.joined(separator: " + ")) · \(mode.title) \(Int((blendAmount * 100).rounded()))% · \(preset.title)" + ((preservedCharacters?.isEmpty == false) ? " · \(preservedCharacters!.count) glyphs retain the dominant source structure" : "")
+        "Editable local remix of \(sourcePostScriptNames.joined(separator: " + ")) · \(mode.title) \(Int((blendAmount * 100).rounded()))% · \(preset.title)" + ((preservedCharacters?.isEmpty == false) ? " · \(preservedCharacters!.count) glyphs retain a source shape with combined proportions" : "")
     }
 }
 
@@ -122,7 +124,7 @@ struct FontLabRemixResult: Equatable {
 
     var status: String {
         let count = project.completedCount
-        let preserved = preservedCharacters.isEmpty ? "" : " · \(preservedCharacters.count) kept from the dominant source to preserve their structure"
+        let preserved = preservedCharacters.isEmpty ? "" : " · \(preservedCharacters.count) retain a source shape with combined proportions"
         let skipped = skippedCharacters.isEmpty ? "" : " · \(skippedCharacters.count) unsupported"
         return "Created \(count) editable glyphs from \(provenance.sourcePostScriptNames.joined(separator: " + "))\(skipped)\(preserved). \(FontLabRemixProvenance.licenseNotice)"
     }
@@ -135,6 +137,7 @@ enum FontLabRemixEngine {
         case invalidCharacters
         case unavailableFont(String)
         case noSupportedCharacters
+        case incompatibleLetterforms
 
         var errorDescription: String? {
             switch self {
@@ -146,6 +149,8 @@ enum FontLabRemixEngine {
                 return "The starter character list must contain unique, single characters."
             case let .unavailableFont(name):
                 return "The font face “\(name)” is no longer available. Refresh the Library and choose another face."
+            case .incompatibleLetterforms:
+                return "These fonts use different alphabets: one draws lowercase letters as capitals. Choose Alternate glyphs, or two fonts with compatible lowercase designs."
             case .noSupportedCharacters:
                 return "The selected sources and balance do not provide any of the requested characters."
             }
@@ -172,7 +177,13 @@ enum FontLabRemixEngine {
 
         let primary = try exactFont(named: recipe.primaryPostScriptName)
         let secondary = try exactFont(named: recipe.secondaryPostScriptName)
+        if recipe.mode != .alternate, recipe.blendAmount > 0, recipe.blendAmount < 1,
+           hasCapitalOnlyLowercase(primary) != hasCapitalOnlyLowercase(secondary) {
+            throw RemixError.incompatibleLetterforms
+        }
         var metrics = FontLabMetrics()
+        metrics.baseline = 0.24
+        metrics.capHeight = 0.80
         let aScale = faceScale(primary, metrics: metrics), bScale = faceScale(secondary, metrics: metrics)
         metrics.capHeight = metrics.baseline + mix(Double(CTFontGetCapHeight(primary)) * aScale,
             Double(CTFontGetCapHeight(secondary)) * bScale, recipe.blendAmount)
@@ -193,9 +204,10 @@ enum FontLabRemixEngine {
 
         var skipped: [String] = []
         var preserved: [String] = []
+        var sourceB: [String] = []
         for character in characters {
-            let primaryOutline = normalizedOutline(character: character, font: primary, metrics: metrics)
-            let secondaryOutline = normalizedOutline(character: character, font: secondary, metrics: metrics)
+            let primaryOutline = normalizedOutline(character: character, font: primary, metrics: metrics, scale: aScale)
+            let secondaryOutline = normalizedOutline(character: character, font: secondary, metrics: metrics, scale: bScale)
             guard primaryOutline != nil || secondaryOutline != nil,
                   !(recipe.blendAmount <= 0 && primaryOutline == nil),
                   !(recipe.blendAmount >= 1 && secondaryOutline == nil) else {
@@ -206,10 +218,15 @@ enum FontLabRemixEngine {
             let (glyph, keptSource) = makeGlyph(character: character, primary: primaryOutline,
                 secondary: secondaryOutline, recipe: recipe, metrics: metrics)
             if keptSource { preserved.append(character) }
+            if recipe.mode == .alternate, secondaryOutline != nil,
+               primaryOutline == nil || alternateUsesB(character: character, amount: recipe.blendAmount) {
+                sourceB.append(character)
+            }
             project.glyphs[character] = glyph
         }
 
         provenance.preservedCharacters = preserved.isEmpty ? nil : preserved
+        provenance.sourceBCharacters = recipe.mode == .alternate ? sourceB : nil
         project.remixProvenance = provenance
         guard project.completedCount > 0 else { throw RemixError.noSupportedCharacters }
         guard project.isValid else { throw RemixError.invalidCharacters }
@@ -286,6 +303,7 @@ enum FontLabRemixEngine {
         }
 
         try geometrySelfTest()
+        try silhouetteSelfTest()
 
         var unavailable = recipe
         unavailable.primaryPostScriptName = "FontShelf-Definitely-Missing-Face"
@@ -323,7 +341,9 @@ enum FontLabRemixEngine {
                                 throw FontLabStore.SelfTestError.failed("A remix endpoint contains geometry from the other source.")
                             }
                         } else if mode == .alternate {
-                            guard source.contains(where: { geometry($0.glyphs[character]!) == actual }) else {
+                            let selected = alternateUsesB(character: character, amount: amount) ? 1 : 0
+                            guard geometry(source[selected].glyphs[character]!) == actual,
+                                  result.provenance.sourceBCharacters?.contains(character) == (selected == 1) else {
                                 throw FontLabStore.SelfTestError.failed("Alternate glyphs mixed rows from different sources.")
                             }
                         }
@@ -375,45 +395,143 @@ enum FontLabRemixEngine {
         print("PASS: continuous remix contours, source endpoints, proportional widths, counters, all styles/modes, persistence and TrueType shape fidelity.")
     }
 
-    /// A disposable visual specimen; never opens or writes the user's library.
+    private static func silhouetteSelfTest() throws {
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init)
+        for amount in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let selected = alphabet.filter { alternateUsesB(character: $0, amount: amount) }
+            guard selected.count == Int(floor(Double(alphabet.count) * amount)) else {
+                throw FontLabStore.SelfTestError.failed("Alternate glyphs did not distribute both source faces evenly.")
+            }
+        }
+        guard alphabet.enumerated().allSatisfy({ alternateUsesB(character: $0.element, amount: 0.5) == ($0.offset % 2 == 1) }) else {
+            throw FontLabStore.SelfTestError.failed("Alternate glyphs did not alternate A/B through the alphabet.")
+        }
+        let recipe = FontLabRemixRecipe(primaryPostScriptName: "Helvetica", secondaryPostScriptName: "Times-Roman", mode: .alternate)
+        let full = try generate(recipe: recipe)
+        let subset = try generate(recipe: recipe, characters: ["z", "A", "b", "M"])
+        guard subset.project.glyphs.allSatisfy({ full.project.glyphs[$0.key] == $0.value }),
+              try JSONDecoder().decode(FontLabProject.self, from: JSONEncoder().encode(full.project)) == full.project else {
+            throw FontLabStore.SelfTestError.failed("Alternate source assignments changed with preview order or persistence.")
+        }
+        // An asymmetric L catches raster y-axis inversion; a matching pair of
+        // Hs checks actual stem/counter occupancy after both combination modes.
+        func outline(_ coords: [(Double, Double)]) -> Outline {
+            let path = CGMutablePath(); path.addLines(between: coords.map { CGPoint(x: $0.0, y: $0.1) }); path.closeSubpath()
+            return Outline(contours: flattened(path), advance: 0.7)
+        }
+        let ell = outline([(0.1,0.2),(0.6,0.2),(0.6,0.3),(0.2,0.3),(0.2,0.8),(0.1,0.8)])
+        let raster = Silhouette(ell)
+        let roundTrip = traced(raster.field(), bounds: raster.bounds)
+        guard roundTrip.count == 1, contains(roundTrip[0], FontLabPoint(x: 0.5, y: 0.25)),
+              !contains(roundTrip[0], FontLabPoint(x: 0.5, y: 0.75)) else {
+            throw FontLabStore.SelfTestError.failed("Silhouette tracing flipped or lost a source outline.")
+        }
+        func h(_ thickness: Double) -> Outline {
+            outline([(0.1,0.2),(0.1 + thickness,0.2),(0.1 + thickness,0.45),(0.6 - thickness,0.45),
+                     (0.6 - thickness,0.2),(0.6,0.2),(0.6,0.8),(0.6 - thickness,0.8),
+                     (0.6 - thickness,0.55),(0.1 + thickness,0.55),(0.1 + thickness,0.8),(0.1,0.8)])
+        }
+        for mode in [FontLabRemixMode.blend, .interleave] {
+            var recipe = recipe; recipe.mode = mode
+            guard let result = mixedContours(h(0.1), h(0.14), recipe: recipe), result.count == 1,
+                  [0.25, 0.35, 0.65, 0.75].allSatisfy({ y in
+                      contains(result[0], FontLabPoint(x: 0.15, y: y)) && contains(result[0], FontLabPoint(x: 0.55, y: y)) &&
+                      !contains(result[0], FontLabPoint(x: 0.35, y: y))
+                  }), contains(result[0], FontLabPoint(x: 0.35, y: 0.5)) else {
+                throw FontLabStore.SelfTestError.failed("A silhouette combination bent a straight stem or filled an open counter.")
+            }
+        }
+        let outer = outline([(0.1,0.2),(0.6,0.2),(0.6,0.8),(0.1,0.8)]).contours[0]
+        let low = outline([(0.25,0.25),(0.45,0.25),(0.45,0.4),(0.25,0.4)]).contours[0].reversed()
+        let high = low.map { FontLabPoint(x: $0.x, y: $0.y + 0.25) }
+        guard mixedContours(Outline(contours: [outer, Array(low)], advance: 0.7),
+                            Outline(contours: [outer, high], advance: 0.7), recipe: recipe) == nil else {
+            throw FontLabStore.SelfTestError.failed("Equal hole counts hid incompatible counter positions.")
+        }
+        let scaledSources = try ["Helvetica", "Times-Roman", "Avenir-Medium"].map { name in
+            try generate(recipe: FontLabRemixRecipe(primaryPostScriptName: name, secondaryPostScriptName: name), characters: ["H", "g"])
+        }
+        let capHeights = scaledSources.map { $0.project.glyphs["H"]!.strokes[0].contours!.flatMap { $0 }.map(\.y).max()! }
+        guard capHeights.allSatisfy({ abs($0 - 0.80) < 0.003 }) else {
+            throw FontLabStore.SelfTestError.failed("Source metrics shrank Latin capitals to different point sizes.")
+        }
+        print("PASS: balanced A/B assignment, subset stability, silhouette orientation, straight stems and incompatible counter positions.")
+    }
+
+    /// Disposable visual audit with both sources, every method and explicit
+    /// fallback counts. It never opens or writes the user's saved library.
     static func writeSpecimen(to folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let pairs = [("Helvetica", "Times-Roman"), ("AdobeClean-Black", "Futura-Bold"),
-                     ("AbrilFatface-Regular", "1797-POSTER_V2")]
-        let characters = Array("AHOWMagnesio08&@").map(String.init)
+        let pairs = [("Helvetica", "Times-Roman"), ("Helvetica", "Helvetica-Bold"),
+                     ("Georgia", "Times-Roman"), ("Avenir-Medium", "Futura-Medium"),
+                     ("HelveticaNeue-CondensedBold", "HelveticaNeue-Bold"),
+                     ("Courier", "Helvetica"), ("AdobeClean-Black", "Futura-Bold"),
+                     ("AbrilFatface-Regular", "1797-POSTER_V2"),
+                     ("1797-COMPRESSED_V2", "Futura-Bold"),
+                     ("AdelleSansDevanagari-Semibold", "FuturaStd-Condensed")]
+        var report: [String] = []
         for (pairIndex, pair) in pairs.enumerated() {
-            for preset in FontLabStarterPreset.allCases {
-                let recipe = FontLabRemixRecipe(primaryPostScriptName: pair.0, secondaryPostScriptName: pair.1, preset: preset)
-                guard let result = try? generate(recipe: recipe, characters: characters) else { continue }
-                let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1960, pixelsHigh: 420,
+            let amounts = pairIndex == 1 || pairIndex == 6 ? [0.25, 0.5, 0.75] : [0.5]
+            for amount in amounts {
+                let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1800, pixelsHigh: 1130,
                     bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                     colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
                 NSGraphicsContext.saveGraphicsState()
                 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-                NSColor.white.setFill()
-                NSRect(x: 0, y: 0, width: 1960, height: 420).fill()
-                ("\(pair.0) × \(pair.1) · \(preset.title) · 50%" as NSString).draw(at: NSPoint(x: 24, y: 380), withAttributes: [.font: NSFont.systemFont(ofSize: 22), .foregroundColor: NSColor.black])
-                for (index, character) in characters.enumerated() {
-                    if let glyph = result.project.glyphs[character] {
-                        let width = min(106, glyph.resolvedDesignWidth * 210)
-                        fontLabDrawStrokes(glyph.strokes, in: NSRect(x: 24 + Double(index) * 120 + (106 - width) / 2, y: 145, width: width, height: 210), color: .black)
+                NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 1800, height: 1130).fill()
+                func label(_ text: String, _ y: Double, size: Double = 18) {
+                    let context = NSGraphicsContext.current!.cgContext
+                    context.saveGState()
+                    context.textMatrix = .identity
+                    context.textPosition = CGPoint(x: 24, y: y + 4)
+                    let line = CTLineCreateWithAttributedString(NSAttributedString(string: text,
+                        attributes: [.font: NSFont.systemFont(ofSize: size), .foregroundColor: NSColor.black]))
+                    CTLineDraw(line, context)
+                    context.restoreGState()
+                }
+                label("\(pair.0) × \(pair.1) · \(Int(amount * 100))% B · Clean", 1090, size: 24)
+                let recipes = [FontLabRemixRecipe(primaryPostScriptName: pair.0, secondaryPostScriptName: pair.0),
+                               FontLabRemixRecipe(primaryPostScriptName: pair.1, secondaryPostScriptName: pair.1)] +
+                    FontLabRemixMode.allCases.map { FontLabRemixRecipe(primaryPostScriptName: pair.0,
+                        secondaryPostScriptName: pair.1, blendAmount: amount, mode: $0) }
+                for (index, recipe) in recipes.enumerated() {
+                    let y = 1060.0 - Double(index) * 210
+                    let title = index < 2 ? "Source \(index == 0 ? "A" : "B")" : recipe.mode.title
+                    do {
+                        let start = Date()
+                        let result = try generate(recipe: recipe)
+                        let detail = "\(title): \(result.preservedCharacters.count)/\(result.project.completedCount) source shapes retained"
+                        report.append("\(pair.0) × \(pair.1) \(Int(amount * 100))% \(detail) (\(String(format: "%.3f", Date().timeIntervalSince(start)))s)")
+                        label(detail, y - 15)
+                        for (row, text) in ["Hamburgefontsiv 0123456789 &@", "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz"].enumerated() {
+                            let height = row == 0 ? 100.0 : 74.0
+                            var x = 24.0
+                            for character in text.map(String.init) {
+                                guard let glyph = result.project.glyphs[character] else { x += height * 0.3; continue }
+                                x += glyph.leftSideBearing * height
+                                fontLabDrawStrokes(glyph.strokes, in: NSRect(x: x, y: y - (row == 0 ? 115 : 195),
+                                    width: glyph.resolvedDesignWidth * height, height: height), color: .black)
+                                x += (glyph.resolvedDesignWidth + glyph.rightSideBearing) * height
+                            }
+                        }
+                        if index >= 2 {
+                            NSGraphicsContext.saveGraphicsState()
+                            defer { NSGraphicsContext.restoreGraphicsState() }
+                            try FontLabTrueTypeExporter.artifact(for: result.project).write(to:
+                                folder.appendingPathComponent("pair-\(pairIndex)-\(Int(amount * 100))-\(recipe.mode.rawValue).ttf"))
+                        }
+                    } catch {
+                        label("\(title): \(error.localizedDescription)", y - 45)
+                        report.append("\(pair.0) × \(pair.1) \(title): \(error.localizedDescription)")
                     }
                 }
-                let view = FontLabPreviewNSView(frame: NSRect(x: 20, y: 20, width: 1910, height: 120))
-                view.text = "Hamburgefontsiv 0123"
-                view.glyphs = try generate(recipe: recipe).project.glyphs
-                view.metrics = result.project.metrics
-                // Draw in a translated context so the specimen uses the same renderer as the app.
-                let transform = NSAffineTransform()
-                transform.translateX(by: 20, yBy: 20)
-                transform.concat()
-                view.draw(view.bounds)
                 NSGraphicsContext.restoreGraphicsState()
-                try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent("pair-\(pairIndex)-\(preset.rawValue).png"))
-                let font = try FontLabTrueTypeExporter.artifact(for: result.project)
-                try font.write(to: folder.appendingPathComponent("pair-\(pairIndex)-\(preset.rawValue).ttf"))
+                try bitmap.representation(using: .png, properties: [:])!.write(to:
+                    folder.appendingPathComponent("pair-\(pairIndex)-\(Int(amount * 100)).png"))
             }
         }
+        try report.joined(separator: "\n").write(to: folder.appendingPathComponent("report.txt"), atomically: true, encoding: .utf8)
+        print(report.joined(separator: "\n"))
     }
 
     private static func exactFont(named postScriptName: String) throws -> CTFont {
@@ -429,15 +547,26 @@ enum FontLabRemixEngine {
         var advance: Double
     }
 
-    // One scale per face, independent of character width. Previously W/M were
-    // shrunk vertically while i/l retained their height.
+    // One scale per face, independent of preview subsets and glyph width.
+    // Global descent metrics can include scripts far outside the Latin starter
+    // (Adelle Devanagari reports 600 units). Measure the actual starter outlines
+    // so those metrics do not shrink an otherwise ordinary Latin alphabet.
     private static func faceScale(_ font: CTFont, metrics: FontLabMetrics) -> Double {
         let cap = max(1, Double(CTFontGetCapHeight(font)))
-        let descent = max(1, Double(CTFontGetDescent(font)))
-        return min((metrics.capHeight - metrics.baseline) / cap, (metrics.baseline - 0.012) / descent)
+        var descent = 1.0, ascent = cap
+        for character in FontLabProject.starterCharacters {
+            var code = Array(character.utf16)[0], glyph = CGGlyph()
+            if CTFontGetGlyphsForCharacters(font, &code, &glyph, 1), glyph != 0,
+               let bounds = CTFontCreatePathForGlyph(font, glyph, nil)?.boundingBoxOfPath {
+                descent = max(descent, -bounds.minY)
+                ascent = max(ascent, bounds.maxY)
+            }
+        }
+        return min((metrics.capHeight - metrics.baseline) / cap,
+                   (metrics.baseline - 0.012) / descent, (0.988 - metrics.baseline) / ascent)
     }
 
-    private static func normalizedOutline(character: String, font: CTFont, metrics: FontLabMetrics) -> Outline? {
+    private static func normalizedOutline(character: String, font: CTFont, metrics: FontLabMetrics, scale: Double) -> Outline? {
         let utf16 = Array(character.utf16)
         guard utf16.count == 1 else { return nil }
         var codeUnit = utf16[0]
@@ -446,7 +575,6 @@ enum FontLabRemixEngine {
               let path = CTFontCreatePathForGlyph(font, glyph, nil) else { return nil }
         var advance = CGSize.zero
         _ = CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &advance, 1)
-        let scale = faceScale(font, metrics: FontLabMetrics())
         var transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: 0, ty: metrics.baseline)
         guard let normalized = path.copy(using: &transform) else { return nil }
         let contours = flattened(normalized)
@@ -522,124 +650,256 @@ enum FontLabRemixEngine {
         return path.contains(CGPoint(x: p.x, y: p.y))
     }
 
-    private struct Ring {
-        let points: [FontLabPoint]
-        let stops: [Double]
-        init(_ points: [FontLabPoint]) {
-            self.points = points
-            var lengths = [0.0]
-            for index in points.indices {
-                let next = points[(index + 1) % points.count]
-                lengths.append(lengths.last! + hypot(next.x - points[index].x, next.y - points[index].y))
-            }
-            let total = max(lengths.last!, 0.000_001)
-            stops = lengths.map { $0 / total }
+    private struct InkBounds {
+        let minX: Double
+        let minY: Double
+        let width: Double
+        let height: Double
+        init(_ contours: [[FontLabPoint]]) {
+            let points = contours.flatMap { $0 }
+            minX = points.map(\.x).min() ?? 0
+            minY = points.map(\.y).min() ?? 0
+            width = max(0.001, (points.map(\.x).max() ?? 0) - minX)
+            height = max(0.001, (points.map(\.y).max() ?? 0) - minY)
         }
-        func at(_ position: Double) -> FontLabPoint {
-            let t = position - floor(position)
-            var lo = 0, hi = points.count
-            while lo + 1 < hi {
-                let middle = (lo + hi) / 2
-                if stops[middle] <= t { lo = middle } else { hi = middle }
-            }
-            return interpolate(points[lo], points[(lo + 1) % points.count], (t - stops[lo]) / max(0.000_000_1, stops[lo + 1] - stops[lo]))
+        init(mixing a: InkBounds, _ b: InkBounds, amount: Double) {
+            minX = mix(a.minX, b.minX, amount)
+            minY = mix(a.minY, b.minY, amount)
+            width = mix(a.width, b.width, amount)
+            height = mix(a.height, b.height, amount)
         }
+    }
+
+    private static func fitted(_ source: Outline, to bounds: InkBounds, advance: Double) -> Outline {
+        let original = InkBounds(source.contours)
+        return Outline(contours: source.contours.map { $0.map { p in
+            FontLabPoint(x: bounds.minX + (p.x - original.minX) / original.width * bounds.width,
+                         y: bounds.minY + (p.y - original.minY) / original.height * bounds.height)
+        } }, advance: advance)
+    }
+
+    private struct Silhouette {
+        static let size = 320
+        static let padding = 12.0
+        static var span: Double { Double(size) - 2 * padding }
+        let coverage: [UInt8]
+        let bounds: InkBounds
+        init(_ outline: Outline) {
+            let bounds = InkBounds(outline.contours)
+            self.bounds = bounds
+            var pixels = [UInt8](repeating: 0, count: Self.size * Self.size)
+            let path = CGMutablePath()
+            for contour in outline.contours {
+                path.addLines(between: contour.map { p in
+                    CGPoint(x: Self.padding + (p.x - bounds.minX) / bounds.width * Self.span,
+                            y: Self.padding + (p.y - bounds.minY) / bounds.height * Self.span)
+                })
+                path.closeSubpath()
+            }
+            pixels.withUnsafeMutableBytes { bytes in
+                let context = CGContext(data: bytes.baseAddress, width: Self.size, height: Self.size,
+                    bitsPerComponent: 8, bytesPerRow: Self.size, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: 0)!
+                context.setAllowsAntialiasing(true)
+                context.setShouldAntialias(true)
+                context.setFillColor(gray: 1, alpha: 1)
+                context.addPath(path)
+                context.fillPath(using: .winding)
+            }
+            // Core Graphics stores the top row first; geometry uses y-up.
+            coverage = (0..<Self.size).flatMap { y in
+                Array(pixels[((Self.size - 1 - y) * Self.size)..<((Self.size - y) * Self.size)])
+            }
+        }
+
+        /// Exact separable squared Euclidean distance transform. It measures
+        /// distance to ink/space without guessing which outline vertices match.
+        func field() -> [Double] {
+            let n = Self.size
+            func transform(_ f: [Double]) -> [Double] {
+                var sites = [Int](repeating: 0, count: n)
+                var edges = [Double](repeating: 0, count: n + 1)
+                var k = 0
+                edges[0] = -.infinity; edges[1] = .infinity
+                for q in 1..<n {
+                    var s = 0.0
+                    while true {
+                        let v = sites[k]
+                        s = ((f[q] + Double(q * q)) - (f[v] + Double(v * v))) / Double(2 * (q - v))
+                        if s > edges[k] { break }
+                        k -= 1
+                    }
+                    k += 1; sites[k] = q; edges[k] = s; edges[k + 1] = .infinity
+                }
+                k = 0
+                return (0..<n).map { q in
+                    while edges[k + 1] < Double(q) { k += 1 }
+                    let delta = q - sites[k]
+                    return Double(delta * delta) + f[sites[k]]
+                }
+            }
+            func distances(toInk: Bool) -> [Double] {
+                var values = coverage.map { ($0 >= 128) == toInk ? 0.0 : 1_000_000.0 }
+                for y in 0..<n {
+                    let row = transform(Array(values[(y * n)..<((y + 1) * n)]))
+                    values.replaceSubrange((y * n)..<((y + 1) * n), with: row)
+                }
+                for x in 0..<n {
+                    let column = transform((0..<n).map { values[$0 * n + x] })
+                    for y in 0..<n { values[y * n + x] = column[y] }
+                }
+                return values
+            }
+            let toInk = distances(toInk: true), toSpace = distances(toInk: false)
+            return coverage.indices.map { index in
+                let coverage = coverage[index]
+                if coverage > 0 && coverage < 255 { return Double(coverage) / 255 - 0.5 }
+                return coverage >= 128 ? sqrt(toSpace[index]) - 0.5 : 0.5 - sqrt(toInk[index])
+            }
+        }
+    }
+
+    private static func mixedContours(_ a: Outline, _ b: Outline, recipe: FontLabRemixRecipe) -> [[FontLabPoint]]? {
+        guard a.contours.count == b.contours.count,
+              a.contours.filter({ area($0) > 0 }).count == b.contours.filter({ area($0) > 0 }).count else { return nil }
+        let aBounds = InkBounds(a.contours), bBounds = InkBounds(b.contours)
+        func counterCenters(_ outline: Outline, _ bounds: InkBounds) -> [FontLabPoint] {
+            outline.contours.filter { area($0) > 0 }.map { contour in
+                let hole = InkBounds([contour])
+                return FontLabPoint(x: (hole.minX + hole.width / 2 - bounds.minX) / bounds.width,
+                                    y: (hole.minY + hole.height / 2 - bounds.minY) / bounds.height)
+            }.sorted { $0.y == $1.y ? $0.x < $1.x : $0.y < $1.y }
+        }
+        // A single-storey a and a double-storey a both have one counter, but
+        // that counter occupies a different part of the letter. Do not morph
+        // the open shoulder into the bowl and produce an 8-shaped hybrid.
+        let aCounters = counterCenters(a, aBounds), bCounters = counterCenters(b, bBounds)
+        guard zip(aCounters, bCounters).allSatisfy({ hypot($0.x - $1.x, $0.y - $1.y) <= 0.12 }) else { return nil }
+        let lhs = Silhouette(a), rhs = Silhouette(b)
+        var inkA = 0, inkB = 0, overlap = 0
+        for i in lhs.coverage.indices {
+            let a = lhs.coverage[i] >= 128, b = rhs.coverage[i] >= 128
+            if a { inkA += 1 }; if b { inkB += 1 }; if a && b { overlap += 1 }
+        }
+        // Matching hole counts alone cannot distinguish m/M or n/N. Require
+        // the normalized silhouettes to share most of their letter structure.
+        let similarity = Double(2 * overlap) / Double(max(1, inkA + inkB))
+        guard similarity >= 0.72 else { return nil }
+        let af = lhs.field(), bf = rhs.field()
+        let n = Silhouette.size
+        let amount = recipe.blendAmount
+        var field = [Double](repeating: 0, count: af.count)
+        for y in 0..<n {
+            var localAmount = amount
+            if recipe.mode == .interleave {
+                // One join in an aligned frame, not a sinusoidal displacement
+                // of the stem positions. B occupies the upper part of a glyph.
+                let height = (Double(y) + 0.5 - Silhouette.padding) / Silhouette.span
+                let t = min(1, max(0, (height - (1 - amount) + 0.10) / 0.20))
+                localAmount = t * t * (3 - 2 * t)
+            }
+            for x in 0..<n {
+                let i = y * n + x
+                field[i] = mix(af[i], bf[i], localAmount)
+            }
+        }
+        let target = InkBounds(mixing: lhs.bounds, rhs.bounds, amount: amount)
+        let contours = traced(field, bounds: target)
+        let ink = field.filter { $0 > 0 }.count
+        guard contours.count == a.contours.count,
+              contours.filter({ area($0) > 0 }).count == a.contours.filter({ area($0) > 0 }).count,
+              Double(ink) >= Double(min(inkA, inkB)) * 0.80,
+              Double(ink) <= Double(max(inkA, inkB)) * 1.15,
+              validTopology(contours) else { return nil }
+        return contours
+    }
+
+    /// Marching squares yields closed vector contours with subpixel crossings.
+    /// Shared edge IDs avoid cracks, quantized joins and contour-order matching.
+    private static func traced(_ field: [Double], bounds: InkBounds) -> [[FontLabPoint]] {
+        let n = Silhouette.size
+        var locations: [Int: FontLabPoint] = [:]
+        var neighbors: [Int: [Int]] = [:]
+        for y in 0..<(n - 1) {
+            for x in 0..<(n - 1) {
+                let values = [field[y * n + x], field[y * n + x + 1], field[(y + 1) * n + x + 1], field[(y + 1) * n + x]]
+                let mask = values.enumerated().reduce(0) { $0 | ($1.element > 0 ? 1 << $1.offset : 0) }
+                if mask == 0 || mask == 15 { continue }
+                let centerInside = values.reduce(0, +) > 0
+                let pairs: [(Int, Int)]
+                switch mask {
+                case 1, 14: pairs = [(3, 0)]
+                case 2, 13: pairs = [(0, 1)]
+                case 3, 12: pairs = [(3, 1)]
+                case 4, 11: pairs = [(1, 2)]
+                case 6, 9: pairs = [(0, 2)]
+                case 7, 8: pairs = [(3, 2)]
+                case 5: pairs = centerInside ? [(0, 1), (2, 3)] : [(3, 0), (1, 2)]
+                case 10: pairs = centerInside ? [(3, 0), (1, 2)] : [(0, 1), (2, 3)]
+                default: pairs = []
+                }
+                func vertex(_ edge: Int) -> Int {
+                    let ids = [y * n + x, n * n + y * n + x + 1, (y + 1) * n + x, n * n + y * n + x]
+                    let id = ids[edge]
+                    if locations[id] == nil {
+                        let corners = [(Double(x), Double(y)), (Double(x + 1), Double(y)), (Double(x + 1), Double(y + 1)), (Double(x), Double(y + 1))]
+                        let end = (edge + 1) % 4
+                        let t = values[edge] / (values[edge] - values[end])
+                        let px = mix(corners[edge].0, corners[end].0, t) + 0.5
+                        let py = mix(corners[edge].1, corners[end].1, t) + 0.5
+                        locations[id] = FontLabPoint(x: bounds.minX + (px - Silhouette.padding) / Silhouette.span * bounds.width,
+                            y: bounds.minY + (py - Silhouette.padding) / Silhouette.span * bounds.height)
+                    }
+                    return id
+                }
+                for pair in pairs {
+                    let a = vertex(pair.0), b = vertex(pair.1)
+                    neighbors[a, default: []].append(b)
+                    neighbors[b, default: []].append(a)
+                }
+            }
+        }
+        guard neighbors.values.allSatisfy({ $0.count == 2 }) else { return [] }
+        var visited = Set<Int>()
+        let path = CGMutablePath()
+        for start in neighbors.keys.sorted() where !visited.contains(start) {
+            var current = start, previous = -1
+            var ring: [FontLabPoint] = []
+            repeat {
+                guard !visited.contains(current), let next = neighbors[current]?.first(where: { $0 != previous }), let point = locations[current] else { return [] }
+                visited.insert(current); ring.append(point)
+                previous = current; current = next
+            } while current != start
+            let reduced = simplified(ring, tolerance: 0.000_5)
+            guard reduced.count >= 3 else { continue }
+            path.addLines(between: reduced.map { CGPoint(x: $0.x, y: $0.y) }); path.closeSubpath()
+        }
+        return flattened(path)
+    }
+
+    /// Balanced error diffusion in the fixed character order. Unlike hashing
+    /// one-byte strings, this alternates A/B at 50% and assigns every fourth
+    /// glyph to B at 25%; preview subsets cannot change a glyph's assignment.
+    static func alternateUsesB(character: String, amount: Double) -> Bool {
+        let index = FontLabProject.starterCharacters.firstIndex(of: character) ?? Int(character.unicodeScalars.first?.value ?? 0)
+        let amount = min(1, max(0, amount))
+        return floor(Double(index + 1) * amount) > floor(Double(index) * amount)
+    }
+
+    private static func hasCapitalOnlyLowercase(_ font: CTFont) -> Bool {
+        let probes = Array("aehmnrst")
+        var matches = 0
+        for character in probes {
+            var code = Array(String(character).utf16)[0], upperCode = Array(String(character).uppercased().utf16)[0]
+            var lower = CGGlyph(), upper = CGGlyph()
+            guard CTFontGetGlyphsForCharacters(font, &code, &lower, 1), CTFontGetGlyphsForCharacters(font, &upperCode, &upper, 1),
+                  let lp = CTFontCreatePathForGlyph(font, lower, nil), let up = CTFontCreatePathForGlyph(font, upper, nil) else { continue }
+            if lower == upper || lp == up { matches += 1 }
+        }
+        return matches >= 5
     }
 
     private static func interpolate(_ a: FontLabPoint, _ b: FontLabPoint, _ t: Double) -> FontLabPoint {
         FontLabPoint(x: mix(a.x, b.x, t), y: mix(a.y, b.y, t))
-    }
-
-    private static func mixedContours(_ a: Outline, _ b: Outline, recipe: FontLabRemixRecipe) -> [[FontLabPoint]]? {
-        // Mixing incompatible counter structures (e.g. single/double-storey g)
-        // produces torn bowls. Keep the dominant source for that character.
-        guard a.contours.allSatisfy({ $0.count <= 1_200 }), b.contours.allSatisfy({ $0.count <= 1_200 }),
-              a.contours.count == b.contours.count,
-              a.contours.filter({ area($0) > 0 }).count == b.contours.filter({ area($0) > 0 }).count else { return nil }
-        func center(_ contour: [FontLabPoint]) -> FontLabPoint {
-            let xs = contour.map(\.x), ys = contour.map(\.y)
-            return FontLabPoint(x: (xs.min()! + xs.max()!) / 2, y: (ys.min()! + ys.max()!) / 2)
-        }
-        var available = Set(b.contours.indices)
-        var result: [[FontLabPoint]] = []
-        for lhs in a.contours {
-            let lc = center(lhs), la = area(lhs)
-            guard let match = available.filter({ (area(b.contours[$0]) > 0) == (la > 0) }).min(by: { i, j in
-                func cost(_ index: Int) -> Double {
-                    let rc = center(b.contours[index])
-                    return pow(lc.x - rc.x, 2) + pow(lc.y - rc.y, 2) + abs(abs(la) - abs(area(b.contours[index])))
-                }
-                let x = cost(i), y = cost(j)
-                return x == y ? i < j : x < y
-            }) else { return nil }
-            available.remove(match)
-            let left = Ring(lhs), right = Ring(b.contours[match])
-            // Find a consistent starting point before interpolating perimeters.
-            let samples = 96
-            let l = (0..<samples).map { left.at(Double($0) / Double(samples)) }
-            let r = (0..<samples).map { right.at(Double($0) / Double(samples)) }
-            let shift = (0..<samples).min { first, second in
-                func score(_ offset: Int) -> Double {
-                    (0..<samples).reduce(0) { sum, index in
-                        let a = l[index], b = r[(index + offset) % samples]
-                        return sum + pow(a.x - b.x, 2) + pow(a.y - b.y, 2)
-                    }
-                }
-                return score(first) < score(second)
-            } ?? 0
-            let phase = Double(shift) / Double(samples)
-            // Monotone spatial correspondence keeps baselines, stems and serif
-            // junctions aligned even when the two perimeters have different lengths.
-            let leftStops = Array(Set(left.stops.dropLast() + (0..<samples).map { Double($0) / Double(samples) })).sorted()
-            let rightStops = Array(Set(right.stops.dropLast().map { ($0 - phase + 1).truncatingRemainder(dividingBy: 1) } + (0..<samples).map { Double($0) / Double(samples) })).sorted()
-            let lp = (leftStops + [1]).map { left.at($0) }
-            let rp = (rightStops + [1]).map { right.at($0 + phase) }
-            let columns = rp.count
-            var costs = [Double](repeating: .infinity, count: lp.count * columns)
-            var previous = [UInt8](repeating: 0, count: costs.count)
-            let leftCenter = center(lhs), rightCenter = center(b.contours[match])
-            let leftWidth = max(0.02, lhs.map(\.x).max()! - lhs.map(\.x).min()!)
-            let rightWidth = max(0.02, b.contours[match].map(\.x).max()! - b.contours[match].map(\.x).min()!)
-            let commonWidth = (leftWidth + rightWidth) / 2
-            for i in lp.indices {
-                for j in rp.indices {
-                    let dx = ((lp[i].x - leftCenter.x) / leftWidth - (rp[j].x - rightCenter.x) / rightWidth) * commonWidth
-                    let dy = lp[i].y - rp[j].y
-                    let local = dx * dx + dy * dy
-                    let index = i * columns + j
-                    if i == 0 && j == 0 { costs[index] = local; continue }
-                    let diagonal = i > 0 && j > 0 ? costs[(i - 1) * columns + j - 1] : .infinity
-                    let up = i > 0 ? costs[(i - 1) * columns + j] + 0.000_002 : .infinity
-                    let across = j > 0 ? costs[i * columns + j - 1] + 0.000_002 : .infinity
-                    if diagonal <= up && diagonal <= across { costs[index] = local + diagonal; previous[index] = 0 }
-                    else if up <= across { costs[index] = local + up; previous[index] = 1 }
-                    else { costs[index] = local + across; previous[index] = 2 }
-                }
-            }
-            var i = lp.count - 1, j = rp.count - 1
-            var ring: [FontLabPoint] = []
-            while true {
-                let p = lp[i], q = rp[j]
-                var amount = recipe.blendAmount
-                if recipe.mode == .interleave {
-                    let y = mix(p.y, q.y, amount)
-                    amount = min(1, max(0, amount + sin((y - 0.18) * .pi * 6) * min(amount, 1 - amount) * 0.85))
-                }
-                ring.append(interpolate(p, q, amount))
-                if i == 0 && j == 0 { break }
-                switch previous[i * columns + j] {
-                case 1: i -= 1
-                case 2: j -= 1
-                default: i -= 1; j -= 1
-                }
-            }
-            ring.reverse()
-            if ring.first == ring.last { ring.removeLast() }
-            ring = simplified(ring, tolerance: 0.000_45)
-            guard ring.count >= 3, (area(ring) > 0) == (la > 0), abs(area(ring)) > 0.000_001 else { return nil }
-            result.append(ring)
-        }
-        return validTopology(result) ? result : nil
     }
 
     /// Closed Ramer–Douglas–Peucker reduction. This keeps sharp corners while
@@ -732,11 +992,12 @@ enum FontLabRemixEngine {
         if amount <= 0 { outline = a }
         else if amount >= 1 { outline = b }
         else if a.contours == b.contours { outline = a }
-        else if recipe.mode == .alternate { outline = hashUnit(character) < amount ? b : a }
+        else if recipe.mode == .alternate { outline = alternateUsesB(character: character, amount: amount) ? b : a }
         else if let contours = mixedContours(a, b, recipe: recipe) {
             outline = Outline(contours: contours, advance: mix(a.advance, b.advance, amount))
         } else {
-            outline = amount < 0.5 ? a : b
+            let bounds = InkBounds(mixing: InkBounds(a.contours), InkBounds(b.contours), amount: amount)
+            outline = fitted(amount < 0.5 ? a : b, to: bounds, advance: mix(a.advance, b.advance, amount))
             fallback = true
         }
         let contours = styled(outline.contours, preset: recipe.preset, baseline: metrics.baseline)
@@ -748,16 +1009,12 @@ enum FontLabRemixEngine {
         glyph.contourDesignWidth = min(width, 3)
         glyph.leftSideBearing = min(0.4, max(0.015, minX))
         glyph.rightSideBearing = min(0.4, max(0.015, outline.advance * recipe.preset.widthScale - maxX))
-        glyph.strokes = [FontLabStroke(id: stableUUID("\(character)|\(recipe.primaryPostScriptName)|\(recipe.secondaryPostScriptName)|\(recipe.blendAmount)|\(recipe.mode.rawValue)|\(recipe.preset.rawValue)|contours-v2"), contours: normalized)]
+        glyph.strokes = [FontLabStroke(id: stableUUID("\(character)|\(recipe.primaryPostScriptName)|\(recipe.secondaryPostScriptName)|\(recipe.blendAmount)|\(recipe.mode.rawValue)|\(recipe.preset.rawValue)|silhouettes-v3"), contours: normalized)]
         return (glyph, fallback)
     }
 
     private static func mix(_ lhs: Double, _ rhs: Double, _ amount: Double) -> Double {
         lhs + (rhs - lhs) * amount
-    }
-
-    private static func hashUnit(_ text: String) -> Double {
-        Double(fnv1a(text, seed: 0xcbf29ce484222325)) / Double(UInt64.max)
     }
 
     private static func stableUUID(_ text: String) -> UUID {
