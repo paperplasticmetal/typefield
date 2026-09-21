@@ -717,11 +717,17 @@ struct ContentView: View {
         if let renamed = ShelfRename.prompt("Rename collection", current: name, validate: { candidate in candidate != name && library.saved.collections[candidate] != nil ? "A collection with this name already exists. Choose another name." : nil }) { _ = library.renameCollection(name, to: renamed) }
     }
     var header: some View {
-        HStack {
+        HStack(spacing: 12) {
             if library.selection.hasPrefix("collection:") {
                 let name = String(library.selection.dropFirst(11))
-                ShelfEditableName(name: name, onRename: { library.renameCollection(name, to: $0) }).font(.system(size: 25, weight: .semibold)).frame(minWidth: 110)
-            } else { Text(library.selection.replacingOccurrences(of: "tag:", with: "")).font(.system(size: 25, weight: .semibold)) }
+                ShelfEditableName(name: name, onRename: { library.renameCollection(name, to: $0) })
+                    .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
+                    .frame(minWidth: 110, minHeight: WorkspaceHeaderLayout.titleHeight)
+            } else {
+                Text(library.selection.replacingOccurrences(of: "tag:", with: ""))
+                    .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
+                    .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
+            }
             Spacer()
             Button("Rediscover", systemImage: "shuffle") { showDiscovery = true }.help("Find local fonts you have not applied recently")
             Button("New typeboard", systemImage: "text.badge.plus") {
@@ -741,8 +747,9 @@ struct ContentView: View {
             }.menuStyle(.borderlessButton).foregroundStyle(Color.primary).padding(8).shelfGlass(radius: 16).frame(width: 85)
             LibrarySearchView(library: library).focused($searchFocused).frame(minWidth: 220, idealWidth: 290, maxWidth: 350)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
+        .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
+        .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
+        .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
         .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
     }
     func rowBaseline(_ faces: [Face]) -> Double {
@@ -1115,7 +1122,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try FontLabStore.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try FontLabStore.selfTest(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

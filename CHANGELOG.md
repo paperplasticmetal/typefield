@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.28.0 — 2026-09-21
+
+- Added an offline Font Lab starter generator that remixes two installed faces into editable glyph strokes. Blend, Interleave and Alternate-glyph methods, an adjustable source balance and Clean/Soft/Poster/Kinetic presets provide playful starting points without copying source font binaries or presenting deterministic transforms as cloud AI.
+- Persisted source-face provenance and derivative-license guidance with generated projects. Creation requires the user to confirm they have permission to modify both source fonts; remixed exports use conservative embedding permissions and carry source identifiers plus the licensing warning in the font name table.
+- Added real installable TrueType export. FontShelf builds a validated OpenType font with TrueType outlines, `.notdef`, Unicode mappings, Font Lab metrics, collision-resistant install identity and round/marker/outline geometry, then checks it through Core Text before saving with the truthful `.ttf` extension.
+- Added individual, selected and all-drawn SVG export. Font Lab now has an explicit multi-glyph selection mode and creates a collision-safe new export folder without overwriting—or cleaning up—unrelated files.
+- Added persistent Round, Marker and Outline nib styles with matching pressure-aware drawing, preview, SVG and TrueType geometry while preserving legacy project decoding.
+- Made the character rail resizable through a visible, bounded and accessible drag handle, so narrowing the list directly expands the drawing canvas; double-click resets its width.
+- Standardized the Library, Spaces and Font Lab header title size, row height and padding so their title baselines remain aligned even beside the taller Library search field.
+- Moved coalesced Font Lab snapshot encoding and file writes to a serial utility queue, switched large projects to compact deterministic JSON and stopped project switching or each completed stroke from synchronously rewriting the whole state on the main thread.
+
 ## 0.27.0 — 2026-09-20
 
 - Replaced the small collapsed-sidebar restore control with a shared 52-by-64-point edge pull-tab across Library, Spaces and Font Lab, with a full rectangular hit target, a dedicated header lane, hover feedback and an accessible keyboard hint.

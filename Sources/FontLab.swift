@@ -20,10 +20,37 @@ struct FontLabPoint: Codable, Equatable {
     }
 }
 
+enum FontLabNibStyle: String, Codable, CaseIterable, Identifiable {
+    case round
+    case marker
+    case outline
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .round: return "Round"
+        case .marker: return "Marker"
+        case .outline: return "Outline"
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .round: return "pencil.tip"
+        case .marker: return "highlighter"
+        case .outline: return "circle.dotted"
+        }
+    }
+}
+
 struct FontLabStroke: Codable, Identifiable, Equatable {
     var id = UUID()
     var points: [FontLabPoint] = []
     var width = 0.026
+    /// Optional so projects saved before nib styles existed continue to decode.
+    /// A missing value is rendered as the original round pen.
+    var nibStyle: FontLabNibStyle? = nil
+
+    var resolvedNibStyle: FontLabNibStyle { nibStyle ?? .round }
 
     var isValid: Bool {
         !points.isEmpty && points.count <= 50_000 && width.isFinite && (0.002...0.2).contains(width) && points.allSatisfy(\.isValid)
@@ -176,17 +203,30 @@ enum FontLabSVGExporter {
             guard let first = stroke.points.first else { return nil }
             let firstWidth = stroke.width * FontLabDrawingOperations.pressureScale(for: first) * 1_000
             if stroke.points.count == 1 {
-                return "  <circle cx=\"\(number(first.x * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"#111111\"/>"
+                switch stroke.resolvedNibStyle {
+                case .round:
+                    return "  <circle cx=\"\(number(first.x * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"#111111\"/>"
+                case .marker:
+                    let width = firstWidth * 1.28
+                    return "  <rect x=\"\(number(first.x * 1_000 - width / 2))\" y=\"\(number((1 - first.y) * 1_000 - firstWidth * 0.32))\" width=\"\(number(width))\" height=\"\(number(firstWidth * 0.64))\" rx=\"\(number(firstWidth * 0.08))\" fill=\"#111111\"/>"
+                case .outline:
+                    return "  <circle cx=\"\(number(first.x * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(max(2, firstWidth * 0.14)))\"/>"
+                }
             }
+            if stroke.resolvedNibStyle == .outline { return outlineElements(for: stroke) }
+            let marker = stroke.resolvedNibStyle == .marker
+            let widthScale = marker ? 1.28 : 1
+            let cap = marker ? "square" : "round"
+            let join = marker ? "bevel" : "round"
             if stroke.points.contains(where: { $0.pressure != nil }) {
                 return zip(stroke.points, stroke.points.dropFirst()).map { start, end in
                     let scale = (FontLabDrawingOperations.pressureScale(for: start) + FontLabDrawingOperations.pressureScale(for: end)) / 2
-                    let width = number(stroke.width * scale * 1_000)
-                    return "  <line x1=\"\(number(start.x * 1_000))\" y1=\"\(number((1 - start.y) * 1_000))\" x2=\"\(number(end.x * 1_000))\" y2=\"\(number((1 - end.y) * 1_000))\" stroke=\"#111111\" stroke-width=\"\(width)\" stroke-linecap=\"round\"/>"
+                    let width = number(stroke.width * scale * widthScale * 1_000)
+                    return "  <line x1=\"\(number(start.x * 1_000))\" y1=\"\(number((1 - start.y) * 1_000))\" x2=\"\(number(end.x * 1_000))\" y2=\"\(number((1 - end.y) * 1_000))\" stroke=\"#111111\" stroke-width=\"\(width)\" stroke-linecap=\"\(cap)\"/>"
                 }.joined(separator: "\n")
             }
             let points = stroke.points.map { "\(number($0.x * 1_000)),\(number((1 - $0.y) * 1_000))" }.joined(separator: " ")
-            return "  <polyline points=\"\(points)\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(stroke.width * 1_000))\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+            return "  <polyline points=\"\(points)\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(stroke.width * widthScale * 1_000))\" stroke-linecap=\"\(cap)\" stroke-linejoin=\"\(join)\"/>"
         }.joined(separator: "\n")
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -195,6 +235,33 @@ enum FontLabSVGExporter {
         \(elements)
         </svg>
         """
+    }
+
+    /// Turns a centerline into two independent edge paths. Unlike painting a
+    /// white line over a black one, the space between these paths remains
+    /// transparent when the SVG is placed over color.
+    private static func outlineElements(for stroke: FontLabStroke) -> String {
+        let mapped = stroke.points.map { (x: $0.x * 1_000, y: (1 - $0.y) * 1_000, pressure: FontLabDrawingOperations.pressureScale(for: $0)) }
+        guard mapped.count > 1 else { return "" }
+        var leading: [(Double, Double)] = []
+        var trailing: [(Double, Double)] = []
+        for index in mapped.indices {
+            let before = mapped[index == mapped.startIndex ? index : mapped.index(before: index)]
+            let after = mapped[index == mapped.index(before: mapped.endIndex) ? index : mapped.index(after: index)]
+            let dx = after.x - before.x
+            let dy = after.y - before.y
+            let length = max(0.001, hypot(dx, dy))
+            let offset = stroke.width * 500 * mapped[index].pressure
+            let ox = -dy / length * offset
+            let oy = dx / length * offset
+            leading.append((mapped[index].x + ox, mapped[index].y + oy))
+            trailing.append((mapped[index].x - ox, mapped[index].y - oy))
+        }
+        let lineWidth = number(max(2, stroke.width * 140))
+        return [leading, trailing].map { edge in
+            let points = edge.map { "\(number($0.0)),\(number($0.1))" }.joined(separator: " ")
+            return "  <polyline points=\"\(points)\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(lineWidth)\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+        }.joined(separator: "\n")
     }
 
     private static func number(_ value: Double) -> String {
@@ -262,6 +329,9 @@ struct FontLabProject: Codable, Identifiable, Equatable {
     var glyphs: [String: FontLabGlyph] = [:]
     var metrics = FontLabMetrics()
     var previewText = "Hamburgefontsiv 0123"
+    /// Optional metadata keeps projects created before local remix support fully
+    /// decodable while preserving source/licensing context for new derivatives.
+    var remixProvenance: FontLabRemixProvenance? = nil
 
     init(id: UUID = UUID(), name: String = "Untitled font", characters: [String] = FontLabProject.starterCharacters) {
         self.id = id
@@ -275,7 +345,8 @@ struct FontLabProject: Codable, Identifiable, Equatable {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 200 &&
             !characters.isEmpty && characters.count <= 2_000 && Set(characters).count == characters.count &&
             characters.allSatisfy { $0.count == 1 } && metrics.isValid && previewText.count <= 2_000 &&
-            glyphs.count <= 2_000 && glyphs.allSatisfy { key, glyph in key == glyph.character && glyph.isValid }
+            glyphs.count <= 2_000 && glyphs.allSatisfy { key, glyph in key == glyph.character && glyph.isValid } &&
+            (remixProvenance?.isValid ?? true)
     }
 }
 
@@ -291,6 +362,12 @@ struct FontLabState: Codable, Equatable {
 }
 
 final class FontLabStore: ObservableObject {
+    private struct SnapshotSave {
+        let snapshot: FontLabState
+        let destination: URL
+        let revision: Int
+    }
+
     @Published private(set) var state = FontLabState()
     @Published var error = ""
     @Published var status = ""
@@ -300,6 +377,21 @@ final class FontLabStore: ObservableObject {
     private(set) var readBlocked = false
     private var pendingSave: DispatchWorkItem?
     private var terminationObserver: NSObjectProtocol?
+    private let persistenceQueue = DispatchQueue(label: "FontShelf.FontLab.persistence", qos: .utility)
+    /// Protects the revision read performed by the background persistence
+    /// queue. UI mutations stay on the main thread, but queued save blocks
+    /// need a synchronized way to tell whether their captured snapshot has
+    /// already been superseded before doing the expensive JSON encode/write.
+    private let persistenceRevisionLock = NSLock()
+    private var latestPersistenceRevision = 0
+    private var queuedSaveRevision = 0
+    private var finishedSaveRevision = 0
+    /// Main-thread-owned single-flight state. While one snapshot is being
+    /// written, subsequent requests replace this deferred value rather than
+    /// retaining and serializing an unbounded queue of obsolete projects.
+    private var backgroundSaveInFlight = false
+    private var deferredSnapshotSave: SnapshotSave?
+    private var persistenceErrorMessage: String?
 
     init(url: URL) {
         self.url = url
@@ -340,10 +432,27 @@ final class FontLabStore: ObservableObject {
         return project.id
     }
 
+    /// Inserts a complete project produced by a local generator without routing
+    /// it through backup import (which intentionally renames imported projects).
+    /// Persistence is scheduled so encoding a large generated starter cannot
+    /// stall the sheet-to-workspace transition; termination still flushes it.
+    @discardableResult func addGeneratedProject(_ generated: FontLabProject) -> UUID? {
+        guard !readBlocked, generated.isValid else {
+            if !readBlocked { error = "The generated Font Lab project is invalid and was not saved." }
+            return nil
+        }
+        var project = generated
+        if state.projects.contains(where: { $0.id == project.id }) { project.id = UUID() }
+        state.projects.append(project)
+        state.selectedProject = project.id
+        scheduleSave(after: 0.05)
+        return project.id
+    }
+
     func selectProject(_ id: UUID) {
         guard state.projects.contains(where: { $0.id == id }) else { return }
         state.selectedProject = id
-        _ = save()
+        scheduleSave(after: 0.4)
     }
 
     func updateProject(_ id: UUID, save shouldSave: Bool = true, _ edit: (inout FontLabProject) -> Void) {
@@ -403,25 +512,119 @@ final class FontLabStore: ObservableObject {
             error = "Font Lab contains invalid project data and was not saved."
             return false
         }
-        do {
-            let folder = url.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(state)
-            try LibraryBackupTools.preserve(url)
-            if FileManager.default.fileExists(atPath: url.path) {
-                let existing = try Data(contentsOf: url)
-                try existing.write(to: url.appendingPathExtension("backup"), options: .atomic)
-            }
-            try data.write(to: url, options: .atomic)
-            savedAt = Date()
-            error = ""
+        // The synchronous snapshot below includes all current state, so a
+        // deferred older background request is no longer needed.
+        deferredSnapshotSave = nil
+        let snapshot = state
+        queuedSaveRevision += 1
+        let revision = queuedSaveRevision
+        registerLatestPersistenceRevision(revision)
+        let result: Result<Date, Error> = Result {
+            try persistenceQueue.sync { try Self.persist(snapshot, to: url) }
+        }
+        finishedSaveRevision = max(finishedSaveRevision, revision)
+        switch result {
+        case let .success(timestamp):
+            savedAt = timestamp
+            if error == persistenceErrorMessage { error = "" }
+            persistenceErrorMessage = nil
             return true
-        } catch {
-            self.error = "Font Lab could not be saved. " + error.localizedDescription
+        case let .failure(saveError):
+            let message = "Font Lab could not be saved. " + saveError.localizedDescription
+            persistenceErrorMessage = message
+            error = message
             return false
         }
+    }
+
+    private static func persist(_ snapshot: FontLabState, to url: URL) throws -> Date {
+        let folder = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        // Generated starters contain many small editable strokes. Compact,
+        // sorted JSON keeps saves deterministic while avoiding the I/O and
+        // allocation cost of pretty-printing several megabytes of points.
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(snapshot)
+        try LibraryBackupTools.preserve(url)
+        if FileManager.default.fileExists(atPath: url.path) {
+            let existing = try Data(contentsOf: url)
+            try existing.write(to: url.appendingPathExtension("backup"), options: .atomic)
+        }
+        try data.write(to: url, options: .atomic)
+        return Date()
+    }
+
+    private func enqueueSnapshotSave() {
+        pendingSave = nil
+        guard !readBlocked else { return }
+        guard state.isValid else {
+            error = "Font Lab contains invalid project data and was not saved."
+            return
+        }
+        let snapshot = state
+        let destination = url
+        queuedSaveRevision += 1
+        let revision = queuedSaveRevision
+        registerLatestPersistenceRevision(revision)
+        let request = SnapshotSave(snapshot: snapshot, destination: destination, revision: revision)
+        if backgroundSaveInFlight {
+            deferredSnapshotSave = request
+            return
+        }
+        backgroundSaveInFlight = true
+        beginBackgroundSave(request)
+    }
+
+    private func beginBackgroundSave(_ request: SnapshotSave) {
+        let revision = request.revision
+        persistenceQueue.async {
+            let result: Result<Date, Error>?
+            if self.isLatestPersistenceRevision(revision) {
+                result = Result { try Self.persist(request.snapshot, to: request.destination) }
+            } else {
+                result = nil
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.finishBackgroundSave(revision: revision, result: result)
+            }
+        }
+    }
+
+    private func finishBackgroundSave(revision: Int, result: Result<Date, Error>?) {
+        finishedSaveRevision = max(finishedSaveRevision, revision)
+        if revision == queuedSaveRevision, let result {
+            switch result {
+            case let .success(timestamp):
+                savedAt = timestamp
+                if error == persistenceErrorMessage { error = "" }
+                persistenceErrorMessage = nil
+            case let .failure(saveError):
+                let message = "Font Lab could not be saved. " + saveError.localizedDescription
+                persistenceErrorMessage = message
+                error = message
+            }
+        }
+
+        if let deferredSnapshotSave {
+            self.deferredSnapshotSave = nil
+            beginBackgroundSave(deferredSnapshotSave)
+        } else {
+            backgroundSaveInFlight = false
+        }
+    }
+
+    private func registerLatestPersistenceRevision(_ revision: Int) {
+        persistenceRevisionLock.lock()
+        latestPersistenceRevision = max(latestPersistenceRevision, revision)
+        persistenceRevisionLock.unlock()
+    }
+
+    private func isLatestPersistenceRevision(_ revision: Int) -> Bool {
+        persistenceRevisionLock.lock()
+        let isLatest = revision == latestPersistenceRevision
+        persistenceRevisionLock.unlock()
+        return isLatest
     }
 
     /// Coalesces rapid UI edits so sliders and text entry do not rewrite and
@@ -429,13 +632,13 @@ final class FontLabStore: ObservableObject {
     func scheduleSave(after delay: TimeInterval = 0.35) {
         guard !readBlocked else { return }
         pendingSave?.cancel()
-        let work = DispatchWorkItem { [weak self] in _ = self?.save() }
+        let work = DispatchWorkItem { [weak self] in self?.enqueueSnapshotSave() }
         pendingSave = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     func flushPendingSave() {
-        guard pendingSave != nil else { return }
+        guard pendingSave != nil || finishedSaveRevision < queuedSaveRevision else { return }
         _ = save()
     }
 
@@ -490,6 +693,36 @@ final class FontLabStore: ObservableObject {
             throw SelfTestError.failed("Font Lab backup projects did not import as independent copies.")
         }
 
+        // A synchronous flush must invalidate every older queued snapshot and
+        // leave the newest UI state on disk. This exercises the same path used
+        // when the app terminates while background saves are still pending.
+        let revisionFile = root.appendingPathComponent("revisioned-font-lab.json")
+        let revisionStore = FontLabStore(url: revisionFile)
+        guard let revisionProjectID = revisionStore.addProject(name: "Revision test") else {
+            throw SelfTestError.failed("Could not create the persistence revision fixture.")
+        }
+        for revision in 1...12 {
+            revisionStore.updateProject(revisionProjectID, save: false) { $0.previewText = "Queued revision \(revision)" }
+            revisionStore.enqueueSnapshotSave()
+        }
+        revisionStore.updateProject(revisionProjectID, save: false) { $0.previewText = "Termination flush" }
+        revisionStore.scheduleSave(after: 60)
+        revisionStore.flushPendingSave()
+        let revisionReloaded = FontLabStore(url: revisionFile)
+        guard revisionReloaded.selectedProject?.previewText == "Termination flush" else {
+            throw SelfTestError.failed("A stale background snapshot overwrote the latest Font Lab state.")
+        }
+        let generatedFixture = FontLabProject(name: "Generated fixture", characters: ["A"])
+        guard let generatedID = revisionStore.addGeneratedProject(generatedFixture) else {
+            throw SelfTestError.failed("Could not add a generated project without blocking persistence.")
+        }
+        revisionStore.flushPendingSave()
+        let generatedReloaded = FontLabStore(url: revisionFile)
+        guard generatedReloaded.state.selectedProject == generatedID,
+              generatedReloaded.selectedProject?.name == "Generated fixture" else {
+            throw SelfTestError.failed("The generated project was not persisted by the termination flush path.")
+        }
+
         let corruptFile = root.appendingPathComponent("corrupt.json")
         let corruptData = Data("{ definitely-not-json".utf8)
         try corruptData.write(to: corruptFile, options: .atomic)
@@ -503,6 +736,11 @@ final class FontLabStore: ObservableObject {
         let legacyPoint = try JSONDecoder().decode(FontLabPoint.self, from: Data("{\"x\":0.2,\"y\":0.3}".utf8))
         guard legacyPoint.isValid, legacyPoint.pressure == nil, legacyPoint.tiltX == nil, legacyPoint.tiltY == nil else {
             throw SelfTestError.failed("Pre-pressure Font Lab points are no longer backward compatible.")
+        }
+        let legacyStrokeJSON = "{\"id\":\"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE\",\"points\":[{\"x\":0.2,\"y\":0.3}],\"width\":0.03}"
+        let legacyStroke = try JSONDecoder().decode(FontLabStroke.self, from: Data(legacyStrokeJSON.utf8))
+        guard legacyStroke.isValid, legacyStroke.nibStyle == nil, legacyStroke.resolvedNibStyle == .round else {
+            throw SelfTestError.failed("Pre-nib-style Font Lab strokes are no longer backward compatible.")
         }
         let tabletPoint = FontLabPoint(x: 0.8, y: 0.9, pressure: 0.75, tiltX: -0.2, tiltY: 0.4)
         let smoothed = FontLabDrawingOperations.smoothed(tabletPoint, after: FontLabPoint(x: 0.2, y: 0.3, pressure: 0.25), level: .gentle)
@@ -525,6 +763,80 @@ final class FontLabStore: ObservableObject {
         guard FontLabSVGExporter.string(projectName: "Pressure", glyph: pressureGlyph, metrics: FontLabMetrics()).contains("<line") else {
             throw SelfTestError.failed("Pressure-aware SVG export failed.")
         }
+        var markerGlyph = FontLabGlyph(character: "M")
+        markerGlyph.strokes = [FontLabStroke(points: stroke.points, width: stroke.width, nibStyle: .marker)]
+        guard FontLabSVGExporter.string(projectName: "Marker", glyph: markerGlyph, metrics: FontLabMetrics()).contains("stroke-linecap=\"square\"") else {
+            throw SelfTestError.failed("Marker SVG export lost its flat nib geometry.")
+        }
+        var outlineGlyph = FontLabGlyph(character: "O")
+        outlineGlyph.strokes = [FontLabStroke(points: stroke.points, width: stroke.width, nibStyle: .outline)]
+        let outlineSVG = FontLabSVGExporter.string(projectName: "Outline", glyph: outlineGlyph, metrics: FontLabMetrics())
+        guard outlineSVG.components(separatedBy: "<polyline").count == 3 else {
+            throw SelfTestError.failed("Outline SVG export must produce two transparent rails.")
+        }
+    }
+}
+
+enum FontLabCharacterPanelLayout {
+    static let minimumWidth = 184.0
+    static let defaultWidth = 270.0
+    static let maximumWidth = 420.0
+
+    static func clamped(_ width: Double) -> Double {
+        min(max(width, minimumWidth), maximumWidth)
+    }
+}
+
+private struct FontLabCharacterPanelDivider: View {
+    @Binding var width: Double
+    @State private var dragStart: Double?
+    @State private var hovered = false
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color.primary.opacity(hovered ? 0.08 : 0.025))
+            Capsule()
+                .fill(Color.secondary.opacity(hovered ? 0.8 : 0.45))
+                .frame(width: 3, height: 38)
+            Image(systemName: "arrow.left.and.right")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Color.secondary)
+                .padding(4)
+                .background(Color(nsColor: .controlBackgroundColor), in: Circle())
+                .offset(y: 31)
+        }
+        .frame(width: 14)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let start = dragStart ?? width
+                    if dragStart == nil { dragStart = width }
+                    width = FontLabCharacterPanelLayout.clamped(start + value.translation.width)
+                }
+                .onEnded { _ in dragStart = nil }
+        )
+        .onTapGesture(count: 2) { width = FontLabCharacterPanelLayout.defaultWidth }
+        .onHover { inside in
+            guard hovered != inside else { return }
+            hovered = inside
+            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+        }
+        .onDisappear {
+            if hovered { NSCursor.pop(); hovered = false }
+        }
+        .help("Drag to resize the character list. Double-click to reset.")
+        .accessibilityElement()
+        .accessibilityLabel("Character list width")
+        .accessibilityValue("\(Int(width)) points")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: width = FontLabCharacterPanelLayout.clamped(width + 24)
+            case .decrement: width = FontLabCharacterPanelLayout.clamped(width - 24)
+            @unknown default: break
+            }
+        }
+        .accessibilityIdentifier("font-lab-character-divider")
     }
 }
 
@@ -535,11 +847,17 @@ struct FontLabView: View {
     @State private var selectedCharacter = "A"
     @State private var strokeWidth = 0.026
     @State private var drawingTool = FontLabDrawingTool.pen
+    @State private var nibStyle = FontLabNibStyle.round
     @State private var smoothing = FontLabSmoothingLevel.gentle
     @State private var usesTabletPressure = true
     @State private var tabletInputDetected = false
+    @State private var selectingCharacters = false
+    @State private var selectedCharacters: Set<String> = []
+    @AppStorage("fontLabCharacterBrowserWidth") private var characterBrowserWidth = FontLabCharacterPanelLayout.defaultWidth
     @State private var showInputHelp = false
     @State private var showMetricsGuide = false
+    @State private var showRemixGenerator = false
+    @State private var isExportingFont = false
     @State private var clearRequest: ClearRequest?
 
     private struct ClearRequest: Identifiable {
@@ -572,6 +890,7 @@ struct FontLabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
+            characterBrowserWidth = FontLabCharacterPanelLayout.clamped(characterBrowserWidth)
             if let project = store.selectedProject, !project.characters.contains(selectedCharacter) {
                 selectedCharacter = project.characters.first ?? "A"
             }
@@ -579,6 +898,11 @@ struct FontLabView: View {
         .onChange(of: store.state.selectedProject) { _ in
             if let project = store.selectedProject, !project.characters.contains(selectedCharacter) {
                 selectedCharacter = project.characters.first ?? "A"
+            }
+            if let project = store.selectedProject {
+                selectedCharacters.formIntersection(project.characters)
+            } else {
+                selectedCharacters.removeAll()
             }
         }
         .alert("Clear glyph artwork?", isPresented: Binding(get: { clearRequest != nil }, set: { if !$0 { clearRequest = nil } })) {
@@ -595,8 +919,26 @@ struct FontLabView: View {
             let currentGlyph = currentProject?.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
             FontLabMetricsGuideSheet(metrics: currentProject?.metrics ?? FontLabMetrics(), glyph: currentGlyph)
         }
+        .sheet(isPresented: $showRemixGenerator) {
+            FontLabRemixSheet(faces: library.allFaces, suggestedNames: remixSuggestedFaceNames) { result in
+                guard store.addGeneratedProject(result.project) != nil else { return false }
+                selectedCharacter = store.selectedProject?.characters.first(where: { store.selectedProject?.glyphs[$0]?.hasArtwork == true }) ?? "A"
+                selectedCharacters.removeAll()
+                selectingCharacters = false
+                store.status = result.status
+                return true
+            }
+        }
         .onDisappear { store.flushPendingSave() }
         .accessibilityIdentifier("font-lab-workspace")
+    }
+
+    private var remixSuggestedFaceNames: [String] {
+        let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
+        let candidates = (selected + library.compared).map { library.chosenFace($0).name }
+        return candidates.reduce(into: []) { names, name in
+            if !names.contains(name) { names.append(name) }
+        }
     }
 
     private var projectSidebar: some View {
@@ -645,35 +987,43 @@ struct FontLabView: View {
     }
 
     private func projectWorkspace(_ project: FontLabProject) -> some View {
-        VStack(spacing: 0) {
+        let selectedDrawnCharacters = project.characters.filter { selectedCharacters.contains($0) && project.glyphs[$0]?.hasArtwork == true }
+        let allDrawnCharacters = project.characters.filter { project.glyphs[$0]?.hasArtwork == true }
+        return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 TextField("Project name", text: projectNameBinding(project.id))
-                    .font(.system(size: 22, weight: .semibold)).textFieldStyle(.plain)
+                    .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold)).textFieldStyle(.plain)
+                    .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
                     .onSubmit { store.flushPendingSave() }
                     .disabled(store.readBlocked)
                 Spacer()
                 Text("\(project.completedCount)/\(project.characters.count) glyphs")
                     .font(.caption).foregroundStyle(.secondary)
+                Button("New from fonts", systemImage: "wand.and.stars") { showRemixGenerator = true }
+                    .disabled(store.readBlocked || library.allFaces.count < 2)
+                    .help("Generate an editable starter by remixing two installed font faces")
                 Menu {
                     Button("SVG tracing — planned") { explainImport(.svg) }
                     Button("PNG / Procreate tracing — planned") { explainImport(.png) }
-                    Divider()
-                    Button("Blend two or three fonts — research") {
-                        store.status = "Font blending needs outline compatibility, interpolation, and license safeguards before it can create truthful results. It is on the Font Lab research path; no font data was changed."
-                    }
                 } label: { Label("Roadmap", systemImage: "map") }
                     .disabled(store.readBlocked)
                 Menu {
                     Button("Export \(selectedCharacter) as SVG…") { exportGlyphSVG(project) }
                         .disabled(project.glyphs[selectedCharacter]?.hasArtwork != true)
                     Divider()
-                    Button("Export installable OTF — planned") { }
-                        .disabled(true)
+                    Button("Export selected as SVGs…") { exportGlyphSVGs(project, characters: selectedDrawnCharacters) }
+                        .disabled(selectedDrawnCharacters.isEmpty)
+                    Button("Export all drawn glyphs as SVGs…") { exportGlyphSVGs(project, characters: allDrawnCharacters) }
+                        .disabled(allDrawnCharacters.isEmpty)
+                    Divider()
+                    Button("Export installable TrueType (.ttf)…") { exportInstallableFont(project) }
+                        .disabled(allDrawnCharacters.isEmpty || isExportingFont)
                 } label: { Label("Export", systemImage: "square.and.arrow.up") }
                     .disabled(store.readBlocked)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
+            .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
+            .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
+            .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
             .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             if !store.error.isEmpty {
                 Text(store.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
@@ -684,17 +1034,24 @@ struct FontLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
-            Text("Drawn glyphs can be exported as SVG now. Installable OTF generation is a later step.")
+            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Round, marker, and outline strokes stay editable. Export SVG artwork or a validated installable TrueType font (.ttf).")
                 .font(.caption2).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
                 .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+            if let provenance = project.remixProvenance {
+                Text(provenance.summary + ". Review both source font licenses before distributing the result.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
+                    .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+            }
             Divider()
             GeometryReader { proxy in
                 ScrollView([.horizontal, .vertical]) {
                     VStack(spacing: 0) {
                         HStack(spacing: 0) {
                             characterBrowser(project)
-                            Divider()
+                                .frame(width: characterBrowserWidth)
+                            FontLabCharacterPanelDivider(width: $characterBrowserWidth)
                             glyphEditor(project)
                         }
                         .frame(height: max(520, proxy.size.height - 160))
@@ -709,25 +1066,67 @@ struct FontLabView: View {
 
     private func characterBrowser(_ project: FontLabProject) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("CHARACTERS").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("CHARACTERS").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                Spacer()
+                Button(selectingCharacters ? "Done" : selectedCharacters.isEmpty ? "Select" : "Selected \(selectedCharacters.count)") {
+                    selectingCharacters.toggle()
+                }
+                .buttonStyle(.plain).font(.caption).foregroundStyle(ShelfPalette.ink)
+                .help(selectingCharacters ? "Finish selecting glyphs" : "Select several glyphs for SVG export")
+            }
+            if selectingCharacters {
+                HStack(spacing: 10) {
+                    Button("Drawn") {
+                        selectedCharacters = Set(project.characters.filter { project.glyphs[$0]?.hasArtwork == true })
+                    }
+                    .buttonStyle(.plain).font(.caption2)
+                    Button("Clear") { selectedCharacters.removeAll() }
+                        .buttonStyle(.plain).font(.caption2).disabled(selectedCharacters.isEmpty)
+                    Spacer()
+                    Text("\(selectedCharacters.count) selected")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .contain)
+            }
             ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 6), spacing: 6) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 34, maximum: 46), spacing: 6)], spacing: 6) {
                     ForEach(project.characters, id: \.self) { character in
                         let complete = project.glyphs[character]?.hasArtwork == true
-                        Button { selectedCharacter = character } label: {
-                            ZStack(alignment: .topTrailing) {
-                                Text(character).font(.system(size: 18, design: .serif)).frame(maxWidth: .infinity, minHeight: 34)
-                                if complete { Circle().fill(Color.green).frame(width: 6, height: 6).padding(4) }
+                        let selectedForExport = selectedCharacters.contains(character)
+                        Button {
+                            selectedCharacter = character
+                            if selectingCharacters {
+                                if selectedForExport { selectedCharacters.remove(character) }
+                                else { selectedCharacters.insert(character) }
                             }
-                            .background(selectedCharacter == character ? ShelfPalette.indiaYellow.opacity(0.22) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
-                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selectedCharacter == character ? ShelfPalette.indiaYellow : Color.primary.opacity(0.08)))
+                        } label: {
+                            ZStack {
+                                Text(character).font(.system(size: 18, design: .serif)).frame(maxWidth: .infinity, minHeight: 34)
+                                if selectingCharacters {
+                                    Image(systemName: selectedForExport ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(selectedForExport ? ShelfPalette.ink : Color.secondary)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                        .padding(3)
+                                }
+                                if complete {
+                                    Circle().fill(Color.green).frame(width: 6, height: 6)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                                        .padding(4)
+                                }
+                            }
+                            .background(selectedForExport ? ShelfPalette.indiaYellow.opacity(0.32) : selectedCharacter == character ? ShelfPalette.indiaYellow.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selectedForExport || selectedCharacter == character ? ShelfPalette.indiaYellow : Color.primary.opacity(0.08)))
                         }
-                        .buttonStyle(.plain).accessibilityLabel("\(character), \(complete ? "drawn" : "empty")")
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(character), \(complete ? "drawn" : "empty")")
+                        .accessibilityValue(selectingCharacters ? (selectedForExport ? "Selected for export" : "Not selected for export") : (selectedCharacter == character ? "Current glyph" : ""))
                     }
                 }
             }
         }
-        .padding(16).frame(width: 270).frame(maxHeight: .infinity, alignment: .topLeading)
+        .padding(16).frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func glyphEditor(_ project: FontLabProject) -> some View {
@@ -746,13 +1145,16 @@ struct FontLabView: View {
                     metrics: project.metrics,
                     strokeWidth: strokeWidth,
                     tool: drawingTool,
+                    nibStyle: nibStyle,
                     smoothing: smoothing,
                     usesTabletPressure: usesTabletPressure,
                     onTabletInput: { tabletInputDetected = true }
                 ) { editedGlyph in
-                    store.setGlyph(editedGlyph, in: project.id, save: true)
+                    store.setGlyph(editedGlyph, in: project.id, save: false)
+                    store.scheduleSave(after: 0.4)
                 }
-                .frame(minWidth: 340, minHeight: 340)
+                .frame(minWidth: 340, maxWidth: .infinity, minHeight: 340, maxHeight: .infinity)
+                .layoutPriority(1)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.12)))
@@ -765,16 +1167,28 @@ struct FontLabView: View {
                         }
                         .labelsHidden().pickerStyle(.segmented).frame(width: 154)
                         Divider().frame(height: 22)
+                        Text("Nib").font(.caption).foregroundStyle(.secondary)
+                        Picker("Nib", selection: $nibStyle) {
+                            ForEach(FontLabNibStyle.allCases) { style in
+                                Label(style.title, systemImage: style.systemImage).tag(style)
+                            }
+                        }
+                        .labelsHidden().pickerStyle(.menu).frame(width: 124)
+                        .disabled(drawingTool == .eraser)
+                        Spacer(minLength: 0)
+                    }
+                    HStack(spacing: 12) {
                         Text(drawingTool == .pen ? "Stroke" : "Eraser size").font(.caption).foregroundStyle(.secondary)
-                        Slider(value: $strokeWidth, in: 0.008...0.07).frame(maxWidth: 170)
+                        Slider(value: $strokeWidth, in: 0.008...0.07).frame(maxWidth: 210)
                         Text(strokeWidth.formatted(.number.precision(.fractionLength(3))))
                             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
-                    }
-                    HStack(spacing: 14) {
+                        Spacer(minLength: 0)
                         Picker("Smoothing", selection: $smoothing) {
                             ForEach(FontLabSmoothingLevel.allCases) { level in Text(level.title).tag(level) }
                         }
-                        .pickerStyle(.menu).frame(width: 150)
+                        .pickerStyle(.menu).frame(width: 138)
+                    }
+                    HStack(spacing: 14) {
                         Toggle("Pressure", isOn: $usesTabletPressure)
                             .toggleStyle(.switch).controlSize(.small).disabled(drawingTool == .eraser)
                         Spacer(minLength: 4)
@@ -856,9 +1270,15 @@ struct FontLabView: View {
         VStack(spacing: 14) {
             Image(systemName: "pencil.and.outline").font(.system(size: 42)).foregroundStyle(.secondary)
             Text(store.readBlocked ? "Font Lab data needs attention" : "Start a Font Lab project").font(.title2)
-            Text(store.error.isEmpty ? "Draw characters one at a time, tune their metrics, preview them in words, and export finished glyphs as SVG. Tracing, font blending, and installable OTF output are clearly marked as later work." : store.error)
+            Text(store.error.isEmpty ? "Draw from scratch or generate an editable starter from two installed fonts. Tune every glyph and export SVG artwork or an installable TrueType font." : store.error)
                 .foregroundStyle(Color(nsColor: store.error.isEmpty ? .secondaryLabelColor : .systemOrange)).multilineTextAlignment(.center).frame(maxWidth: 520)
-            if !store.readBlocked { Button("New project") { _ = store.addProject(name: "") } }
+            if !store.readBlocked {
+                HStack(spacing: 10) {
+                    Button("Blank project") { _ = store.addProject(name: "") }
+                    Button("New from fonts…") { showRemixGenerator = true }
+                        .disabled(library.allFaces.count < 2)
+                }
+            }
         }
         .padding(40)
     }
@@ -945,6 +1365,89 @@ struct FontLabView: View {
         } catch {
             store.error = "The SVG could not be exported. " + error.localizedDescription
         }
+    }
+
+    private func exportGlyphSVGs(_ project: FontLabProject, characters: [String]) {
+        let artifacts = FontLabSVGCollectionExporter.artifacts(for: project, characters: Set(characters))
+        guard !artifacts.isEmpty else {
+            store.status = "Select at least one drawn glyph before exporting."
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.title = "Choose a folder for exported SVG glyphs"
+        panel.prompt = "Export SVGs"
+        panel.message = "FontShelf creates a new folder here, so existing files are never replaced."
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let parent = panel.url else { return }
+        let fileManager = FileManager.default
+        var createdDestination: URL?
+        do {
+            let destination = try createUniqueExportDirectory(in: parent, baseName: safeFilename(project.name) + "-SVG", fileManager: fileManager)
+            createdDestination = destination
+            for artifact in artifacts {
+                let url = destination.appendingPathComponent(artifact.suggestedFilename)
+                try artifact.data.write(to: url, options: [.atomic, .withoutOverwriting])
+            }
+            store.status = "Exported \(artifacts.count) SVG \(artifacts.count == 1 ? "glyph" : "glyphs") to \(destination.lastPathComponent)."
+            NSWorkspace.shared.activateFileViewerSelecting([destination])
+        } catch {
+            // Only clean up a directory this export successfully created. A
+            // different process may win a candidate name between attempts.
+            if let createdDestination { try? fileManager.removeItem(at: createdDestination) }
+            store.error = "The SVG set could not be exported. " + error.localizedDescription
+        }
+    }
+
+    private func exportInstallableFont(_ project: FontLabProject) {
+        guard project.completedCount > 0 else {
+            store.status = "Draw or generate at least one glyph before exporting an installable font."
+            return
+        }
+        let panel = NSSavePanel()
+        panel.title = "Export installable TrueType font"
+        panel.prompt = "Export Font"
+        panel.message = "FontShelf builds a standard OpenType font with TrueType outlines and validates it with macOS before saving."
+        panel.nameFieldStringValue = safeFilename(project.name) + ".ttf"
+        panel.allowedContentTypes = [UTType(filenameExtension: "ttf") ?? .data]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        isExportingFont = true
+        store.error = ""
+        store.status = "Building and validating \(project.name)…"
+        let projectSnapshot = project
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try FontLabTrueTypeExporter.write(projectSnapshot, to: destination) }
+            DispatchQueue.main.async {
+                isExportingFont = false
+                switch result {
+                case let .success(artifact):
+                    let warning = artifact.warnings.isEmpty ? "" : " " + artifact.warnings.joined(separator: " ")
+                    store.status = "Exported \(artifact.exportedCharacterCount) mapped characters as \(destination.lastPathComponent)." + warning
+                    NSWorkspace.shared.activateFileViewerSelecting([destination])
+                case let .failure(error):
+                    store.error = "The installable font could not be exported. " + error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func createUniqueExportDirectory(in parent: URL, baseName: String, fileManager: FileManager) throws -> URL {
+        let base = baseName.isEmpty ? "Font-Lab-SVG" : baseName
+        for suffix in 1..<10_000 {
+            let name = suffix == 1 ? base : "\(base)-\(suffix)"
+            let candidate = parent.appendingPathComponent(name, isDirectory: true)
+            do {
+                try fileManager.createDirectory(at: candidate, withIntermediateDirectories: false)
+                return candidate
+            } catch let error as CocoaError where error.code == .fileWriteFileExists {
+                continue
+            }
+        }
+        throw CocoaError(.fileWriteFileExists)
     }
 
     private func safeFilename(_ value: String) -> String {
@@ -1146,6 +1649,7 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
     let metrics: FontLabMetrics
     let strokeWidth: Double
     let tool: FontLabDrawingTool
+    let nibStyle: FontLabNibStyle
     let smoothing: FontLabSmoothingLevel
     let usesTabletPressure: Bool
     let onTabletInput: () -> Void
@@ -1162,6 +1666,7 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
         view.metrics = metrics
         view.strokeWidth = strokeWidth
         view.tool = tool
+        view.nibStyle = nibStyle
         view.smoothing = smoothing
         view.usesTabletPressure = usesTabletPressure
         view.onTabletInput = { context.coordinator.onTabletInput() }
@@ -1176,6 +1681,7 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
         view.metrics = metrics
         view.strokeWidth = strokeWidth
         view.tool = tool
+        view.nibStyle = nibStyle
         view.smoothing = smoothing
         view.usesTabletPressure = usesTabletPressure
         view.needsDisplay = true
@@ -1196,6 +1702,7 @@ private final class FontLabDrawingNSView: NSView {
     var metrics = FontLabMetrics() { didSet { needsDisplay = true } }
     var strokeWidth = 0.026
     var tool = FontLabDrawingTool.pen
+    var nibStyle = FontLabNibStyle.round
     var smoothing = FontLabSmoothingLevel.gentle
     var usesTabletPressure = true
     var onTabletInput: (() -> Void)?
@@ -1249,7 +1756,7 @@ private final class FontLabDrawingNSView: NSView {
         switch tool {
         case .pen:
             guard glyph.strokes.count < 10_000 else { isDrawing = false; return }
-            glyph.strokes.append(FontLabStroke(points: [point], width: min(max(strokeWidth, 0.002), 0.2)))
+            glyph.strokes.append(FontLabStroke(points: [point], width: min(max(strokeWidth, 0.002), 0.2), nibStyle: nibStyle))
             gestureChangedGlyph = true
         case .eraser:
             erase(at: point)
@@ -1473,7 +1980,28 @@ private func fontLabDrawStrokes(_ strokes: [FontLabStroke], in rect: NSRect, col
         let baseWidth = max(1, CGFloat(stroke.width) * min(rect.width, rect.height))
         if mapped.count == 1 {
             let width = baseWidth * CGFloat(FontLabDrawingOperations.pressureScale(for: stroke.points[0]))
-            NSBezierPath(ovalIn: NSRect(x: mapped[0].x - width / 2, y: mapped[0].y - width / 2, width: width, height: width)).fill()
+            switch stroke.resolvedNibStyle {
+            case .round:
+                NSBezierPath(ovalIn: NSRect(x: mapped[0].x - width / 2, y: mapped[0].y - width / 2, width: width, height: width)).fill()
+            case .marker:
+                let markerRect = NSRect(x: mapped[0].x - width * 0.64, y: mapped[0].y - width * 0.32, width: width * 1.28, height: width * 0.64)
+                NSBezierPath(roundedRect: markerRect, xRadius: width * 0.08, yRadius: width * 0.08).fill()
+            case .outline:
+                let ring = NSBezierPath(ovalIn: NSRect(x: mapped[0].x - width / 2, y: mapped[0].y - width / 2, width: width, height: width))
+                ring.lineWidth = max(1, width * 0.14)
+                ring.stroke()
+            }
+        } else if stroke.resolvedNibStyle == .outline {
+            for edge in fontLabOutlineEdges(stroke: stroke, mapped: mapped, baseWidth: baseWidth) {
+                guard let first = edge.first else { continue }
+                let path = NSBezierPath()
+                path.move(to: first)
+                for point in edge.dropFirst() { path.line(to: point) }
+                path.lineWidth = max(1, baseWidth * 0.14)
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+                path.stroke()
+            }
         } else if stroke.points.contains(where: { $0.pressure != nil }) {
             for index in 1..<mapped.count {
                 let startScale = FontLabDrawingOperations.pressureScale(for: stroke.points[index - 1])
@@ -1481,19 +2009,38 @@ private func fontLabDrawStrokes(_ strokes: [FontLabStroke], in rect: NSRect, col
                 let path = NSBezierPath()
                 path.move(to: mapped[index - 1])
                 path.line(to: mapped[index])
-                path.lineWidth = baseWidth * CGFloat((startScale + endScale) / 2)
-                path.lineCapStyle = .round
-                path.lineJoinStyle = .round
+                path.lineWidth = baseWidth * CGFloat((startScale + endScale) / 2) * (stroke.resolvedNibStyle == .marker ? 1.28 : 1)
+                path.lineCapStyle = stroke.resolvedNibStyle == .marker ? .square : .round
+                path.lineJoinStyle = stroke.resolvedNibStyle == .marker ? .bevel : .round
                 path.stroke()
             }
         } else {
             let path = NSBezierPath()
             path.move(to: mapped[0])
             for point in mapped.dropFirst() { path.line(to: point) }
-            path.lineWidth = baseWidth
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
+            path.lineWidth = baseWidth * (stroke.resolvedNibStyle == .marker ? 1.28 : 1)
+            path.lineCapStyle = stroke.resolvedNibStyle == .marker ? .square : .round
+            path.lineJoinStyle = stroke.resolvedNibStyle == .marker ? .bevel : .round
             path.stroke()
         }
     }
+}
+
+private func fontLabOutlineEdges(stroke: FontLabStroke, mapped: [NSPoint], baseWidth: CGFloat) -> [[NSPoint]] {
+    guard mapped.count > 1 else { return [] }
+    var leading: [NSPoint] = []
+    var trailing: [NSPoint] = []
+    for index in mapped.indices {
+        let before = mapped[index == mapped.startIndex ? index : mapped.index(before: index)]
+        let after = mapped[index == mapped.index(before: mapped.endIndex) ? index : mapped.index(after: index)]
+        let dx = after.x - before.x
+        let dy = after.y - before.y
+        let length = max(0.001, hypot(dx, dy))
+        let offset = baseWidth * CGFloat(FontLabDrawingOperations.pressureScale(for: stroke.points[index])) / 2
+        let ox = -dy / length * offset
+        let oy = dx / length * offset
+        leading.append(NSPoint(x: mapped[index].x + ox, y: mapped[index].y + oy))
+        trailing.append(NSPoint(x: mapped[index].x - ox, y: mapped[index].y - oy))
+    }
+    return [leading, trailing]
 }

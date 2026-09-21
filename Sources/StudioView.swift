@@ -17,6 +17,13 @@ enum WorkspaceSidebarLayout {
     static let revealHeight = 64.0
     static func reservedWidth(collapsed: Bool) -> Double { collapsed ? 0 : width + outerPadding * 2 }
 }
+enum WorkspaceHeaderLayout {
+    static let horizontalPadding = 20.0
+    static let verticalPadding = 14.0
+    static let titleSize = 22.0
+    static let titleHeight = 30.0
+    static let rowHeight = 40.0
+}
 struct WorkspaceSwitcher: View {
     @ObservedObject var library: Library
     var body: some View {
@@ -129,7 +136,9 @@ struct StudioView: View {
             if !store.error.isEmpty { Text(store.error).foregroundStyle(.orange).textSelection(.enabled).padding(.horizontal, 20) }
             if let space {
                 HStack(spacing: 12) {
-                    ShelfEditableName(name: space.displayName, onRename: { setSpaceName(space.id, $0) }).font(.system(size: 22, weight: .semibold)).frame(minHeight: 30)
+                    ShelfEditableName(name: space.displayName, onRename: { setSpaceName(space.id, $0) })
+                        .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
+                        .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
                     Spacer()
                     Button("New typeboard") {
                         let fonts = library.compared.map { library.chosenFace($0).name }
@@ -152,8 +161,9 @@ struct StudioView: View {
                         Button("Delete space…", role: .destructive) { confirmDelete = true }
                     } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Space actions").accessibilityLabel("Space actions")
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
+                .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
+                .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
+                .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
                 .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
                 .fixedSize(horizontal: false, vertical: true)
                 Divider()
