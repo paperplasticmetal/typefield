@@ -6,6 +6,8 @@ Native macOS font browsing, previews, and organization, built with SwiftUI, AppK
 
 **Current version: 0.24.0 (build 32).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
+**[Download the latest FontShelf.zip](../../releases/latest/download/FontShelf.zip)** — unzip it, move `FontShelf.app` to Applications, and open it. This development build is ad-hoc signed rather than notarized.
+
 **Developer handoff:** In a typeboard, choose **Export → Developer handoff…** for all its canvases, or use the space actions menu to export the whole project. One folder contains `@font-face` declarations, axes/features, CSS variables and suggested fluid `clamp()` scales, fallback stacks, preload examples, font-display guidance, Tailwind v3/v4 setup, versioned token JSON, SwiftUI and Compose starter definitions, and a standalone printable HTML specimen. Font binaries are never bundled: supply licensed web/app assets at the manifest paths. The README documents defaults and native integration work; the specimen is a typography reference, not a pixel-perfect layout export.
 
 **Rename:** Click a selected space, typeboard or collection name to edit it directly, in the sidebar or main header. Double-click an unselected name to rename it. Return saves; Escape cancels. Sidebar context menus also offer Rename. Collection renaming preserves membership and selection and prevents overwriting an existing collection.
@@ -61,7 +63,7 @@ open /Applications/FontShelf.app
 
 The installer builds and verifies an ad-hoc-signed local app, then updates the stable `/Applications/FontShelf.app` copy. This avoids accumulating numbered app bundles; opening FontShelf from Applications launches the latest installed build. Pass another destination path to `install-local.sh` when needed. No paid Apple account is required for this local build. To run the checks again:
 
-Production workflow: after each completed fix or feature, run the relevant checks, commit its source, tests and release notes, and push the commit to both the personal canonical repository (`origin/main`) and the Regular Expression collaboration fork (`regex/main`). This working copy configures `origin` with both push destinations so an ordinary push updates both. Fetch and review `regex` before integrating team work; never force-push over collaborators. The canonical local app remains `/Applications/FontShelf.app`; an unpushed local build is not the release reference.
+Production workflow: after each completed fix or feature, run the relevant checks, commit its source, tests and release notes, and push the commit to both the personal canonical repository (`origin/main`) and the private Regular Expression collaboration repository (`regex/main`). This working copy configures `origin` with both push destinations so an ordinary push updates both. Fetch and review `regex` before integrating team work; never force-push over collaborators. The canonical local app remains `/Applications/FontShelf.app`; an unpushed local build is not the release reference.
 
 ```sh
 dist/FontShelf.app/Contents/MacOS/FontShelf --self-test
