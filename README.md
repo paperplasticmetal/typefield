@@ -4,13 +4,15 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.24.0 (build 32).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.25.0 (build 33).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **[Download the latest FontShelf.zip](../../releases/latest/download/FontShelf.zip)** — unzip it, move `FontShelf.app` to Applications, and open it. This development build is ad-hoc signed rather than notarized.
 
 **Developer handoff:** In a typeboard, choose **Export → Developer handoff…** for all its canvases, or use the space actions menu to export the whole project. One folder contains `@font-face` declarations, axes/features, CSS variables and suggested fluid `clamp()` scales, fallback stacks, preload examples, font-display guidance, Tailwind v3/v4 setup, versioned token JSON, SwiftUI and Compose starter definitions, and a standalone printable HTML specimen. Font binaries are never bundled: supply licensed web/app assets at the manifest paths. The README documents defaults and native integration work; the specimen is a typography reference, not a pixel-perfect layout export.
 
 **Rename:** Click a selected space, typeboard or collection name to edit it directly, in the sidebar or main header. Double-click an unselected name to rename it. Return saves; Escape cancels. Sidebar context menus also offer Rename. Collection renaming preserves membership and selection and prevents overwriting an existing collection.
+
+**Create a typeboard from fonts:** Multi-select families anywhere in Library, including Favorites and collections, then choose **Create typeboard**. In Shortlist, check any subset, choose each family's style and use the prominent **Create typeboard** action. FontShelf opens the new typeboard in Spaces, pre-populates its first canvas and distributes up to six selected fonts across useful type roles while retaining them all as candidates.
 
 Spaces contain typeboards, and typeboards contain canvases. Selecting another canvas keeps the current comparison visible; use **Only this**, each comparison's close button, or the **Shown** menu to hide it again. **Show all** displays every canvas, while Quick A/B solos two same-size alternatives for rapid switching. **Add canvas** creates a blank canvas or duplicates the current one. Double-click canvas text to edit it in place; Return inserts a line, Command-Return saves, and Escape cancels. Click text or a type role to locate its exact canvas use, or drag a role onto the active canvas to add its saved sample text and settings. The font chooser includes collections, favorites, categories (including your overrides), and #tag search. Pinch over the canvas viewport, or use ⌘ + mouse-wheel scrolling, to zoom; ordinary scrolling pans and the zoom menu returns to Fit.
 

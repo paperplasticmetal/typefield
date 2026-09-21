@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.25.0 — 2026-09-20
+
+- Added a direct **Create typeboard** action to Shortlist, with checkboxes for choosing any subset and preservation of each selected font style.
+- Made the Library header's typeboard action use selected families when present, so multi-selecting fonts in Favorites, a collection or any filtered Library view creates a populated typeboard immediately.
+- Expanded initial role assignment from two-font pairing to up to six selected fonts across display, heading, subheading, body, UI/caption and monospace roles; every selected font remains available as a typeboard candidate.
+- Added regression coverage for predictable two-font pairing and complete multi-font role seeding.
+
 ## 0.24.0 — 2026-09-20
 
 - Unified the Library and Spaces sidebar header so the FontShelf mark and workspace switcher remain in exactly the same position when changing workspaces.

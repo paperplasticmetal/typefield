@@ -86,6 +86,10 @@ enum StudioChecks {
         let store = StudioStore(url: root.appendingPathComponent("spaces.json"))
         let space = store.addSpace("Client")!, boardID = store.addBoard(space: space, fonts: ["Georgia", "Helvetica"])!
         var board = store.state.spaces[0].boards[0]
+        let pairSeed = board.directions[0]
+        try verify(pairSeed.style(.display).fontName == "Georgia" && pairSeed.style(.heading).fontName == "Georgia" && pairSeed.style(.body).fontName == "Helvetica", "Two-font typeboards must seed display and supporting roles predictably")
+        let multiSeed = TypeDirection(fonts: ["Display", "Heading", "Subheading", "Body", "UI", "Mono"])
+        try verify(multiSeed.style(.display).fontName == "Display" && multiSeed.style(.heading).fontName == "Heading" && multiSeed.style(.subheading).fontName == "Subheading" && multiSeed.style(.body).fontName == "Body" && multiSeed.style(.label).fontName == "UI" && multiSeed.style(.mono).fontName == "Mono", "Multi-font typeboards must put every selected font into an initial role")
         try verify(board.canvasName(board.directions[0]) == "Canvas 1")
         var legacyBoard = board; legacyBoard.directions[0].name = "Direction A copy"
         try verify(legacyBoard.canvasName(legacyBoard.directions[0]) == "Canvas 1" && legacyBoard.directions[0].name == "Direction A copy", "Legacy canvas labels must not rewrite saved names")

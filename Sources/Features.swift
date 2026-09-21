@@ -76,10 +76,22 @@ struct CompareView: View {
     @State var preview: String
     @State var size: Double
     @State var styles: [String: String] = [:]
+    @State var selected: Set<String> = []
     @Environment(\.dismiss) var dismiss
+    var selectedFonts: [String] {
+        library.compared.filter { selected.contains($0.name) }.map { family in
+            family.faces.first { $0.name == styles[family.name] }?.name ?? library.chosenFace(family).name
+        }
+    }
     var body: some View {
         VStack(spacing: 16) {
-            HStack { Text("Shortlist").font(.title2); Spacer(); Text("\(library.compared.count) \(library.compared.count == 1 ? "family" : "families")").foregroundStyle(.secondary); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack {
+                Text("Shortlist").font(.title2)
+                Spacer()
+                Text("\(selectedFonts.count) of \(library.compared.count) selected").foregroundStyle(.secondary)
+                Button("Create typeboard") { let fonts = selectedFonts; library.pairSelection(fonts); dismiss() }.buttonStyle(.borderedProminent).disabled(selectedFonts.isEmpty)
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
             HStack { TextField("Preview text", text: $preview); Slider(value: $size, in: 16...160).frame(width: 140); Text("\(Int(size)) pt").frame(width: 45) }
             ScrollView {
                 VStack(spacing: 18) {
@@ -87,7 +99,12 @@ struct CompareView: View {
                         let face = family.faces.first { $0.name == styles[family.name] } ?? library.chosenFace(family)
                         let text = preview == "{family}" ? family.name : preview
                         VStack(alignment: .leading, spacing: 10) {
-                            HStack { Text(family.name).font(.headline); Spacer(); ShelfDropdown(title: "Style", selection: Binding(get: { face.name }, set: { styles[family.name] = $0 }), options: family.faces.map { ($0.style, $0.name) }).frame(width: 230); Button { library.compare(family) } label: { Image(systemName: "xmark") }.help("Remove from comparison") }
+                            HStack {
+                                Toggle(family.name, isOn: Binding(get: { selected.contains(family.name) }, set: { included in if included { selected.insert(family.name) } else { selected.remove(family.name) } })).toggleStyle(.checkbox).font(.headline)
+                                Spacer()
+                                ShelfDropdown(title: "Style", selection: Binding(get: { face.name }, set: { styles[family.name] = $0 }), options: family.faces.map { ($0.style, $0.name) }).frame(width: 230)
+                                Button { selected.remove(family.name); library.compare(family) } label: { Image(systemName: "xmark") }.help("Remove from shortlist")
+                            }
                             // Wrapping allows comparing the same complete sentence at a shared size.
                             Text(text).font(.custom(face.name, size: size)).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                             CoverageView(text: text, coverage: face.coverage)
@@ -96,7 +113,7 @@ struct CompareView: View {
                     if library.compared.isEmpty { Text("Add families with the + button on a font preview.").foregroundStyle(.secondary).padding(30) }
                 }
             }
-        }.padding(24).frame(width: 900, height: min(780, (NSScreen.main?.visibleFrame.height ?? 900) - 100))
+        }.padding(24).frame(width: 900, height: min(780, (NSScreen.main?.visibleFrame.height ?? 900) - 100)).onAppear { selected = Set(library.comparison) }
     }
 }
 enum AdobeTarget: String, CaseIterable {

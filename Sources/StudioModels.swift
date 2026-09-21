@@ -88,12 +88,23 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var importedLayout: ImportedLayout?
     var importWarnings: [String]?
     var textOverrides: [String: String]?
+    static func seededFontIndex(for role: TypeRole, count: Int) -> Int {
+        guard count > 1 else { return 0 }
+        switch role {
+        case .display: return 0
+        case .heading: return count == 2 ? 0 : min(1, count - 1)
+        case .subheading: return count == 2 ? 0 : min(count >= 5 ? 2 : 1, count - 1)
+        case .body: return min(count >= 5 ? 3 : 2, count - 1)
+        case .label, .caption: return min(count >= 6 ? 4 : (count >= 3 ? 2 : 1), count - 1)
+        case .mono: return count - 1
+        }
+    }
     init(name: String = "Canvas 1", fonts: [String] = []) {
         self.name = name
         for role in TypeRole.allCases {
             let fallback = role == .mono ? "Menlo-Regular" : role == .display || role == .heading ? "Georgia" : "Helvetica"
-            let index = role == .display || role == .heading ? 0 : 1
-            styles[role.rawValue] = TypeStyle(fontName: fonts.isEmpty ? fallback : fonts[min(index, fonts.count - 1)], size: role.size, text: role.sample)
+            let index = Self.seededFontIndex(for: role, count: fonts.count)
+            styles[role.rawValue] = TypeStyle(fontName: fonts.isEmpty ? fallback : fonts[index], size: role.size, text: role.sample)
         }
     }
     func style(_ role: TypeRole) -> TypeStyle { styles[role.rawValue] ?? TypeStyle(fontName: "Helvetica", size: role.size, text: role.sample) }

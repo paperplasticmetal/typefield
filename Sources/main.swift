@@ -491,7 +491,7 @@ struct ContentView: View {
                     HStack {
                         Text("\(library.selectedFamilies.count) selected")
                         Button("Tag…") { library.openTools("Tags") }
-                        Button("New typeboard…") { library.pairSelection(library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }) }
+                        Button("Create typeboard") { library.pairSelection(library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }) }
                         Button("PDF…") { SpecimenExporter.export(faces: library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0) }, library: library, sample: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
                         Button("Edit families…") { library.openTools("Families") }
                         Button("Export fonts…") { if let result = FontExporter.export(library.selectedFaces) { library.message = result } }
@@ -621,7 +621,10 @@ struct ContentView: View {
             } else { Text(library.selection.replacingOccurrences(of: "tag:", with: "")).font(.system(size: 25, weight: .semibold)) }
             Spacer()
             Button("Rediscover", systemImage: "shuffle") { showDiscovery = true }.help("Find local fonts you have not applied recently")
-            Button("New typeboard", systemImage: "text.badge.plus") { library.pairSelection(library.compared.map { library.chosenFace($0).name }) }.help("Create a typeboard in the current space using your shortlisted fonts")
+            Button("New typeboard", systemImage: "text.badge.plus") {
+                let selected = library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }
+                library.pairSelection(selected.isEmpty ? library.compared.map { library.chosenFace($0).name } : selected)
+            }.help(library.selectedFamilies.isEmpty ? "Create a typeboard in the current space using your shortlisted fonts" : "Create a typeboard in the current space using the selected fonts")
             Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").popover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
             Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").popover(isPresented: $showColors) { PreviewColorsView() }
             Menu("Tools") {

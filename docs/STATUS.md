@@ -1,13 +1,13 @@
 # Build and verification status
 
-Current source: **0.24.0, build 32**. Updated 2026-09-20.
+Current source: **0.25.0, build 33**. Updated 2026-09-20.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
 | Layout checks | 21,260 cases across 4,252 available styles on the release machine |
-| Xcode Release build, 0.24.0 | Passed with Swift and compiler warnings treated as errors |
+| Xcode Release build, 0.24.0 | Passed with Swift and compiler warnings treated as errors; rebuild 0.25 archive before distribution |
 | Spaces and canvas regression checks | Passed: independent directions, checkpoints, imported layers, persistence and 28 canvas/viewport combinations |
 | Live folder watcher and session activation | Passed with a temporary copy of an existing Google font; visibility checked in a separate process, then deactivated and removed |
 | New designer UI | Website desktop/mobile comparison and Unicode lookup/metrics inspected locally |
@@ -23,6 +23,7 @@ Current source: **0.24.0, build 32**. Updated 2026-09-20.
 | 0.23 local intelligence | Local-only similarity scoring and least-recently-used rediscovery are regression-tested. Recommendations expose their metadata-based reasons; screenshot matching is not implemented. |
 | 0.23 protected-folder recovery | Missing or revoked security-scoped bookmarks no longer trigger repeated protected-folder probes. One actionable reauthorization notice is emitted per affected folder per launch, and live-folder refresh waits for access to be restored. |
 | 0.24 workspace sidebar | Library and Spaces use the same branded header geometry and persisted collapse state. Native checks cover the default, both persisted states and the full 256-point width returned to the workspace. Installed 0.24.0 QA verified both workspaces, the edge restore control, dynamic View-menu label, Control-Command-S, cross-workspace state and real quit/relaunch persistence. |
+| 0.25 Library-to-Spaces typeboards | Shortlist supports subset selection, selected styles and direct typeboard creation. Library multi-selection, including Favorites, seeds the same flow. Native checks cover two-font pairing and six-font role distribution; installed-app QA verified the Shortlist checkboxes, live selected count, style menus and Create typeboard action without writing to the user's saved projects. |
 | Figma bridge | Mocked API suite passed; live outbound editable frames and reverse selected-frame JSON import verified, including editing, movement/Undo and relaunch persistence |
 | Unsigned archive and asset catalog, 0.12.3 | Passed; archive not checked into source |
 | Sandbox/hardened-runtime clean launch and installed-font export, 0.12.3 | Passed |
