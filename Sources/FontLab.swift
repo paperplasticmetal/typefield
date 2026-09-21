@@ -965,7 +965,6 @@ struct FontLabView: View {
     @AppStorage("fontLabCharacterBrowserWidth") private var characterBrowserWidth = FontLabCharacterPanelLayout.defaultWidth
     @State private var showInputHelp = false
     @State private var showMetricsGuide = false
-    @State private var showRemixGenerator = false
     @State private var showArtworkImporter = false
     @State private var artworkUndo: (before: FontLabProject, after: FontLabProject)?
     @State private var isExportingFont = false
@@ -1043,16 +1042,6 @@ struct FontLabView: View {
             let currentGlyph = currentProject?.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
             FontLabMetricsGuideSheet(metrics: currentProject?.metrics ?? FontLabMetrics(), glyph: currentGlyph)
         }
-        .sheet(isPresented: $showRemixGenerator) {
-            FontLabRemixSheet(faces: library.allFaces, suggestedNames: remixSuggestedFaceNames) { result in
-                guard store.addGeneratedProject(result.project) != nil else { return false }
-                selectedCharacter = store.selectedProject?.characters.first(where: { store.selectedProject?.glyphs[$0]?.hasArtwork == true }) ?? "A"
-                selectedCharacters.removeAll()
-                selectingCharacters = false
-                store.status = result.status
-                return true
-            }
-        }
         .sheet(isPresented: $showArtworkImporter) {
             FontLabArtworkImportSheet(currentProject: store.selectedProject, selectedCharacter: selectedCharacter) { result, original in
                 if let original {
@@ -1070,14 +1059,6 @@ struct FontLabView: View {
         }
         .onDisappear { store.flushPendingSave() }
         .accessibilityIdentifier("font-lab-workspace")
-    }
-
-    private var remixSuggestedFaceNames: [String] {
-        let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
-        let candidates = (selected + library.compared).map { library.chosenFace($0).name }
-        return candidates.reduce(into: []) { names, name in
-            if !names.contains(name) { names.append(name) }
-        }
     }
 
     private var projectSidebar: some View {
@@ -1149,9 +1130,6 @@ struct FontLabView: View {
                 Spacer()
                 Text("\(project.completedCount)/\(project.characters.count) glyphs")
                     .font(.caption).foregroundStyle(.secondary)
-                Button("New from fonts", systemImage: "wand.and.stars") { showRemixGenerator = true }
-                    .disabled(store.readBlocked || library.allFaces.count < 2)
-                    .help("Generate an editable starter by remixing two installed font faces")
                 Button("Delete", systemImage: "trash", role: .destructive) { deleteRequest = project }
                     .disabled(store.readBlocked || isExportingFont).help("Delete this Font Lab project")
                 Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
@@ -1188,7 +1166,7 @@ struct FontLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
-            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Reshape generated outlines or draw with Round, Marker, and Outline pens. Export SVG artwork or an installable TrueType font (.ttf).")
+            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Reshape imported outlines or draw with Round, Marker, and Outline pens. Export SVG artwork or an installable TrueType font (.ttf).")
                 .font(.caption2).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
                 .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
@@ -1431,15 +1409,13 @@ struct FontLabView: View {
         VStack(spacing: 14) {
             Image(systemName: "pencil.and.outline").font(.system(size: 42)).foregroundStyle(.secondary)
             Text(store.readBlocked ? "Font Lab data needs attention" : "Start a Font Lab project").font(.title2)
-            Text(store.error.isEmpty ? "Draw from scratch, import your letter artwork, or combine two installed fonts. Tune every glyph and export SVG artwork or an installable TrueType font." : store.error)
+            Text(store.error.isEmpty ? "Draw from scratch or import your own letter artwork. Tune every glyph and export SVG artwork or an installable TrueType font." : store.error)
                 .foregroundStyle(Color(nsColor: store.error.isEmpty ? .secondaryLabelColor : .systemOrange)).multilineTextAlignment(.center).frame(maxWidth: 520)
             if !store.readBlocked {
                 HStack(spacing: 10) {
                     Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
                         .disabled(store.readBlocked)
                     Button("Blank project") { _ = store.addProject(name: "") }
-                    Button("New from fonts…") { showRemixGenerator = true }
-                        .disabled(library.allFaces.count < 2)
                 }
             }
         }

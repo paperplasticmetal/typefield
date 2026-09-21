@@ -1033,9 +1033,6 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
 } else if let index = CommandLine.arguments.firstIndex(of: "--handoff-fixture"), CommandLine.arguments.count > index + 1 {
     do { print(try StudioChecks.handoff(catalog: FontCatalog.scan(), parent: URL(fileURLWithPath: CommandLine.arguments[index + 1])).path) }
     catch { fputs("Handoff check failed: \(error.localizedDescription)\n", stderr); exit(1) }
-} else if let index = CommandLine.arguments.firstIndex(of: "--font-lab-specimen"), CommandLine.arguments.count > index + 1 {
-    do { try FontLabRemixEngine.writeSpecimen(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
-    catch { fputs("Font Lab specimen failed: \(error.localizedDescription)\n", stderr); exit(1) }
 } else if let index = CommandLine.arguments.firstIndex(of: "--font-lab-artwork-fixtures"), CommandLine.arguments.count > index + 1 {
     do { try FontLabArtworkChecks.writeFixtures(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
     catch { fputs("Artwork fixtures failed: \(error.localizedDescription)\n", stderr); exit(1) }

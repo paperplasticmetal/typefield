@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.31.1 — 2026-09-21
+
+- Shelved **New from fonts**: removed both creation buttons, generator presentation/source-selection wiring and the remix specimen CLI entry point. The generator screen is archived outside the application targets for possible future reconsideration.
+- Focused Font Lab on drawing and importing your own artwork. Existing projects, source attribution, outline editing and exports are preserved.
+
 ## 0.31.0 — 2026-09-21
 
 - Added **Import artwork** to Font Lab: trace PNG, JPEG, TIFF, HEIC and outlined SVG drawings into editable glyphs, individually or from alphabet sheets.
