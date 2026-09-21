@@ -270,7 +270,7 @@ struct CanvasTypographySummary {
         return fence + padding + value.replacingOccurrences(of: "\n", with: " ") + padding + fence
     }
     init(canvas: String, direction: TypeDirection) {
-        self.canvas = canvas; format = direction.canvas.rawValue
+        self.canvas = canvas; format = direction.canvasDisplayName
         let plan = CanvasPlan(direction: direction)
         var values: [Entry] = []
         for element in plan.elements {

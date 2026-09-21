@@ -1,13 +1,13 @@
 # Build and verification status
 
-Current source: **0.25.0, build 33**. Updated 2026-09-20.
+Current source: **0.26.0, build 34**. Updated 2026-09-20.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
 | Layout checks | 21,260 cases across 4,252 available styles on the release machine |
-| Xcode Release build, 0.24.0 | Passed with Swift and compiler warnings treated as errors; rebuild 0.25 archive before distribution |
+| Xcode Release build, 0.26.0 | Passed with Swift and compiler warnings treated as errors; the new role-mapping, pairing, Adobe and Font Lab sources are included in the Xcode target |
 | Spaces and canvas regression checks | Passed: independent directions, checkpoints, imported layers, persistence and 28 canvas/viewport combinations |
 | Live folder watcher and session activation | Passed with a temporary copy of an existing Google font; visibility checked in a separate process, then deactivated and removed |
 | New designer UI | Website desktop/mobile comparison and Unicode lookup/metrics inspected locally |
@@ -24,6 +24,10 @@ Current source: **0.25.0, build 33**. Updated 2026-09-20.
 | 0.23 protected-folder recovery | Missing or revoked security-scoped bookmarks no longer trigger repeated protected-folder probes. One actionable reauthorization notice is emitted per affected folder per launch, and live-folder refresh waits for access to be restored. |
 | 0.24 workspace sidebar | Library and Spaces use the same branded header geometry and persisted collapse state. Native checks cover the default, both persisted states and the full 256-point width returned to the workspace. Installed 0.24.0 QA verified both workspaces, the edge restore control, dynamic View-menu label, Control-Command-S, cross-workspace state and real quit/relaunch persistence. |
 | 0.25 Library-to-Spaces typeboards | Shortlist supports subset selection, selected styles and direct typeboard creation. Library multi-selection, including Favorites, seeds the same flow. Native checks cover two-font pairing and six-font role distribution; installed-app QA verified the Shortlist checkboxes, live selected count, style menus and Create typeboard action without writing to the user's saved projects. |
+| 0.26 explicit typeboard setup | Library selection, Favorites, collections, Shortlist, single-font actions and recommendations now open one seven-role assignment pass before creation. Native checks cover candidate deduplication, resettable defaults, explicit overrides and unconstrained edits after creation. Installed-app QA opened a five-font collection, verified every role menu and cancelled without creating a saved typeboard. |
+| 0.26 pairing suggestions | Safe/Balanced/Expressive results are catalog-only and deterministic, exclude the source family and symbols, enforce a true monospaced target, and expose language/proportion/category/role/contrast reasons. Synthetic regression fixtures cover ranking direction, coverage penalties, bounds and explanation counts; installed-app QA verified paired previews and explanations against the full local catalog without applying a change. |
+| 0.26 Adobe round trip | Illustrator/InDesign builder and return JSX are deterministically generated and parsed with JavaScriptCore. Hostile strings, metadata retention, bounded return JSON, top-level group traversal, no-fill/grayscale handling, stable page matching, source-aware units and conversion into editable imported layers pass automated checks. Installed-app menus and disclosure were inspected; live execution inside Adobe applications remains a manual compatibility check. Native `.ai`/`.indd` decoding and full Adobe fidelity are not claimed. |
+| 0.26 Font Lab foundation | Isolated project creation, normalized drawing, metrics, drawn-glyph preview, atomic persistence/daily backups, exported-backup merge compatibility, safe project naming, confirmed clearing, corrupt-file write blocking and deterministic SVG output pass native checks. Installed-app QA verified the three-way workspace and empty state without creating `font-lab.json`. SVG/PNG tracing, blending, kerning and installable OTF compilation are explicitly not implemented yet. |
 | Figma bridge | Mocked API suite passed; live outbound editable frames and reverse selected-frame JSON import verified, including editing, movement/Undo and relaunch persistence |
 | Unsigned archive and asset catalog, 0.12.3 | Passed; archive not checked into source |
 | Sandbox/hardened-runtime clean launch and installed-font export, 0.12.3 | Passed |
@@ -39,7 +43,7 @@ Manual checks do not certify every font/script or failure case. Offline preview 
 
 The live activation check requires normal macOS execution outside the coding-tool sandbox. Session activation in the App Store sandbox has not been verified for 0.14.0. Watching runs only while the app is open. New tests also cover recursive folder replacements/removal, nested tag inclusion/exclusion, glyph SVG generation, long specimen pagination and backup merge. Test-runner crashes encountered during development were corrected; new studio checks report failures without intentionally trapping.
 
-Not complete Typeface parity: direct Adobe integration, a published Figma plug-in, document-triggered activation, third-party collection-database imports, screenshot-based font matching, cloud collaboration and advanced color-font controls remain out of scope for this release. **Find similar** is an explainable metadata-based local-library tool, not image recognition. The local Figma bridge supports two-way JSON handoff with documented fidelity limits, not native `.fig` decoding or live sync. Custom template canvases use ordered blocks; imported Figma layouts retain independently movable layers. Font Health does not rewrite TTC/OTC collections, WOFF/WOFF2/dfont containers, outlines, hinting, layout tables or ambiguous/missing identity records.
+Not complete Typeface parity: native Adobe-file decoding/live sync, installable Font Lab output, font-outline blending/tracing, a published Figma plug-in, document-triggered activation, third-party collection-database imports, screenshot-based font matching, cloud collaboration and advanced color-font controls remain out of scope for this release. **Find similar** and Spaces pairing are explainable metadata-based local-library tools, not image recognition or universal taste scores. The local Figma bridge supports two-way JSON handoff with documented fidelity limits, not native `.fig` decoding or live sync. Custom template canvases use ordered blocks; imported Figma/Adobe layouts retain independently movable layers. Font Health does not rewrite TTC/OTC collections, WOFF/WOFF2/dfont containers, outlines, hinting, layout tables or ambiguous/missing identity records.
 
 Web-font costs are exact only for unambiguously matched WOFF2 files. Installed desktop fonts can supply labeled coverage and layout information but are not silently treated as equivalent web assets; missing and duplicate matches remain visible and are excluded from known-byte totals.
 

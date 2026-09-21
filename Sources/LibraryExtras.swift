@@ -8,6 +8,8 @@ struct LibraryBackup: Codable {
     var library: SavedLibrary
     var pro: ProState
     var spaces: StudioState
+    /// Optional so version-1 backups created before Font Lab remain decodable.
+    var fontLab: FontLabState? = nil
 }
 enum LibraryBackupTools {
     static func preserve(_ url: URL) throws {
@@ -22,13 +24,18 @@ enum LibraryBackupTools {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "FontShelf-library.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let backup = LibraryBackup(library: library.saved, pro: library.pro, spaces: library.studio.state)
+            guard !library.fontLab.readBlocked else { throw CocoaError(.fileReadCorruptFile) }
+            let backup = LibraryBackup(library: library.saved, pro: library.pro, spaces: library.studio.state, fontLab: library.fontLab.state)
             try JSONEncoder().encode(backup).write(to: url, options: .atomic)
-            library.message = "Library backup exported. Font files are not included."
+            library.message = "Library, Spaces, and Font Lab backup exported. Font files are not included."
         } catch { library.message = error.localizedDescription }
     }
     static func merge(_ backup: LibraryBackup, into library: Library) throws {
-        guard backup.version == 1, backup.spaces.version == 1, !library.librarySaveBlocked, !library.proSaveBlocked, !library.studio.readBlocked, backup.spaces.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw CocoaError(.fileReadCorruptFile) }
+        let fontLabIsValid = backup.fontLab?.isValid ?? true
+        let canImportFontLab = backup.fontLab == nil || !library.fontLab.readBlocked
+        guard backup.version == 1, backup.spaces.version == 1, fontLabIsValid, canImportFontLab,
+              !library.librarySaveBlocked, !library.proSaveBlocked, !library.studio.readBlocked,
+              backup.spaces.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw CocoaError(.fileReadCorruptFile) }
         library.saved.favorites.formUnion(backup.library.favorites)
         for (key, values) in backup.library.collections { library.saved.collections[key, default: []].formUnion(values) }
         library.saved.overrides.merge(backup.library.overrides) { existing, _ in existing }
@@ -52,10 +59,15 @@ enum LibraryBackupTools {
         }
         guard library.save(), library.savePro() else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Import may be partially saved. " + library.message]) }
         guard library.studio.save() else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Import may be partially saved. " + library.studio.error]) }
+        if let fontLab = backup.fontLab, !fontLab.projects.isEmpty {
+            guard library.fontLab.importProjects(fontLab.projects) else {
+                throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Import may be partially saved. " + library.fontLab.error])
+            }
+        }
         library.regroup()
     }
     static func restore(_ library: Library) {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a FontShelf backup. Existing settings are kept; spaces are imported as copies."
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a FontShelf backup. Existing settings are kept; spaces and Font Lab projects are imported as copies."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try merge(JSONDecoder().decode(LibraryBackup.self, from: Data(contentsOf: url)), into: library)
@@ -218,7 +230,7 @@ enum FigmaLayoutImporter {
             let layout = ImportedLayout(width: width, height: height, layers: layers)
             guard layout.isValid else { throw invalid("The layout has invalid bounds or typography.") }
             var direction = TypeDirection(name: frame["name"] as? String ?? "Figma frame")
-            direction.canvas = .imported; direction.width = width; direction.paper = try color(frame["paper"]).0; direction.importedLayout = layout
+            direction.canvas = .imported; direction.width = width; direction.paper = try color(frame["paper"]).0; direction.importedLayout = layout; direction.importedSource = .figma
             direction.importWarnings = Array(Set(warnings)).sorted(); directions.append(direction)
         }
         return TypeBoard(name: root["name"] as? String ?? "Figma typeboard", directions: directions, selectedDirection: directions.first?.id)

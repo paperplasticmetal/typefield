@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.26.0 — 2026-09-20
+
+- Added an explicit seven-role setup step whenever selected Library fonts, Favorites, a collection, Shortlist or a recommendation seeds a typeboard. FontShelf supplies a resettable first pass, while the user chooses the initial Display, Heading, Subheading, Body, UI, Caption and Monospace faces; every role remains freely editable afterward.
+- Added local, explainable font-pairing suggestions inside Spaces. Safe, Balanced and Expressive modes rank compatible installed families for a chosen target role, preview both faces together, show the signals behind each result and apply the choice without replacing the source role.
+- Added Illustrator and InDesign type-system builders beside PDF export. The generated JSX creates a new editable native `.ai` or `.indd` document with canvases/pages, live text, simple shapes, named styles and retained FontShelf metadata; fonts are referenced rather than bundled.
+- Added the reverse Adobe bridge: export a document or selection from Illustrator/InDesign to bounded JSON, then import it as an editable FontShelf typeboard with source-aware units, transparent no-fill handling and per-layer fidelity warnings. Native proprietary files are not decoded directly and mixed styles, complex effects, variable axes and some OpenType settings still require review.
+- Added Font Lab as a third top-level workspace. Its first foundation includes explicit project creation, per-glyph mouse/trackpad drawing, baseline/x-height/cap-height and side-bearing controls, drawn-glyph word previews, atomic local persistence, daily and portable backup coverage, confirmed clearing and real per-glyph SVG export.
+- Marked Font Lab's SVG/PNG/Procreate tracing, multi-font blending and installable OTF generation honestly as planned or research work rather than presenting placeholder output as a finished font.
+- Added deterministic checks for role seeding/editability, pairing scoring, Adobe script parsing and JSON round trips, Font Lab persistence/corrupt-data preservation/SVG output and backward-compatible Library backup merging, plus the new sources in the Xcode target.
+
 ## 0.25.0 — 2026-09-20
 
 - Added a direct **Create typeboard** action to Shortlist, with checkboxes for choosing any subset and preservation of each selected font style.

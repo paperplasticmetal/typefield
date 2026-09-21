@@ -3,6 +3,20 @@ import AppKit
 import CoreText
 
 enum CanvasKind: String, Codable, CaseIterable { case website = "Website", product = "Product UI", editorial = "Editorial", poster = "Poster", specimen = "Type system", custom = "Custom layout", imported = "Figma layout" }
+enum ImportedLayoutSource: String, Codable {
+    case figma
+    case illustrator
+    case indesign
+
+    var displayName: String {
+        switch self {
+        case .figma: return "Figma layout"
+        case .illustrator: return "Illustrator layout"
+        case .indesign: return "InDesign layout"
+        }
+    }
+    var unitLabel: String { self == .figma ? "px" : "pt" }
+}
 enum TypeRole: String, Codable, CaseIterable, Identifiable {
     case display = "Display", heading = "Heading", subheading = "Subheading", body = "Body", label = "UI label", caption = "Caption", mono = "Monospace"
     var id: String { rawValue }
@@ -86,8 +100,13 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var sectionOrder: [String]?
     var hiddenSections: Set<String>?
     var importedLayout: ImportedLayout?
+    /// Optional so projects created before source tracking still decode. A
+    /// missing value denotes the original Figma import flow.
+    var importedSource: ImportedLayoutSource?
     var importWarnings: [String]?
     var textOverrides: [String: String]?
+    var canvasDisplayName: String { canvas == .imported ? (importedSource ?? .figma).displayName : canvas.rawValue }
+    var canvasUnitLabel: String { canvas == .imported ? (importedSource ?? .figma).unitLabel : "px" }
     static func seededFontIndex(for role: TypeRole, count: Int) -> Int {
         guard count > 1 else { return 0 }
         switch role {
@@ -99,12 +118,12 @@ struct TypeDirection: Codable, Identifiable, Equatable {
         case .mono: return count - 1
         }
     }
-    init(name: String = "Canvas 1", fonts: [String] = []) {
+    init(name: String = "Canvas 1", fonts: [String] = [], roleFonts: [String: String] = [:]) {
         self.name = name
         for role in TypeRole.allCases {
             let fallback = role == .mono ? "Menlo-Regular" : role == .display || role == .heading ? "Georgia" : "Helvetica"
             let index = Self.seededFontIndex(for: role, count: fonts.count)
-            styles[role.rawValue] = TypeStyle(fontName: fonts.isEmpty ? fallback : fonts[index], size: role.size, text: role.sample)
+            styles[role.rawValue] = TypeStyle(fontName: roleFonts[role.rawValue] ?? (fonts.isEmpty ? fallback : fonts[index]), size: role.size, text: role.sample)
         }
     }
     func style(_ role: TypeRole) -> TypeStyle { styles[role.rawValue] ?? TypeStyle(fontName: "Helvetica", size: role.size, text: role.sample) }
@@ -243,12 +262,12 @@ final class StudioStore: ObservableObject {
         let space = DesignSpace(name: name.isEmpty ? "Untitled space" : name)
         state.spaces.append(space); focusedSpace = space.id; focusedBoard = nil; save(); return space.id
     }
-    func addBoard(space: UUID, fonts: [String] = []) -> UUID? {
+    func addBoard(space: UUID, fonts: [String] = [], roleFonts: [String: String] = [:]) -> UUID? {
         guard !readBlocked else { return nil }
         guard let i = state.spaces.firstIndex(where: { $0.id == space }) else { return nil }
         var number = state.spaces[i].boards.count + 1
         while state.spaces[i].boards.contains(where: { $0.name == "Typeboard \(number)" }) { number += 1 }
-        let board = TypeBoard(name: "Typeboard \(number)", directions: [TypeDirection(fonts: fonts)], candidates: fonts)
+        let board = TypeBoard(name: "Typeboard \(number)", directions: [TypeDirection(fonts: fonts, roleFonts: roleFonts)], candidates: fonts)
         state.spaces[i].boards.append(board); focusedSpace = space; focusedBoard = board.id; save(); return board.id
     }
     func update(space: UUID, board: TypeBoard, action: String = "Edit Typeboard") {

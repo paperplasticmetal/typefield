@@ -16,7 +16,9 @@ enum WorkspaceSidebarLayout {
 struct WorkspaceSwitcher: View {
     @ObservedObject var library: Library
     var body: some View {
-        Picker("Workspace", selection: $library.workspace) { Text("Library").tag(false); Text("Spaces").tag(true) }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("workspace-switcher")
+        Picker("Workspace", selection: $library.workspace) {
+            ForEach(WorkspaceMode.allCases) { workspace in Text(workspace.rawValue).tag(workspace) }
+        }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("workspace-switcher")
     }
 }
 struct WorkspaceSidebarHeader: View {
@@ -78,10 +80,19 @@ struct StudioView: View {
                 HStack(spacing: 12) {
                     ShelfEditableName(name: space.displayName, onRename: { setSpaceName(space.id, $0) }).font(.system(size: 22, weight: .semibold)).frame(minHeight: 30)
                     Spacer()
-                    Button("New typeboard") { boardID = store.addBoard(space: space.id, fonts: library.compared.map { library.chosenFace($0).name }) }.disabled(store.readBlocked)
+                    Button("New typeboard") {
+                        let fonts = library.compared.map { library.chosenFace($0).name }
+                        if fonts.isEmpty { boardID = store.addBoard(space: space.id) }
+                        else { library.pairSelection(fonts, source: "Shortlist", spaceID: space.id) }
+                    }.disabled(store.readBlocked)
                     Menu {
                         Button("Rename space…") { renameSpace(space) }
                         Button("Import Figma typeboard…") { importFigma() }.disabled(store.readBlocked)
+                        Button("Import Adobe return JSON…") { importAdobe() }.disabled(store.readBlocked)
+                        Menu("Export Adobe return bridge") {
+                            Button("Illustrator (.jsx)…") { exportAdobeReturnBridge(.illustrator) }
+                            Button("InDesign (.jsx)…") { exportAdobeReturnBridge(.indesign) }
+                        }
                         Button("Create font collection…") { createCollection(from: space) }.disabled(space.boards.isEmpty)
                         Button("Developer handoff…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
                         Button("Export space…") { exportSpace(space) }
@@ -114,7 +125,12 @@ struct StudioView: View {
             TextField("Project or client name", text: $newName)
             Button("Create") {
                 let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let created = store.addSpace(name) { spaceID = created; boardID = store.addBoard(space: created, fonts: library.compared.map { library.chosenFace($0).name }) }
+                if let created = store.addSpace(name) {
+                    spaceID = created
+                    let fonts = library.compared.map { library.chosenFace($0).name }
+                    if fonts.isEmpty { boardID = store.addBoard(space: created) }
+                    else { DispatchQueue.main.async { library.pairSelection(fonts, source: "Shortlist", spaceID: created) } }
+                }
                 newName = ""
             }
             Button("Cancel", role: .cancel) { newName = "" }
@@ -148,7 +164,17 @@ struct StudioView: View {
                     }
                     }
                 }
-                Menu("Import…") { Button("Space…") { importSpace() }.disabled(store.readBlocked); Button("Figma typeboard JSON…") { importFigma() }.disabled(store.readBlocked); Button("Using a native .fig file…") { figFileHelp() } }.menuStyle(.borderlessButton).fixedSize().padding(.bottom, 12)
+                Menu("Import…") {
+                    Button("Space…") { importSpace() }.disabled(store.readBlocked)
+                    Button("Figma typeboard JSON…") { importFigma() }.disabled(store.readBlocked)
+                    Button("Using a native .fig file…") { figFileHelp() }
+                    Divider()
+                    Button("Adobe return JSON…") { importAdobe() }.disabled(store.readBlocked)
+                    Menu("Export Adobe return bridge") {
+                        Button("Illustrator (.jsx)…") { exportAdobeReturnBridge(.illustrator) }
+                        Button("InDesign (.jsx)…") { exportAdobeReturnBridge(.indesign) }
+                    }
+                }.menuStyle(.borderlessButton).fixedSize().padding(.bottom, 12)
             }.padding(.horizontal, 12)
         }
     }
@@ -204,6 +230,35 @@ struct StudioView: View {
             guard let index = store.state.spaces.firstIndex(where: { $0.id == target }) else { return }
             store.state.spaces[index].boards.append(imported); store.focusedSpace = target; store.focusedBoard = imported.id; store.save(); spaceID = target; boardID = imported.id
         } catch { store.error = "Figma layout could not be imported: " + error.localizedDescription }
+    }
+    func importAdobe() {
+        guard !store.readBlocked else { return }
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
+        panel.message = "Run FontShelf's return bridge inside Illustrator or InDesign, save its JSON, then choose that file here. Native .ai and .indd files are not decoded directly."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 20_000_000 else { throw AdobeTypeSystemReturnBridge.ImportError.tooLarge }
+            let imported = try AdobeTypeSystemReturnBridge.board(data: Data(contentsOf: url), fonts: library.allFaces)
+            guard let target = space?.id ?? store.addSpace("Adobe imports") else { return }
+            guard let index = store.state.spaces.firstIndex(where: { $0.id == target }) else { return }
+            store.state.spaces[index].boards.append(imported)
+            store.focusedSpace = target; store.focusedBoard = imported.id; store.save(); spaceID = target; boardID = imported.id
+        } catch {
+            store.error = "Adobe layout could not be imported: " + error.localizedDescription
+        }
+    }
+    func exportAdobeReturnBridge(_ target: AdobeTypeSystemTarget) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: target.scriptExtension) ?? .plainText]
+        panel.nameFieldStringValue = AdobeTypeSystemReturnBridge.suggestedScriptFilename(target: target)
+        panel.message = "Run this bridge inside Adobe " + target.displayName + ". It exports the selection or document as JSON that FontShelf can import."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try AdobeTypeSystemReturnBridge.data(target: target, scope: .prompt).write(to: url, options: .atomic)
+            store.error = ""
+        } catch {
+            store.error = "Adobe return bridge could not be exported: " + error.localizedDescription
+        }
     }
     func figFileHelp() {
         let alert = NSAlert(); alert.messageText = "Bring a .fig file into FontShelf"
@@ -285,6 +340,8 @@ struct TypeBoardEditor: View {
     @State private var showDelete = false
     @State private var status = ""
     @State private var showFontPicker = false
+    @State private var showPairingSuggestions = false
+    @State private var pairingTargetRole = TypeRole.body
     @State private var showFontSummary = false
     @State private var showWebFontAudit = false
     @State private var fontSummaryDetail = TypographySummaryDetail.roles
@@ -367,8 +424,8 @@ struct TypeBoardEditor: View {
                 Button(showingAllCanvases ? "Only current" : "Show all") { if showingAllCanvases { showOnlyCurrent() } else { shownCanvasIDs = Set(board.directions.map(\.id)); abID = nil } }.disabled(board.directions.count < 2).fixedSize()
             }.frame(height: 36).padding(.horizontal, 14).padding(.bottom, 10)
             HStack {
-                ShelfDropdown(title: "Format", selection: directionBinding(\.canvas), options: CanvasKind.allCases.filter { $0 != .imported || direction.importedLayout != nil }.map { ($0.rawValue, $0) }).frame(minWidth: 115, idealWidth: 180, maxWidth: 210)
-                if direction.canvas == .imported { Text("\(Int(direction.width)) px").font(.caption).foregroundStyle(.secondary) }
+                ShelfDropdown(title: "Format", selection: directionBinding(\.canvas), options: CanvasKind.allCases.filter { $0 != .imported || direction.importedLayout != nil }.map { ($0 == .imported ? direction.canvasDisplayName : $0.rawValue, $0) }).frame(minWidth: 115, idealWidth: 180, maxWidth: 210)
+                if direction.canvas == .imported { Text("\(Int(direction.width)) \(direction.canvasUnitLabel)").font(.caption).foregroundStyle(.secondary) }
                 else { ShelfDropdown(title: "Width", selection: directionBinding(\.width), options: [("Mobile · 390", 390.0), ("Tablet · 768", 768.0), ("Desktop · 1200", 1200.0), ("Canvas · 960", 960.0)], showsTitle: false).frame(width: 132) }
                 Spacer()
                 Menu {
@@ -407,11 +464,18 @@ struct TypeBoardEditor: View {
                         }.padding(24).frame(minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
                     }.background(Color.black.opacity(0.09)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
                     }
-                    HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(direction.width)) px · " + (zoom == 0 ? "Fit" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(10)
+                    HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(direction.width)) \(direction.canvasUnitLabel) · " + (zoom == 0 ? "Fit" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(10)
                 }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
             }
         }.alert("Delete this typeboard?", isPresented: $showDelete) { Button("Delete", role: .destructive, action: onDelete); Button("Cancel", role: .cancel) {} }
         .sheet(isPresented: $showWebFontAudit) { WebFontAuditView(board: board, library: library, initialCanvasIDs: summaryCanvasIDs) }
+        .sheet(isPresented: $showPairingSuggestions) {
+            if let reference = library.allFaces.first(where: { $0.name == style.fontName }) {
+                FontPairingSuggestionsSheet(library: library, reference: reference, intendedRole: pairingTargetRole, preview: direction.style(pairingTargetRole).text) { face in
+                    applyPairingSuggestion(face, to: pairingTargetRole, reference: reference)
+                }
+            }
+        }
         .onChange(of: savedBoard) { value in if value != board { board = value; shownCanvasIDs = CanvasVisibility.prune(shownCanvasIDs, valid: Set(value.directions.map(\.id)), selected: value.selectedDirection ?? value.directions.first?.id) } }
         .onChange(of: role) { _ in library.studio.endUndoCoalescing() }
         .onChange(of: selectedSection) { _ in library.studio.endUndoCoalescing() }
@@ -517,17 +581,29 @@ struct TypeBoardEditor: View {
                 if selectedTextID != nil && direction.canvas != .imported { Text("Editing the selected text. Font and spacing changes apply to its shared type role.").font(.caption).foregroundStyle(.secondary) }
                 Button { showFontPicker = true } label: { HStack { VStack(alignment: .leading, spacing: 4) { Text("Font").font(.caption).foregroundStyle(.secondary); Text(style.fontName).lineLimit(2) }; Spacer(); Image(systemName: "magnifyingglass") }.padding(10).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
                     .popover(isPresented: $showFontPicker) { fontPicker }
-                numeric("Size", value: styleBinding(\.size), range: direction.canvas == .imported ? 1...1000 : 8...160, unit: "px")
-                numeric("Line height", value: Binding(get: { style.lineHeight ?? style.size * style.leading }, set: { var s = style; s.lineHeight = $0; setStyle(s); save("Change Line Height") }), range: direction.canvas == .imported ? 1...2000 : 8...400, unit: "px")
+                if direction.canvas != .imported {
+                    Menu {
+                        ForEach(TypeRole.allCases.filter { $0 != role }) { target in
+                            Button("Suggest for " + target.rawValue) {
+                                pairingTargetRole = target
+                                showPairingSuggestions = true
+                            }
+                        }
+                    } label: { Label("Pair this font with another role…", systemImage: "sparkles") }
+                        .disabled(library.allFaces.first(where: { $0.name == style.fontName }) == nil)
+                        .help("Rank compatible fonts from your local library and explain each suggestion")
+                }
+                numeric("Size", value: styleBinding(\.size), range: direction.canvas == .imported ? 1...1000 : 8...160, unit: direction.canvasUnitLabel)
+                numeric("Line height", value: Binding(get: { style.lineHeight ?? style.size * style.leading }, set: { var s = style; s.lineHeight = $0; setStyle(s); save("Change Line Height") }), range: direction.canvas == .imported ? 1...2000 : 8...400, unit: direction.canvasUnitLabel)
                 Button("Auto line height") { var s = style; s.lineHeight = nil; setStyle(s); save() }.font(.caption)
-                numeric("Letter spacing", value: styleBinding(\.tracking), range: -3...12, unit: "px")
+                numeric("Letter spacing", value: styleBinding(\.tracking), range: -3...12, unit: direction.canvasUnitLabel)
                 ShelfDropdown(title: "Alignment", selection: optionalStyleBinding(\.alignment, default: .left), options: TextAlignmentOption.allCases.map { ($0.rawValue, $0) })
                 Toggle("Font kerning", isOn: kerningBinding).toggleStyle(.checkbox).help("Use the font’s built-in spacing adjustments between letter pairs")
                 DisclosureGroup("More text settings") {
                     VStack(spacing: 12) {
-                        numeric("Word spacing", value: optionalStyleBinding(\.wordSpacing, default: 0), range: -3...40, unit: "px")
-                        numeric("Paragraph spacing", value: optionalStyleBinding(\.paragraphSpacing, default: 0), range: 0...200, unit: "px")
-                        numeric("First-line indent", value: optionalStyleBinding(\.indent, default: 0), range: 0...200, unit: "px")
+                        numeric("Word spacing", value: optionalStyleBinding(\.wordSpacing, default: 0), range: -3...40, unit: direction.canvasUnitLabel)
+                        numeric("Paragraph spacing", value: optionalStyleBinding(\.paragraphSpacing, default: 0), range: 0...200, unit: direction.canvasUnitLabel)
+                        numeric("First-line indent", value: optionalStyleBinding(\.indent, default: 0), range: 0...200, unit: direction.canvasUnitLabel)
                         ShelfDropdown(title: "Case", selection: optionalStyleBinding(\.casing, default: .original), options: TextCaseOption.allCases.map { ($0.rawValue, $0) })
                         HStack { Toggle("Underline", isOn: optionalStyleBinding(\.underline, default: false)); Toggle("Strike", isOn: optionalStyleBinding(\.strikethrough, default: false)) }.toggleStyle(.checkbox)
                     }.padding(.top, 10)
@@ -608,6 +684,18 @@ struct TypeBoardEditor: View {
         }
     }
     func chooseFont(_ name: String) { let changed = style.fontName != name; var s = style; s.fontName = name; s.axes = library.pro.axes[name] ?? [:]; s.features = library.pro.features[name] ?? [:]; setStyle(s); save("Change Font"); if changed && library.studio.error.isEmpty { _ = library.recordFontUse(name) } }
+    func applyPairingSuggestion(_ face: Face, to target: TypeRole, reference: Face) {
+        var paired = direction.style(target)
+        paired.fontName = face.name
+        paired.axes = library.pro.axes[face.name] ?? [:]
+        paired.features = library.pro.features[face.name] ?? [:]
+        board.directions[directionIndex].styles[target.rawValue] = paired
+        board.candidates = Array(Set(board.candidates + [reference.name, face.name])).sorted()
+        role = target; selectedSection = nil; selectedTextID = nil
+        save("Apply Pairing Suggestion")
+        if library.studio.error.isEmpty { _ = library.recordFontUse(face.name) }
+        status = "Paired " + reference.originalFamily + " with " + face.originalFamily + " for " + target.rawValue
+    }
     func chooseDiscoveryFont() {
         let allowed = Set(faces.map(\.name))
         let eligible = library.families.filter { !$0.faces.allSatisfy { !allowed.contains($0.name) } }
@@ -647,9 +735,12 @@ struct TypeBoardEditor: View {
                     Button("Markdown…") { exportFontSummary(markdown: true) }
                     Divider()
                     Button("Type system PDF…") { exportTypeSystemPDF() }
+                    Divider()
+                    Button("Illustrator builder (.jsx)…") { exportAdobeTypeSystem(.illustrator) }
+                    Button("InDesign builder (.jsx)…") { exportAdobeTypeSystem(.indesign) }
                 }.fixedSize()
             }
-            Text("Each selected canvas contributes its visible text styles. Full settings adds size, line height, tracking, variable axes and OpenType features. Type system PDF creates one specimen page per selected canvas using its chosen typography.").font(.caption).foregroundStyle(.secondary)
+            Text("Each selected canvas contributes its visible text styles. Type system PDF creates one specimen page per canvas. Adobe builders create editable native documents when you run the saved script inside Illustrator or InDesign; fonts are referenced, never bundled.").font(.caption).foregroundStyle(.secondary)
         }.padding(18).frame(width: 540)
     }
     enum CollectionScope { case canvas, typeboard, project }
@@ -692,6 +783,19 @@ struct TypeBoardEditor: View {
             try TypeSystemPDFExporter.data(directions: selectedSummaryDirections).write(to: url, options: .atomic)
             status = "Type system PDF exported with \(selectedSummaryDirections.count) canvas \(selectedSummaryDirections.count == 1 ? "page" : "pages")"
         } catch { status = "Type system PDF export failed: " + error.localizedDescription }
+    }
+    func exportAdobeTypeSystem(_ target: AdobeTypeSystemTarget) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: target.scriptExtension) ?? .plainText]
+        panel.nameFieldStringValue = AdobeTypeSystemExporter.suggestedScriptFilename(title: board.name, target: target)
+        panel.message = "Run this builder inside Adobe " + target.displayName + ". It creates a new editable ." + target.documentExtension + " document and asks where to save it."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try AdobeTypeSystemExporter.data(directions: selectedSummaryDirections, title: board.name, target: target).write(to: url, options: .atomic)
+            status = "Adobe " + target.displayName + " builder exported — run the .jsx file inside " + target.displayName + " to create the native document"
+        } catch {
+            status = "Adobe " + target.displayName + " export failed: " + error.localizedDescription
+        }
     }
     func numeric(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 4) { HStack { Text(title); Spacer(); TextField(title, value: Binding(get: { value.wrappedValue }, set: { if $0.isFinite { value.wrappedValue = min(range.upperBound, max(range.lowerBound, $0)) } }), format: .number.precision(.fractionLength(0...2))).multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 65).onSubmit { NSApp.keyWindow?.makeFirstResponder(nil) }; Text(unit).foregroundStyle(.secondary) }.font(.caption); Slider(value: value, in: range) }
@@ -1257,6 +1361,7 @@ enum TypeSystemPDFExporter {
         direction.sectionOrder = nil
         direction.hiddenSections = nil
         direction.importedLayout = nil
+        direction.importedSource = nil
         direction.importWarnings = nil
         direction.textOverrides = nil
         return direction

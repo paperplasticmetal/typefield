@@ -90,6 +90,12 @@ enum StudioChecks {
         try verify(pairSeed.style(.display).fontName == "Georgia" && pairSeed.style(.heading).fontName == "Georgia" && pairSeed.style(.body).fontName == "Helvetica", "Two-font typeboards must seed display and supporting roles predictably")
         let multiSeed = TypeDirection(fonts: ["Display", "Heading", "Subheading", "Body", "UI", "Mono"])
         try verify(multiSeed.style(.display).fontName == "Display" && multiSeed.style(.heading).fontName == "Heading" && multiSeed.style(.subheading).fontName == "Subheading" && multiSeed.style(.body).fontName == "Body" && multiSeed.style(.label).fontName == "UI" && multiSeed.style(.mono).fontName == "Mono", "Multi-font typeboards must put every selected font into an initial role")
+        var mappedSeed = TypeDirection(fonts: ["One", "Two"], roleFonts: [TypeRole.display.rawValue: "Two", TypeRole.body.rawValue: "One"])
+        try verify(mappedSeed.style(.display).fontName == "Two" && mappedSeed.style(.body).fontName == "One" && mappedSeed.style(.caption).fontName == "Two", "Typeboard role choices must override suggestions")
+        var remappedBody = mappedSeed.style(.body); remappedBody.fontName = "Changed later"; mappedSeed.styles[TypeRole.body.rawValue] = remappedBody
+        try verify(mappedSeed.style(.body).fontName == "Changed later", "Initial typeboard role choices must remain freely editable")
+        let seedDraft = TypeboardSeedDraft(fonts: ["One", "Two", "One"], source: "Fixture")
+        try verify(seedDraft.fonts == ["One", "Two"] && seedDraft.suggested.count == TypeRole.allCases.count, "Typeboard setup must deduplicate candidates and suggest every role")
         try verify(board.canvasName(board.directions[0]) == "Canvas 1")
         var legacyBoard = board; legacyBoard.directions[0].name = "Direction A copy"
         try verify(legacyBoard.canvasName(legacyBoard.directions[0]) == "Canvas 1" && legacyBoard.directions[0].name == "Direction A copy", "Legacy canvas labels must not rewrite saved names")
@@ -257,11 +263,16 @@ enum StudioChecks {
         let importedBoard = try FigmaLayoutImporter.board(data: reverseData, fonts: catalog.flatMap(\.faces))
         try verify(importedBoard.isValid && importedBoard.directions.count == board.directions.count, "Figma typeboard failed validation")
         let importedFirst = importedBoard.directions[0]
-        try verify(importedFirst.canvas == .imported && importedFirst.importedLayout?.layers.filter { $0.style != nil }.count == CanvasPlan(direction: board.directions[0]).elements.filter { $0.text != nil }.count)
+        try verify(importedFirst.canvas == .imported && importedFirst.importedSource == .figma && importedFirst.canvasDisplayName == "Figma layout" && importedFirst.canvasUnitLabel == "px" && importedFirst.importedLayout?.layers.filter { $0.style != nil }.count == CanvasPlan(direction: board.directions[0]).elements.filter { $0.text != nil }.count)
         try verify(importedFirst.importedLayout?.layers.first?.style?.fontName == "Helvetica", "Imported font mapping failed")
         let importedEncoded = try JSONEncoder().encode(importedBoard)
         let decodedImported = try JSONDecoder().decode(TypeBoard.self, from: importedEncoded)
         try verify(decodedImported == importedBoard, "Imported geometry/style persistence failed")
+        var legacyImportedObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(importedFirst)) as! [String: Any]
+        legacyImportedObject.removeValue(forKey: "importedSource")
+        let legacyImportedData = try JSONSerialization.data(withJSONObject: legacyImportedObject)
+        let legacyImportedDirection = try JSONDecoder().decode(TypeDirection.self, from: legacyImportedData)
+        try verify(legacyImportedDirection.importedSource == nil && legacyImportedDirection.canvasDisplayName == "Figma layout" && legacyImportedDirection.canvasUnitLabel == "px", "Pre-source Figma layouts must remain compatible")
         try verify(restoredBoard.directions.count == 2 && restoredBoard.selectedDirection == duplicate.id)
         try verify(restoredBoard.directions[0].style(.body).fontName == "Helvetica")
         try verify(restoredBoard.directions[1] == duplicate, "Direction settings were lost on reload")
@@ -426,12 +437,27 @@ enum StudioChecks {
         library.saved.fontUsage = [usageName: FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 20), applicationCount: 4)]
         var importedLibrary = library.saved
         importedLibrary.fontUsage = [usageName: FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 30), applicationCount: 2)]
-        let backup = LibraryBackup(library: importedLibrary, pro: library.pro, spaces: store.state)
+        let fontLabProjectIDValue = library.fontLab.addProject(name: "Backup lettering")
+        try verify(fontLabProjectIDValue != nil, "Could not create Font Lab backup fixture")
+        let fontLabProjectID = fontLabProjectIDValue!
+        let fontLabStroke = FontLabStroke(points: [FontLabPoint(x: 0.2, y: 0.2), FontLabPoint(x: 0.8, y: 0.8)], width: 0.03)
+        var fontLabGlyph = FontLabGlyph(character: "A")
+        fontLabGlyph.strokes = [fontLabStroke]
+        library.fontLab.setGlyph(fontLabGlyph, in: fontLabProjectID, save: true)
+        let backup = LibraryBackup(library: importedLibrary, pro: library.pro, spaces: store.state, fontLab: library.fontLab.state)
+        let backupData = try JSONEncoder().encode(backup)
+        var legacyBackupObject = try JSONSerialization.jsonObject(with: backupData) as! [String: Any]
+        legacyBackupObject.removeValue(forKey: "fontLab")
+        let legacyBackupData = try JSONSerialization.data(withJSONObject: legacyBackupObject)
+        let legacyBackup = try JSONDecoder().decode(LibraryBackup.self, from: legacyBackupData)
+        try verify(legacyBackup.fontLab == nil, "Pre-Font-Lab version-1 backups must remain decodable")
         try LibraryBackupTools.merge(backup, into: library)
         try verify(library.saved.collections["Keep"] == [catalog[0].name])
         try verify(library.saved.fontUsage?[usageName] == FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 30), applicationCount: 4), "Backup merge must keep the newest use date without double-counting applications")
         try verify(library.studio.state.spaces[0].id != store.state.spaces[0].id)
+        let importedFontLabProject = library.fontLab.state.projects.first { $0.id != fontLabProjectID }
+        try verify(importedFontLabProject?.name == "Backup lettering (imported)" && importedFontLabProject?.glyphs["A"] == fontLabGlyph, "Backup merge must preserve Font Lab artwork in an independent project copy")
         try verify(FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path))
-        print("PASS: typography and legacy decoding, section reorder/removal, Figma layout payload, search tokens, independent directions and relaunch persistence, corrupt workspace preservation, nested AND/OR/NOT tags, recursive folder changes, Unicode lookup/SVG, \(plans) responsive canvases, specimen PDF and backup merge.")
+        print("PASS: typography and legacy decoding, section reorder/removal, Figma layout payload, search tokens, independent directions and relaunch persistence, corrupt workspace preservation, nested AND/OR/NOT tags, recursive folder changes, Unicode lookup/SVG, \(plans) responsive canvases, specimen PDF and Library/Spaces/Font Lab backup merge.")
     }
 }

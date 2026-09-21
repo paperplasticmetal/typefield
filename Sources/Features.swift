@@ -89,7 +89,7 @@ struct CompareView: View {
                 Text("Shortlist").font(.title2)
                 Spacer()
                 Text("\(selectedFonts.count) of \(library.compared.count) selected").foregroundStyle(.secondary)
-                Button("Create typeboard") { let fonts = selectedFonts; library.pairSelection(fonts); dismiss() }.buttonStyle(.borderedProminent).disabled(selectedFonts.isEmpty)
+                Button("Create typeboard") { let fonts = selectedFonts; dismiss(); DispatchQueue.main.async { library.pairSelection(fonts, source: "Shortlist") } }.buttonStyle(.borderedProminent).disabled(selectedFonts.isEmpty)
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             HStack { TextField("Preview text", text: $preview); Slider(value: $size, in: 16...160).frame(width: 140); Text("\(Int(size)) pt").frame(width: 45) }

@@ -114,21 +114,52 @@ enum FontCatalog {
     }
 }
 
+enum WorkspaceMode: String, CaseIterable, Identifiable {
+    case library = "Library"
+    case spaces = "Spaces"
+    case fontLab = "Font Lab"
+    var id: String { rawValue }
+}
+
 final class Library: ObservableObject {
-    @Published var workspace = false
+    @Published var workspace = WorkspaceMode.library
+    @Published var typeboardDraft: TypeboardSeedDraft?
     @Published var tagQuery = TagQuery()
     @Published var folderStatus = ""
     let folderWatcher = FolderWatcher()
     var autoActivatedPaths: Set<String> = []
     var autoActivatedStamps: [String: FontFileStamp] = [:]
     lazy var studio = StudioStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("spaces.json"))
-    func pairSelection(_ names: [String]) {
+    lazy var fontLab = FontLabStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("font-lab.json"))
+    func pairSelection(_ names: [String], source: String = "Selected fonts", spaceID: UUID? = nil) {
         guard !studio.readBlocked else { message = studio.error; return }
+        let unique = names.reduce(into: [String]()) { values, name in if !values.contains(name) { values.append(name) } }
+        if !unique.isEmpty { typeboardDraft = TypeboardSeedDraft(fonts: unique, source: source, spaceID: spaceID); return }
         let active = studio.state.spaces.first(where: { $0.id == studio.focusedSpace })?.id
         guard let space = active ?? studio.state.spaces.first?.id ?? studio.addSpace("My projects") else { message = studio.error; return }
-        guard studio.addBoard(space: space, fonts: names) != nil else { message = studio.error; return }
-        if !names.isEmpty { _ = recordFontUses(names) }
-        workspace = true
+        guard studio.addBoard(space: space) != nil else { message = studio.error; return }
+        workspace = .spaces
+    }
+    func createTypeboard(from draft: TypeboardSeedDraft, roles: [String: String]) {
+        guard !studio.readBlocked else { message = studio.error; return }
+        let requested = draft.spaceID.flatMap { id in studio.state.spaces.first(where: { $0.id == id })?.id }
+        let active = requested ?? studio.state.spaces.first(where: { $0.id == studio.focusedSpace })?.id
+        guard let space = active ?? studio.state.spaces.first?.id ?? studio.addSpace("My projects") else { message = studio.error; return }
+        guard studio.addBoard(space: space, fonts: draft.fonts, roleFonts: roles) != nil else { message = studio.error; return }
+        _ = recordFontUses(Array(Set(roles.values)))
+        typeboardDraft = nil
+        workspace = .spaces
+    }
+    func contextualTypeboardSeed() -> (fonts: [String], source: String) {
+        if !selectedFamilies.isEmpty {
+            return (families.filter { selectedFamilies.contains($0.name) }.map { chosenFace($0).name }, "Selected Library fonts")
+        }
+        if selection == "Favorites" || selection.hasPrefix("collection:") {
+            let values = families.filter { matchesSection($0, selection) }.map { chosenFace($0).name }
+            let label = selection == "Favorites" ? "Favorites" : "Collection “" + String(selection.dropFirst(11)) + "”"
+            if !values.isEmpty { return (values, label) }
+        }
+        return (compared.map { chosenFace($0).name }, comparison.isEmpty ? "Blank typeboard" : "Shortlist")
     }
     @Published var families: [Family] = []
     var originalFamilies: [Family] = []
@@ -392,16 +423,21 @@ struct ContentView: View {
     var body: some View {
         ZStack(alignment: .leading) {
         HStack(spacing: 0) {
-            if !library.workspace && !sidebarCollapsed { WorkspaceSidebarShell { sidebar }.transition(.move(edge: .leading).combined(with: .opacity)) }
-            if library.workspace {
+            if library.workspace == .library && !sidebarCollapsed { WorkspaceSidebarShell { sidebar }.transition(.move(edge: .leading).combined(with: .opacity)) }
+            switch library.workspace {
+            case .spaces:
                 StudioView(library: library, store: library.studio, sidebarCollapsed: $sidebarCollapsed)
-            } else { VStack(spacing: 0) {
+            case .fontLab:
+                FontLabView(library: library, sidebarCollapsed: $sidebarCollapsed)
+            case .library:
+                VStack(spacing: 0) {
                 let visibleFamilies = library.filtered
                 topControls
                 libraryContent(visibleFamilies)
                 Divider()
                 HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families")"); Text("·"); Text("\(library.families.reduce(0) { $0 + $1.faces.count }) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
-            }.accessibilityIdentifier("library-workspace") }
+                }.accessibilityIdentifier("library-workspace")
+            }
         }
         if sidebarCollapsed { WorkspaceSidebarRevealButton(collapsed: $sidebarCollapsed).padding(.leading, 4).zIndex(2) }
         }
@@ -427,6 +463,7 @@ struct ContentView: View {
         .onChange(of: preview) { value in library.requiredText = value == "{family}" ? "" : value; if value == "{family}" { library.requireCoverage = false } }
         .sheet(isPresented: $library.showTools) { LibraryToolsView(library: library) }
         .sheet(isPresented: $library.showCompare) { CompareView(library: library, preview: preview, size: size) }
+        .sheet(item: $library.typeboardDraft) { draft in TypeboardRoleMapper(library: library, draft: draft) }
         .sheet(isPresented: $showDiscovery) { FontDiscoveryView(library: library, eligibleFamilies: library.filtered, preview: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
         .sheet(item: $library.detail) { family in DetailView(library: library, family: family, preview: preview == "{family}" ? family.name : preview, size: size) }
         .alert("New collection", isPresented: $showCollection) {
@@ -491,7 +528,7 @@ struct ContentView: View {
                     HStack {
                         Text("\(library.selectedFamilies.count) selected")
                         Button("Tag…") { library.openTools("Tags") }
-                        Button("Create typeboard") { library.pairSelection(library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }) }
+                        Button("Create typeboard") { library.pairSelection(library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }, source: "Selected Library fonts") }
                         Button("PDF…") { SpecimenExporter.export(faces: library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0) }, library: library, sample: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
                         Button("Edit families…") { library.openTools("Families") }
                         Button("Export fonts…") { if let result = FontExporter.export(library.selectedFaces) { library.message = result } }
@@ -563,8 +600,8 @@ struct ContentView: View {
             SidebarSection(title: "TAGS", key: "sidebar.tags") {
             ForEach(TagQuery.hierarchy(Set(library.pro.tags.values.flatMap { $0 })), id: \.self) { tag in
                 nav(tag, icon: "tag", key: "tag:" + tag).padding(.leading, CGFloat(tag.filter { $0 == "/" }.count) * 8).contextMenu {
-                    Button("Include tag") { library.tagQuery.included.insert(tag); library.tagQuery.excluded.remove(tag); library.workspace = false; library.selection = "All Fonts" }
-                    Button("Exclude tag") { library.tagQuery.excluded.insert(tag); library.tagQuery.included.remove(tag); library.workspace = false; library.selection = "All Fonts" }
+                    Button("Include tag") { library.tagQuery.included.insert(tag); library.tagQuery.excluded.remove(tag); library.workspace = .library; library.selection = "All Fonts" }
+                    Button("Exclude tag") { library.tagQuery.excluded.insert(tag); library.tagQuery.included.remove(tag); library.workspace = .library; library.selection = "All Fonts" }
                 }
             }
             }
@@ -573,8 +610,8 @@ struct ContentView: View {
                 VStack(spacing: 6) {
                     ForEach(library.saved.collections.keys.sorted(), id: \.self) { name in
                         HStack(spacing: 0) {
-                            Button { library.workspace = false; library.selection = "collection:" + name } label: { Image(systemName: "folder").frame(width: 28) }.buttonStyle(.plain).accessibilityLabel("Open collection " + name)
-                            ShelfEditableName(name: name, selected: library.selection == "collection:" + name, onSelect: { library.workspace = false; library.selection = "collection:" + name }, onRename: { library.renameCollection(name, to: $0) })
+                            Button { library.workspace = .library; library.selection = "collection:" + name } label: { Image(systemName: "folder").frame(width: 28) }.buttonStyle(.plain).accessibilityLabel("Open collection " + name)
+                            ShelfEditableName(name: name, selected: library.selection == "collection:" + name, onSelect: { library.workspace = .library; library.selection = "collection:" + name }, onRename: { library.renameCollection(name, to: $0) })
                             Text("\(library.families.filter { library.matchesSection($0, "collection:" + name) }.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection", role: .destructive) { library.saved.collections.removeValue(forKey: name); library.save(); if library.selection == "collection:" + name { library.selection = "All Fonts" } } }
                     }
@@ -606,9 +643,9 @@ struct ContentView: View {
         }
     }
     func nav(_ title: String, icon: String, key: String) -> some View {
-        Button { library.workspace = false; library.selection = key } label: {
+        Button { library.workspace = .library; library.selection = key } label: {
             HStack { navIcon(icon, key: key); Text(title).lineLimit(1); Spacer(); Text("\(library.families.filter { library.matchesSection($0, key) }.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
-        }.buttonStyle(.plain).background(!library.workspace && library.selection == key ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
+        }.buttonStyle(.plain).background(library.workspace == .library && library.selection == key ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
     }
     func renameCollection(_ name: String) {
         if let renamed = ShelfRename.prompt("Rename collection", current: name, validate: { candidate in candidate != name && library.saved.collections[candidate] != nil ? "A collection with this name already exists. Choose another name." : nil }) { _ = library.renameCollection(name, to: renamed) }
@@ -622,9 +659,9 @@ struct ContentView: View {
             Spacer()
             Button("Rediscover", systemImage: "shuffle") { showDiscovery = true }.help("Find local fonts you have not applied recently")
             Button("New typeboard", systemImage: "text.badge.plus") {
-                let selected = library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }
-                library.pairSelection(selected.isEmpty ? library.compared.map { library.chosenFace($0).name } : selected)
-            }.help(library.selectedFamilies.isEmpty ? "Create a typeboard in the current space using your shortlisted fonts" : "Create a typeboard in the current space using the selected fonts")
+                let seed = library.contextualTypeboardSeed()
+                library.pairSelection(seed.fonts, source: seed.source)
+            }.help("Create a typeboard and choose the initial font for every role")
             Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").popover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
             Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").popover(isPresented: $showColors) { PreviewColorsView() }
             Menu("Tools") {
@@ -673,7 +710,7 @@ struct ContentView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.contextMenu { actions(family) }
     }
     @ViewBuilder func actions(_ family: Family) -> some View {
-        Button("New typeboard with this font") { library.pairSelection([library.chosenFace(family).name]) }
+        Button("New typeboard with this font") { library.pairSelection([library.chosenFace(family).name], source: family.name) }
         Button(library.comparison.contains(family.name) ? "Remove from comparison" : "Add to comparison") { library.compare(family) }
         Button("Use as overlay reference") { library.overlayName = library.chosenFace(family).name }
         Button("View all styles") { library.detail = family }
@@ -729,6 +766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Browse Google Fonts…", "Google Fonts", to: fileMenu)
         addCommand("New Collection…", "collection", to: fileMenu, key: "n")
         addCommand("Spaces", "spaces", to: fileMenu)
+        addCommand("Font Lab", "fontLab", to: fileMenu)
         addCommand("New Typeboard", "pair", to: fileMenu, key: "k")
         addCommand("Watched Folders…", "Folders", to: fileMenu)
         addCommand("Inspect Font Files…", "Font Health", to: fileMenu)
@@ -819,8 +857,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return true
     }
     var activeUndoManager: UndoManager? {
-        if let text = window.firstResponder as? NSTextView, !(library.workspace && text.isFieldEditor), let manager = text.undoManager, manager.canUndo || manager.canRedo { return manager }
-        return library.workspace ? library.studio.undoManager : nil
+        if let text = window.firstResponder as? NSTextView, !(library.workspace == .spaces && text.isFieldEditor), let manager = text.undoManager, manager.canUndo || manager.canRedo { return manager }
+        return library.workspace == .spaces ? library.studio.undoManager : nil
     }
     @objc func undo(_ sender: Any?) { let manager = activeUndoManager; if manager === library.studio.undoManager { window.makeFirstResponder(window) }; manager?.undo() }
     @objc func redo(_ sender: Any?) { let manager = activeUndoManager; if manager === library.studio.undoManager { window.makeFirstResponder(window) }; manager?.redo() }
@@ -829,8 +867,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
         switch command {
         case "folder": library.addFolder()
-        case "spaces": library.workspace = true
-        case "pair": library.pairSelection(selected.isEmpty ? library.compared.map { library.chosenFace($0).name } : selected.map { library.chosenFace($0).name })
+        case "spaces": library.workspace = .spaces
+        case "fontLab": library.workspace = .fontLab
+        case "pair": let seed = library.contextualTypeboardSeed(); library.pairSelection(selected.isEmpty ? seed.fonts : selected.map { library.chosenFace($0).name }, source: selected.isEmpty ? seed.source : "Selected Library fonts")
         case "backup": LibraryBackupTools.export(library)
         case "restoreBackup": LibraryBackupTools.restore(library)
         case "Tags", "Families", "Duplicates", "Font Health", "Google Fonts", "Activation", "Folders": library.openTools(command)
@@ -971,7 +1010,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     testLibrary.requireCoverage = false; testLibrary.compare(fonts[0]); precondition(testLibrary.compared.count == 1)
     testLibrary.compare(fonts[0]); precondition(testLibrary.compared.isEmpty)
     AdobeBridge.selfTest()
-    do { try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    AdobeTypeSystemExporter.selfTest()
+    AdobeTypeSystemReturnBridge.selfTest()
+    precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
+    do { try FontLabStore.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

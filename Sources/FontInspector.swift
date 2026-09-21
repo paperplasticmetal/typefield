@@ -217,7 +217,7 @@ struct SimilarFontsView: View {
                             VStack(alignment: .trailing, spacing: 7) {
                                 Button("Inspect") { open(result.family) }
                                 Button(library.comparison.contains(result.family.name) ? "Shortlisted" : "Shortlist") { library.compare(result.family) }
-                                Button("New typeboard") { library.pairSelection([reference.name, result.face.name]); dismiss() }
+                                Button("New typeboard") { dismiss(); DispatchQueue.main.async { library.pairSelection([reference.name, result.face.name], source: "Pairing suggestion") } }
                             }.fixedSize()
                         }.padding(14).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
                     }
@@ -267,7 +267,7 @@ struct FontDiscoveryView: View {
                             VStack(alignment: .trailing, spacing: 7) {
                                 Button("Inspect") { open(result.family) }
                                 Button(library.comparison.contains(result.family.name) ? "Shortlisted" : "Shortlist") { library.compare(result.family) }
-                                Button("New typeboard") { library.pairSelection([result.face.name]); dismiss() }
+                                Button("New typeboard") { dismiss(); DispatchQueue.main.async { library.pairSelection([result.face.name], source: "Discovery suggestion") } }
                             }.fixedSize()
                         }.padding(14).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
                     }
