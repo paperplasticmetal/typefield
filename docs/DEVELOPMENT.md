@@ -31,3 +31,7 @@
 - Never replace an unreadable library or workspace while installing a build. App data remains in Application Support and is separate from the app bundle.
 
 Keep source-only changes separate from generated artifacts. The `.gitignore` excludes local output and private state. Use Xcode's complete bundle for distribution rather than relying on the source-only Swift package.
+
+## Font Lab specimens
+
+Run `dist/FontShelf.app/Contents/MacOS/FontShelf --font-lab-specimen /tmp/fontshelf-specimens` to render disposable comparison sheets and export validation fonts. This command does not open the user library or save projects. Fonts unavailable to the current process are skipped. Use normal macOS execution for the complete installed font catalog. Generated files are QA fixtures, not distribution artifacts.

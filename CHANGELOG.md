@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.29.0 — 2026-09-21
+
+- Rebuilt Font Lab combination around continuous filled contours instead of horizontal pen strips. Adaptive curve sampling, spatial contour matching and counter-aware fallback produce smoother edges, more stable stems and intact bowls. Incompatible glyph structures retain the dominant source and are identified in the preview.
+- Preserved proportional glyph widths, source side bearings, consistent face scaling and exact source selection at 0% and 100%. Alternate glyphs now selects a whole source glyph; Interleave uses broad connected bands.
+- Added a debounced live generated specimen, automatic source-based project naming that respects custom names, and visible descriptions for Clean, Soft, Poster and Kinetic. Clean is the neutral default; Soft rounds corners, Poster adds weight and width, and Kinetic adds forward slant.
+- Added Reshape with draggable outline points and shared canvas/toolbar Undo. Continuous outlines and counters persist through saved projects, SVG and validated TrueType export; existing pen projects retain their original rendering.
+- Added a visible Delete project action and sidebar context action. Deleted experiments can be restored from Deleted projects after relaunch; source fonts and exported files remain untouched.
+- Added isolated regression coverage for source endpoints, whole-glyph alternation, proportional widths, counter/export fidelity, contour persistence and project deletion/restoration.
+
 ## 0.28.0 — 2026-09-21
 
 - Added an offline Font Lab starter generator that remixes two installed faces into editable glyph strokes. Blend, Interleave and Alternate-glyph methods, an adjustable source balance and Clean/Soft/Poster/Kinetic presets provide playful starting points without copying source font binaries or presenting deterministic transforms as cloud AI.

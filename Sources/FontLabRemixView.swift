@@ -13,11 +13,15 @@ struct FontLabRemixSheet: View {
     @State private var secondaryName: String
     @State private var projectName: String
     @State private var mode = FontLabRemixMode.blend
-    @State private var preset = FontLabStarterPreset.soft
+    @State private var preset = FontLabStarterPreset.clean
     @State private var blendAmount = 0.5
     @State private var rightsConfirmed = false
     @State private var isGenerating = false
     @State private var failure = ""
+    @State private var autoName = ""
+    @State private var preview: FontLabRemixResult?
+    @State private var previewBusy = true
+    @State private var previewFailure = ""
 
     init(faces: [Face], suggestedNames: [String], onCreate: @escaping (FontLabRemixResult) -> Bool) {
         self.faces = faces.sorted {
@@ -30,7 +34,7 @@ struct FontLabRemixSheet: View {
 
         let available = Set(faces.map(\.name))
         var choices = suggestedNames.filter { available.contains($0) }
-        for familiar in ["Helvetica", "Times-Roman"] where available.contains(familiar) && !choices.contains(familiar) {
+        for familiar in ["Helvetica", "TimesNewRomanPSMT", "Times-Roman", "Georgia"] where available.contains(familiar) && !choices.contains(familiar) {
             choices.append(familiar)
         }
         for face in self.faces where !choices.contains(face.name) && choices.count < 2 {
@@ -47,7 +51,7 @@ struct FontLabRemixSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Generate an editable font starter").font(.title2.weight(.semibold))
@@ -60,7 +64,12 @@ struct FontLabRemixSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("PROJECT NAME").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                HStack {
+                    Text("PROJECT NAME").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Use source names") { projectName = suggestedProjectName; autoName = suggestedProjectName }
+                        .buttonStyle(.plain).font(.caption).disabled(projectName == suggestedProjectName)
+                }
                 TextField("Font name", text: $projectName).textFieldStyle(.roundedBorder)
                     .onChange(of: projectName) { value in
                         if value.count > 200 { projectName = String(value.prefix(200)) }
@@ -97,8 +106,8 @@ struct FontLabRemixSheet: View {
                     Text("A").font(.caption.weight(.semibold))
                     Slider(value: $blendAmount, in: 0...1)
                     Text("B").font(.caption.weight(.semibold))
-                    Text("\(Int((blendAmount * 100).rounded()))%")
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
+                    Text("\(Int((blendAmount * 100).rounded()))% B")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
                 }
                 .disabled(primaryName == secondaryName)
             }
@@ -111,15 +120,37 @@ struct FontLabRemixSheet: View {
                 .pickerStyle(.segmented).labelsHidden()
             }
 
+            Text(preset.explanation).font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             HStack(spacing: 12) {
                 FontLabSourcePreview(label: "A", face: selectedFace(primaryName))
                 FontLabSourcePreview(label: "B", face: selectedFace(secondaryName))
             }
 
             VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("GENERATED PREVIEW").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Spacer()
+                    if previewBusy { ProgressView().controlSize(.small); Text("Updating…").font(.caption) }
+                }
+                if let preview {
+                    FontLabPreviewCanvas(text: "Hamburgefontsiv 08&", glyphs: preview.project.glyphs, metrics: preview.project.metrics)
+                        .frame(height: 94).opacity(previewBusy ? 0.4 : 1)
+                    if !preview.preservedCharacters.isEmpty {
+                        Text("Structure preserved from source \(blendAmount < 0.5 ? "A" : "B"): " + preview.preservedCharacters.joined(separator: " "))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(previewFailure.isEmpty ? "Building your preview…" : previewFailure)
+                        .font(.caption).foregroundStyle(.secondary).frame(height: 94)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
                 Label("Private by design", systemImage: "checkmark.shield")
                     .font(.subheadline.weight(.semibold))
-                Text("This version uses deterministic outline sampling and geometric presets—not a cloud AI model. It copies no source font binaries, but the result is derivative artwork: review both source licenses before installing or sharing it.")
+                Text("Generated on your Mac. Review both source font licenses before installing or sharing a derivative font.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("I have permission to modify both source fonts for this project.", isOn: $rightsConfirmed)
                     .toggleStyle(.checkbox)
@@ -135,7 +166,7 @@ struct FontLabRemixSheet: View {
             }
 
             HStack {
-                Text(isGenerating ? "Sampling and combining the starter character set…" : "The generated glyphs remain ordinary editable Font Lab strokes.")
+                Text(isGenerating ? "Combining the starter character set…" : "Use Reshape to edit outline points, or draw over any glyph.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { dismiss() }.disabled(isGenerating)
@@ -145,7 +176,12 @@ struct FontLabRemixSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 760, height: 720)
+        .frame(width: 800, height: 820)
+        .disabled(isGenerating)
+        .onAppear { autoName = suggestedProjectName }
+        .onChange(of: primaryName) { _ in updateSuggestedName() }
+        .onChange(of: secondaryName) { _ in updateSuggestedName() }
+        .task(id: recipe) { await refreshPreview() }
         .interactiveDismissDisabled(isGenerating)
     }
 
@@ -157,14 +193,41 @@ struct FontLabRemixSheet: View {
 
     private func selectedFace(_ name: String) -> Face? { faces.first { $0.name == name } }
 
+    private var suggestedProjectName: String {
+        String("\(selectedFace(primaryName)?.originalFamily ?? "Font") × \(selectedFace(secondaryName)?.originalFamily ?? "Remix")".prefix(200))
+    }
+
+    private func updateSuggestedName() {
+        if projectName == autoName || projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            projectName = suggestedProjectName
+        }
+        autoName = suggestedProjectName
+    }
+
+    private var recipe: FontLabRemixRecipe {
+        FontLabRemixRecipe(primaryPostScriptName: primaryName, secondaryPostScriptName: secondaryName,
+            blendAmount: primaryName == secondaryName ? 0 : blendAmount, mode: mode, preset: preset)
+    }
+
+    @MainActor private func refreshPreview() async {
+        previewBusy = true
+        previewFailure = ""
+        let requestedRecipe = recipe
+        do { try await Task.sleep(nanoseconds: 220_000_000) } catch { return }
+        let generated = await Task.detached(priority: .userInitiated) {
+            Result { try FontLabRemixEngine.generate(recipe: requestedRecipe,
+                characters: Array("Hamburgefontsiv08&").map(String.init)) }
+        }.value
+        guard !Task.isCancelled else { return }
+        previewBusy = false
+        switch generated {
+        case let .success(result): preview = result
+        case let .failure(error): preview = nil; previewFailure = error.localizedDescription
+        }
+    }
+
     private func generate() {
-        let recipe = FontLabRemixRecipe(
-            primaryPostScriptName: primaryName,
-            secondaryPostScriptName: secondaryName,
-            blendAmount: primaryName == secondaryName ? 0 : blendAmount,
-            mode: mode,
-            preset: preset
-        )
+        let recipe = self.recipe
         let requestedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
         isGenerating = true
         failure = ""
@@ -235,25 +298,33 @@ private struct FontLabFacePicker: View {
                         Spacer()
                         if !query.isEmpty { Button("Clear") { query = "" }.buttonStyle(.plain).font(.caption) }
                     }
-                    List(filteredFaces) { face in
-                        Button {
-                            selection = face.name
-                            presented = false
-                        } label: {
-                            HStack(spacing: 10) {
-                                Text("Ag").font(.custom(face.name, size: 21)).frame(width: 38)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(face.originalFamily).font(.subheadline.weight(face.name == selection ? .semibold : .regular))
-                                    Text("\(face.style) · \(face.name)").font(.caption2).foregroundStyle(.secondary)
+                    ScrollView {
+                        LazyVStack(spacing: 2) {
+                            ForEach(filteredFaces) { face in
+                                Button {
+                                    selection = face.name
+                                    presented = false
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Text("Ag").font(.custom(face.name, size: 21)).frame(width: 38)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(face.originalFamily).font(.subheadline.weight(face.name == selection ? .semibold : .regular))
+                                            Text("\(face.style) · \(face.name)").font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                        .lineLimit(1)
+                                        Spacer()
+                                        if face.name == selection { Image(systemName: "checkmark").foregroundStyle(ShelfPalette.ink) }
+                                    }
+                                    .padding(.horizontal, 8).padding(.vertical, 7)
+                                    .background(face.name == selection ? Color.primary.opacity(0.08) : Color.clear,
+                                                in: RoundedRectangle(cornerRadius: 7))
+                                    .contentShape(Rectangle())
                                 }
-                                Spacer()
-                                if face.name == selection { Image(systemName: "checkmark").foregroundStyle(ShelfPalette.ink) }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(face.originalFamily), \(face.style), \(face.name)")
                             }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
-                    .listStyle(.inset)
                 }
                 .padding(14).frame(width: 410, height: 440)
             }

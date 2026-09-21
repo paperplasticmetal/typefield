@@ -49,21 +49,26 @@ struct FontLabStroke: Codable, Identifiable, Equatable {
     /// Optional so projects saved before nib styles existed continue to decode.
     /// A missing value is rendered as the original round pen.
     var nibStyle: FontLabNibStyle? = nil
+    /// A compound, non-zero-filled outline. Optional for old pen-only projects.
+    /// Keeping counters with their outer shape preserves holes during editing.
+    var contours: [[FontLabPoint]]? = nil
 
     var resolvedNibStyle: FontLabNibStyle { nibStyle ?? .round }
 
     var isValid: Bool {
-        !points.isEmpty && points.count <= 50_000 && width.isFinite && (0.002...0.2).contains(width) && points.allSatisfy(\.isValid)
+        (contours.map { !$0.isEmpty && $0.count <= 256 && $0.reduce(0) { $0 + $1.count } <= 30_000 && $0.allSatisfy { $0.count >= 3 && $0.allSatisfy(\.isValid) } } ?? !points.isEmpty) &&
+            points.count <= 50_000 && width.isFinite && (0.002...0.2).contains(width) && points.allSatisfy(\.isValid)
     }
 }
 
 enum FontLabDrawingTool: String, CaseIterable, Identifiable {
     case pen
     case eraser
+    case reshape
 
     var id: String { rawValue }
-    var title: String { self == .pen ? "Pen" : "Eraser" }
-    var systemImage: String { self == .pen ? "pencil.tip" : "eraser" }
+    var title: String { self == .pen ? "Pen" : self == .eraser ? "Eraser" : "Reshape" }
+    var systemImage: String { self == .pen ? "pencil.tip" : self == .eraser ? "eraser" : "point.topleft.down.to.point.bottomright.curvepath" }
 }
 
 enum FontLabSmoothingLevel: String, CaseIterable, Identifiable {
@@ -118,6 +123,14 @@ enum FontLabDrawingOperations {
     }
 
     private static func strokeIntersects(_ stroke: FontLabStroke, point: FontLabPoint, squaredRadius: Double) -> Bool {
+        if let contours = stroke.contours {
+            let path = CGMutablePath()
+            for contour in contours {
+                path.addLines(between: contour.map { CGPoint(x: $0.x, y: $0.y) })
+                path.closeSubpath()
+            }
+            return path.contains(CGPoint(x: point.x, y: point.y))
+        }
         guard let first = stroke.points.first else { return false }
         if squaredDistance(first, point) <= squaredRadius { return true }
         for (start, end) in zip(stroke.points, stroke.points.dropFirst()) {
@@ -199,21 +212,31 @@ enum FontLabSVGExporter {
     }
 
     static func string(projectName: String, glyph: FontLabGlyph, metrics: FontLabMetrics) -> String {
+        let xScale = glyph.contourDesignWidth ?? 1
+        let penScale = min(xScale, 1)
         let elements = glyph.strokes.compactMap { stroke -> String? in
+            if let contours = stroke.contours {
+                let d = contours.map { contour in
+                    contour.enumerated().map { index, point in
+                        "\(index == 0 ? "M" : "L")\(number(point.x * xScale * 1_000)),\(number((1 - point.y) * 1_000))"
+                    }.joined(separator: " ") + " Z"
+                }.joined(separator: " ")
+                return "  <path d=\"\(d)\" fill=\"#111111\" fill-rule=\"nonzero\"/>"
+            }
             guard let first = stroke.points.first else { return nil }
-            let firstWidth = stroke.width * FontLabDrawingOperations.pressureScale(for: first) * 1_000
+            let firstWidth = stroke.width * FontLabDrawingOperations.pressureScale(for: first) * penScale * 1_000
             if stroke.points.count == 1 {
                 switch stroke.resolvedNibStyle {
                 case .round:
-                    return "  <circle cx=\"\(number(first.x * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"#111111\"/>"
+                    return "  <circle cx=\"\(number(first.x * xScale * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"#111111\"/>"
                 case .marker:
                     let width = firstWidth * 1.28
-                    return "  <rect x=\"\(number(first.x * 1_000 - width / 2))\" y=\"\(number((1 - first.y) * 1_000 - firstWidth * 0.32))\" width=\"\(number(width))\" height=\"\(number(firstWidth * 0.64))\" rx=\"\(number(firstWidth * 0.08))\" fill=\"#111111\"/>"
+                    return "  <rect x=\"\(number(first.x * xScale * 1_000 - width / 2))\" y=\"\(number((1 - first.y) * 1_000 - firstWidth * 0.32))\" width=\"\(number(width))\" height=\"\(number(firstWidth * 0.64))\" rx=\"\(number(firstWidth * 0.08))\" fill=\"#111111\"/>"
                 case .outline:
-                    return "  <circle cx=\"\(number(first.x * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(max(2, firstWidth * 0.14)))\"/>"
+                    return "  <circle cx=\"\(number(first.x * xScale * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(max(2, firstWidth * 0.14)))\"/>"
                 }
             }
-            if stroke.resolvedNibStyle == .outline { return outlineElements(for: stroke) }
+            if stroke.resolvedNibStyle == .outline { return outlineElements(for: stroke, xScale: xScale) }
             let marker = stroke.resolvedNibStyle == .marker
             let widthScale = marker ? 1.28 : 1
             let cap = marker ? "square" : "round"
@@ -221,16 +244,16 @@ enum FontLabSVGExporter {
             if stroke.points.contains(where: { $0.pressure != nil }) {
                 return zip(stroke.points, stroke.points.dropFirst()).map { start, end in
                     let scale = (FontLabDrawingOperations.pressureScale(for: start) + FontLabDrawingOperations.pressureScale(for: end)) / 2
-                    let width = number(stroke.width * scale * widthScale * 1_000)
-                    return "  <line x1=\"\(number(start.x * 1_000))\" y1=\"\(number((1 - start.y) * 1_000))\" x2=\"\(number(end.x * 1_000))\" y2=\"\(number((1 - end.y) * 1_000))\" stroke=\"#111111\" stroke-width=\"\(width)\" stroke-linecap=\"\(cap)\"/>"
+                    let width = number(stroke.width * scale * widthScale * penScale * 1_000)
+                    return "  <line x1=\"\(number(start.x * xScale * 1_000))\" y1=\"\(number((1 - start.y) * 1_000))\" x2=\"\(number(end.x * xScale * 1_000))\" y2=\"\(number((1 - end.y) * 1_000))\" stroke=\"#111111\" stroke-width=\"\(width)\" stroke-linecap=\"\(cap)\"/>"
                 }.joined(separator: "\n")
             }
-            let points = stroke.points.map { "\(number($0.x * 1_000)),\(number((1 - $0.y) * 1_000))" }.joined(separator: " ")
-            return "  <polyline points=\"\(points)\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(stroke.width * widthScale * 1_000))\" stroke-linecap=\"\(cap)\" stroke-linejoin=\"\(join)\"/>"
+            let points = stroke.points.map { "\(number($0.x * xScale * 1_000)),\(number((1 - $0.y) * 1_000))" }.joined(separator: " ")
+            return "  <polyline points=\"\(points)\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(stroke.width * widthScale * penScale * 1_000))\" stroke-linecap=\"\(cap)\" stroke-linejoin=\"\(join)\"/>"
         }.joined(separator: "\n")
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="\(escaped(projectName)) glyph \(escaped(glyph.character))">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \(number(glyph.contourDesignWidth == nil ? 1000 : glyph.resolvedDesignWidth * 1000)) 1000" role="img" aria-label="\(escaped(projectName)) glyph \(escaped(glyph.character))">
           <metadata>FontShelf Font Lab; character=\(escaped(glyph.character)); baseline=\(number(metrics.baseline)); x-height=\(number(metrics.xHeight)); cap-height=\(number(metrics.capHeight)); left-side-bearing=\(number(glyph.leftSideBearing)); right-side-bearing=\(number(glyph.rightSideBearing))</metadata>
         \(elements)
         </svg>
@@ -240,8 +263,8 @@ enum FontLabSVGExporter {
     /// Turns a centerline into two independent edge paths. Unlike painting a
     /// white line over a black one, the space between these paths remains
     /// transparent when the SVG is placed over color.
-    private static func outlineElements(for stroke: FontLabStroke) -> String {
-        let mapped = stroke.points.map { (x: $0.x * 1_000, y: (1 - $0.y) * 1_000, pressure: FontLabDrawingOperations.pressureScale(for: $0)) }
+    private static func outlineElements(for stroke: FontLabStroke, xScale: Double) -> String {
+        let mapped = stroke.points.map { (x: $0.x * xScale * 1_000, y: (1 - $0.y) * 1_000, pressure: FontLabDrawingOperations.pressureScale(for: $0)) }
         guard mapped.count > 1 else { return "" }
         var leading: [(Double, Double)] = []
         var trailing: [(Double, Double)] = []
@@ -251,13 +274,13 @@ enum FontLabSVGExporter {
             let dx = after.x - before.x
             let dy = after.y - before.y
             let length = max(0.001, hypot(dx, dy))
-            let offset = stroke.width * 500 * mapped[index].pressure
+            let offset = stroke.width * min(xScale, 1) * 500 * mapped[index].pressure
             let ox = -dy / length * offset
             let oy = dx / length * offset
             leading.append((mapped[index].x + ox, mapped[index].y + oy))
             trailing.append((mapped[index].x - ox, mapped[index].y - oy))
         }
-        let lineWidth = number(max(2, stroke.width * 140))
+        let lineWidth = number(max(2, stroke.width * min(xScale, 1) * 140))
         return [leading, trailing].map { edge in
             let points = edge.map { "\(number($0.0)),\(number($0.1))" }.joined(separator: " ")
             return "  <polyline points=\"\(points)\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(lineWidth)\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
@@ -284,10 +307,13 @@ struct FontLabGlyph: Codable, Equatable {
     var rightSideBearing = 0.08
     var importedFrom: String?
     var importFormat: FontLabImportFormat?
+    var contourDesignWidth: Double? = nil
+    var resolvedDesignWidth: Double { contourDesignWidth ?? 0.62 }
 
-    var hasArtwork: Bool { strokes.contains { !$0.points.isEmpty } }
+    var hasArtwork: Bool { strokes.contains { !$0.points.isEmpty || $0.contours?.isEmpty == false } }
     var isValid: Bool {
         character.count == 1 && strokes.count <= 10_000 && strokes.allSatisfy(\.isValid) &&
+            (contourDesignWidth.map { $0.isFinite && (0.02...3).contains($0) } ?? true) &&
             leftSideBearing.isFinite && rightSideBearing.isFinite &&
             (0...0.4).contains(leftSideBearing) && (0...0.4).contains(rightSideBearing) &&
             ((importedFrom == nil && importFormat == nil) || (importedFrom?.isEmpty == false && importFormat != nil))
@@ -354,9 +380,11 @@ struct FontLabState: Codable, Equatable {
     var version = 1
     var projects: [FontLabProject] = []
     var selectedProject: UUID?
+    var deletedProjects: [FontLabProject]? = nil
 
     var isValid: Bool {
         version == 1 && Set(projects.map(\.id)).count == projects.count && projects.allSatisfy(\.isValid) &&
+            (deletedProjects.map { $0.allSatisfy(\.isValid) && Set($0.map(\.id)).count == $0.count && Set($0.map(\.id)).isDisjoint(with: projects.map(\.id)) } ?? true) &&
             (selectedProject == nil || projects.contains { $0.id == selectedProject })
     }
 }
@@ -447,6 +475,31 @@ final class FontLabStore: ObservableObject {
         state.selectedProject = project.id
         scheduleSave(after: 0.05)
         return project.id
+    }
+
+    /// Deleted experiments remain recoverable across relaunches.
+    @discardableResult func deleteProject(_ id: UUID) -> Bool {
+        guard !readBlocked, let index = state.projects.firstIndex(where: { $0.id == id }) else { return false }
+        let previous = state
+        let removed = state.projects.remove(at: index)
+        state.deletedProjects = (state.deletedProjects ?? []) + [removed]
+        if state.selectedProject == id {
+            state.selectedProject = state.projects.isEmpty ? nil : state.projects[min(index, state.projects.count - 1)].id
+        }
+        guard save() else { state = previous; return false }
+        status = "Deleted “\(removed.name)”. Restore it from Deleted projects."
+        return true
+    }
+
+    @discardableResult func restoreProject(_ id: UUID) -> Bool {
+        guard !readBlocked, let index = state.deletedProjects?.firstIndex(where: { $0.id == id }) else { return false }
+        let previous = state
+        let project = state.deletedProjects!.remove(at: index)
+        state.projects.append(project)
+        state.selectedProject = project.id
+        guard save() else { state = previous; return false }
+        status = "Restored “\(project.name)”."
+        return true
     }
 
     func selectProject(_ id: UUID) {
@@ -723,11 +776,32 @@ final class FontLabStore: ObservableObject {
             throw SelfTestError.failed("The generated project was not persisted by the termination flush path.")
         }
 
+        // Delete exactly the requested project, persist a recoverable copy,
+        // and invalidate pending saves so deleted projects cannot reappear.
+        revisionStore.scheduleSave(after: 60)
+        guard revisionStore.deleteProject(revisionProjectID), revisionStore.state.selectedProject == generatedID,
+              revisionStore.state.projects.count == 1 else { throw SelfTestError.failed("Deleting an unselected Font Lab project changed the selection.") }
+        guard revisionStore.deleteProject(generatedID), revisionStore.state.projects.isEmpty,
+              revisionStore.state.selectedProject == nil else { throw SelfTestError.failed("Deleting the last Font Lab project left an invalid selection.") }
+        revisionStore.flushPendingSave()
+        let trashReloaded = FontLabStore(url: revisionFile)
+        guard trashReloaded.state.projects.isEmpty, trashReloaded.state.deletedProjects?.count == 2,
+              trashReloaded.restoreProject(revisionProjectID),
+              trashReloaded.selectedProject?.previewText == "Termination flush",
+              !trashReloaded.restoreProject(revisionProjectID),
+              !trashReloaded.deleteProject(UUID()), trashReloaded.state.isValid else {
+            throw SelfTestError.failed("Font Lab deletion recovery lost data or accepted duplicate restoration.")
+        }
+        let restored = FontLabStore(url: revisionFile)
+        guard restored.selectedProject?.id == revisionProjectID, restored.state.deletedProjects?.count == 1 else {
+            throw SelfTestError.failed("Restored Font Lab projects did not persist.")
+        }
+
         let corruptFile = root.appendingPathComponent("corrupt.json")
         let corruptData = Data("{ definitely-not-json".utf8)
         try corruptData.write(to: corruptFile, options: .atomic)
         let corruptStore = FontLabStore(url: corruptFile)
-        guard corruptStore.readBlocked, !corruptStore.save() else { throw SelfTestError.failed("A corrupt project was not write-blocked.") }
+        guard corruptStore.readBlocked, !corruptStore.save(), !corruptStore.deleteProject(id), !corruptStore.restoreProject(id) else { throw SelfTestError.failed("A corrupt project was not write-blocked.") }
         guard try Data(contentsOf: corruptFile) == corruptData else { throw SelfTestError.failed("A corrupt project was overwritten.") }
 
         guard (try FontLabImportAPI.request(sourceURL: URL(fileURLWithPath: "/tmp/glyph.svg"), targetCharacter: "A")).format == .svg else {
@@ -859,6 +933,8 @@ struct FontLabView: View {
     @State private var showRemixGenerator = false
     @State private var isExportingFont = false
     @State private var clearRequest: ClearRequest?
+    @State private var deleteRequest: FontLabProject?
+    @State private var glyphUndo: [FontLabGlyph] = []
 
     private struct ClearRequest: Identifiable {
         let id = UUID()
@@ -895,7 +971,9 @@ struct FontLabView: View {
                 selectedCharacter = project.characters.first ?? "A"
             }
         }
+        .onChange(of: selectedCharacter) { _ in glyphUndo = [] }
         .onChange(of: store.state.selectedProject) { _ in
+            glyphUndo = []
             if let project = store.selectedProject, !project.characters.contains(selectedCharacter) {
                 selectedCharacter = project.characters.first ?? "A"
             }
@@ -913,6 +991,15 @@ struct FontLabView: View {
             Button("Cancel", role: .cancel) { clearRequest = nil }
         } message: {
             Text("This removes every stroke from \(clearRequest?.glyph.character ?? "this glyph"). The current project file is backed up before the change.")
+        }
+        .alert("Delete Font Lab project?", isPresented: Binding(get: { deleteRequest != nil }, set: { if !$0 { deleteRequest = nil } })) {
+            Button("Delete project", role: .destructive) {
+                if let request = deleteRequest { _ = store.deleteProject(request.id) }
+                deleteRequest = nil
+            }
+            Button("Cancel", role: .cancel) { deleteRequest = nil }
+        } message: {
+            Text("“\(deleteRequest?.name ?? "This project")” will move to Deleted projects, where you can restore it. Source fonts and exported font files stay in place.")
         }
         .sheet(isPresented: $showMetricsGuide) {
             let currentProject = store.selectedProject
@@ -972,8 +1059,19 @@ struct FontLabView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Delete project…", role: .destructive) { deleteRequest = project }.disabled(store.readBlocked)
+                            }
                         }
                     }
+                }
+                if let deleted = store.state.deletedProjects, !deleted.isEmpty {
+                    Menu {
+                        ForEach(deleted.reversed()) { project in
+                            Button("Restore “\(project.name)”") { _ = store.restoreProject(project.id) }
+                        }
+                    } label: { Label("Deleted projects (\(deleted.count))", systemImage: "trash") }
+                        .disabled(store.readBlocked)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 5) {
@@ -1002,6 +1100,8 @@ struct FontLabView: View {
                 Button("New from fonts", systemImage: "wand.and.stars") { showRemixGenerator = true }
                     .disabled(store.readBlocked || library.allFaces.count < 2)
                     .help("Generate an editable starter by remixing two installed font faces")
+                Button("Delete", systemImage: "trash", role: .destructive) { deleteRequest = project }
+                    .disabled(store.readBlocked || isExportingFont).help("Delete this Font Lab project")
                 Menu {
                     Button("SVG tracing — planned") { explainImport(.svg) }
                     Button("PNG / Procreate tracing — planned") { explainImport(.png) }
@@ -1034,12 +1134,13 @@ struct FontLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
-            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Round, marker, and outline strokes stay editable. Export SVG artwork or a validated installable TrueType font (.ttf).")
+            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Reshape generated outlines or draw with Round, Marker, and Outline pens. Export SVG artwork or an installable TrueType font (.ttf).")
                 .font(.caption2).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
                 .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             if let provenance = project.remixProvenance {
                 Text(provenance.summary + ". Review both source font licenses before distributing the result.")
+                    .help((provenance.preservedCharacters ?? []).isEmpty ? provenance.summary : "Source structure preserved for: " + provenance.preservedCharacters!.joined(separator: " "))
                     .font(.caption2).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
@@ -1134,9 +1235,9 @@ struct FontLabView: View {
         return HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Draw \(selectedCharacter)").font(.title3.weight(.semibold))
+                    Text("Edit \(selectedCharacter)").font(.title3.weight(.semibold))
                     Spacer()
-                    Button("Undo stroke") { undoStroke(glyph, projectID: project.id) }.disabled(glyph.strokes.isEmpty || store.readBlocked)
+                    Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled((glyphUndo.isEmpty && glyph.strokes.isEmpty) || store.readBlocked)
                     Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
                         .disabled(glyph.strokes.isEmpty || store.readBlocked)
                 }
@@ -1148,11 +1249,17 @@ struct FontLabView: View {
                     nibStyle: nibStyle,
                     smoothing: smoothing,
                     usesTabletPressure: usesTabletPressure,
-                    onTabletInput: { tabletInputDetected = true }
+                    onTabletInput: { tabletInputDetected = true },
+                    onUndo: { undoStroke(glyph, projectID: project.id) }
                 ) { editedGlyph in
+                    if let previous = store.selectedProject?.glyphs[selectedCharacter] {
+                        glyphUndo.append(previous)
+                        if glyphUndo.count > 30 { glyphUndo.removeFirst() }
+                    }
                     store.setGlyph(editedGlyph, in: project.id, save: false)
                     store.scheduleSave(after: 0.4)
                 }
+                .id(project.id.uuidString + selectedCharacter)
                 .frame(minWidth: 340, maxWidth: .infinity, minHeight: 340, maxHeight: .infinity)
                 .layoutPriority(1)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
@@ -1165,7 +1272,7 @@ struct FontLabView: View {
                                 Label(tool.title, systemImage: tool.systemImage).tag(tool)
                             }
                         }
-                        .labelsHidden().pickerStyle(.segmented).frame(width: 154)
+                        .labelsHidden().pickerStyle(.segmented).frame(width: 240)
                         Divider().frame(height: 22)
                         Text("Nib").font(.caption).foregroundStyle(.secondary)
                         Picker("Nib", selection: $nibStyle) {
@@ -1174,23 +1281,23 @@ struct FontLabView: View {
                             }
                         }
                         .labelsHidden().pickerStyle(.menu).frame(width: 124)
-                        .disabled(drawingTool == .eraser)
+                        .disabled(drawingTool != .pen)
                         Spacer(minLength: 0)
                     }
                     HStack(spacing: 12) {
-                        Text(drawingTool == .pen ? "Stroke" : "Eraser size").font(.caption).foregroundStyle(.secondary)
-                        Slider(value: $strokeWidth, in: 0.008...0.07).frame(maxWidth: 210)
+                        Text(drawingTool == .reshape ? "Point editing" : drawingTool == .pen ? "Stroke" : "Eraser size").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: $strokeWidth, in: 0.008...0.07).frame(maxWidth: 210).disabled(drawingTool == .reshape)
                         Text(strokeWidth.formatted(.number.precision(.fractionLength(3))))
                             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
                         Spacer(minLength: 0)
                         Picker("Smoothing", selection: $smoothing) {
                             ForEach(FontLabSmoothingLevel.allCases) { level in Text(level.title).tag(level) }
                         }
-                        .pickerStyle(.menu).frame(width: 138)
+                        .pickerStyle(.menu).frame(width: 138).disabled(drawingTool != .pen)
                     }
                     HStack(spacing: 14) {
                         Toggle("Pressure", isOn: $usesTabletPressure)
-                            .toggleStyle(.switch).controlSize(.small).disabled(drawingTool == .eraser)
+                            .toggleStyle(.switch).controlSize(.small).disabled(drawingTool != .pen)
                         Spacer(minLength: 4)
                         Button { showInputHelp.toggle() } label: {
                             Label(tabletInputDetected ? "Tablet active" : "Tablet & iPad", systemImage: tabletInputDetected ? "checkmark.circle.fill" : "ipad.and.apple.pencil")
@@ -1200,7 +1307,7 @@ struct FontLabView: View {
                         .help("Set up Apple Pencil with Sidecar or a macOS drawing tablet")
                         .popover(isPresented: $showInputHelp, arrowEdge: .bottom) { FontLabInputHelp() }
                     }
-                    Text(drawingTool == .pen ? "Draw with a mouse, trackpad, Apple Pencil through Sidecar, or a macOS-compatible pen tablet. ⌘Z removes the last stroke." : "Drag across a line to erase that entire stroke.")
+                    Text(drawingTool == .reshape ? "Drag a blue outline point to reshape the glyph. ⌘Z undoes the last canvas edit." : drawingTool == .pen ? "Draw with a mouse, trackpad, Apple Pencil through Sidecar, or a macOS-compatible pen tablet. ⌘Z undoes the last canvas edit." : "Drag across a line or filled shape to erase it. ⌘Z restores the last canvas edit.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(10)
@@ -1331,12 +1438,14 @@ struct FontLabView: View {
 
     private func undoStroke(_ glyph: FontLabGlyph, projectID: UUID) {
         var edited = glyph
-        if !edited.strokes.isEmpty { edited.strokes.removeLast() }
+        if let previous = glyphUndo.popLast() { edited = previous }
+        else if !edited.strokes.isEmpty { edited.strokes.removeLast() }
         store.setGlyph(edited, in: projectID, save: true)
     }
 
     private func clearGlyph(_ glyph: FontLabGlyph, projectID: UUID) {
         var edited = glyph
+        glyphUndo.append(glyph)
         edited.strokes = []
         edited.importedFrom = nil
         edited.importFormat = nil
@@ -1653,6 +1762,7 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
     let smoothing: FontLabSmoothingLevel
     let usesTabletPressure: Bool
     let onTabletInput: () -> Void
+    let onUndo: () -> Void
     let onCommit: (FontLabGlyph) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onTabletInput: onTabletInput, onCommit: onCommit) }
@@ -1670,14 +1780,16 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
         view.smoothing = smoothing
         view.usesTabletPressure = usesTabletPressure
         view.onTabletInput = { context.coordinator.onTabletInput() }
+        view.onUndo = onUndo
         view.onCommit = { context.coordinator.onCommit($0) }
         return view
     }
 
     func updateNSView(_ view: FontLabDrawingNSView, context: Context) {
         context.coordinator.onTabletInput = onTabletInput
+        view.onUndo = onUndo
         context.coordinator.onCommit = onCommit
-        if !view.isDrawing { view.glyph = glyph }
+        if !view.isDrawing, view.glyph != glyph { view.replaceGlyph(glyph) }
         view.metrics = metrics
         view.strokeWidth = strokeWidth
         view.tool = tool
@@ -1706,13 +1818,25 @@ private final class FontLabDrawingNSView: NSView {
     var smoothing = FontLabSmoothingLevel.gentle
     var usesTabletPressure = true
     var onTabletInput: (() -> Void)?
+    var onUndo: (() -> Void)?
     var onCommit: ((FontLabGlyph) -> Void)?
     private(set) var isDrawing = false
     private var gestureChangedGlyph = false
     private var reportedTabletInput = false
+    private var nodeSelection: (stroke: Int, contour: Int, point: Int)?
+
+    func replaceGlyph(_ value: FontLabGlyph) {
+        glyph = value
+    }
 
     override var acceptsFirstResponder: Bool { true }
-    private var drawingRect: NSRect { bounds.insetBy(dx: 24, dy: 24) }
+    private var drawingRect: NSRect {
+        let available = bounds.insetBy(dx: 24, dy: 24)
+        guard glyph.contourDesignWidth != nil else { return available }
+        let em = min(available.height, available.width / glyph.resolvedDesignWidth)
+        return NSRect(x: available.midX - em * glyph.resolvedDesignWidth / 2, y: available.midY - em / 2,
+                      width: em * glyph.resolvedDesignWidth, height: em)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1741,6 +1865,17 @@ private final class FontLabDrawingNSView: NSView {
         border.lineWidth = 1
         border.stroke()
         fontLabDrawStrokes(glyph.strokes, in: rect, color: .labelColor)
+        if tool == .reshape {
+            NSColor.systemBlue.setFill()
+            for stroke in glyph.strokes {
+                for contour in stroke.contours ?? [] {
+                    for point in contour {
+                        NSBezierPath(ovalIn: NSRect(x: rect.minX + point.x * rect.width - 2,
+                            y: rect.minY + point.y * rect.height - 2, width: 4, height: 4)).fill()
+                    }
+                }
+            }
+        }
         drawHorizontalLabel("BASELINE", at: metrics.baseline, color: .systemOrange)
         drawHorizontalLabel("x-HEIGHT", at: metrics.xHeight, color: .secondaryLabelColor)
         drawHorizontalLabel("CAP HEIGHT", at: metrics.capHeight, color: .secondaryLabelColor)
@@ -1760,6 +1895,17 @@ private final class FontLabDrawingNSView: NSView {
             gestureChangedGlyph = true
         case .eraser:
             erase(at: point)
+        case .reshape:
+            nodeSelection = nil
+            var distance = 12.0
+            for (s, stroke) in glyph.strokes.enumerated() {
+                for (c, contour) in (stroke.contours ?? []).enumerated() {
+                    for (p, candidate) in contour.enumerated() {
+                        let d = hypot((candidate.x - point.x) * drawingRect.width, (candidate.y - point.y) * drawingRect.height)
+                        if d < distance { distance = d; nodeSelection = (s, c, p) }
+                    }
+                }
+            }
         }
         needsDisplay = true
     }
@@ -1780,6 +1926,11 @@ private final class FontLabDrawingNSView: NSView {
             gestureChangedGlyph = true
         case .eraser:
             erase(at: sampled)
+        case .reshape:
+            if let node = nodeSelection {
+                glyph.strokes[node.stroke].contours?[node.contour][node.point] = FontLabPoint(x: sampled.x, y: sampled.y)
+                gestureChangedGlyph = true
+            }
         }
         needsDisplay = true
     }
@@ -1788,6 +1939,7 @@ private final class FontLabDrawingNSView: NSView {
         guard isDrawing else { return }
         isDrawing = false
         if gestureChangedGlyph { onCommit?(glyph) }
+        nodeSelection = nil
         gestureChangedGlyph = false
         needsDisplay = true
     }
@@ -1805,10 +1957,8 @@ private final class FontLabDrawingNSView: NSView {
     private func handleUndoShortcut(_ event: NSEvent) -> Bool {
         let editingModifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard editingModifiers == .command,
-              event.charactersIgnoringModifiers?.lowercased() == "z", !glyph.strokes.isEmpty else { return false }
-        glyph.strokes.removeLast()
-        onCommit?(glyph)
-        needsDisplay = true
+              event.charactersIgnoringModifiers?.lowercased() == "z", onUndo != nil else { return false }
+        onUndo?()
         return true
     }
 
@@ -1895,7 +2045,7 @@ private final class FontLabDrawingNSView: NSView {
     }
 }
 
-private struct FontLabPreviewCanvas: NSViewRepresentable {
+struct FontLabPreviewCanvas: NSViewRepresentable {
     let text: String
     let glyphs: [String: FontLabGlyph]
     let metrics: FontLabMetrics
@@ -1915,7 +2065,7 @@ private struct FontLabPreviewCanvas: NSViewRepresentable {
     }
 }
 
-private final class FontLabPreviewNSView: NSView {
+final class FontLabPreviewNSView: NSView {
     var text = ""
     var glyphs: [String: FontLabGlyph] = [:]
     var metrics = FontLabMetrics()
@@ -1944,7 +2094,7 @@ private final class FontLabPreviewNSView: NSView {
             let glyph = glyphs[character]
             let left = CGFloat(glyph?.leftSideBearing ?? 0.08) * em
             let right = CGFloat(glyph?.rightSideBearing ?? 0.08) * em
-            let inkWidth = em * 0.62
+            let inkWidth = em * CGFloat(glyph?.resolvedDesignWidth ?? 0.62)
             if let glyph, glyph.hasArtwork {
                 let rect = NSRect(x: x + left, y: originY, width: inkWidth, height: em)
                 fontLabDrawStrokes(glyph.strokes, in: rect, color: .labelColor)
@@ -1967,15 +2117,28 @@ private final class FontLabPreviewNSView: NSView {
         24 + characters.reduce(CGFloat.zero) { result, character in
             if character == " " { return result + em * 0.3 }
             let glyph = glyphs[character]
-            return result + em * (0.62 + CGFloat(glyph?.leftSideBearing ?? 0.08) + CGFloat(glyph?.rightSideBearing ?? 0.08))
+            return result + em * (CGFloat(glyph?.resolvedDesignWidth ?? 0.62) + CGFloat(glyph?.leftSideBearing ?? 0.08) + CGFloat(glyph?.rightSideBearing ?? 0.08))
         }
     }
 }
 
-private func fontLabDrawStrokes(_ strokes: [FontLabStroke], in rect: NSRect, color: NSColor) {
+func fontLabDrawStrokes(_ strokes: [FontLabStroke], in rect: NSRect, color: NSColor) {
     color.setStroke()
     color.setFill()
-    for stroke in strokes where !stroke.points.isEmpty {
+    for stroke in strokes {
+        if let contours = stroke.contours {
+            let path = NSBezierPath()
+            path.windingRule = .nonZero
+            for contour in contours {
+                guard let first = contour.first else { continue }
+                path.move(to: NSPoint(x: rect.minX + first.x * rect.width, y: rect.minY + first.y * rect.height))
+                for point in contour.dropFirst() { path.line(to: NSPoint(x: rect.minX + point.x * rect.width, y: rect.minY + point.y * rect.height)) }
+                path.close()
+            }
+            path.fill()
+            continue
+        }
+        guard !stroke.points.isEmpty else { continue }
         let mapped = stroke.points.map { NSPoint(x: rect.minX + CGFloat($0.x) * rect.width, y: rect.minY + CGFloat($0.y) * rect.height) }
         let baseWidth = max(1, CGFloat(stroke.width) * min(rect.width, rect.height))
         if mapped.count == 1 {

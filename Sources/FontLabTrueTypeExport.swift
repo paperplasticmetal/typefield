@@ -89,6 +89,7 @@ enum FontLabTrueTypeExporter {
         let points: [RevisionPoint]
         let width: Double
         let nibStyle: String
+        let contours: [[RevisionPoint]]?
     }
 
     private struct RevisionGlyph: Encodable {
@@ -96,6 +97,7 @@ enum FontLabTrueTypeExporter {
         let strokes: [RevisionStroke]
         let leftSideBearing: Double
         let rightSideBearing: Double
+        let designWidth: Double?
     }
 
     private struct RevisionProvenance: Encodable {
@@ -453,9 +455,9 @@ enum FontLabTrueTypeExporter {
         let sampled = try sampledStrokes(glyph)
         var outlineContours: [[TTPoint]] = []
         for stroke in sampled.strokes {
-            outlineContours.append(contentsOf: contours(for: stroke, metrics: metrics, leftBearing: glyph.leftSideBearing))
+            outlineContours.append(contentsOf: contours(for: stroke, metrics: metrics, leftBearing: glyph.leftSideBearing, width: glyph.resolvedDesignWidth * Double(unitsPerEm)))
         }
-        let advance = Int((Double(designWidth) + (glyph.leftSideBearing + glyph.rightSideBearing) * Double(unitsPerEm)).rounded())
+        let advance = Int((glyph.resolvedDesignWidth * Double(unitsPerEm) + (glyph.leftSideBearing + glyph.rightSideBearing) * Double(unitsPerEm)).rounded())
         return (try glyphRecord(contours: outlineContours, advanceWidth: advance), sampled.removedPointCount)
     }
 
@@ -517,10 +519,11 @@ enum FontLabTrueTypeExporter {
     }
 
     private static func sampledStrokes(_ glyph: FontLabGlyph) throws -> SampledStrokes {
-        let nonempty = glyph.strokes.filter { !$0.points.isEmpty }
+        let filled = glyph.strokes.filter { $0.contours != nil }
+        let nonempty = glyph.strokes.filter { $0.contours == nil && !$0.points.isEmpty }
         guard nonempty.count <= maximumSamplesPerGlyph else { throw ExportError.glyphTooComplex(glyph.character) }
         let originalCount = nonempty.reduce(0) { $0 + $1.points.count }
-        guard originalCount > maximumSamplesPerGlyph else { return SampledStrokes(strokes: nonempty, removedPointCount: 0) }
+        guard originalCount > maximumSamplesPerGlyph else { return SampledStrokes(strokes: filled + nonempty, removedPointCount: 0) }
 
         let mandatory = nonempty.count
         let extraCapacity = maximumSamplesPerGlyph - mandatory
@@ -555,19 +558,25 @@ enum FontLabTrueTypeExporter {
             }
             return copy
         }
-        return SampledStrokes(strokes: reduced, removedPointCount: originalCount - reduced.reduce(0) { $0 + $1.points.count })
+        return SampledStrokes(strokes: filled + reduced, removedPointCount: originalCount - reduced.reduce(0) { $0 + $1.points.count })
     }
 
-    private static func contours(for stroke: FontLabStroke, metrics: FontLabMetrics, leftBearing: Double) -> [[TTPoint]] {
+    private static func contours(for stroke: FontLabStroke, metrics: FontLabMetrics, leftBearing: Double, width: Double) -> [[TTPoint]] {
+        if let contours = stroke.contours {
+            return contours.map { $0.map { point in
+                TTPoint(x: Int((leftBearing * Double(unitsPerEm) + point.x * width).rounded()),
+                        y: Int(((point.y - metrics.baseline) * Double(unitsPerEm)).rounded()))
+            } }
+        }
         let points = stroke.points.map { point in
             TTPoint(
-                x: Int((leftBearing * Double(unitsPerEm) + point.x * Double(designWidth)).rounded()),
+                x: Int((leftBearing * Double(unitsPerEm) + point.x * width).rounded()),
                 y: Int(((point.y - metrics.baseline) * Double(unitsPerEm)).rounded())
             )
         }
         guard !points.isEmpty else { return [] }
         let radii = stroke.points.map { point in
-            max(1.0, stroke.width * Double(designWidth) * FontLabDrawingOperations.pressureScale(for: point) / 2)
+            max(1.0, stroke.width * min(width, Double(unitsPerEm)) * FontLabDrawingOperations.pressureScale(for: point) / 2)
         }
         switch stroke.resolvedNibStyle {
         case .round:
@@ -1323,11 +1332,13 @@ enum FontLabTrueTypeExporter {
                     RevisionStroke(
                         points: stroke.points.map { RevisionPoint(x: $0.x, y: $0.y, pressure: $0.pressure) },
                         width: stroke.width,
-                        nibStyle: stroke.resolvedNibStyle.rawValue
+                        nibStyle: stroke.resolvedNibStyle.rawValue,
+                        contours: stroke.contours?.map { $0.map { RevisionPoint(x: $0.x, y: $0.y, pressure: nil) } }
                     )
                 },
                 leftSideBearing: glyph.leftSideBearing,
-                rightSideBearing: glyph.rightSideBearing
+                rightSideBearing: glyph.rightSideBearing,
+                designWidth: glyph.contourDesignWidth
             )
         }
         let provenance = project.remixProvenance.map {
