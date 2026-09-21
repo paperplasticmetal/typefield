@@ -65,6 +65,10 @@ enum FontPairingEngine {
     /// Pure assessment for tests, previews, and future tuning. Callers can
     /// construct signatures without loading or registering any font files.
     static func assess(reference: FontSignature, candidate: FontSignature, intendedRole: TypeRole, mode: FontPairingMode) -> FontPairingAssessment {
+        assessment(reference: reference, candidate: candidate, intendedRole: intendedRole, mode: mode, includeReasons: true)
+    }
+
+    private static func assessment(reference: FontSignature, candidate: FontSignature, intendedRole: TypeRole, mode: FontPairingMode, includeReasons: Bool) -> FontPairingAssessment {
         let writing = writingCompatibility(reference.writingSystems, candidate.writingSystems)
         let proportions = proportionCompatibility(reference, candidate)
         let visualCohesion = tagCohesion(reference.visualTags, candidate.visualTags)
@@ -81,7 +85,7 @@ enum FontPairingEngine {
         if intendedRole == .mono && !candidate.monospace && candidate.category != .mono { rawScore *= 0.10 }
         if !reference.writingSystems.isEmpty && !candidate.writingSystems.isEmpty && reference.writingSystems.isDisjoint(with: candidate.writingSystems) { rawScore *= 0.50 }
 
-        let reasons = explanations(reference: reference, candidate: candidate, intendedRole: intendedRole, mode: mode, writingCompatibility: writing, proportionCompatibility: proportions, roleFitness: roleFitness, contrast: contrast)
+        let reasons = includeReasons ? explanations(reference: reference, candidate: candidate, intendedRole: intendedRole, mode: mode, writingCompatibility: writing, proportionCompatibility: proportions, roleFitness: roleFitness, contrast: contrast) : []
         return FontPairingAssessment(score: rounded(clamp(rawScore) * 100), compatibility: rounded(compatibility), roleFitness: rounded(roleFitness), contrast: rounded(contrast), reasons: reasons)
     }
 
@@ -108,13 +112,15 @@ enum FontPairingEngine {
             for face in family.faces {
                 if intendedRole == .mono && !face.facts.monospace && category != .mono { continue }
                 let signature = FontSignature(face: face, category: category, tags: tagsByPostScriptName[face.name] ?? [])
-                let assessment = assess(reference: sourceSignature, candidate: signature, intendedRole: intendedRole, mode: mode)
+                let assessment = assessment(reference: sourceSignature, candidate: signature, intendedRole: intendedRole, mode: mode, includeReasons: false)
                 if shouldPrefer(face: face, assessment: assessment, over: best, preferredName: preferredFacesByFamily[family.name], representativeName: family.representative.name) {
                     best = (face, assessment)
                 }
             }
             if let best {
-                results.append(FontPairingResult(family: family, face: best.face, intendedRole: intendedRole, mode: mode, assessment: best.assessment))
+                let signature = FontSignature(face: best.face, category: category, tags: tagsByPostScriptName[best.face.name] ?? [])
+                let explained = assessment(reference: sourceSignature, candidate: signature, intendedRole: intendedRole, mode: mode, includeReasons: true)
+                results.append(FontPairingResult(family: family, face: best.face, intendedRole: intendedRole, mode: mode, assessment: explained))
             }
         }
 

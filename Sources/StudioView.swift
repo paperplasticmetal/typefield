@@ -11,6 +11,10 @@ enum WorkspaceSidebarPreference {
 enum WorkspaceSidebarLayout {
     static let width = 232.0
     static let outerPadding = 12.0
+    // Keep the collapsed affordance comfortably above Apple's 44-point
+    // minimum target instead of reducing it to a small floating chevron.
+    static let revealWidth = 52.0
+    static let revealHeight = 64.0
     static func reservedWidth(collapsed: Bool) -> Double { collapsed ? 0 : width + outerPadding * 2 }
 }
 struct WorkspaceSwitcher: View {
@@ -51,12 +55,59 @@ struct WorkspaceSidebarShell<Content: View>: View {
 struct WorkspaceSidebarRevealButton: View {
     @Binding var collapsed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var hovered = false
     var body: some View {
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { collapsed = false }
-        } label: { Image(systemName: "chevron.right").frame(width: 18, height: 28) }
-            .buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(.horizontal, 5).shelfGlass(radius: 10)
-            .help("Show sidebar").accessibilityLabel("Show sidebar").accessibilityIdentifier("workspace-sidebar-show")
+        } label: {
+            VStack(spacing: 9) {
+                Image(systemName: "sidebar.left").font(.system(size: 17, weight: .medium))
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold))
+            }
+            .frame(width: WorkspaceSidebarLayout.revealWidth, height: WorkspaceSidebarLayout.revealHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(ShelfPalette.ink)
+        .background(
+            reduceTransparency
+                ? Color(nsColor: .controlBackgroundColor)
+                : Color(nsColor: .windowBackgroundColor).opacity(hovered ? 0.96 : 0.82),
+            in: WorkspaceSidebarEdgeShape()
+        )
+        .overlay(WorkspaceSidebarEdgeShape().stroke(Color.primary.opacity(hovered ? 0.24 : 0.13), lineWidth: 1))
+        .shadow(color: .black.opacity(hovered ? 0.16 : 0.09), radius: hovered ? 8 : 5, x: 2, y: 2)
+        .scaleEffect(hovered && !reduceMotion ? 1.025 : 1, anchor: .leading)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)
+        .onHover { hovered = $0 }
+        .help("Show sidebar (Control-Command-S)")
+        .accessibilityLabel("Show sidebar")
+        .accessibilityHint("Restores Library, Spaces, and Font Lab navigation. You can also press Control-Command-S.")
+        .accessibilityIdentifier("workspace-sidebar-show")
+    }
+}
+
+/// A pull-out tab whose square leading edge stays visually attached to the
+/// window while its exposed edge has friendly rounded corners.
+private struct WorkspaceSidebarEdgeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius = min(15, rect.width, rect.height / 2)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 struct StudioView: View {
@@ -100,7 +151,11 @@ struct StudioView: View {
                         Divider()
                         Button("Delete space…", role: .destructive) { confirmDelete = true }
                     } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Space actions").accessibilityLabel("Space actions")
-                }.padding(.horizontal, 18).padding(.vertical, 14).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+                .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+                .fixedSize(horizontal: false, vertical: true)
                 Divider()
                 if let board {
                     TypeBoardEditor(library: library, savedBoard: board, projectName: space.displayName, projectBoards: space.boards, onSave: { store.update(space: space.id, board: $0, action: $1) }, onDelete: {

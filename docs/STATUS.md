@@ -1,13 +1,13 @@
 # Build and verification status
 
-Current source: **0.26.0, build 34**. Updated 2026-09-20.
+Current source: **0.27.0, build 35**. Updated 2026-09-20.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
 | Layout checks | 21,260 cases across 4,252 available styles on the release machine |
-| Xcode Release build, 0.26.0 | Passed with Swift and compiler warnings treated as errors; the new role-mapping, pairing, Adobe and Font Lab sources are included in the Xcode target |
+| Xcode Release build, 0.27.0 | Passed with Swift and compiler warnings treated as errors; the sidebar, Font Lab and performance changes are included in the Xcode target |
 | Spaces and canvas regression checks | Passed: independent directions, checkpoints, imported layers, persistence and 28 canvas/viewport combinations |
 | Live folder watcher and session activation | Passed with a temporary copy of an existing Google font; visibility checked in a separate process, then deactivated and removed |
 | New designer UI | Website desktop/mobile comparison and Unicode lookup/metrics inspected locally |
@@ -28,6 +28,7 @@ Current source: **0.26.0, build 34**. Updated 2026-09-20.
 | 0.26 pairing suggestions | Safe/Balanced/Expressive results are catalog-only and deterministic, exclude the source family and symbols, enforce a true monospaced target, and expose language/proportion/category/role/contrast reasons. Synthetic regression fixtures cover ranking direction, coverage penalties, bounds and explanation counts; installed-app QA verified paired previews and explanations against the full local catalog without applying a change. |
 | 0.26 Adobe round trip | Illustrator/InDesign builder and return JSX are deterministically generated and parsed with JavaScriptCore. Hostile strings, metadata retention, bounded return JSON, top-level group traversal, no-fill/grayscale handling, stable page matching, source-aware units and conversion into editable imported layers pass automated checks. Installed-app menus and disclosure were inspected; live execution inside Adobe applications remains a manual compatibility check. Native `.ai`/`.indd` decoding and full Adobe fidelity are not claimed. |
 | 0.26 Font Lab foundation | Isolated project creation, normalized drawing, metrics, drawn-glyph preview, atomic persistence/daily backups, exported-backup merge compatibility, safe project naming, confirmed clearing, corrupt-file write blocking and deterministic SVG output pass native checks. Installed-app QA verified the three-way workspace and empty state without creating `font-lab.json`. SVG/PNG tracing, blending, kerning and installable OTF compilation are explicitly not implemented yet. |
+| 0.27 interaction and performance pass | Passed the full native suite (21,260 layouts; 778 families / 4,252 styles), warnings-as-errors Xcode Release build, Figma bridge and installed-app signature/binary checks. Installed QA covered collapsed/expanded Library, Spaces and Font Lab: the shared 52-by-64-point pull-tab remains clear of header text, its full target restores the sidebar, and the clipped drawing/preview/metric surfaces no longer leak through rounded corners. Font Lab's pen/whole-stroke eraser, smoothing, pressure control, direct guide labels, live H/x example, beginner sheet and truthful Sidecar/driver help were inspected without altering saved artwork. Real Apple Pencil/vendor-tablet pressure remains hardware QA. Drawing now publishes once per completed gesture and rapid field/slider saves are coalesced. The full-catalog audit measured a 3,179.53 ms scan, 0.000007 ms cached catalog access, 3.727 ms sidebar snapshot, 5.466 ms filter, 13.385 ms pairing rank, 6.593 ms similarity rank and 2.196/0.000325 ms cold/cached canvas plan. The installed 0.26 same-machine baseline measured a 3,377.79 ms scan and 5.585 ms filter; single-run timing is directional, while removal of per-point project publication is the primary interaction fix. |
 | Figma bridge | Mocked API suite passed; live outbound editable frames and reverse selected-frame JSON import verified, including editing, movement/Undo and relaunch persistence |
 | Unsigned archive and asset catalog, 0.12.3 | Passed; archive not checked into source |
 | Sandbox/hardened-runtime clean launch and installed-font export, 0.12.3 | Passed |

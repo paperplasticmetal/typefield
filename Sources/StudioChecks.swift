@@ -148,6 +148,7 @@ enum StudioChecks {
         WorkspaceSidebarPreference.setCollapsed(false, in: reloadedSidebarDefaults)
         try verify(!WorkspaceSidebarPreference.collapsed(in: sidebarDefaults), "Expanded workspace sidebar state must persist")
         try verify(WorkspaceSidebarLayout.reservedWidth(collapsed: false) == 256 && WorkspaceSidebarLayout.reservedWidth(collapsed: true) == 0, "Collapsing the workspace sidebar must return its complete width to Library and Spaces")
+        try verify(WorkspaceSidebarLayout.revealWidth >= 44 && WorkspaceSidebarLayout.revealHeight >= 44, "The collapsed sidebar reveal control must keep a full-size accessible hit target")
         var inserted = TypeDirection(); let beforeInsert = CanvasPlan(direction: inserted)
         let insertedID = inserted.insert(.heading, target: beforeInsert.sections[1].id, before: true, visible: beforeInsert.sections.map(\.id))
         let afterInsert = CanvasPlan(direction: inserted)

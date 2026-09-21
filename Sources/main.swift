@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import CoreText
 
 enum Category: String, CaseIterable, Codable {
@@ -161,7 +162,7 @@ final class Library: ObservableObject {
         }
         return (compared.map { chosenFace($0).name }, comparison.isEmpty ? "Blank typeboard" : "Shortlist")
     }
-    @Published var families: [Family] = []
+    @Published var families: [Family] = [] { willSet { rebuildCatalogIndexes(for: newValue) } }
     var originalFamilies: [Family] = []
     @Published var pro = ProState()
     @Published var advanced = AdvancedFilter()
@@ -178,8 +179,34 @@ final class Library: ObservableObject {
     var reportedFolderAccessFailures: Set<String> = []
     var proSaveBlocked = false
     var proURL: URL { saveURL.deletingLastPathComponent().appendingPathComponent("pro-library.json") }
-    var allFaces: [Face] { families.flatMap(\.faces) }
+    private var catalogFaces: [Face] = []
+    private var catalogFacesByName: [String: Face] = [:]
+    private var catalogFamiliesByName: [String: Family] = [:]
+    private var catalogFaceNames: Set<String> = []
+    private(set) var styleCount = 0
+    var allFaces: [Face] { catalogFaces }
+    var availableFaceNames: Set<String> { catalogFaceNames }
+    func face(named postScriptName: String) -> Face? { catalogFacesByName[postScriptName] }
+    func family(named familyName: String) -> Family? { catalogFamiliesByName[familyName] }
     var selectedFaces: [Face] { families.filter { selectedFamilies.contains($0.name) }.flatMap(\.faces) }
+    private func rebuildCatalogIndexes(for families: [Family]) {
+        var faces: [Face] = []
+        faces.reserveCapacity(families.reduce(0) { $0 + $1.faces.count })
+        var facesByName: [String: Face] = [:]
+        var familiesByName: [String: Family] = [:]
+        for family in families {
+            familiesByName[family.name] = family
+            for face in family.faces {
+                faces.append(face)
+                facesByName[face.name] = face
+            }
+        }
+        catalogFaces = faces
+        catalogFacesByName = facesByName
+        catalogFamiliesByName = familiesByName
+        catalogFaceNames = Set(facesByName.keys)
+        styleCount = faces.count
+    }
     func openTools(_ tab: String) { toolsTab = tab; showTools = true }
     @discardableResult func savePro() -> Bool {
         guard !proSaveBlocked else { message = "Pro settings could not be read. The existing file has been preserved."; return false }
@@ -202,10 +229,11 @@ final class Library: ObservableObject {
     func regroup() {
         guard !originalFamilies.isEmpty else { families = []; return }
         let groups = Dictionary(grouping: originalFamilies.flatMap(\.faces)) { pro.familyOverrides[$0.name] ?? $0.originalFamily }
+        let automaticCategories = originalFamilies.reduce(into: [String: Category]()) { values, family in values[family.name] = family.automaticCategory }
         families = groups.map { name, faces in
             let sorted = faces.sorted { $0.style.localizedStandardCompare($1.style) == .orderedAscending }
             let rep = sorted.first(where: { $0.name == pro.mainPreviews[name] }) ?? sorted.first(where: { $0.style == "Regular" }) ?? sorted[0]
-            let category = originalFamilies.first(where: { $0.name == rep.originalFamily })?.automaticCategory ?? .other
+            let category = automaticCategories[rep.originalFamily] ?? .other
             return Family(name: name, faces: sorted, automaticCategory: category, variable: sorted.contains { $0.facts.variable }, writingSystems: sorted.reduce(into: []) { $0.formUnion($1.writingSystems) })
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
@@ -253,7 +281,7 @@ final class Library: ObservableObject {
         else if comparison.count < 6 { comparison.append(family.name) }
         else { message = "Compare up to six families. Remove one to add another." }
     }
-    var compared: [Family] { comparison.compactMap { name in families.first { $0.name == name } } }
+    var compared: [Family] { comparison.compactMap { family(named: $0) } }
 
     let saveURL: URL
     lazy var folderAccess = FolderAccess(directory: saveURL.deletingLastPathComponent())
@@ -406,6 +434,38 @@ struct FontPreview: NSViewRepresentable {
     }
 }
 
+private struct LibrarySidebarSnapshot {
+    private let sections: [String: Int]
+    private let writingSystems: [WritingSystem: Int]
+    let tags: [String]
+
+    init(library: Library) {
+        let families = library.families
+        let visibleTags = TagQuery.hierarchy(Set(library.pro.tags.values.flatMap { $0 }))
+        var sectionCounts: [String: Int] = ["All Fonts": families.count]
+        var writingCounts: [WritingSystem: Int] = [:]
+        for family in families {
+            sectionCounts[library.category(family).rawValue, default: 0] += 1
+            if library.saved.favorites.contains(family.name) { sectionCounts["Favorites", default: 0] += 1 }
+            if family.faces.contains(where: { library.saved.lastImportNames?.contains($0.name) == true }) { sectionCounts["Last Import", default: 0] += 1 }
+            for writing in family.writingSystems { writingCounts[writing, default: 0] += 1 }
+            let familyTags = library.tags(family)
+            for tag in visibleTags where TagQuery.contains(tag, in: familyTags) { sectionCounts["tag:" + tag, default: 0] += 1 }
+        }
+        let loadedNames = Set(families.map(\.name))
+        for (name, members) in library.saved.collections {
+            sectionCounts["collection:" + name] = members.intersection(loadedNames).count
+        }
+        sections = sectionCounts
+        writingSystems = writingCounts
+        tags = visibleTags
+    }
+
+    func count(section: String) -> Int { sections[section] ?? 0 }
+    func count(writingSystem: WritingSystem) -> Int { writingSystems[writingSystem] ?? 0 }
+    var checksum: Int { sections.values.reduce(0) { $0 &+ $1 } &+ writingSystems.values.reduce(0) { $0 &+ $1 } &+ tags.count }
+}
+
 struct ContentView: View {
     @ObservedObject var library: Library
     @AppStorage("previewText") var preview = "The quick brown fox jumps over the lazy dog."
@@ -421,7 +481,7 @@ struct ContentView: View {
     @AppStorage(WorkspaceSidebarPreference.key) var sidebarCollapsed = false
     @FocusState private var searchFocused: Bool
     var body: some View {
-        ZStack(alignment: .leading) {
+        ZStack(alignment: .topLeading) {
         HStack(spacing: 0) {
             if library.workspace == .library && !sidebarCollapsed { WorkspaceSidebarShell { sidebar }.transition(.move(edge: .leading).combined(with: .opacity)) }
             switch library.workspace {
@@ -435,11 +495,16 @@ struct ContentView: View {
                 topControls
                 libraryContent(visibleFamilies)
                 Divider()
-                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families")"); Text("·"); Text("\(library.families.reduce(0) { $0 + $1.faces.count }) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
+                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families")"); Text("·"); Text("\(library.styleCount) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
                 }.accessibilityIdentifier("library-workspace")
             }
         }
-        if sidebarCollapsed { WorkspaceSidebarRevealButton(collapsed: $sidebarCollapsed).padding(.leading, 4).zIndex(2) }
+        if sidebarCollapsed {
+            WorkspaceSidebarRevealButton(collapsed: $sidebarCollapsed)
+                .padding(.top, 8)
+                .zIndex(2)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+        }
         }
         .background(ShelfPalette.canvas)
         .frame(minWidth: 980, minHeight: 620)
@@ -576,30 +641,31 @@ struct ContentView: View {
                 }
     }
     var sidebar: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let snapshot = LibrarySidebarSnapshot(library: library)
+        return VStack(alignment: .leading, spacing: 6) {
             WorkspaceSidebarHeader(library: library, collapsed: $sidebarCollapsed)
             ScrollView { VStack(alignment: .leading, spacing: 6) {
             sectionLabel("LIBRARY")
-            nav("All Fonts", icon: "square.stack.3d.up", key: "All Fonts")
-            nav("Last Import", icon: "clock.arrow.circlepath", key: "Last Import")
-            nav("Favorites", icon: "star", key: "Favorites")
+            nav("All Fonts", icon: "square.stack.3d.up", key: "All Fonts", count: snapshot.count(section: "All Fonts"))
+            nav("Last Import", icon: "clock.arrow.circlepath", key: "Last Import", count: snapshot.count(section: "Last Import"))
+            nav("Favorites", icon: "star", key: "Favorites", count: snapshot.count(section: "Favorites"))
             Button { library.showCompare = true } label: {
                 HStack { Image(systemName: "square.on.square").frame(width: 20); Text("Shortlist"); Spacer(); Text("\(library.comparison.count)").foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
             }.buttonStyle(.plain).padding(.horizontal, 8).help("Compare up to six families added with +")
             Button("Google Fonts…") { library.openTools("Google Fonts") }.buttonStyle(.plain).padding(.horizontal, 18).padding(.vertical, 8)
             SidebarSection(title: "CATEGORIES", key: "sidebar.categories") {
-            ForEach(Category.allCases, id: \.self) { category in nav(category.rawValue, icon: category.icon, key: category.rawValue) }
+            ForEach(Category.allCases, id: \.self) { category in nav(category.rawValue, icon: category.icon, key: category.rawValue, count: snapshot.count(section: category.rawValue)) }
             }
             SidebarSection(title: "LANGUAGES / SCRIPTS", key: "sidebar.languages") {
             ForEach(WritingSystem.allCases, id: \.self) { writing in
                 Button { library.writing = library.writing == writing ? nil : writing } label: {
-                    HStack { Text(writing.mark).frame(width: 20); Text(writing.rawValue).lineLimit(1); Spacer(); Text("\(library.families.filter { $0.writingSystems.contains(writing) }.count)").font(.caption).foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
+                    HStack { Text(writing.mark).frame(width: 20); Text(writing.rawValue).lineLimit(1); Spacer(); Text("\(snapshot.count(writingSystem: writing))").font(.caption).foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
                 }.buttonStyle(.plain).background(library.writing == writing ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
             }
             }
             SidebarSection(title: "TAGS", key: "sidebar.tags") {
-            ForEach(TagQuery.hierarchy(Set(library.pro.tags.values.flatMap { $0 })), id: \.self) { tag in
-                nav(tag, icon: "tag", key: "tag:" + tag).padding(.leading, CGFloat(tag.filter { $0 == "/" }.count) * 8).contextMenu {
+            ForEach(snapshot.tags, id: \.self) { tag in
+                nav(tag, icon: "tag", key: "tag:" + tag, count: snapshot.count(section: "tag:" + tag)).padding(.leading, CGFloat(tag.filter { $0 == "/" }.count) * 8).contextMenu {
                     Button("Include tag") { library.tagQuery.included.insert(tag); library.tagQuery.excluded.remove(tag); library.workspace = .library; library.selection = "All Fonts" }
                     Button("Exclude tag") { library.tagQuery.excluded.insert(tag); library.tagQuery.included.remove(tag); library.workspace = .library; library.selection = "All Fonts" }
                 }
@@ -612,7 +678,7 @@ struct ContentView: View {
                         HStack(spacing: 0) {
                             Button { library.workspace = .library; library.selection = "collection:" + name } label: { Image(systemName: "folder").frame(width: 28) }.buttonStyle(.plain).accessibilityLabel("Open collection " + name)
                             ShelfEditableName(name: name, selected: library.selection == "collection:" + name, onSelect: { library.workspace = .library; library.selection = "collection:" + name }, onRename: { library.renameCollection(name, to: $0) })
-                            Text("\(library.families.filter { library.matchesSection($0, "collection:" + name) }.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            Text("\(snapshot.count(section: "collection:" + name))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection", role: .destructive) { library.saved.collections.removeValue(forKey: name); library.save(); if library.selection == "collection:" + name { library.selection = "All Fonts" } } }
                     }
                     if library.saved.collections.isEmpty { Text("No collections").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 5) }
@@ -642,9 +708,9 @@ struct ContentView: View {
             Image(systemName: icon).frame(width: 20)
         }
     }
-    func nav(_ title: String, icon: String, key: String) -> some View {
+    func nav(_ title: String, icon: String, key: String, count: Int) -> some View {
         Button { library.workspace = .library; library.selection = key } label: {
-            HStack { navIcon(icon, key: key); Text(title).lineLimit(1); Spacer(); Text("\(library.families.filter { library.matchesSection($0, key) }.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
+            HStack { navIcon(icon, key: key); Text(title).lineLimit(1); Spacer(); Text("\(count)").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
         }.buttonStyle(.plain).background(library.workspace == .library && library.selection == key ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
     }
     func renameCollection(_ name: String) {
@@ -674,7 +740,10 @@ struct ContentView: View {
                 Button("Select visible families") { library.selectedFamilies.formUnion(library.filtered.map(\.name)) }
             }.menuStyle(.borderlessButton).foregroundStyle(Color.primary).padding(8).shelfGlass(radius: 16).frame(width: 85)
             LibrarySearchView(library: library).focused($searchFocused).frame(minWidth: 220, idealWidth: 290, maxWidth: 350)
-        }.padding(.horizontal, 20).padding(.vertical, 18)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
     }
     func rowBaseline(_ faces: [Face]) -> Double {
         let names = faces.map(\.name) + (library.overlayName.isEmpty ? [] : [library.overlayName])
@@ -913,8 +982,22 @@ enum PerformanceAudit {
 
         let library = Library(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-performance-audit-" + UUID().uuidString + "/library.json"))
         library.families = catalog
+        let expectedStyleCount = catalog.reduce(0) { $0 + $1.faces.count }
+        precondition(library.styleCount == expectedStyleCount && library.allFaces.count == expectedStyleCount, "Catalog indexes changed the style count")
+        precondition(library.availableFaceNames == Set(catalog.flatMap(\.faces).map(\.name)), "Catalog name index changed its contents")
+        let catalogAccess = measure(iterations: 10_000) { library.allFaces.count &+ library.availableFaceNames.count }
+        let sidebarCounts = measure(iterations: 100) { LibrarySidebarSnapshot(library: library).checksum }
         library.search = "a"
         let filtering = measure(iterations: 100) { library.filtered.reduce(0) { $0 &+ $1.faces.count } }
+        let reference = catalog.first(where: { $0.automaticCategory != .symbol })?.representative
+        let pairing = measure(iterations: 10) {
+            guard let reference else { return 0 }
+            return FontPairingEngine.recommendations(for: reference, intendedRole: .heading, catalog: catalog, limit: 16).reduce(0) { $0 &+ Int($1.score) }
+        }
+        let similarity = measure(iterations: 10) {
+            guard let reference, let family = catalog.first(where: { $0.faces.contains(where: { $0.name == reference.name }) }) else { return 0 }
+            return LibraryIntelligence.similarFamilies(to: reference, referenceCategory: family.automaticCategory, catalog: catalog, limit: 12).reduce(0) { $0 &+ Int($1.distance * 1_000) }
+        }
 
         var direction = TypeDirection(name: "Performance audit", fonts: ["Helvetica", "Times-Roman"])
         direction.canvas = .editorial
@@ -926,7 +1009,10 @@ enum PerformanceAudit {
         precondition(direct.checksum / 20 == cached.checksum / 200, "Cached canvas plan changed its output")
 
         print(String(format: "PERF catalog scan: %.2f ms (%d families, %d styles)", scanMilliseconds, catalog.count, catalog.reduce(0) { $0 + $1.faces.count }))
+        print(String(format: "PERF cached catalog access: %.6f ms/pass", catalogAccess.milliseconds))
+        print(String(format: "PERF sidebar count snapshot: %.3f ms/pass", sidebarCounts.milliseconds))
         print(String(format: "PERF library filter: %.3f ms/pass", filtering.milliseconds))
+        print(String(format: "PERF pairing rank: %.3f ms/pass; similarity rank: %.3f ms/pass", pairing.milliseconds, similarity.milliseconds))
         print(String(format: "PERF canvas plan: %.3f ms uncached, %.6f ms cached (%.1fx faster)", direct.milliseconds, cached.milliseconds, direct.milliseconds / max(0.000_001, cached.milliseconds)))
     }
 }
@@ -971,7 +1057,19 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
         let font = CTFontCreateWithName(name as CFString, 24, nil)
         precondition(FontCatalog.category(font) == expected, "Classification failed for \(name)")
     }
-    let testLibrary = Library(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-tests-" + UUID().uuidString + "/library.json")); testLibrary.families = fonts
+    let testLibrary = Library(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-tests-" + UUID().uuidString + "/library.json"))
+    var publishedCatalogWasCoherent = false
+    let catalogSubscription = testLibrary.$families.dropFirst().sink { publishedFamilies in
+        publishedCatalogWasCoherent = testLibrary.styleCount == publishedFamilies.reduce(0) { $0 + $1.faces.count }
+    }
+    testLibrary.families = fonts
+    let indexedFaces = fonts.flatMap(\.faces)
+    precondition(publishedCatalogWasCoherent, "Catalog indexes must be updated before the new family list is published")
+    precondition(testLibrary.styleCount == indexedFaces.count)
+    precondition(testLibrary.allFaces.map(\.name) == indexedFaces.map(\.name))
+    precondition(testLibrary.availableFaceNames == Set(indexedFaces.map(\.name)))
+    precondition(indexedFaces.first.map { testLibrary.face(named: $0.name)?.name == $0.name } ?? true)
+    withExtendedLifetime(catalogSubscription) {}
     testLibrary.search = "Helvetica"
     precondition(!testLibrary.filtered.isEmpty && testLibrary.filtered.allSatisfy { $0.name.localizedCaseInsensitiveContains("Helvetica") || $0.faces.contains { $0.name.localizedCaseInsensitiveContains("Helvetica") } })
     testLibrary.search = ""; testLibrary.selection = "Monospaced"
@@ -986,6 +1084,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     testLibrary.saved.lastImportNames = [fonts[0].faces[0].name]
     testLibrary.saved.lastImportDate = Date()
     precondition(testLibrary.matchesSection(fonts[0], "Last Import"))
+    let sidebarSnapshot = LibrarySidebarSnapshot(library: testLibrary)
+    let sidebarSections = ["All Fonts", "Last Import", "Favorites", "collection:Test"] + Category.allCases.map(\.rawValue)
+    precondition(sidebarSections.allSatisfy { section in sidebarSnapshot.count(section: section) == fonts.filter { testLibrary.matchesSection($0, section) }.count })
+    precondition(WritingSystem.allCases.allSatisfy { writing in sidebarSnapshot.count(writingSystem: writing) == fonts.filter { $0.writingSystems.contains(writing) }.count })
     let legacyData = Data("{\"favorites\":[],\"overrides\":{},\"collections\":{},\"folders\":[]}".utf8)
     let legacyLibrary = try JSONDecoder().decode(SavedLibrary.self, from: legacyData)
     precondition(legacyLibrary.lastImportNames == nil)

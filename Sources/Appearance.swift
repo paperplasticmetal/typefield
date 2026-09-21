@@ -47,9 +47,11 @@ struct ShelfCardSurface: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         content.padding(20)
-            .background(scheme == .dark ? Color.white.opacity(hovered ? 0.055 : 0.025) : Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(selected ? ShelfPalette.indiaYellow : Color.primary.opacity(contrast == .increased ? 0.45 : hovered ? 0.17 : 0.07), lineWidth: selected ? 1.5 : 1))
+            .background(scheme == .dark ? Color.white.opacity(hovered ? 0.055 : 0.025) : Color.white.opacity(0.8), in: shape)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(selected ? ShelfPalette.indiaYellow : Color.primary.opacity(contrast == .increased ? 0.45 : hovered ? 0.17 : 0.07), lineWidth: selected ? 1.5 : 1))
             .shadow(color: .black.opacity(scheme == .dark ? 0.07 : 0.025), radius: 5, y: 2)
             .onHover { hovered = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
@@ -122,11 +124,14 @@ struct ShelfSidebarGlass: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @ViewBuilder func body(content: Content) -> some View {
         if reduceTransparency {
-            content.background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 22))
+            content.background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         } else if #available(macOS 26, *) {
-            content.glassEffect(.clear, in: RoundedRectangle(cornerRadius: 22))
+            content.glassEffect(.clear, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         } else {
-            content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+            content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
     }
 }

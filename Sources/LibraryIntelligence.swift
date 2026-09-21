@@ -80,11 +80,15 @@ enum LibraryIntelligence {
     /// A deterministic, inspectable distance. The value is useful for ordering,
     /// not as a percentage or a claim that two designs are interchangeable.
     static func assess(_ reference: FontSignature, _ candidate: FontSignature) -> FontSimilarityAssessment {
+        assessment(reference, candidate, includeReasons: true)
+    }
+
+    private static func assessment(_ reference: FontSignature, _ candidate: FontSignature, includeReasons: Bool) -> FontSimilarityAssessment {
         var distance = 0.0
         var reasons: [String] = []
 
         if reference.category == candidate.category {
-            if reference.category != .other { reasons.append("Same \(reference.category.rawValue.lowercased()) category") }
+            if includeReasons && reference.category != .other { reasons.append("Same \(reference.category.rawValue.lowercased()) category") }
         } else if reference.category == .other || candidate.category == .other {
             distance += 0.45
         } else if reference.category == .symbol || candidate.category == .symbol {
@@ -108,7 +112,7 @@ enum LibraryIntelligence {
 
         distance += panoseDistance(reference.panose, candidate.panose)
 
-        let sharedVisualTags = reference.visualTags.intersection(candidate.visualTags).sorted()
+        let sharedVisualTags = reference.visualTags.intersection(candidate.visualTags)
         if !reference.visualTags.isEmpty || !candidate.visualTags.isEmpty {
             let union = reference.visualTags.union(candidate.visualTags)
             distance += (1 - Double(sharedVisualTags.count) / Double(max(1, union.count))) * 0.65
@@ -120,7 +124,8 @@ enum LibraryIntelligence {
             distance += (1 - Double(shared) / Double(max(1, total))) * 0.2
         }
 
-        for tag in sharedVisualTags.prefix(2) {
+        guard includeReasons else { return FontSimilarityAssessment(distance: distance, reasons: []) }
+        for tag in sharedVisualTags.sorted().prefix(2) {
             let label = String(tag.dropFirst("visual/".count)).replacingOccurrences(of: "-", with: " ")
             reasons.append("Shared visual label: \(label)")
         }
@@ -144,12 +149,16 @@ enum LibraryIntelligence {
             var best: (face: Face, assessment: FontSimilarityAssessment)?
             for face in family.faces {
                 let signature = FontSignature(face: face, category: effectiveCategory, tags: tagsByPostScriptName[face.name] ?? [])
-                let assessment = assess(source, signature)
+                let assessment = assessment(source, signature, includeReasons: false)
                 if best == nil || assessment.distance < best!.assessment.distance || (assessment.distance == best!.assessment.distance && stableName(face.name) < stableName(best!.face.name)) {
                     best = (face, assessment)
                 }
             }
-            if let best { results.append(FontSimilarityResult(family: family, face: best.face, distance: best.assessment.distance, reasons: best.assessment.reasons)) }
+            if let best {
+                let signature = FontSignature(face: best.face, category: effectiveCategory, tags: tagsByPostScriptName[best.face.name] ?? [])
+                let explained = assessment(source, signature, includeReasons: true)
+                results.append(FontSimilarityResult(family: family, face: best.face, distance: explained.distance, reasons: explained.reasons))
+            }
         }
         return Array(results.sorted {
             if $0.distance != $1.distance { return $0.distance < $1.distance }
@@ -250,8 +259,7 @@ extension Library {
     }
 
     @discardableResult func recordFontUses(_ postScriptNames: [String], at date: Date = Date()) -> Bool {
-        let available = Set(allFaces.map(\.name))
-        let names = Set(postScriptNames).intersection(available)
+        let names = Set(postScriptNames).intersection(availableFaceNames)
         guard !names.isEmpty else { return false }
         let previous = saved.fontUsage
         var usage = previous ?? [:]

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.27.0 — 2026-09-20
+
+- Replaced the small collapsed-sidebar restore control with a shared 52-by-64-point edge pull-tab across Library, Spaces and Font Lab, with a full rectangular hit target, a dedicated header lane, hover feedback and an accessible keyboard hint.
+- Hard-clipped shared cards, glass sidebars and Font Lab's native drawing, metric-example and preview surfaces to their continuous rounded shapes so rectangular backgrounds no longer show beyond rounded borders.
+- Expanded Font Lab's drawing toolbar with Pen and whole-stroke Eraser tools, adjustable pen/eraser size, Off/Gentle/Strong smoothing, pressure-sensitive round strokes and clear input status/help. Apple Pencil input arrives through macOS Sidecar and other tablets through their normal macOS drivers; FontShelf does not pair USB or Bluetooth hardware itself. Reported tilt is retained with each sample, but it does not yet rotate the round nib.
+- Labeled baseline, x-height, cap height and both side bearings directly on the drawing guides, and added a live H/x metric example plus a beginner guide explaining what each measurement controls.
+- Kept each in-progress stroke inside the native drawing view, publishing and saving it once at gesture completion instead of copying the full Font Lab project for every sampled point. Project-name, preview and metric edits now use coalesced saves.
+- Added reusable catalog face/family/name indexes, single-pass Library sidebar count snapshots and lean first-pass pairing/similarity ranking so routine redraws and recommendations avoid repeated full-catalog work. Final release measurements are recorded after the verification run.
+
 ## 0.26.0 — 2026-09-20
 
 - Added an explicit seven-role setup step whenever selected Library fonts, Favorites, a collection, Shortlist or a recommendation seeds a typeboard. FontShelf supplies a resettable first pass, while the user chooses the initial Display, Heading, Subheading, Body, UI, Caption and Monospace faces; every role remains freely editable afterward.
