@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.31.0 — 2026-09-21
+
+- Added **Import artwork** to Font Lab: trace PNG, JPEG, TIFF, HEIC and outlined SVG drawings into editable glyphs, individually or from alphabet sheets.
+- Added automatic ink-region detection, local character-label suggestions, grid and single-letter modes, manual region boxes, letter-order assignment, threshold/light-ink controls and speck cleanup. Review the source regions and traced shapes before importing.
+- Preserved counters and detached marks, proportional widths and shared sheet alignment. Import into a new project or an existing one; existing artwork is kept by default, replacement is explicit, and existing-project imports can be undone.
+- Added bounded direct `.procreate` embedded-preview extraction with an explicit resolution notice. This does not decode Procreate layers; export PNG for full-resolution artwork.
+- Added original alphabet, single-letter and dotted-letter test fixtures, plus regressions for tracing, persistence, safe replacement/Undo, archive validation and SVG/TrueType output.
+
 ## 0.30.0 — 2026-09-21
 
 - Replaced perimeter-point morphing with aligned silhouette distance-field blending. Glyphs with incompatible counter positions, low shape overlap or damaged output topology keep a source shape fitted to the combined proportions; the preview reports exactly which glyphs use this fallback.

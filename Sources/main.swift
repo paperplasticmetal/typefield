@@ -1036,6 +1036,9 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
 } else if let index = CommandLine.arguments.firstIndex(of: "--font-lab-specimen"), CommandLine.arguments.count > index + 1 {
     do { try FontLabRemixEngine.writeSpecimen(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
     catch { fputs("Font Lab specimen failed: \(error.localizedDescription)\n", stderr); exit(1) }
+} else if let index = CommandLine.arguments.firstIndex(of: "--font-lab-artwork-fixtures"), CommandLine.arguments.count > index + 1 {
+    do { try FontLabArtworkChecks.writeFixtures(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
+    catch { fputs("Artwork fixtures failed: \(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--performance-audit") {
     PerformanceAudit.run()
 } else if CommandLine.arguments.contains("--self-test") {
@@ -1125,7 +1128,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try FontLabStore.selfTest(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

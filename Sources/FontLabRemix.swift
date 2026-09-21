@@ -904,7 +904,7 @@ enum FontLabRemixEngine {
 
     /// Closed Ramer–Douglas–Peucker reduction. This keeps sharp corners while
     /// making the generated outlines practical to edit with a mouse.
-    private static func simplified(_ points: [FontLabPoint], tolerance: Double) -> [FontLabPoint] {
+    static func simplified(_ points: [FontLabPoint], tolerance: Double) -> [FontLabPoint] {
         guard points.count > 6 else { return points }
         func open(_ values: [FontLabPoint]) -> [FontLabPoint] {
             guard values.count > 2 else { return values }

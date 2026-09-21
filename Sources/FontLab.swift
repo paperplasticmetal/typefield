@@ -159,14 +159,23 @@ enum FontLabDrawingOperations {
 enum FontLabImportFormat: String, Codable, CaseIterable {
     case svg
     case png
+    case jpeg
+    case tiff
+    case heic
+    case procreate
 
-    var displayName: String { rawValue.uppercased() }
-    var filenameExtensions: Set<String> { [rawValue] }
+    var displayName: String { self == .procreate ? "Procreate" : rawValue.uppercased() }
+    var filenameExtensions: Set<String> {
+        switch self {
+        case .jpeg: return ["jpg", "jpeg"]
+        case .tiff: return ["tif", "tiff"]
+        case .heic: return ["heic", "heif"]
+        default: return [rawValue]
+        }
+    }
 }
 
-/// A validated handoff object for a future vector/raster tracing engine. Creating a
-/// request never reads, changes, or installs a font and does not imply that tracing
-/// is currently available.
+/// A validated request for local artwork tracing. Source files are read-only.
 struct FontLabImportRequest: Equatable {
     let sourceURL: URL
     let format: FontLabImportFormat
@@ -190,7 +199,7 @@ enum FontLabImportAPI {
 
         var errorDescription: String? {
             switch self {
-            case .unsupportedFormat: return "Choose an SVG or PNG file."
+            case .unsupportedFormat: return "Choose PNG, JPEG, TIFF, HEIC, SVG, or Procreate artwork."
             case .invalidCharacter: return "Choose one character before importing artwork."
             }
         }
@@ -475,6 +484,16 @@ final class FontLabStore: ObservableObject {
         state.selectedProject = project.id
         scheduleSave(after: 0.05)
         return project.id
+    }
+
+    /// Compare the whole snapshot before applying or undoing an import. A stale
+    /// sheet/undo cannot overwrite edits made after that snapshot was captured.
+    @discardableResult func replaceArtworkProject(_ expected: FontLabProject, with updated: FontLabProject) -> Bool {
+        guard !readBlocked, expected.id == updated.id, updated.isValid,
+              let index = state.projects.firstIndex(where: { $0.id == expected.id }), state.projects[index] == expected else { return false }
+        state.projects[index] = updated
+        scheduleSave(after: 0.05)
+        return true
     }
 
     /// Deleted experiments remain recoverable across relaunches.
@@ -797,6 +816,22 @@ final class FontLabStore: ObservableObject {
             throw SelfTestError.failed("Restored Font Lab projects did not persist.")
         }
 
+        let artworkFile = root.appendingPathComponent("artwork-import.json")
+        let artworkStore = FontLabStore(url: artworkFile)
+        _ = artworkStore.addProject(name: "Artwork transaction")
+        let beforeArtwork = artworkStore.selectedProject!
+        var afterArtwork = beforeArtwork
+        afterArtwork.glyphs["A"] = glyph
+        guard artworkStore.replaceArtworkProject(beforeArtwork, with: afterArtwork),
+              !artworkStore.replaceArtworkProject(beforeArtwork, with: beforeArtwork),
+              artworkStore.replaceArtworkProject(afterArtwork, with: beforeArtwork) else {
+            throw SelfTestError.failed("Artwork import/undo accepted a stale snapshot or lost its original project.")
+        }
+        artworkStore.flushPendingSave()
+        guard FontLabStore(url: artworkFile).selectedProject == beforeArtwork else {
+            throw SelfTestError.failed("Artwork import Undo did not preserve the original project on disk.")
+        }
+
         let corruptFile = root.appendingPathComponent("corrupt.json")
         let corruptData = Data("{ definitely-not-json".utf8)
         try corruptData.write(to: corruptFile, options: .atomic)
@@ -931,6 +966,8 @@ struct FontLabView: View {
     @State private var showInputHelp = false
     @State private var showMetricsGuide = false
     @State private var showRemixGenerator = false
+    @State private var showArtworkImporter = false
+    @State private var artworkUndo: (before: FontLabProject, after: FontLabProject)?
     @State private var isExportingFont = false
     @State private var clearRequest: ClearRequest?
     @State private var deleteRequest: FontLabProject?
@@ -1013,6 +1050,21 @@ struct FontLabView: View {
                 selectedCharacters.removeAll()
                 selectingCharacters = false
                 store.status = result.status
+                return true
+            }
+        }
+        .sheet(isPresented: $showArtworkImporter) {
+            FontLabArtworkImportSheet(currentProject: store.selectedProject, selectedCharacter: selectedCharacter) { result, original in
+                if let original {
+                    guard store.replaceArtworkProject(original, with: result) else { return false }
+                    artworkUndo = (before: original, after: result)
+                } else {
+                    guard store.addGeneratedProject(result) != nil else { return false }
+                    artworkUndo = nil
+                }
+                glyphUndo = []; selectedCharacters.removeAll(); selectingCharacters = false
+                selectedCharacter = result.characters.first(where: { result.glyphs[$0]?.hasArtwork == true }) ?? "A"
+                store.status = "Imported artwork as editable outlines. Use Reshape to refine points, or export SVG / TrueType."
                 return true
             }
         }
@@ -1102,11 +1154,13 @@ struct FontLabView: View {
                     .help("Generate an editable starter by remixing two installed font faces")
                 Button("Delete", systemImage: "trash", role: .destructive) { deleteRequest = project }
                     .disabled(store.readBlocked || isExportingFont).help("Delete this Font Lab project")
-                Menu {
-                    Button("SVG tracing — planned") { explainImport(.svg) }
-                    Button("PNG / Procreate tracing — planned") { explainImport(.png) }
-                } label: { Label("Roadmap", systemImage: "map") }
-                    .disabled(store.readBlocked)
+                Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
+                    .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
+                if let undo = artworkUndo, undo.after == project {
+                    Button("Undo import", systemImage: "arrow.uturn.backward") {
+                        if store.replaceArtworkProject(undo.after, with: undo.before) { artworkUndo = nil; glyphUndo = [] }
+                    }.disabled(store.readBlocked)
+                }
                 Menu {
                     Button("Export \(selectedCharacter) as SVG…") { exportGlyphSVG(project) }
                         .disabled(project.glyphs[selectedCharacter]?.hasArtwork != true)
@@ -1377,10 +1431,12 @@ struct FontLabView: View {
         VStack(spacing: 14) {
             Image(systemName: "pencil.and.outline").font(.system(size: 42)).foregroundStyle(.secondary)
             Text(store.readBlocked ? "Font Lab data needs attention" : "Start a Font Lab project").font(.title2)
-            Text(store.error.isEmpty ? "Draw from scratch or generate an editable starter from two installed fonts. Tune every glyph and export SVG artwork or an installable TrueType font." : store.error)
+            Text(store.error.isEmpty ? "Draw from scratch, import your letter artwork, or combine two installed fonts. Tune every glyph and export SVG artwork or an installable TrueType font." : store.error)
                 .foregroundStyle(Color(nsColor: store.error.isEmpty ? .secondaryLabelColor : .systemOrange)).multilineTextAlignment(.center).frame(maxWidth: 520)
             if !store.readBlocked {
                 HStack(spacing: 10) {
+                    Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
+                        .disabled(store.readBlocked)
                     Button("Blank project") { _ = store.addProject(name: "") }
                     Button("New from fonts…") { showRemixGenerator = true }
                         .disabled(library.allFaces.count < 2)
@@ -1450,10 +1506,6 @@ struct FontLabView: View {
         edited.importedFrom = nil
         edited.importFormat = nil
         store.setGlyph(edited, in: projectID, save: true)
-    }
-
-    private func explainImport(_ format: FontLabImportFormat) {
-        store.status = "\(format.displayName) artwork import is prepared as a tracing API, but tracing is not enabled yet. Your artwork and font library were not changed."
     }
 
     private func exportGlyphSVG(_ project: FontLabProject) {
