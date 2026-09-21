@@ -61,7 +61,7 @@ open /Applications/FontShelf.app
 
 The installer builds and verifies an ad-hoc-signed local app, then updates the stable `/Applications/FontShelf.app` copy. This avoids accumulating numbered app bundles; opening FontShelf from Applications launches the latest installed build. Pass another destination path to `install-local.sh` when needed. No paid Apple account is required for this local build. To run the checks again:
 
-Production workflow: after each completed fix or feature, run the relevant checks, commit its source, tests and release notes, and push the commit to GitHub. The canonical local app remains `/Applications/FontShelf.app`; an unpushed local build is not the release reference.
+Production workflow: after each completed fix or feature, run the relevant checks, commit its source, tests and release notes, and push the commit to both the personal canonical repository (`origin/main`) and the Regular Expression collaboration fork (`regex/main`). This working copy configures `origin` with both push destinations so an ordinary push updates both. Fetch and review `regex` before integrating team work; never force-push over collaborators. The canonical local app remains `/Applications/FontShelf.app`; an unpushed local build is not the release reference.
 
 ```sh
 dist/FontShelf.app/Contents/MacOS/FontShelf --self-test
