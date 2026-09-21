@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.32.0 — 2026-09-21
+
+- Made Font Lab vector-first, with saved cubic Bézier nodes/handles, a click/drag pen, rectangles, ellipses, smooth/corner editing, multi-node selection, exact segment splitting and keyboard nudging. Sketch tools remain available.
+- Added contour closing/opening, direction reversal, Make counter, extrema insertion, overlap removal, subtraction/intersection, duplication and cross-glyph contour copy/paste. Added coordinate entry, alignment, mirroring, scaling and rotation.
+- Added canvas zoom/pan, grid, metric/node snapping, fill toggle and Redo. Clicking a word-preview glyph now selects it for editing.
+- Preserved original cubic curves in saved projects and SVG exports, and added adaptive curve conversion for TrueType. Open vector paths block font export rather than silently changing the outline. Legacy drawings and imported polygons remain compatible.
+- Added geometry, persistence, export-identity and counter regressions. New from fonts remains shelved.
+
 ## 0.31.1 — 2026-09-21
 
 - Shelved **New from fonts**: removed both creation buttons, generator presentation/source-selection wiring and the remix specimen CLI entry point. The generator screen is archived outside the application targets for possible future reconsideration.

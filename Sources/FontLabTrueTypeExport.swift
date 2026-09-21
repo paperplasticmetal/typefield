@@ -85,11 +85,21 @@ enum FontLabTrueTypeExporter {
         let pressure: Double?
     }
 
+    private struct RevisionVectorNode: Encodable {
+        let point: RevisionPoint
+        let incoming: RevisionPoint?
+        let outgoing: RevisionPoint?
+    }
+    private struct RevisionVectorPath: Encodable {
+        let nodes: [RevisionVectorNode]
+        let closed: Bool
+    }
     private struct RevisionStroke: Encodable {
         let points: [RevisionPoint]
         let width: Double
         let nibStyle: String
         let contours: [[RevisionPoint]]?
+        let vectorPaths: [RevisionVectorPath]?
     }
 
     private struct RevisionGlyph: Encodable {
@@ -112,6 +122,7 @@ enum FontLabTrueTypeExporter {
     }
 
     enum ExportError: LocalizedError, Equatable {
+        case openContours(String)
         case invalidProject
         case noDrawnCharacters
         case glyphTooComplex(String)
@@ -122,6 +133,8 @@ enum FontLabTrueTypeExporter {
 
         var errorDescription: String? {
             switch self {
+            case let .openContours(character):
+                return "Close the open vector contours in \(character) before exporting the font. SVG can preserve open paths."
             case .invalidProject:
                 return "The Font Lab project contains invalid data and cannot be exported."
             case .noDrawnCharacters:
@@ -144,6 +157,9 @@ enum FontLabTrueTypeExporter {
     /// that have artwork, plus a blank space and a visible `.notdef` glyph.
     static func artifact(for project: FontLabProject) throws -> FontLabTrueTypeArtifact {
         guard project.isValid else { throw ExportError.invalidProject }
+        for glyph in project.glyphs.values where glyph.strokes.contains(where: { $0.vectorPaths?.contains(where: { !$0.closed }) == true }) {
+            throw ExportError.openContours(glyph.character)
+        }
 
         let revision = try fontRevision(for: project)
         let familyName = uniqueFamilyName(project.name, projectID: project.id, fingerprint: revision.fingerprint)
@@ -519,8 +535,8 @@ enum FontLabTrueTypeExporter {
     }
 
     private static func sampledStrokes(_ glyph: FontLabGlyph) throws -> SampledStrokes {
-        let filled = glyph.strokes.filter { $0.contours != nil }
-        let nonempty = glyph.strokes.filter { $0.contours == nil && !$0.points.isEmpty }
+        let filled = glyph.strokes.filter { $0.contours != nil || $0.vectorPaths != nil }
+        let nonempty = glyph.strokes.filter { $0.contours == nil && $0.vectorPaths == nil && !$0.points.isEmpty }
         guard nonempty.count <= maximumSamplesPerGlyph else { throw ExportError.glyphTooComplex(glyph.character) }
         let originalCount = nonempty.reduce(0) { $0 + $1.points.count }
         guard originalCount > maximumSamplesPerGlyph else { return SampledStrokes(strokes: filled + nonempty, removedPointCount: 0) }
@@ -562,7 +578,7 @@ enum FontLabTrueTypeExporter {
     }
 
     private static func contours(for stroke: FontLabStroke, metrics: FontLabMetrics, leftBearing: Double, width: Double) -> [[TTPoint]] {
-        if let contours = stroke.contours {
+        if let contours = stroke.vectorPaths?.filter(\.closed).map({ $0.flattened(tolerance: 0.00003) }) ?? stroke.contours {
             return contours.map { $0.map { point in
                 TTPoint(x: Int((leftBearing * Double(unitsPerEm) + point.x * width).rounded()),
                         y: Int(((point.y - metrics.baseline) * Double(unitsPerEm)).rounded()))
@@ -1333,7 +1349,14 @@ enum FontLabTrueTypeExporter {
                         points: stroke.points.map { RevisionPoint(x: $0.x, y: $0.y, pressure: $0.pressure) },
                         width: stroke.width,
                         nibStyle: stroke.resolvedNibStyle.rawValue,
-                        contours: stroke.contours?.map { $0.map { RevisionPoint(x: $0.x, y: $0.y, pressure: nil) } }
+                        contours: stroke.contours?.map { $0.map { RevisionPoint(x: $0.x, y: $0.y, pressure: nil) } },
+                        vectorPaths: stroke.vectorPaths?.map { path in
+                            RevisionVectorPath(nodes: path.nodes.map { node in
+                                RevisionVectorNode(point: RevisionPoint(x: node.point.x, y: node.point.y, pressure: nil),
+                                    incoming: node.incoming.map { RevisionPoint(x: $0.x, y: $0.y, pressure: nil) },
+                                    outgoing: node.outgoing.map { RevisionPoint(x: $0.x, y: $0.y, pressure: nil) })
+                            }, closed: path.closed)
+                        }
                     )
                 },
                 leftSideBearing: glyph.leftSideBearing,

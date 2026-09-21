@@ -52,11 +52,17 @@ struct FontLabStroke: Codable, Identifiable, Equatable {
     /// A compound, non-zero-filled outline. Optional for old pen-only projects.
     /// Keeping counters with their outer shape preserves holes during editing.
     var contours: [[FontLabPoint]]? = nil
+    var vectorPaths: [FontLabVectorPath]? = nil
 
     var resolvedNibStyle: FontLabNibStyle { nibStyle ?? .round }
 
     var isValid: Bool {
-        (contours.map { !$0.isEmpty && $0.count <= 256 && $0.reduce(0) { $0 + $1.count } <= 30_000 && $0.allSatisfy { $0.count >= 3 && $0.allSatisfy(\.isValid) } } ?? !points.isEmpty) &&
+        if let vectorPaths {
+            return contours == nil && points.isEmpty && !vectorPaths.isEmpty && vectorPaths.count <= 256 &&
+                vectorPaths.reduce(0) { $0 + $1.nodes.count } <= 30_000 && vectorPaths.allSatisfy(\.isValid) &&
+                Set(vectorPaths.map(\.id)).count == vectorPaths.count && width.isFinite && (0.002...0.2).contains(width)
+        }
+        return (contours.map { !$0.isEmpty && $0.count <= 256 && $0.reduce(0) { $0 + $1.count } <= 30_000 && $0.allSatisfy { $0.count >= 3 && $0.allSatisfy(\.isValid) } } ?? !points.isEmpty) &&
             points.count <= 50_000 && width.isFinite && (0.002...0.2).contains(width) && points.allSatisfy(\.isValid)
     }
 }
@@ -123,6 +129,11 @@ enum FontLabDrawingOperations {
     }
 
     private static func strokeIntersects(_ stroke: FontLabStroke, point: FontLabPoint, squaredRadius: Double) -> Bool {
+        if let paths = stroke.vectorPaths {
+            let compound = CGMutablePath()
+            for path in paths where path.closed { compound.addPath(path.cgPath) }
+            return compound.contains(CGPoint(x: point.x * 1000, y: point.y * 1000))
+        }
         if let contours = stroke.contours {
             let path = CGMutablePath()
             for contour in contours {
@@ -224,6 +235,13 @@ enum FontLabSVGExporter {
         let xScale = glyph.contourDesignWidth ?? 1
         let penScale = min(xScale, 1)
         let elements = glyph.strokes.compactMap { stroke -> String? in
+            if let paths = stroke.vectorPaths {
+                let closed = paths.filter(\.closed).map { $0.svg(xScale: xScale) }.joined(separator: " ")
+                var elements: [String] = []
+                if !closed.isEmpty { elements.append("  <path d=\"\(closed)\" fill=\"#111111\" fill-rule=\"nonzero\"/>") }
+                for path in paths where !path.closed { elements.append("  <path d=\"\(path.svg(xScale: xScale))\" fill=\"none\" stroke=\"#111111\" stroke-width=\"1\"/>") }
+                return elements.joined(separator: "\n")
+            }
             if let contours = stroke.contours {
                 let d = contours.map { contour in
                     contour.enumerated().map { index, point in
@@ -319,7 +337,7 @@ struct FontLabGlyph: Codable, Equatable {
     var contourDesignWidth: Double? = nil
     var resolvedDesignWidth: Double { contourDesignWidth ?? 0.62 }
 
-    var hasArtwork: Bool { strokes.contains { !$0.points.isEmpty || $0.contours?.isEmpty == false } }
+    var hasArtwork: Bool { strokes.contains { !$0.points.isEmpty || $0.contours?.isEmpty == false || $0.vectorPaths?.isEmpty == false } }
     var isValid: Bool {
         character.count == 1 && strokes.count <= 10_000 && strokes.allSatisfy(\.isValid) &&
             (contourDesignWidth.map { $0.isFinite && (0.02...3).contains($0) } ?? true) &&
@@ -971,6 +989,8 @@ struct FontLabView: View {
     @State private var clearRequest: ClearRequest?
     @State private var deleteRequest: FontLabProject?
     @State private var glyphUndo: [FontLabGlyph] = []
+    @State private var glyphRedo: [FontLabGlyph] = []
+    @State private var vectorEditing = true
 
     private struct ClearRequest: Identifiable {
         let id = UUID()
@@ -1007,9 +1027,9 @@ struct FontLabView: View {
                 selectedCharacter = project.characters.first ?? "A"
             }
         }
-        .onChange(of: selectedCharacter) { _ in glyphUndo = [] }
+        .onChange(of: selectedCharacter) { _ in glyphUndo = []; glyphRedo = [] }
         .onChange(of: store.state.selectedProject) { _ in
-            glyphUndo = []
+            glyphUndo = []; glyphRedo = []
             if let project = store.selectedProject, !project.characters.contains(selectedCharacter) {
                 selectedCharacter = project.characters.first ?? "A"
             }
@@ -1051,7 +1071,7 @@ struct FontLabView: View {
                     guard store.addGeneratedProject(result) != nil else { return false }
                     artworkUndo = nil
                 }
-                glyphUndo = []; selectedCharacters.removeAll(); selectingCharacters = false
+                glyphUndo = []; glyphRedo = []; selectedCharacters.removeAll(); selectingCharacters = false
                 selectedCharacter = result.characters.first(where: { result.glyphs[$0]?.hasArtwork == true }) ?? "A"
                 store.status = "Imported artwork as editable outlines. Use Reshape to refine points, or export SVG / TrueType."
                 return true
@@ -1136,7 +1156,7 @@ struct FontLabView: View {
                     .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
                 if let undo = artworkUndo, undo.after == project {
                     Button("Undo import", systemImage: "arrow.uturn.backward") {
-                        if store.replaceArtworkProject(undo.after, with: undo.before) { artworkUndo = nil; glyphUndo = [] }
+                        if store.replaceArtworkProject(undo.after, with: undo.before) { artworkUndo = nil; glyphUndo = []; glyphRedo = [] }
                     }.disabled(store.readBlocked)
                 }
                 Menu {
@@ -1166,7 +1186,7 @@ struct FontLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
-            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Reshape imported outlines or draw with Round, Marker, and Outline pens. Export SVG artwork or an installable TrueType font (.ttf).")
+            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Draw Bézier contours in Vector, or freehand in Sketch. Export SVG artwork or an installable TrueType font (.ttf).")
                 .font(.caption2).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
                 .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
@@ -1269,10 +1289,23 @@ struct FontLabView: View {
                 HStack {
                     Text("Edit \(selectedCharacter)").font(.title3.weight(.semibold))
                     Spacer()
+                    Picker("Editor", selection: $vectorEditing) {
+                        Text("Vector").tag(true)
+                        Text("Sketch").tag(false)
+                    }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
+                    Button("Redo") { redoGlyph(projectID: project.id) }.disabled(glyphRedo.isEmpty || store.readBlocked)
                     Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled((glyphUndo.isEmpty && glyph.strokes.isEmpty) || store.readBlocked)
                     Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
                         .disabled(glyph.strokes.isEmpty || store.readBlocked)
                 }
+                if vectorEditing {
+                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics,
+                        onChange: { edited in recordGlyphEdit(edited, projectID: project.id) },
+                        onUndo: { undoStroke(glyph, projectID: project.id) },
+                        onRedo: { redoGlyph(projectID: project.id) })
+                        .id(project.id.uuidString + selectedCharacter)
+                        .disabled(store.readBlocked)
+                } else {
                 FontLabGlyphCanvas(
                     glyph: glyph,
                     metrics: project.metrics,
@@ -1286,6 +1319,7 @@ struct FontLabView: View {
                 ) { editedGlyph in
                     if let previous = store.selectedProject?.glyphs[selectedCharacter] {
                         glyphUndo.append(previous)
+                        glyphRedo = []
                         if glyphUndo.count > 30 { glyphUndo.removeFirst() }
                     }
                     store.setGlyph(editedGlyph, in: project.id, save: false)
@@ -1345,6 +1379,7 @@ struct FontLabView: View {
                 .padding(10)
                 .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                }
             }
             metricsPanel(project, glyph: glyph)
         }
@@ -1393,11 +1428,13 @@ struct FontLabView: View {
             HStack {
                 Text("PREVIEW").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
                 Spacer()
-                Text("Drawn glyphs only; outlined tiles mark missing characters.").font(.caption).foregroundStyle(.secondary)
+                Text("Click a preview letter to edit it. Outlined tiles mark missing characters.").font(.caption).foregroundStyle(.secondary)
             }
             TextField("Preview text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
                 .onSubmit { store.flushPendingSave() }.disabled(store.readBlocked)
-            FontLabPreviewCanvas(text: project.previewText, glyphs: project.glyphs, metrics: project.metrics)
+            FontLabPreviewCanvas(text: project.previewText, glyphs: project.glyphs, metrics: project.metrics, selectedCharacter: selectedCharacter, onSelect: { character in
+                if project.characters.contains(character) { selectedCharacter = character }
+            })
                 .frame(height: 118).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.1)))
@@ -1468,16 +1505,34 @@ struct FontLabView: View {
         })
     }
 
+    private func recordGlyphEdit(_ edited: FontLabGlyph, projectID: UUID) {
+        let previous = store.selectedProject?.glyphs[edited.character] ?? FontLabGlyph(character: edited.character)
+        guard edited != previous else { return }
+        glyphUndo.append(previous); if glyphUndo.count > 60 { glyphUndo.removeFirst() }
+        glyphRedo = []
+        store.setGlyph(edited, in: projectID, save: false)
+        store.scheduleSave(after: 0.4)
+    }
+
     private func undoStroke(_ glyph: FontLabGlyph, projectID: UUID) {
-        var edited = glyph
+        let current = store.selectedProject?.glyphs[glyph.character] ?? glyph
+        var edited = current
         if let previous = glyphUndo.popLast() { edited = previous }
         else if !edited.strokes.isEmpty { edited.strokes.removeLast() }
+        guard edited != current else { return }
+        glyphRedo.append(current)
         store.setGlyph(edited, in: projectID, save: true)
+    }
+
+    private func redoGlyph(projectID: UUID) {
+        guard let next = glyphRedo.popLast(), let current = store.selectedProject?.glyphs[next.character] else { return }
+        glyphUndo.append(current)
+        store.setGlyph(next, in: projectID, save: true)
     }
 
     private func clearGlyph(_ glyph: FontLabGlyph, projectID: UUID) {
         var edited = glyph
-        glyphUndo.append(glyph)
+        glyphUndo.append(glyph); glyphRedo = []
         edited.strokes = []
         edited.importedFrom = nil
         edited.importFormat = nil
@@ -2077,6 +2132,8 @@ struct FontLabPreviewCanvas: NSViewRepresentable {
     let text: String
     let glyphs: [String: FontLabGlyph]
     let metrics: FontLabMetrics
+    var selectedCharacter: String? = nil
+    var onSelect: ((String) -> Void)? = nil
 
     func makeNSView(context: Context) -> FontLabPreviewNSView {
         let view = FontLabPreviewNSView()
@@ -2089,6 +2146,8 @@ struct FontLabPreviewCanvas: NSViewRepresentable {
         view.text = text
         view.glyphs = glyphs
         view.metrics = metrics
+        view.selectedCharacter = selectedCharacter
+        view.onSelect = onSelect
         view.needsDisplay = true
     }
 }
@@ -2097,11 +2156,19 @@ final class FontLabPreviewNSView: NSView {
     var text = ""
     var glyphs: [String: FontLabGlyph] = [:]
     var metrics = FontLabMetrics()
+    var selectedCharacter: String?
+    var onSelect: ((String) -> Void)?
+    private var hitRegions: [(String, CGRect)] = []
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let match = hitRegions.first(where: { $0.1.contains(point) }) { onSelect?(match.0) }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         NSColor.textBackgroundColor.setFill()
         bounds.fill()
+        hitRegions = []
         let characters = text.map(String.init)
         guard !characters.isEmpty else { return }
         let nominalHeight: CGFloat = min(96, max(32, bounds.height - 24))
@@ -2123,6 +2190,12 @@ final class FontLabPreviewNSView: NSView {
             let left = CGFloat(glyph?.leftSideBearing ?? 0.08) * em
             let right = CGFloat(glyph?.rightSideBearing ?? 0.08) * em
             let inkWidth = em * CGFloat(glyph?.resolvedDesignWidth ?? 0.62)
+            let hit = CGRect(x: x, y: originY, width: left + inkWidth + right, height: em)
+            hitRegions.append((character, hit))
+            if character == selectedCharacter {
+                NSColor.controlAccentColor.withAlphaComponent(0.1).setFill()
+                NSBezierPath(roundedRect: hit, xRadius: 4, yRadius: 4).fill()
+            }
             if let glyph, glyph.hasArtwork {
                 let rect = NSRect(x: x + left, y: originY, width: inkWidth, height: em)
                 fontLabDrawStrokes(glyph.strokes, in: rect, color: .labelColor)
@@ -2154,6 +2227,10 @@ func fontLabDrawStrokes(_ strokes: [FontLabStroke], in rect: NSRect, color: NSCo
     color.setStroke()
     color.setFill()
     for stroke in strokes {
+        if let paths = stroke.vectorPaths {
+            FontLabVectorMath.draw(paths, in: rect, color: color)
+            continue
+        }
         if let contours = stroke.contours {
             let path = NSBezierPath()
             path.windingRule = .nonZero
