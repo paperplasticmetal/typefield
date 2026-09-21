@@ -45,6 +45,17 @@ Date: 2026-09-19. Build under test: `/tmp/fontshelf-interaction-qa/dist/FontShel
 | FontInspector | Close/restore | LIVE PASS | Done closes sheet and restores Library with disposable state cleared |
 | Build/self-test | `bash build.sh` and built-in self-test | AUTOMATED PASS | Build completed in isolated copy; self-test output saved at `/tmp/fontshelf-selftest.log` and reports all PASS lines including 180 families / 528 styles classification |
 
+## 0.24.0 installed-app follow-up
+
+Date: 2026-09-20. Build under test: `/Applications/FontShelf.app`, version 0.24.0 (32). Existing fonts, collections, watches and projects were not modified.
+
+| Area | Interaction | Status | Evidence |
+|---|---|---|---|
+| Shared workspace header | Switch Library → Spaces → Library | LIVE PASS | Ff/FontShelf and the Library/Spaces segmented control remained in the same shared header position; the Ff mark is present in Spaces |
+| Collapsible sidebar | Hide from Library and Spaces; restore from left edge | LIVE PASS | Sidebar disappeared from AX and the visual layout; accessible Show sidebar remained at the left edge and restored it |
+| View command | Hide/Show Sidebar menu label and Control-Command-S | LIVE PASS | Menu title changed with state and the keyboard command restored the sidebar |
+| Shared persistence | Collapse in Library, switch to Spaces, quit and relaunch | LIVE PASS | Spaces inherited collapsed state; the installed app reopened collapsed after a real process relaunch; sidebar was restored after QA |
+
 ## Gaps and limitations
 
 - The Filter icon itself produced no accessibility-tree change when clicked during this pass; the Tag filters popover and property-search flow are live and functional. This is recorded as a UI affordance gap rather than claiming the icon is verified.

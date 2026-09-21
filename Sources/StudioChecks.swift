@@ -26,7 +26,7 @@ enum StudioChecks {
         try verify((value["axes"] as? [String: Double])?["wght"] == 520, "Variable axes preserved")
         let html = try read("index.html"), css = try read("typography.css")
         try verify(!html.contains("<script>") && html.contains("&lt;script&gt;") && html.contains("café 🖋"), "HTML must escape sample text and retain Unicode")
-        try verify(css.contains("clamp(") && css.contains("\"wght\" 520") && css.contains("font-display: swap") && css.contains("font-feature-settings: \"kern\" 0, \"liga\" 0"), "CSS carries axes, features and loading policy")
+        try verify(css.contains("clamp(") && css.contains("\"wght\" 520") && css.contains("font-display: swap") && css.contains("font-feature-settings: \"kern\" 0, \"liga\" 0") && css.contains("font-kerning: none"), "CSS carries axes, features, kerning and loading policy")
         try verify(DeveloperHandoff.fluid(16) == "1rem" && DeveloperHandoff.number(0) == "0" && DeveloperHandoff.number(100) == "100", "Fluid scale and numeric precision")
         let manifest = try read("fonts.json")
         try verify(!manifest.contains("/Users/") && manifest.contains("\"availableOnExportingMac\" : false"), "Missing fonts marked without leaking local paths")
@@ -128,6 +128,16 @@ enum StudioChecks {
         try verify(visible == [canvasA, canvasB, canvasC], "Selecting another canvas must preserve the visible comparison set")
         visible.remove(canvasA)
         try verify(CanvasVisibility.prune(visible, valid: [canvasA, canvasC], selected: canvasC) == [canvasC] && CanvasVisibility.solo(canvasB) == [canvasB], "Canvas hide, prune and solo state")
+        let sidebarSuite = "FontShelf-sidebar-check-" + UUID().uuidString
+        let sidebarDefaults = UserDefaults(suiteName: sidebarSuite)!
+        defer { sidebarDefaults.removePersistentDomain(forName: sidebarSuite) }
+        try verify(!WorkspaceSidebarPreference.collapsed(in: sidebarDefaults), "The workspace sidebar must be expanded by default")
+        WorkspaceSidebarPreference.setCollapsed(true, in: sidebarDefaults)
+        let reloadedSidebarDefaults = UserDefaults(suiteName: sidebarSuite)!
+        try verify(WorkspaceSidebarPreference.collapsed(in: reloadedSidebarDefaults), "Collapsed workspace sidebar state must persist across view recreation")
+        WorkspaceSidebarPreference.setCollapsed(false, in: reloadedSidebarDefaults)
+        try verify(!WorkspaceSidebarPreference.collapsed(in: sidebarDefaults), "Expanded workspace sidebar state must persist")
+        try verify(WorkspaceSidebarLayout.reservedWidth(collapsed: false) == 256 && WorkspaceSidebarLayout.reservedWidth(collapsed: true) == 0, "Collapsing the workspace sidebar must return its complete width to Library and Spaces")
         var inserted = TypeDirection(); let beforeInsert = CanvasPlan(direction: inserted)
         let insertedID = inserted.insert(.heading, target: beforeInsert.sections[1].id, before: true, visible: beforeInsert.sections.map(\.id))
         let afterInsert = CanvasPlan(direction: inserted)
@@ -306,6 +316,29 @@ enum StudioChecks {
         let legacyStyle = Data(#"{"fontName":"Helvetica","size":18,"leading":1.35,"tracking":0,"axes":{},"features":{},"text":"Legacy document"}"#.utf8)
         let legacy = try JSONDecoder().decode(TypeStyle.self, from: legacyStyle)
         try verify(legacy.alignment == nil && legacy.lineHeight == nil, "Legacy typography failed to decode")
+        var legacyKerning = legacy
+        legacyKerning.features = ["kern": 0, "liga": 1]
+        try verify(legacyKerning.kerning == nil && !legacyKerning.effectiveKerning && legacyKerning.canonicalFeatures == ["kern": 0, "liga": 1], "Legacy OpenType kerning must remain effective")
+        try verify(DeveloperHandoff.features(legacyKerning)["kern"] == 0, "Legacy kerning must export without contradictory settings")
+        let legacyKerningRoundTrip = try JSONDecoder().decode(TypeStyle.self, from: JSONEncoder().encode(legacyKerning))
+        try verify(!legacyKerningRoundTrip.effectiveKerning && legacyKerningRoundTrip.features["kern"] == 0, "Legacy kerning must survive JSON round-trip")
+        let legacyKerningText = legacyKerning.attributed("AV", color: .black)
+        try verify((legacyKerningText.attribute(.kern, at: 0, effectiveRange: nil) as? NSNumber)?.doubleValue == 0, "Legacy disabled kerning must render as disabled")
+        var legacyKerningDirection = TypeDirection()
+        legacyKerningDirection.styles[TypeRole.body.rawValue] = legacyKerning
+        var legacyKerningBoard = TypeBoard()
+        legacyKerningBoard.directions = [legacyKerningDirection]
+        legacyKerningBoard.selectedDirection = legacyKerningDirection.id
+        let legacyKerningFrame = (FigmaLayoutExporter.payload(board: legacyKerningBoard)["frames"] as! [[String: Any]])[0]
+        let legacyKerningLayer = (legacyKerningFrame["elements"] as! [[String: Any]]).first { $0["role"] as? String == TypeRole.body.rawValue }!
+        try verify(legacyKerningLayer["kerning"] as? Bool == false && (legacyKerningLayer["features"] as? [String: Int])?["kern"] == nil, "Figma export must canonicalize legacy kerning")
+        legacyKerning.features["kern"] = 1
+        try verify(legacyKerning.effectiveKerning, "Legacy enabled kerning must remain enabled")
+        legacyKerning.features["kern"] = 0
+        legacyKerning.kerning = true
+        try verify(legacyKerning.effectiveKerning && legacyKerning.canonicalFeatures["kern"] == 1, "Explicit kerning must override a stale legacy feature")
+        legacyKerning.setKerning(false)
+        try verify(legacyKerning.kerning == false && legacyKerning.features["kern"] == nil && !legacyKerning.effectiveKerning, "Changing kerning must remove the legacy duplicate feature")
         let styled = duplicate.style(.body).attributed("One two\nThree", color: .black)
         try verify(styled.string == "ONE TWO\nTHREE")
         let paragraph = styled.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as! NSParagraphStyle
@@ -376,7 +409,8 @@ enum StudioChecks {
         try verify(figma["format"] as? String == "fontshelf-figma" && (figma["frames"] as? [[String: Any]])?.count == 2)
         let frames = figma["frames"] as! [[String: Any]]
         let bodyLayer = (frames[1]["elements"] as! [[String: Any]]).first { $0["role"] as? String == TypeRole.body.rawValue }!
-        try verify(bodyLayer["alignment"] as? String == "RIGHT" && bodyLayer["lineHeight"] as? Double == 32)
+        try verify(bodyLayer["alignment"] as? String == "RIGHT" && bodyLayer["lineHeight"] as? Double == 32 && bodyLayer["kerning"] as? Bool == false)
+        try verify((bodyLayer["features"] as? [String: Int])?["kern"] == nil, "Figma export must keep kerning out of generic feature settings")
         let library = Library(storageURL: root.appendingPathComponent("library-state/library.json")); library.acceptCatalog(catalog)
         let sample = catalog.flatMap(\.faces).first { $0.name == "Helvetica" }!
         let pdf = SpecimenExporter.data(faces: [sample], library: library, sample: "Hamburgefontsiv 0123456789")

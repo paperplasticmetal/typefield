@@ -56,7 +56,7 @@ enum DeveloperHandoff {
     static func validTag(_ value: String) -> Bool { value.utf8.count == 4 && value.utf8.allSatisfy { (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) } }
     static func axes(_ style: TypeStyle) -> [String: Double] { Dictionary(uniqueKeysWithValues: style.axes.compactMap { id, value in tag(id).map { ($0, value) } }) }
     static func features(_ style: TypeStyle) -> [String: Int] {
-        var values = style.features.filter { validTag($0.key) }; if let kerning = style.kerning { values["kern"] = kerning ? 1 : 0 }; return values
+        style.canonicalFeatures.filter { validTag($0.key) }
     }
     static func settings<T>(_ values: [String: T]) -> String { values.isEmpty ? "normal" : values.keys.sorted().map { "\"\($0)\" \(values[$0]!)" }.joined(separator: ", ") }
     static func fluid(_ size: Double) -> String {
@@ -114,7 +114,7 @@ enum DeveloperHandoff {
             let decoration = [s.underline == true ? "underline" : nil, s.strikethrough == true ? "line-through" : nil].compactMap { $0 }.joined(separator: " ")
             let stack = "'\(a.alias)', \(a.fallback)"
             css += "  --\(key)-font: \(stack);\n  --\(key)-size: \(fluid(s.size));\n  --\(key)-line-height: \(number(line / s.size));\n  --\(key)-tracking: \(number(s.tracking / s.size))em;\n"
-            classes += ".fs-\(key) { font-family: var(--\(key)-font); font-size: var(--\(key)-size); line-height: var(--\(key)-line-height); letter-spacing: var(--\(key)-tracking); font-weight: \(number(weight)); font-style: \(a.italic ? "italic" : "normal"); font-synthesis: none; font-variation-settings: \(settings(axis)); font-feature-settings: \(settings(feature)); font-kerning: \(s.kerning == false ? "none" : "normal"); text-align: \(alignment); text-transform: \(casing); text-decoration: \(decoration.isEmpty ? "none" : decoration); word-spacing: \(number(s.wordSpacing ?? 0))px; text-indent: \(number(s.indent ?? 0))px; margin-block: 0 \(number(s.paragraphSpacing ?? 0))px; }\n"
+            classes += ".fs-\(key) { font-family: var(--\(key)-font); font-size: var(--\(key)-size); line-height: var(--\(key)-line-height); letter-spacing: var(--\(key)-tracking); font-weight: \(number(weight)); font-style: \(a.italic ? "italic" : "normal"); font-synthesis: none; font-variation-settings: \(settings(axis)); font-feature-settings: \(settings(feature)); font-kerning: \(s.effectiveKerning ? "normal" : "none"); text-align: \(alignment); text-transform: \(casing); text-decoration: \(decoration.isEmpty ? "none" : decoration); word-spacing: \(number(s.wordSpacing ?? 0))px; text-indent: \(number(s.indent ?? 0))px; margin-block: 0 \(number(s.paragraphSpacing ?? 0))px; }\n"
             let value: [String: Any] = ["fontFamily": s.fontName, "fontSize": s.size, "fontSizeUnit": "px", "fontWeight": weight, "fontStyle": a.italic ? "italic" : "normal", "lineHeight": line, "letterSpacing": s.tracking, "wordSpacing": s.wordSpacing ?? 0, "paragraphSpacing": s.paragraphSpacing ?? 0, "firstLineIndent": s.indent ?? 0, "alignment": alignment, "textTransform": casing, "decoration": decoration, "axes": axis, "features": feature, "fallbackStack": a.fallback, "fluidCSS": fluid(s.size)]
             tokens[key] = ["$type": "typography", "$value": value, "board": entry.board, "canvas": entry.canvas, "role": entry.label, "sampleText": s.text]
             sizes[key] = ["var(--\(key)-size)", ["lineHeight": "var(--\(key)-line-height)", "letterSpacing": "var(--\(key)-tracking)", "fontWeight": number(weight)]]

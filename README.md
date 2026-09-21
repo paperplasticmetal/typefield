@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.23.0 (build 31).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.24.0 (build 32).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Developer handoff:** In a typeboard, choose **Export → Developer handoff…** for all its canvases, or use the space actions menu to export the whole project. One folder contains `@font-face` declarations, axes/features, CSS variables and suggested fluid `clamp()` scales, fallback stacks, preload examples, font-display guidance, Tailwind v3/v4 setup, versioned token JSON, SwiftUI and Compose starter definitions, and a standalone printable HTML specimen. Font binaries are never bundled: supply licensed web/app assets at the manifest paths. The README documents defaults and native integration work; the specimen is a typography reference, not a pixel-perfect layout export.
 
@@ -40,7 +40,7 @@ The typography summary also includes a **Web font cost** audit for the selected 
 - Selected-canvas web-font cost audits with exact WOFF2 provenance, ambiguity reporting, Unicode/script coverage, compatible variable-versus-static comparisons, fallback-layout probes and removable-style estimates.
 - Daily local state backups and merge-based backup import. Folder access permissions must be granted separately.
 
-Spaces is a separate workspace with its own project/typeboard sidebar. Its resizable inspector includes alignment, kerning, exact line height, tracking, paragraph/word spacing, indents, case and decorations. Drag sections in the arrangement list or directly on the canvas. Choose an A/B partner with the same format and width, then use **Swap A/B** (Command-backslash). Fit zoom adapts to panel resizing.
+Library and Spaces share one stable workspace sidebar, including the same FontShelf mark and workspace switcher in the same position. Use the header control or **View → Hide Sidebar** (Control-Command-S) to reclaim the full window; the choice persists across workspace switches and relaunches, and the small left-edge control restores it. Spaces has a resizable inspector with alignment, kerning, exact line height, tracking, paragraph/word spacing, indents, case and decorations. **Font kerning** uses or suppresses the font designer's built-in pair spacing (for combinations such as AV or To); it is independent of the explicit Letter spacing value. Drag sections in the arrangement list or directly on the canvas. Choose an A/B partner with the same format and width, then use **Swap A/B** (Command-backslash). Fit zoom adapts to panel resizing.
 
 Search accepts `#tag`, `#!tag`, and quoted names such as `#"Client Work"`. Typing `#` opens tag and font-property suggestions. Built-ins include `#fontshelf/active`, `#fontshelf/user`, `#fontshelf/bold`, `#fontshelf/italic`, and `#fontshelf/feature/tnum`; `#typeface/` is accepted as an alias. Tokens combine with AND and match the same style. A parent tag includes its descendants. Removable search chips show active filters.
 

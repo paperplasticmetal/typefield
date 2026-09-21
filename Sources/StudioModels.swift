@@ -26,7 +26,23 @@ struct TypeStyle: Codable, Equatable {
     var casing: TextCaseOption?
     var underline: Bool?
     var strikethrough: Bool?
-    var font: CTFont { var values = features; if let kerning { values["kern"] = kerning ? 1 : 0 }; return OpenType.font(name: fontName, size: size, axes: axes, features: values) }
+    var kerningOverride: Bool? {
+        if let kerning { return kerning }
+        if let legacy = features["kern"] { return legacy != 0 }
+        return nil
+    }
+    var effectiveKerning: Bool { kerningOverride ?? true }
+    var featuresWithoutKerning: [String: Int] { features.filter { $0.key != "kern" } }
+    var canonicalFeatures: [String: Int] {
+        var values = featuresWithoutKerning
+        if let kerningOverride { values["kern"] = kerningOverride ? 1 : 0 }
+        return values
+    }
+    mutating func setKerning(_ enabled: Bool) {
+        kerning = enabled
+        features.removeValue(forKey: "kern")
+    }
+    var font: CTFont { OpenType.font(name: fontName, size: size, axes: axes, features: canonicalFeatures) }
     func attributed(_ source: String? = nil, color: NSColor) -> NSAttributedString {
         let raw = source ?? text
         let value = casing == .upper ? raw.uppercased() : casing == .lower ? raw.lowercased() : raw
@@ -38,7 +54,7 @@ struct TypeStyle: Codable, Equatable {
         paragraph.firstLineHeadIndent = indent ?? 0
         paragraph.lineBreakMode = .byWordWrapping
         var attributes: [NSAttributedString.Key: Any] = [.font: font as NSFont, .foregroundColor: color, .paragraphStyle: paragraph]
-        if tracking != 0 || kerning == false { attributes[.kern] = tracking }
+        if tracking != 0 || !effectiveKerning { attributes[.kern] = tracking }
         if underline == true { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
         if strikethrough == true { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
         let result = NSMutableAttributedString(string: value, attributes: attributes)

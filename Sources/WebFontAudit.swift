@@ -246,7 +246,7 @@ enum WebTextLayoutMetrics {
     static func attributed(style: TypeStyle, text: String, fontName: String?) -> NSAttributedString {
         let value = style.attributed(text, color: .black).mutableCopy() as! NSMutableAttributedString
         if let fontName {
-            let font = OpenType.font(name: fontName, size: style.size, axes: [:], features: style.features)
+            let font = OpenType.font(name: fontName, size: style.size, axes: [:], features: style.canonicalFeatures)
             value.addAttribute(.font, value: font as NSFont, range: NSRange(location: 0, length: value.length))
         }
         return value
@@ -374,7 +374,11 @@ enum WebFontAuditAnalyzer {
             }
             let desktopBytes = catalogValue?.1.url.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }
             let desktopFormat = catalogValue?.1.url?.pathExtension.uppercased()
-            let instances = Set(uses.map { use in use.style.axes.keys.sorted().map { "\($0)=\(use.style.axes[$0]!)" }.joined(separator: ";") + "|\(use.style.size)|\(use.style.features)" }).count
+            let instances = Set(uses.map { use in
+                let axes = use.style.axes.keys.sorted().map { "\($0)=\(use.style.axes[$0]!)" }.joined(separator: ";")
+                let features = use.style.canonicalFeatures.keys.sorted().map { "\($0)=\(use.style.canonicalFeatures[$0]!)" }.joined(separator: ";")
+                return "\(axes)|\(use.style.size)|\(features)"
+            }).count
             return WebFontStyleAudit(postScriptName: name,
                                      family: family,
                                      sourceFamily: sourceFamily,

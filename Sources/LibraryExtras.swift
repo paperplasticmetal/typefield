@@ -159,7 +159,7 @@ enum FigmaLayoutExporter {
                     let font = style.font
                     var axes: [String: Double] = [:]
                     for (key, value) in style.axes { axes[String(bytes: [UInt8((key >> 24) & 255), UInt8((key >> 16) & 255), UInt8((key >> 8) & 255), UInt8(key & 255)], encoding: .ascii) ?? ""] = value }
-                    object.merge(["kind": "text", "text": text.string, "role": item.role?.rawValue ?? "Text", "fontFamily": CTFontCopyFamilyName(font) as String, "fontStyle": CTFontCopyName(font, kCTFontStyleNameKey) as String? ?? "Regular", "fontName": style.fontName, "fontSize": style.size, "lineHeight": style.lineHeight ?? style.size * style.leading, "letterSpacing": style.tracking, "paragraphSpacing": style.paragraphSpacing ?? 0, "paragraphIndent": style.indent ?? 0, "wordSpacing": style.wordSpacing ?? 0, "alignment": (style.alignment ?? .left).rawValue.uppercased(), "underline": style.underline ?? false, "strikethrough": style.strikethrough ?? false, "kerning": style.kerning ?? true, "features": style.features, "axes": axes, "color": color((text.length > 0 ? text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor : nil) ?? NSColor(hex: direction.ink))]) { _, new in new }
+                    object.merge(["kind": "text", "text": text.string, "role": item.role?.rawValue ?? "Text", "fontFamily": CTFontCopyFamilyName(font) as String, "fontStyle": CTFontCopyName(font, kCTFontStyleNameKey) as String? ?? "Regular", "fontName": style.fontName, "fontSize": style.size, "lineHeight": style.lineHeight ?? style.size * style.leading, "letterSpacing": style.tracking, "paragraphSpacing": style.paragraphSpacing ?? 0, "paragraphIndent": style.indent ?? 0, "wordSpacing": style.wordSpacing ?? 0, "alignment": (style.alignment ?? .left).rawValue.uppercased(), "underline": style.underline ?? false, "strikethrough": style.strikethrough ?? false, "kerning": style.effectiveKerning, "features": style.featuresWithoutKerning, "axes": axes, "color": color((text.length > 0 ? text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor : nil) ?? NSColor(hex: direction.ink))]) { _, new in new }
                 } else { object["kind"] = "rectangle"; object["color"] = color(item.color ?? .clear); object["radius"] = item.radius }
                 return object
             }
@@ -207,8 +207,9 @@ enum FigmaLayoutImporter {
                     style.lineHeight = try number(e, "lineHeight"); style.paragraphSpacing = try number(e, "paragraphSpacing", fallback: 0); style.indent = try number(e, "paragraphIndent", fallback: 0)
                     style.alignment = TextAlignmentOption.allCases.first { $0.rawValue.uppercased() == e["alignment"] as? String } ?? .left
                     style.underline = e["underline"] as? Bool; style.strikethrough = e["strikethrough"] as? Bool
-                    style.kerning = e["kerning"] as? Bool; style.wordSpacing = try number(e, "wordSpacing", fallback: 0)
                     style.features = e["features"] as? [String: Int] ?? [:]
+                    if let kerning = e["kerning"] as? Bool { style.setKerning(kerning) }
+                    style.wordSpacing = try number(e, "wordSpacing", fallback: 0)
                     for (tag, value) in e["axes"] as? [String: Double] ?? [:] where tag.utf8.count == 4 { style.axes[tag.utf8.reduce(0) { ($0 << 8) | Int($1) }] = value }
                     layer.style = style
                 } else if e["kind"] as? String != "rectangle" { throw invalid("Unsupported layer kind. Export it again with the FontShelf bridge.") }

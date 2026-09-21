@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.0 — 2026-09-20
+
+- Unified the Library and Spaces sidebar header so the FontShelf mark and workspace switcher remain in exactly the same position when changing workspaces.
+- Added a persistent collapsible workspace sidebar, a compact left-edge restore control and **View → Hide/Show Sidebar** (Control-Command-S), returning the complete 256-point sidebar footprint to the active workspace.
+- Clarified the Font kerning control and made it the single canonical control for the OpenType `kern` feature, avoiding a contradictory duplicate feature selector while preserving legacy saved settings across rendering, web audits and exports.
+- Added regression checks for expanded-by-default behavior, persisted collapse/expand state and exact reclaimed workspace width.
+
 ## 0.23.0 — 2026-09-20
 
 - Added direct canvas text editing on double-click, with Command-Return to save and Escape to cancel; hardened empty, oversized and focus-changing edits so they cannot crash the canvas or overwrite a newer selection.

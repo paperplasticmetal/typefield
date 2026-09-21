@@ -1,4 +1,12 @@
-# Interaction checks — 0.20.0
+# Interaction checks
+
+## 0.24.0 follow-up
+
+Verified the shared workspace header in the installed `/Applications/FontShelf.app` 0.24.0 (32): Ff, FontShelf, the Library/Spaces switcher and collapse control occupy the same layout in Library and Spaces. Hiding the sidebar from either workspace removed its complete 256-point footprint and expanded the active content to the left edge; the small accessible **Show sidebar** control restored it without covering the workspace controls.
+
+The View menu changed between **Hide Sidebar** and **Show Sidebar** with the current state, and Control-Command-S toggled it. Collapsing in Library and opening Spaces through the File menu retained the collapsed state. After a real quit and relaunch, FontShelf reopened with the sidebar still collapsed; the sidebar was restored at the end of QA. The installed app's plist reports 0.24.0 build 32, its code signature verifies, and its executable matches the verified build byte-for-byte.
+
+Font kerning now has one visible control. Legacy boards that stored `kern` in generic OpenType settings continue to render the same way, while the checkbox, Figma payload, developer handoff and web-font audit all use one effective value. Automated checks cover legacy off/on, explicit conflicts, toggle cleanup, JSON round-trip, Figma canonicalization and CSS output. The final installed performance audit measured a 3,301 ms full scan of 4,252 styles, a 5.87 ms filter pass, and 1.86 ms uncached versus 0.000350 ms cached canvas planning.
 
 ## 0.20.0 follow-up
 

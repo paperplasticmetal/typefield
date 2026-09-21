@@ -387,19 +387,23 @@ struct ContentView: View {
     @State var showColors = false
     @State var showTagFilters = false
     @State var showDiscovery = false
+    @AppStorage(WorkspaceSidebarPreference.key) var sidebarCollapsed = false
     @FocusState private var searchFocused: Bool
     var body: some View {
-        HStack(spacing: 12) {
-            if !library.workspace { sidebar.frame(width: 232).environment(\.shelfInsideGlass, true).modifier(ShelfSidebarGlass()).padding(.leading, 12).padding(.vertical, 12) }
+        ZStack(alignment: .leading) {
+        HStack(spacing: 0) {
+            if !library.workspace && !sidebarCollapsed { WorkspaceSidebarShell { sidebar }.transition(.move(edge: .leading).combined(with: .opacity)) }
             if library.workspace {
-                StudioView(library: library, store: library.studio)
+                StudioView(library: library, store: library.studio, sidebarCollapsed: $sidebarCollapsed)
             } else { VStack(spacing: 0) {
                 let visibleFamilies = library.filtered
                 topControls
                 libraryContent(visibleFamilies)
                 Divider()
                 HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families")"); Text("·"); Text("\(library.families.reduce(0) { $0 + $1.faces.count }) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
-            } }
+            }.accessibilityIdentifier("library-workspace") }
+        }
+        if sidebarCollapsed { WorkspaceSidebarRevealButton(collapsed: $sidebarCollapsed).padding(.leading, 4).zIndex(2) }
         }
         .background(ShelfPalette.canvas)
         .frame(minWidth: 980, minHeight: 620)
@@ -414,6 +418,7 @@ struct ContentView: View {
             case "resetSize": size = 64
             case "list": grid = false
             case "grid": grid = true
+            case "toggleSidebar": sidebarCollapsed.toggle()
             default: break
             }
         }
@@ -535,8 +540,7 @@ struct ContentView: View {
     }
     var sidebar: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) { Text("Ff").font(.custom("Georgia", size: 30)).foregroundStyle(ShelfPalette.ink); VStack(alignment: .leading, spacing: 2) { Text("FontShelf").font(.headline);  } }.padding(.horizontal, 14).padding(.top, 22).padding(.bottom, 23)
-            WorkspaceSwitcher(library: library).padding(.horizontal, 12).padding(.bottom, 12)
+            WorkspaceSidebarHeader(library: library, collapsed: $sidebarCollapsed)
             ScrollView { VStack(alignment: .leading, spacing: 6) {
             sectionLabel("LIBRARY")
             nav("All Fonts", icon: "square.stack.3d.up", key: "All Fonts")
@@ -756,6 +760,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("List", "list", to: viewMenu, key: "1")
         addCommand("Grid", "grid", to: viewMenu, key: "2")
         viewMenu.addItem(.separator())
+        let sidebarItem = addCommand("Hide Sidebar", "toggleSidebar", to: viewMenu, key: "s")
+        sidebarItem.keyEquivalentModifierMask = [.command, .control]
+        viewMenu.addItem(.separator())
         addCommand("Larger Preview", "larger", to: viewMenu, key: "+")
         addCommand("Smaller Preview", "smaller", to: viewMenu, key: "-")
         addCommand("Reset Preview Size", "resetSize", to: viewMenu, key: "0")
@@ -785,9 +792,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let item = NSMenuItem(); parent.addItem(item)
         let submenu = NSMenu(title: title); item.submenu = submenu; return submenu
     }
-    func addCommand(_ title: String, _ command: String, to menu: NSMenu, key: String = "") {
+    @discardableResult func addCommand(_ title: String, _ command: String, to menu: NSMenu, key: String = "") -> NSMenuItem {
         let item = menu.addItem(withTitle: title, action: #selector(runMenuCommand(_:)), keyEquivalent: key)
         item.target = self; item.representedObject = command
+        return item
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(undo(_:)) { item.title = activeUndoManager?.undoMenuItemTitle ?? "Undo"; return activeUndoManager?.canUndo == true }
@@ -801,6 +809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "compareSelected": return (2...6).contains(selected.count)
         case "comparison": return true
         case "refresh": return !library.loading
+        case "toggleSidebar": item.title = WorkspaceSidebarPreference.collapsed() ? "Show Sidebar" : "Hide Sidebar"
         case "list", "grid": item.state = (UserDefaults.standard.object(forKey: "adaptiveGridView") as? Bool ?? true) == (command == "grid") ? .on : .off
         default: break
         }

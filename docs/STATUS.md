@@ -1,13 +1,13 @@
 # Build and verification status
 
-Current source: **0.23.0, build 31**. Updated 2026-09-20.
+Current source: **0.24.0, build 32**. Updated 2026-09-20.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
 | Layout checks | 21,260 cases across 4,252 available styles on the release machine |
-| Xcode Release build, 0.23.0 | Passed |
+| Xcode Release build, 0.24.0 | Passed with Swift and compiler warnings treated as errors |
 | Spaces and canvas regression checks | Passed: independent directions, checkpoints, imported layers, persistence and 28 canvas/viewport combinations |
 | Live folder watcher and session activation | Passed with a temporary copy of an existing Google font; visibility checked in a separate process, then deactivated and removed |
 | New designer UI | Website desktop/mobile comparison and Unicode lookup/metrics inspected locally |
@@ -17,11 +17,12 @@ Current source: **0.23.0, build 31**. Updated 2026-09-20.
 | 0.19 interaction checks | Stable multi-canvas visibility, one-action solo/hide, font-summary detail levels and role-to-canvas selection verified. Canvas/typeboard/project collection scopes, family deduplication and no-overwrite behavior are regression-tested. Role-drop model and payloads are regression-tested; the physical drag gesture still needs hands-on verification. |
 | 0.20 font health | Local scanner UI and severity/fix workflow inspected across 2,624 user/watched files. Malformed-name fixture repair, duplicate removal, identity preservation, SFNT checksum rebuilding and in-memory Core Text validation of a real rebuilt font pass. No real user font was modified; App Store sandbox in-place-repair access remains unverified. |
 | 0.21 typography exports | Automated checks cover selected-canvas combined summaries, generated type-system settings and one PDF page per selected canvas. Native picker and installed-app smoke check passed locally. |
-| 0.22 performance pass | Cold launch avoids the duplicate catalog scan unless watched-folder registration actually changes available fonts. Font, preview-layout and canvas-plan work is cached with catalog invalidation and bounded memory. The final 0.23 installed-app audit measured a 3,047 ms scan across 4,252 styles, a 5.24 ms full filter pass and 2.09 ms uncached versus 0.000465 ms cached canvas-plan lookup. Ordinary cold launch avoids a second identical catalog scan (about 3 seconds on this catalog). |
+| 0.22 performance pass | Cold launch avoids the duplicate catalog scan unless watched-folder registration actually changes available fonts. Font, preview-layout and canvas-plan work is cached with catalog invalidation and bounded memory. The final 0.24 installed-app audit measured a 3,301 ms scan across 4,252 styles, a 5.87 ms full filter pass and 1.86 ms uncached versus 0.000350 ms cached canvas-plan lookup. Ordinary cold launch avoids a second identical catalog scan (about 3 seconds on this catalog). |
 | 0.23 canvas editing and alignment | Double-click in-place text editing, save/cancel behavior, empty text and size limits are regression-tested. Shared comparison headers keep **Only this** and the close control aligned to each canvas edge across the 28 canvas/viewport combinations. |
 | 0.23 web-font cost audit | Selected-canvas/style aggregation, exact WOFF2 byte accounting, explicit missing/ambiguous matches, source-labeled character coverage, compatible variable/static comparisons, fallback metrics and unused-style estimates are covered by native checks. Analysis is debounced and serialized so stale calculations do not replace current selections. |
 | 0.23 local intelligence | Local-only similarity scoring and least-recently-used rediscovery are regression-tested. Recommendations expose their metadata-based reasons; screenshot matching is not implemented. |
 | 0.23 protected-folder recovery | Missing or revoked security-scoped bookmarks no longer trigger repeated protected-folder probes. One actionable reauthorization notice is emitted per affected folder per launch, and live-folder refresh waits for access to be restored. |
+| 0.24 workspace sidebar | Library and Spaces use the same branded header geometry and persisted collapse state. Native checks cover the default, both persisted states and the full 256-point width returned to the workspace. Installed 0.24.0 QA verified both workspaces, the edge restore control, dynamic View-menu label, Control-Command-S, cross-workspace state and real quit/relaunch persistence. |
 | Figma bridge | Mocked API suite passed; live outbound editable frames and reverse selected-frame JSON import verified, including editing, movement/Undo and relaunch persistence |
 | Unsigned archive and asset catalog, 0.12.3 | Passed; archive not checked into source |
 | Sandbox/hardened-runtime clean launch and installed-font export, 0.12.3 | Passed |

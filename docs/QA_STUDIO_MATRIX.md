@@ -8,7 +8,9 @@ Status vocabulary: `LIVE PASS` means exercised in the isolated app; `AUTOMATED P
 
 | Interaction | Expected result | Existing automated evidence | Status / live evidence |
 |---|---|---|---|
-| Switch Library ↔ Spaces | Studio opens and returns to Library without losing state | Store persistence covered by `StudioChecks.run` | PENDING |
+| Switch Library ↔ Spaces | Studio opens and returns to Library without losing state; shared branding and switcher do not move | Store persistence covered by `StudioChecks.run`; shared `WorkspaceSidebarHeader` supplies both modes | LIVE PASS — installed 0.24.0 showed the same Ff/FontShelf header and segmented switcher in both workspaces |
+| Collapse/restore workspace sidebar | Sidebar is removed, full 256-point footprint is reclaimed, and the edge control restores it in either workspace | `WorkspaceSidebarPreference` persistence and `WorkspaceSidebarLayout.reservedWidth` assertions | LIVE PASS — header button and View menu removed the sidebar, workspace expanded to the left edge, and accessible Show sidebar restored it |
+| Sidebar state across switch/relaunch | One persisted state applies to Library and Spaces and survives relaunch | Temporary `UserDefaults` suite verifies default, collapsed and re-expanded states | LIVE PASS — collapsed Library switched to collapsed Spaces; a real quit/relaunch reopened collapsed, then QA restored the expanded state |
 | Create space | New space is focused and receives a typeboard | `StudioStore.addSpace` / `addBoard` exercised by `StudioChecks.run` | LIVE PASS — created `QA Studio Disposable`; sidebar and board appeared |
 | Rename space (inline and menu) | Name updates and persists | No direct automated UI assertion | LIVE PASS — renamed to `QA Studio Renamed`; imported round-trip retained it |
 | Delete space / cancel delete | Confirmation is safe; deletion clears focus and persists | Regression noted in `QA_2026-09-19.md` | LIVE PASS — opened confirmation, Cancel preserved space, Delete removed disposable space and its board |

@@ -3,15 +3,64 @@ import AppKit
 import CoreText
 import UniformTypeIdentifiers
 
+enum WorkspaceSidebarPreference {
+    static let key = "workspaceSidebarCollapsed"
+    static func collapsed(in defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: key) }
+    static func setCollapsed(_ value: Bool, in defaults: UserDefaults = .standard) { defaults.set(value, forKey: key) }
+}
+enum WorkspaceSidebarLayout {
+    static let width = 232.0
+    static let outerPadding = 12.0
+    static func reservedWidth(collapsed: Bool) -> Double { collapsed ? 0 : width + outerPadding * 2 }
+}
 struct WorkspaceSwitcher: View {
     @ObservedObject var library: Library
     var body: some View {
-        Picker("Workspace", selection: $library.workspace) { Text("Library").tag(false); Text("Spaces").tag(true) }.pickerStyle(.segmented).labelsHidden()
+        Picker("Workspace", selection: $library.workspace) { Text("Library").tag(false); Text("Spaces").tag(true) }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("workspace-switcher")
+    }
+}
+struct WorkspaceSidebarHeader: View {
+    @ObservedObject var library: Library
+    @Binding var collapsed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Text("Ff").font(.custom("Georgia", size: 30)).foregroundStyle(ShelfPalette.ink).accessibilityHidden(true).accessibilityIdentifier("workspace-brand-mark")
+                Text("FontShelf").font(.headline).accessibilityIdentifier("workspace-brand-name")
+                Spacer()
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { collapsed = true }
+                } label: { Image(systemName: "sidebar.left") }
+                    .buttonStyle(.plain).padding(7).contentShape(Rectangle())
+                    .help("Hide sidebar").accessibilityLabel("Hide sidebar").accessibilityIdentifier("workspace-sidebar-hide")
+            }
+            WorkspaceSwitcher(library: library)
+        }.padding(.horizontal, 12).padding(.top, 14).padding(.bottom, 12)
+    }
+}
+struct WorkspaceSidebarShell<Content: View>: View {
+    let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    var body: some View {
+        content.frame(width: WorkspaceSidebarLayout.width).environment(\.shelfInsideGlass, true).modifier(ShelfSidebarGlass()).padding(WorkspaceSidebarLayout.outerPadding).accessibilityIdentifier("workspace-sidebar")
+    }
+}
+struct WorkspaceSidebarRevealButton: View {
+    @Binding var collapsed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { collapsed = false }
+        } label: { Image(systemName: "chevron.right").frame(width: 18, height: 28) }
+            .buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(.horizontal, 5).shelfGlass(radius: 10)
+            .help("Show sidebar").accessibilityLabel("Show sidebar").accessibilityIdentifier("workspace-sidebar-show")
     }
 }
 struct StudioView: View {
     @ObservedObject var library: Library
     @ObservedObject var store: StudioStore
+    @Binding var sidebarCollapsed: Bool
     @State private var spaceID: UUID?
     @State private var boardID: UUID?
     @State private var newName = ""
@@ -22,7 +71,7 @@ struct StudioView: View {
     var board: TypeBoard? { space?.boards.first { $0.id == boardID } ?? space?.boards.first }
     var body: some View {
         HStack(spacing: 0) {
-        navigation.frame(width: 232).environment(\.shelfInsideGlass, true).modifier(ShelfSidebarGlass()).padding(12)
+        if !sidebarCollapsed { WorkspaceSidebarShell { navigation }.transition(.move(edge: .leading).combined(with: .opacity)) }
         VStack(spacing: 0) {
             if !store.error.isEmpty { Text(store.error).foregroundStyle(.orange).textSelection(.enabled).padding(.horizontal, 20) }
             if let space {
@@ -57,7 +106,7 @@ struct StudioView: View {
                     HStack { Button("New space") { showNewSpace = true }; Button("Import space…") { importSpace() } }.disabled(store.readBlocked)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        } }
+        }.accessibilityIdentifier("spaces-workspace") }
         .onAppear { if let id = store.focusedSpace { spaceID = id }; if let id = store.focusedBoard { boardID = id } }
         .onChange(of: store.focusedSpace) { id in spaceID = id; boardID = store.focusedBoard }
         .onChange(of: store.focusedBoard) { id in spaceID = store.focusedSpace; boardID = id }
@@ -80,12 +129,12 @@ struct StudioView: View {
         } message: { Text("Its canvases will be removed from this space. You can undo this with ⌘Z.") }
     }
     var navigation: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("FontShelf").font(.headline).padding(.top, 22)
-            WorkspaceSwitcher(library: library)
-            HStack { Text("SPACES").font(.caption).foregroundStyle(.secondary); Spacer(); Button { showNewSpace = true } label: { Image(systemName: "plus") }.help("New space").disabled(store.readBlocked) }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            WorkspaceSidebarHeader(library: library, collapsed: $sidebarCollapsed)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack { Text("SPACES").font(.caption).foregroundStyle(.secondary); Spacer(); Button { showNewSpace = true } label: { Image(systemName: "plus") }.help("New space").disabled(store.readBlocked) }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
                     ForEach(store.state.spaces) { item in
                         HStack(spacing: 8) {
                             Button { selectSpace(item.id) } label: { Image(systemName: "rectangle.3.group") }.buttonStyle(.plain).accessibilityLabel("Open " + item.displayName)
@@ -97,10 +146,11 @@ struct StudioView: View {
                             }, onRenameInline: { name in var renamed = child; renamed.name = name; store.update(space: item.id, board: renamed, action: "Rename Typeboard"); return true }, onDelete: { deletingBoard = (item.id, child) })
                         }
                     }
+                    }
                 }
-            }
-            Menu("Import…") { Button("Space…") { importSpace() }.disabled(store.readBlocked); Button("Figma typeboard JSON…") { importFigma() }.disabled(store.readBlocked); Button("Using a native .fig file…") { figFileHelp() } }.menuStyle(.borderlessButton).fixedSize().padding(.bottom, 12)
-        }.padding(.horizontal, 12)
+                Menu("Import…") { Button("Space…") { importSpace() }.disabled(store.readBlocked); Button("Figma typeboard JSON…") { importFigma() }.disabled(store.readBlocked); Button("Using a native .fig file…") { figFileHelp() } }.menuStyle(.borderlessButton).fixedSize().padding(.bottom, 12)
+            }.padding(.horizontal, 12)
+        }
     }
     func renameSpace(_ target: DesignSpace) {
         if let name = ShelfRename.prompt("Rename space", current: target.displayName) { _ = setSpaceName(target.id, name) }
@@ -472,7 +522,7 @@ struct TypeBoardEditor: View {
                 Button("Auto line height") { var s = style; s.lineHeight = nil; setStyle(s); save() }.font(.caption)
                 numeric("Letter spacing", value: styleBinding(\.tracking), range: -3...12, unit: "px")
                 ShelfDropdown(title: "Alignment", selection: optionalStyleBinding(\.alignment, default: .left), options: TextAlignmentOption.allCases.map { ($0.rawValue, $0) })
-                Toggle("Font kerning", isOn: optionalStyleBinding(\.kerning, default: true)).toggleStyle(.checkbox)
+                Toggle("Font kerning", isOn: kerningBinding).toggleStyle(.checkbox).help("Use the font’s built-in spacing adjustments between letter pairs")
                 DisclosureGroup("More text settings") {
                     VStack(spacing: 12) {
                         numeric("Word spacing", value: optionalStyleBinding(\.wordSpacing, default: 0), range: -3...40, unit: "px")
@@ -483,11 +533,14 @@ struct TypeBoardEditor: View {
                     }.padding(.top, 10)
                 }
                 axesEditor
-                if let face = library.allFaces.first(where: { $0.name == style.fontName }), !face.facts.features.isEmpty {
+                if let face = library.allFaces.first(where: { $0.name == style.fontName }) {
+                    let features = face.facts.features.filter { $0 != "kern" }
+                    if !features.isEmpty {
                     DisclosureGroup("OpenType features") {
-                        ForEach(face.facts.features, id: \.self) { tag in
+                        ForEach(features, id: \.self) { tag in
                             ShelfDropdown(title: tag, selection: Binding(get: { style.features[tag] ?? -1 }, set: { var s = style; if $0 < 0 { s.features.removeValue(forKey: tag) } else { s.features[tag] = $0 }; setStyle(s); save() }), options: [("Default", -1), ("Off", 0), ("On", 1)] + (2...9).map { ("Alternate \($0)", $0) })
                         }
+                    }
                     }
                 }
                 Text(selectedTextID == nil ? "Sample text" : "Selected text").font(.caption).foregroundStyle(.secondary)
@@ -503,6 +556,7 @@ struct TypeBoardEditor: View {
         }
     }
     func optionalStyleBinding<T>(_ key: WritableKeyPath<TypeStyle, T?>, default fallback: T) -> Binding<T> { Binding(get: { style[keyPath: key] ?? fallback }, set: { var s = style; s[keyPath: key] = $0; setStyle(s); save() }) }
+    var kerningBinding: Binding<Bool> { Binding(get: { style.effectiveKerning }, set: { var s = style; s.setKerning($0); setStyle(s); save() }) }
     var fontPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Text("Choose font · " + editingTitle).font(.headline); Spacer(); Button("Done") { showFontPicker = false } }
