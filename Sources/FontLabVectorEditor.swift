@@ -9,6 +9,7 @@ enum FontLabVectorTool: String, CaseIterable, Identifiable {
 
 final class FontLabVectorEditor: ObservableObject {
     @Published var glyph: FontLabGlyph
+    @Published var componentStrokes: [FontLabStroke] = []
     @Published var metrics: FontLabMetrics
     @Published var tool = FontLabVectorTool.select
     @Published var selection = Set<UUID>()
@@ -213,6 +214,7 @@ final class FontLabVectorEditor: ObservableObject {
 struct FontLabVectorEditorView: View {
     let glyph: FontLabGlyph
     let metrics: FontLabMetrics
+    let componentStrokes: [FontLabStroke]
     let onChange: (FontLabGlyph)->Void
     let onUndo: ()->Void
     let onRedo: ()->Void
@@ -221,8 +223,8 @@ struct FontLabVectorEditorView: View {
     @State private var y = ""
     @State private var scale = "100"
     @State private var angle = "0"
-    init(glyph:FontLabGlyph,metrics:FontLabMetrics,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void) {
-        self.glyph=glyph;self.metrics=metrics;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo
+    init(glyph:FontLabGlyph,metrics:FontLabMetrics,componentStrokes:[FontLabStroke]=[],onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void) {
+        self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo
         _editor=StateObject(wrappedValue:FontLabVectorEditor(glyph:glyph,metrics:metrics))
     }
     var body: some View {
@@ -290,6 +292,8 @@ struct FontLabVectorEditorView: View {
                 .font(.caption2).foregroundStyle(editor.openCount>0 ? .orange : .secondary).fixedSize(horizontal:false,vertical:true)
         }
         .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
+        .onAppear { editor.componentStrokes=componentStrokes }
+        .onChange(of:componentStrokes) {editor.componentStrokes=$0}
         .onChange(of:metrics) {editor.metrics=$0}
         .onChange(of:editor.selection) {_ in updateCoordinates()}
         .onChange(of:editor.glyph) {_ in updateCoordinates()}

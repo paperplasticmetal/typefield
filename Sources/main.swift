@@ -1125,7 +1125,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

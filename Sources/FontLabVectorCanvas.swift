@@ -55,6 +55,7 @@ final class FontLabVectorNSView: NSView {
             let line=NSBezierPath();line.move(to:CGPoint(x:0,y:position));line.line(to:CGPoint(x:bounds.width,y:position));line.lineWidth=0.7;line.stroke()
             (label as NSString).draw(at:CGPoint(x:8,y:position+3),withAttributes:[.font:NSFont.systemFont(ofSize:9),.foregroundColor:NSColor.secondaryLabelColor])
         }
+        fontLabDrawStrokes(editor.componentStrokes,in:r,color:.systemTeal)
         let paths=editor.paths
         let pens=editor.glyph.strokes.filter {$0.contours == nil && $0.vectorPaths == nil}
         fontLabDrawStrokes(pens,in:r,color:.labelColor)
@@ -78,7 +79,7 @@ final class FontLabVectorNSView: NSView {
             }
         }
         if let marquee {NSColor.systemBlue.withAlphaComponent(0.12).setFill();marquee.fill();NSColor.systemBlue.setStroke();NSBezierPath(rect:marquee).stroke()}
-        if paths.isEmpty && pens.isEmpty {
+        if paths.isEmpty && pens.isEmpty && editor.componentStrokes.isEmpty {
             ("Choose Bézier and click to place nodes. Drag for curves.\nClick the first node to close a contour." as NSString).draw(in:bounds.insetBy(dx:40,dy:60),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor])
         }
     }

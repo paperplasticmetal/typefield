@@ -335,10 +335,12 @@ struct FontLabGlyph: Codable, Equatable {
     var importedFrom: String?
     var importFormat: FontLabImportFormat?
     var contourDesignWidth: Double? = nil
+    var components: [FontLabComponentUse]? = nil
     var resolvedDesignWidth: Double { contourDesignWidth ?? 0.62 }
 
-    var hasArtwork: Bool { strokes.contains { !$0.points.isEmpty || $0.contours?.isEmpty == false || $0.vectorPaths?.isEmpty == false } }
+    var hasArtwork: Bool { components?.isEmpty == false || strokes.contains { !$0.points.isEmpty || $0.contours?.isEmpty == false || $0.vectorPaths?.isEmpty == false } }
     var isValid: Bool {
+        (components.map { $0.count <= 16 && $0.allSatisfy(\.isValid) && Set($0.map(\.id)).count == $0.count } ?? true) &&
         character.count == 1 && strokes.count <= 10_000 && strokes.allSatisfy(\.isValid) &&
             (contourDesignWidth.map { $0.isFinite && (0.02...3).contains($0) } ?? true) &&
             leftSideBearing.isFinite && rightSideBearing.isFinite &&
@@ -385,6 +387,10 @@ struct FontLabProject: Codable, Identifiable, Equatable {
     /// Optional metadata keeps projects created before local remix support fully
     /// decodable while preserving source/licensing context for new derivatives.
     var remixProvenance: FontLabRemixProvenance? = nil
+    var masters: [FontLabMaster]? = nil
+    var activeMasterID: UUID? = nil
+    var kerningGroups: [FontLabKerningGroup]? = nil
+    var kerningPairs: [FontLabKerningPair]? = nil
 
     init(id: UUID = UUID(), name: String = "Untitled font", characters: [String] = FontLabProject.starterCharacters) {
         self.id = id
@@ -393,13 +399,13 @@ struct FontLabProject: Codable, Identifiable, Equatable {
         glyphs = Dictionary(uniqueKeysWithValues: characters.map { ($0, FontLabGlyph(character: $0)) })
     }
 
-    var completedCount: Int { glyphs.values.filter(\.hasArtwork).count }
+    var completedCount: Int { glyphs.keys.filter { resolvedGlyph($0)?.hasArtwork == true }.count }
     var isValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 200 &&
             !characters.isEmpty && characters.count <= 2_000 && Set(characters).count == characters.count &&
             characters.allSatisfy { $0.count == 1 } && metrics.isValid && previewText.count <= 2_000 &&
             glyphs.count <= 2_000 && glyphs.allSatisfy { key, glyph in key == glyph.character && glyph.isValid } &&
-            (remixProvenance?.isValid ?? true)
+            (remixProvenance?.isValid ?? true) && designIsValid
     }
 }
 
@@ -991,6 +997,10 @@ struct FontLabView: View {
     @State private var glyphUndo: [FontLabGlyph] = []
     @State private var glyphRedo: [FontLabGlyph] = []
     @State private var vectorEditing = true
+    @State private var showFontDesign = false
+    @State private var showSmoothing = false
+    @State private var designUndo: (before: FontLabProject, after: FontLabProject)?
+    @State private var glyphEditRevision = UUID()
 
     private struct ClearRequest: Identifiable {
         let id = UUID()
@@ -1077,6 +1087,23 @@ struct FontLabView: View {
                 return true
             }
         }
+        .sheet(isPresented: $showFontDesign) {
+            if let original = store.selectedProject {
+                FontLabDesignView(project: original, character: selectedCharacter) { updated, openCharacter in
+                    guard store.replaceArtworkProject(original, with: updated) else { return false }
+                    designUndo = (original, updated); glyphUndo = []; glyphRedo = []; vectorEditing = true
+                    if let openCharacter { selectedCharacter = openCharacter }
+                    glyphEditRevision = UUID()
+                    store.status = "Font design settings applied. Undo setup restores the previous project snapshot."
+                    return true
+                }
+            }
+        }
+        .sheet(isPresented: $showSmoothing) {
+            if let current = store.selectedProject, let glyph = current.glyphs[selectedCharacter] {
+                FontLabSmoothingView(original: glyph, metrics: current.metrics) { edited in recordGlyphEdit(edited, projectID: current.id) }
+            }
+        }
         .onDisappear { store.flushPendingSave() }
         .accessibilityIdentifier("font-lab-workspace")
     }
@@ -1138,8 +1165,8 @@ struct FontLabView: View {
     }
 
     private func projectWorkspace(_ project: FontLabProject) -> some View {
-        let selectedDrawnCharacters = project.characters.filter { selectedCharacters.contains($0) && project.glyphs[$0]?.hasArtwork == true }
-        let allDrawnCharacters = project.characters.filter { project.glyphs[$0]?.hasArtwork == true }
+        let selectedDrawnCharacters = project.characters.filter { selectedCharacters.contains($0) && project.resolvedGlyph($0)?.hasArtwork == true }
+        let allDrawnCharacters = project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true }
         return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 TextField("Project name", text: projectNameBinding(project.id))
@@ -1152,8 +1179,17 @@ struct FontLabView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Delete", systemImage: "trash", role: .destructive) { deleteRequest = project }
                     .disabled(store.readBlocked || isExportingFont).help("Delete this Font Lab project")
+                Button("Font design", systemImage: "square.stack.3d.up") { showFontDesign = true }.disabled(store.readBlocked || isExportingFont)
                 Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
                     .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
+                if let undo = designUndo, undo.after == project {
+                    Button("Undo setup") {
+                        if store.replaceArtworkProject(undo.after, with: undo.before) {
+                            designUndo = nil; glyphUndo = []; glyphRedo = []; glyphEditRevision = UUID()
+                            if !undo.before.characters.contains(selectedCharacter) { selectedCharacter = undo.before.characters.first ?? "A" }
+                        }
+                    }.disabled(store.readBlocked)
+                }
                 if let undo = artworkUndo, undo.after == project {
                     Button("Undo import", systemImage: "arrow.uturn.backward") {
                         if store.replaceArtworkProject(undo.after, with: undo.before) { artworkUndo = nil; glyphUndo = []; glyphRedo = [] }
@@ -1161,7 +1197,7 @@ struct FontLabView: View {
                 }
                 Menu {
                     Button("Export \(selectedCharacter) as SVG…") { exportGlyphSVG(project) }
-                        .disabled(project.glyphs[selectedCharacter]?.hasArtwork != true)
+                        .disabled(project.resolvedGlyph(selectedCharacter)?.hasArtwork != true)
                     Divider()
                     Button("Export selected as SVGs…") { exportGlyphSVGs(project, characters: selectedDrawnCharacters) }
                         .disabled(selectedDrawnCharacters.isEmpty)
@@ -1197,6 +1233,9 @@ struct FontLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
+            if let master = project.masters?.first(where: { $0.id == project.activeMasterID }) {
+                Text("Active master: " + master.name).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 8)
+            }
             Divider()
             GeometryReader { proxy in
                 ScrollView([.horizontal, .vertical]) {
@@ -1231,7 +1270,7 @@ struct FontLabView: View {
             if selectingCharacters {
                 HStack(spacing: 10) {
                     Button("Drawn") {
-                        selectedCharacters = Set(project.characters.filter { project.glyphs[$0]?.hasArtwork == true })
+                        selectedCharacters = Set(project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true })
                     }
                     .buttonStyle(.plain).font(.caption2)
                     Button("Clear") { selectedCharacters.removeAll() }
@@ -1245,7 +1284,7 @@ struct FontLabView: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 34, maximum: 46), spacing: 6)], spacing: 6) {
                     ForEach(project.characters, id: \.self) { character in
-                        let complete = project.glyphs[character]?.hasArtwork == true
+                        let complete = project.resolvedGlyph(character)?.hasArtwork == true
                         let selectedForExport = selectedCharacters.contains(character)
                         Button {
                             selectedCharacter = character
@@ -1291,19 +1330,21 @@ struct FontLabView: View {
                     Spacer()
                     Picker("Editor", selection: $vectorEditing) {
                         Text("Vector").tag(true)
-                        Text("Sketch").tag(false)
+                        Text("Sketch").tag(false).disabled(glyph.components?.isEmpty == false)
                     }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
+                    Button("Smooth trace…") { showSmoothing = true }
+                        .disabled(store.readBlocked || FontLabVectorMath.paths(in: glyph).allSatisfy { !$0.closed || $0.nodes.contains { $0.incoming != nil || $0.outgoing != nil } })
                     Button("Redo") { redoGlyph(projectID: project.id) }.disabled(glyphRedo.isEmpty || store.readBlocked)
                     Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled((glyphUndo.isEmpty && glyph.strokes.isEmpty) || store.readBlocked)
                     Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
-                        .disabled(glyph.strokes.isEmpty || store.readBlocked)
+                        .disabled(!glyph.hasArtwork || store.readBlocked)
                 }
-                if vectorEditing {
-                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics,
+                if vectorEditing || glyph.components?.isEmpty == false {
+                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)),
                         onChange: { edited in recordGlyphEdit(edited, projectID: project.id) },
                         onUndo: { undoStroke(glyph, projectID: project.id) },
                         onRedo: { redoGlyph(projectID: project.id) })
-                        .id(project.id.uuidString + selectedCharacter)
+                        .id(project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString)
                         .disabled(store.readBlocked)
                 } else {
                 FontLabGlyphCanvas(
@@ -1317,15 +1358,9 @@ struct FontLabView: View {
                     onTabletInput: { tabletInputDetected = true },
                     onUndo: { undoStroke(glyph, projectID: project.id) }
                 ) { editedGlyph in
-                    if let previous = store.selectedProject?.glyphs[selectedCharacter] {
-                        glyphUndo.append(previous)
-                        glyphRedo = []
-                        if glyphUndo.count > 30 { glyphUndo.removeFirst() }
-                    }
-                    store.setGlyph(editedGlyph, in: project.id, save: false)
-                    store.scheduleSave(after: 0.4)
+                    recordGlyphEdit(editedGlyph, projectID: project.id)
                 }
-                .id(project.id.uuidString + selectedCharacter)
+                .id(project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString)
                 .frame(minWidth: 340, maxWidth: .infinity, minHeight: 340, maxHeight: .infinity)
                 .layoutPriority(1)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
@@ -1432,7 +1467,7 @@ struct FontLabView: View {
             }
             TextField("Preview text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
                 .onSubmit { store.flushPendingSave() }.disabled(store.readBlocked)
-            FontLabPreviewCanvas(text: project.previewText, glyphs: project.glyphs, metrics: project.metrics, selectedCharacter: selectedCharacter, onSelect: { character in
+            FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], selectedCharacter: selectedCharacter, onSelect: { character in
                 if project.characters.contains(character) { selectedCharacter = character }
             })
                 .frame(height: 118).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -1508,6 +1543,10 @@ struct FontLabView: View {
     private func recordGlyphEdit(_ edited: FontLabGlyph, projectID: UUID) {
         let previous = store.selectedProject?.glyphs[edited.character] ?? FontLabGlyph(character: edited.character)
         guard edited != previous else { return }
+        if var candidate = store.selectedProject {
+            candidate.glyphs[edited.character] = edited
+            guard candidate.isValid else { store.error = "This edit would move a linked component outside its glyph. Adjust or decompose the component first."; glyphEditRevision = UUID(); return }
+        }
         glyphUndo.append(previous); if glyphUndo.count > 60 { glyphUndo.removeFirst() }
         glyphRedo = []
         store.setGlyph(edited, in: projectID, save: false)
@@ -1534,13 +1573,14 @@ struct FontLabView: View {
         var edited = glyph
         glyphUndo.append(glyph); glyphRedo = []
         edited.strokes = []
+        edited.components = nil
         edited.importedFrom = nil
         edited.importFormat = nil
         store.setGlyph(edited, in: projectID, save: true)
     }
 
     private func exportGlyphSVG(_ project: FontLabProject) {
-        guard let glyph = project.glyphs[selectedCharacter], glyph.hasArtwork else {
+        guard let glyph = project.resolvedGlyph(selectedCharacter), glyph.hasArtwork else {
             store.status = "Draw \(selectedCharacter) before exporting it."
             return
         }
@@ -1560,7 +1600,7 @@ struct FontLabView: View {
     }
 
     private func exportGlyphSVGs(_ project: FontLabProject, characters: [String]) {
-        let artifacts = FontLabSVGCollectionExporter.artifacts(for: project, characters: Set(characters))
+        let artifacts = FontLabSVGCollectionExporter.artifacts(for: project.outputProject, characters: Set(characters))
         guard !artifacts.isEmpty else {
             store.status = "Select at least one drawn glyph before exporting."
             return
@@ -2132,6 +2172,10 @@ struct FontLabPreviewCanvas: NSViewRepresentable {
     let text: String
     let glyphs: [String: FontLabGlyph]
     let metrics: FontLabMetrics
+    var kerningGroups: [FontLabKerningGroup] = []
+    var kerningPairs: [FontLabKerningPair] = []
+    var maximumEm: CGFloat = 96
+    var centered = false
     var selectedCharacter: String? = nil
     var onSelect: ((String) -> Void)? = nil
 
@@ -2146,6 +2190,10 @@ struct FontLabPreviewCanvas: NSViewRepresentable {
         view.text = text
         view.glyphs = glyphs
         view.metrics = metrics
+        view.kerningGroups = kerningGroups
+        view.kerningPairs = kerningPairs
+        view.maximumEm = maximumEm
+        view.centered = centered
         view.selectedCharacter = selectedCharacter
         view.onSelect = onSelect
         view.needsDisplay = true
@@ -2156,6 +2204,10 @@ final class FontLabPreviewNSView: NSView {
     var text = ""
     var glyphs: [String: FontLabGlyph] = [:]
     var metrics = FontLabMetrics()
+    var kerningGroups: [FontLabKerningGroup] = []
+    var kerningPairs: [FontLabKerningPair] = []
+    var maximumEm: CGFloat = 96
+    var centered = false
     var selectedCharacter: String?
     var onSelect: ((String) -> Void)?
     private var hitRegions: [(String, CGRect)] = []
@@ -2171,10 +2223,10 @@ final class FontLabPreviewNSView: NSView {
         hitRegions = []
         let characters = text.map(String.init)
         guard !characters.isEmpty else { return }
-        let nominalHeight: CGFloat = min(96, max(32, bounds.height - 24))
+        let nominalHeight: CGFloat = min(maximumEm, max(32, bounds.height - 24))
         let nominalWidth = estimatedWidth(characters, em: nominalHeight)
         let em = nominalWidth > bounds.width - 24 ? nominalHeight * max(0.2, (bounds.width - 24) / nominalWidth) : nominalHeight
-        var x: CGFloat = 12
+        var x: CGFloat = centered ? max(12, (bounds.width - estimatedWidth(characters, em: em) + 24) / 2) : 12
         let originY = max(8, (bounds.height - em) / 2)
         let baselineY = originY + CGFloat(metrics.baseline) * em
         let guide = NSBezierPath()
@@ -2184,7 +2236,8 @@ final class FontLabPreviewNSView: NSView {
         NSColor.separatorColor.setStroke()
         guide.stroke()
 
-        for character in characters {
+        for (index, character) in characters.enumerated() {
+            if index > 0 { x += CGFloat(FontLabDesign.kerning(characters[index-1], character, groups: kerningGroups, pairs: kerningPairs)) / 1000 * em }
             if character == " " { x += em * 0.3; continue }
             let glyph = glyphs[character]
             let left = CGFloat(glyph?.leftSideBearing ?? 0.08) * em
@@ -2215,7 +2268,8 @@ final class FontLabPreviewNSView: NSView {
     }
 
     private func estimatedWidth(_ characters: [String], em: CGFloat) -> CGFloat {
-        24 + characters.reduce(CGFloat.zero) { result, character in
+        let adjustment = zip(characters, characters.dropFirst()).reduce(0.0) { $0 + FontLabDesign.kerning($1.0, $1.1, groups: kerningGroups, pairs: kerningPairs) }
+        return 24 + CGFloat(adjustment) / 1000 * em + characters.reduce(CGFloat.zero) { result, character in
             if character == " " { return result + em * 0.3 }
             let glyph = glyphs[character]
             return result + em * (CGFloat(glyph?.resolvedDesignWidth ?? 0.62) + CGFloat(glyph?.leftSideBearing ?? 0.08) + CGFloat(glyph?.rightSideBearing ?? 0.08))

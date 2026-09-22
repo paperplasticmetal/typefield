@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.0 — 2026-09-21
+
+- Added Font design with live reusable glyph components, position/scale controls, source navigation and decomposition into independent editable outlines. Components resolve in previews, SVG and TrueType exports; cycles and invalid geometry are rejected.
+- Added independently editable masters with preserved outlines, metrics and kerning, plus static font export for the active master. Added Unicode glyph-set expansion across masters and Undo setup.
+- Added first/second-side kerning groups, group rules and glyph exceptions, including zero exceptions. Preview spacing and exported TrueType kern tables use the same precedence.
+- Added automatic fitting of traced polygon contours into editable curves, with tolerance choices, larger before/after previews, counter/winding/deviation checks and Undo. Original artwork stays unchanged until applied.
+
 ## 0.33.1 — 2026-09-21
 
 - Aligned Spaces Text, Background and Accent labels on the left and their color wells on a shared right edge.

@@ -41,7 +41,7 @@ enum FontLabSVGCollectionExporter {
     static func artifacts(for project: FontLabProject, characters selection: Set<String>? = nil) -> [FontLabSVGExportArtifact] {
         project.characters.compactMap { character in
             guard selection?.contains(character) ?? true,
-                  let glyph = project.glyphs[character], glyph.hasArtwork else { return nil }
+                  let glyph = project.resolvedGlyph(character), glyph.hasArtwork else { return nil }
             let scalars = character.unicodeScalars.map { String(format: "U+%04X", $0.value) }.joined(separator: "-")
             let readable = character.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) } ? character : "glyph"
             let filename = "\(safeFilename(project.name))-\(safeFilename(readable))-\(scalars).svg"
@@ -115,10 +115,12 @@ enum FontLabTrueTypeExporter {
         let distributionNotice: String
     }
 
+    private struct RevisionKerning: Encodable { let left: String; let right: String; let value: Int }
     private struct RevisionPayload: Encodable {
         let metrics: FontLabMetrics
         let glyphs: [RevisionGlyph]
         let provenance: RevisionProvenance?
+        let kerning: [RevisionKerning]?
     }
 
     enum ExportError: LocalizedError, Equatable {
@@ -157,6 +159,9 @@ enum FontLabTrueTypeExporter {
     /// that have artwork, plus a blank space and a visible `.notdef` glyph.
     static func artifact(for project: FontLabProject) throws -> FontLabTrueTypeArtifact {
         guard project.isValid else { throw ExportError.invalidProject }
+        let masterName = project.masters?.first(where: { $0.id == project.activeMasterID })?.name
+        var project = project.outputProject
+        if let masterName { project.name += " — " + masterName }
         for glyph in project.glyphs.values where glyph.strokes.contains(where: { $0.vectorPaths?.contains(where: { !$0.closed }) == true }) {
             throw ExportError.openContours(glyph.character)
         }
@@ -773,6 +778,7 @@ enum FontLabTrueTypeExporter {
             Table(tag: "name", data: try nameTable(project: project, familyName: familyName, postScriptName: postScriptName, revision: revision)),
             Table(tag: "post", data: postTable())
         ]
+        if let kern = try kerningTable(project: project, cmap: cmap) { tables.append(Table(tag: "kern", data: kern)) }
         tables.sort { $0.tag < $1.tag }
 
         let numberOfTables = tables.count
@@ -943,6 +949,25 @@ enum FontLabTrueTypeExporter {
         var writer = BigEndianWriter()
         writer.uint16(12); writer.uint16(0); writer.uint32(UInt32(16 + groups.count * 12)); writer.uint32(0); writer.uint32(UInt32(groups.count))
         for group in groups { writer.uint32(group.start); writer.uint32(group.end); writer.uint32(group.startGlyph) }
+        return writer.data
+    }
+
+    private static func kerningTable(project: FontLabProject, cmap: [UInt32: UInt16]) throws -> Data? {
+        // Control/NBSP cmap aliases share glyph IDs with space or .null. Only
+        // real project mappings may create pairs, matching the revision hash.
+        let characters = Set(mappedGlyphs(project).map(\.character))
+        let pairs = try project.resolvedKerning(characters: characters).compactMap { pair -> (UInt16, UInt16, Int16)? in
+            guard pair.left.unicodeScalars.count == 1, pair.right.unicodeScalars.count == 1,
+                  let left = cmap[pair.left.unicodeScalars.first!.value], let right = cmap[pair.right.unicodeScalars.first!.value] else { return nil }
+            return (left, right, Int16(pair.value))
+        }.sorted { ($0.0, $0.1) < ($1.0, $1.1) }
+        guard !pairs.isEmpty else { return nil }
+        let selector = Int(floor(log2(Double(pairs.count)))), power = 1 << selector
+        var writer = BigEndianWriter()
+        writer.uint16(0); writer.uint16(1)
+        writer.uint16(0); writer.uint16(UInt16(14 + pairs.count * 6)); writer.uint16(1)
+        writer.uint16(UInt16(pairs.count)); writer.uint16(UInt16(power * 6)); writer.uint16(UInt16(selector)); writer.uint16(UInt16((pairs.count-power)*6))
+        for pair in pairs { writer.uint16(pair.0); writer.uint16(pair.1); writer.int16(pair.2) }
         return writer.data
     }
 
@@ -1370,7 +1395,8 @@ enum FontLabTrueTypeExporter {
                 distributionNotice: $0.distributionNotice
             )
         }
-        let payload = RevisionPayload(metrics: project.metrics, glyphs: glyphs, provenance: provenance)
+        let kern = try project.resolvedKerning(characters: Set(mappedGlyphs(project).map(\.character))).map { RevisionKerning(left: $0.left, right: $0.right, value: $0.value) }
+        let payload = RevisionPayload(metrics: project.metrics, glyphs: glyphs, provenance: provenance, kerning: kern.isEmpty ? nil : kern)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let encoded = try encoder.encode(payload)
