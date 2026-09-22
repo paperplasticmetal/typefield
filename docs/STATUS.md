@@ -1,6 +1,6 @@
 # Build and verification status
 
-Current source: **0.33.0, build 42**. Updated 2026-09-21.
+Current source: **0.33.1, build 43**. Updated 2026-09-21.
 
 | Check | Status |
 | --- | --- |
@@ -36,6 +36,7 @@ Current source: **0.33.0, build 42**. Updated 2026-09-21.
 | 0.31.1 shelved font combination | Removed all product entry points and archived the generator view outside app targets. Existing-project decoding, shared geometry, artwork import and export remain supported. Optimized native suite (21,260 layouts), warnings-as-errors Xcode Release build and Figma bridge passed; canonical 0.31.1 (40) installed. |
 | 0.32 vector canvas | Cubic paths and handles, contour editing/booleans, exact splitting, primitives, transforms, magnetic snapping, pan/zoom, Undo/Redo and clickable word preview. Original sketches/imports remain compatible. Focused checks cover cubic geometry, counters, legacy decoding and export identity. Native disposable UI verified pen drawing/closing, tangent handle edits, Make counter, multi-node selection, ten-unit nudging, numeric coordinates, zoom and keyboard Undo/Redo. The optimized native suite passed (21,260 layouts / 4,252 styles), as did Xcode Release with warnings as errors and the Figma bridge. Installed-app QA verified the Vector/Sketch switch, canvas layout and shelved generator; all eight original projects remain byte-for-byte unchanged. Final 0.32.0 (41) rebuild, compact closed-curve regression, signature verification and installed/tested binary identity checks passed. See FONT_LAB_VECTOR.md for supported workflows and remaining Glyphs features. |
 | 0.33 Spaces typography | Character/Paragraph/List/Align panels, compact values/presets, family styles, and persisted per-frame canvas alignment. List transformation, alignment geometry, unchanged neighboring frames, reset, persistence and validation covered by native checks. Optimized native suite (21,260 font layouts), Xcode Release with warnings as errors, Figma bridge and canonical 0.33.0 (42) installation passed. Disposable native UI verified direct numeric entry, size presets/auto leading, paragraph centering, bullet-to-number conversion, frame alignment and reset. Original spaces.json remains byte-for-byte unchanged. |
+| 0.33.1 color alignment | Installed native UI confirms Text/Background/Accent labels share a left edge and all three wells share a right edge. Optimized native suite and canonical installation passed; existing Spaces data is unchanged. |
 | Figma bridge | Mocked API suite passed; live outbound editable frames and reverse selected-frame JSON import verified, including editing, movement/Undo and relaunch persistence |
 | Unsigned archive and asset catalog, 0.12.3 | Passed; archive not checked into source |
 | Sandbox/hardened-runtime clean launch and installed-font export, 0.12.3 | Passed |

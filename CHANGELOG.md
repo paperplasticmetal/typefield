@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.33.1 — 2026-09-21
+
+- Aligned Spaces Text, Background and Accent labels on the left and their color wells on a shared right edge.
+
 ## 0.33.0 — 2026-09-21
 
 - Refined Spaces typography into Character, Paragraph, Bullets and numbering, and Align panels, with compact numeric entry, steppers, presets, family/style selection and one-click paragraph alignment. Type roles now collapse to keep the active controls easy to reach.

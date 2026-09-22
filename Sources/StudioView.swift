@@ -864,7 +864,11 @@ struct TypeBoardEditor: View {
         }
     }
     func colorPicker(_ title: String, key: WritableKeyPath<TypeDirection, String>) -> some View {
-        ColorPicker(title, selection: Binding(get: { Color(nsColor: NSColor(hex: key == \TypeDirection.ink ? importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink : direction[keyPath: key])) }, set: { if key == \TypeDirection.ink && importedNonTextSelected { return }; if key == \TypeDirection.ink, let index = importedLayerIndex { board.directions[directionIndex].importedLayout?.layers[index].color = NSColor($0).rgbHex } else { board.directions[directionIndex][keyPath: key] = NSColor($0).rgbHex }; save() }), supportsOpacity: false)
+        HStack {
+            Text(title)
+            Spacer()
+            ColorPicker(title, selection: Binding(get: { Color(nsColor: NSColor(hex: key == \TypeDirection.ink ? importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink : direction[keyPath: key])) }, set: { if key == \TypeDirection.ink && importedNonTextSelected { return }; if key == \TypeDirection.ink, let index = importedLayerIndex { board.directions[directionIndex].importedLayout?.layers[index].color = NSColor($0).rgbHex } else { board.directions[directionIndex][keyPath: key] = NSColor($0).rgbHex }; save() }), supportsOpacity: false).labelsHidden().fixedSize()
+        }
     }
     func exportPDF() {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — " + direction.name + ".pdf"

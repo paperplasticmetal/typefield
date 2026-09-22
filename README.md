@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.33.0 (build 42).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.33.1 (build 43).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **[Download the latest FontShelf.zip](../../releases/latest/download/FontShelf.zip)** — unzip it, move `FontShelf.app` to Applications, and open it. This development build is ad-hoc signed rather than notarized.
 
