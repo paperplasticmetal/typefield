@@ -9,7 +9,8 @@ final class FontLabVectorNSView: NSView {
     private var marquee: CGRect?
     private var spaceDown = false
     private var panStart = CGPoint.zero
-    private enum Drag { case none, nodes, handle(Int,Int,Bool), pen(Int,Int), shape, marquee, pan }
+    private var resizeBox = CGRect.zero
+    private enum Drag { case none, nodes, handle(Int,Int,Bool), pen(Int,Int), shape, marquee, pan, resize(Int) }
     private var drag = Drag.none
     init(editor:FontLabVectorEditor) {self.editor=editor;super.init(frame:.zero);setAccessibilityLabel("Vector glyph canvas");setAccessibilityRole(.group)}
     required init?(coder:NSCoder) {fatalError("init(coder:) has not been implemented")}
@@ -58,10 +59,11 @@ final class FontLabVectorNSView: NSView {
         fontLabDrawStrokes(editor.componentStrokes,in:r,color:.systemTeal)
         let paths=editor.paths
         let pens=editor.glyph.strokes.filter {$0.contours == nil && $0.vectorPaths == nil}
-        fontLabDrawStrokes(pens,in:r,color:.labelColor)
-        if editor.fill {FontLabVectorMath.draw(paths,in:r,color:NSColor.labelColor.withAlphaComponent(0.82))}
+        fontLabDrawStrokes(pens,in:r,color:NSColor(editor.inkColor))
+        if editor.fill {FontLabVectorMath.draw(paths,in:r,color:NSColor(editor.inkColor))}
         for path in paths {
             NSColor.systemBlue.withAlphaComponent(0.75).setStroke();let outline=path.bezier(in:r);outline.lineWidth=1;outline.stroke()
+            if editor.objectSelection && editor.tool == .select { continue }
             for (index,node) in path.nodes.enumerated() {
                 let p=screen(node.point)
                 if editor.selection.contains(node.id) {
@@ -78,10 +80,24 @@ final class FontLabVectorNSView: NSView {
                 if index==0 {let marker=NSBezierPath();marker.move(to:CGPoint(x:p.x+5,y:p.y));marker.line(to:CGPoint(x:p.x+9,y:p.y+3));marker.line(to:CGPoint(x:p.x+9,y:p.y-3));marker.close();NSColor.systemBlue.setFill();marker.fill()}
             }
         }
+        if editor.objectSelection && editor.tool == .select, let box = selectionBox {
+            NSColor.systemBlue.setStroke(); NSBezierPath(rect: box).stroke()
+            for p in corners(box) {
+                let handle = NSBezierPath(rect: CGRect(x:p.x-4,y:p.y-4,width:8,height:8))
+                NSColor.textBackgroundColor.setFill(); handle.fill(); handle.stroke()
+            }
+        }
         if let marquee {NSColor.systemBlue.withAlphaComponent(0.12).setFill();marquee.fill();NSColor.systemBlue.setStroke();NSBezierPath(rect:marquee).stroke()}
         if paths.isEmpty && pens.isEmpty && editor.componentStrokes.isEmpty {
             ("Choose Bézier and click to place nodes. Drag for curves.\nClick the first node to close a contour." as NSString).draw(in:bounds.insetBy(dx:40,dy:60),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor])
         }
+    }
+    private func corners(_ r: CGRect) -> [CGPoint] { [CGPoint(x:r.minX,y:r.minY),CGPoint(x:r.maxX,y:r.minY),CGPoint(x:r.maxX,y:r.maxY),CGPoint(x:r.minX,y:r.maxY)] }
+    private var selectionBox: CGRect? {
+        let chosen = editor.paths.filter { !$0.nodes.isEmpty && $0.nodes.allSatisfy { editor.selection.contains($0.id) } }
+        guard !chosen.isEmpty else { return nil }
+        let box = chosen.reduce(CGRect.null) { $0.union($1.bezier(in:designRect).bounds) }
+        return box.width > 0.1 && box.height > 0.1 ? box : nil
     }
     private func hitNode(_ p:CGPoint)->(Int,Int,Bool?)? {
         let paths=editor.paths
@@ -133,6 +149,19 @@ final class FontLabVectorNSView: NSView {
             }
         case .rectangle,.ellipse:drag = .shape
         case .select:
+            if editor.objectSelection {
+                if let box = selectionBox, let corner = corners(box).firstIndex(where: { hypot($0.x-start.x,$0.y-start.y)<9 }) {
+                    drag = .resize(corner); resizeBox = box; return
+                }
+                let hit = hitSegment(start)?.0 ?? originalPaths.indices.reversed().first { originalPaths[$0].closed && originalPaths[$0].bezier(in:designRect).contains(start) }
+                if let hit {
+                    let alreadySelected = originalPaths[hit].nodes.allSatisfy { editor.selection.contains($0.id) }
+                    if !alreadySelected || event.modifierFlags.contains(.shift) { editor.selectObject(hit, adding:event.modifierFlags.contains(.shift)) }
+                    drag = .nodes; needsDisplay = true; return
+                }
+                if !event.modifierFlags.contains(.shift) { editor.selection = [] }
+                drag = .marquee; marquee = CGRect(origin:start,size:.zero); needsDisplay = true; return
+            }
             if let (a,b,handle)=hitNode(start) {
                 if let handle {drag = .handle(a,b,handle);return}
                 let id=originalPaths[a].nodes[b].id
@@ -158,6 +187,13 @@ final class FontLabVectorNSView: NSView {
         let end=convert(event.locationInWindow,from:nil)
         switch drag {
         case .none:break
+        case let .resize(corner):
+            let points = corners(resizeBox), opposite = points[(corner+2)%4], moving = points[corner]
+            var sx = max(0.02,(end.x-opposite.x)/(moving.x-opposite.x))
+            var sy = max(0.02,(end.y-opposite.y)/(moving.y-opposite.y))
+            if event.modifierFlags.contains(.shift) { let uniform = abs(sx-1)>abs(sy-1) ? sx:sy; sx=uniform;sy=uniform }
+            let anchor = design(opposite,clamp:false)
+            _=editor.apply(FontLabVectorEditor.resized(originalPaths,selection:initialSelection,anchor:anchor,sx:sx,sy:sy),commit:false)
         case .pan:editor.pan=CGPoint(x:panStart.x+end.x-start.x,y:panStart.y+end.y-start.y)
         case .marquee:
             marquee=CGRect(x:min(start.x,end.x),y:min(start.y,end.y),width:abs(end.x-start.x),height:abs(end.y-start.y))
@@ -213,7 +249,7 @@ final class FontLabVectorNSView: NSView {
         needsDisplay=true
     }
     override func mouseUp(with event:NSEvent) {
-        switch drag {case .nodes,.handle,.pen,.shape:if let previousGlyph {editor.finishGesture(from:previousGlyph)};default:break}
+        switch drag {case .nodes,.handle,.pen,.shape,.resize:if let previousGlyph {editor.finishGesture(from:previousGlyph)};default:break}
         previousGlyph=nil;marquee=nil;drag = .none;needsDisplay=true
     }
     override func keyDown(with event:NSEvent) {

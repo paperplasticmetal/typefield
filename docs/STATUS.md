@@ -1,6 +1,6 @@
 # Build and verification status
 
-Current source: **0.34.0, build 44**. Updated 2026-09-21.
+Current source: **0.34.1, build 45**. Updated 2026-09-21.
 
 | Check | Status |
 | --- | --- |
@@ -58,3 +58,9 @@ Not complete Typeface parity: native Adobe-file decoding/live sync, full native 
 Web-font costs are exact only for unambiguously matched WOFF2 files. Installed desktop fonts can supply labeled coverage and layout information but are not silently treated as equivalent web assets; missing and duplicate matches remain visible and are excluded from known-byte totals.
 
 Local bundles are ad-hoc signed. They are not notarized downloads and are not App Store packages. A passing CI run does not guarantee App Review approval.
+
+## 0.34.1 focused refinement
+
+Added Objects/Nodes selection, counter-preserving whole-object selection, corner resize handles with Shift proportional scaling, Select all, preview-only ink color and saved freehand pen width. Native disposable UI confirmed one-click selection of a 480-point ring with its counter and corner dragging updating both editor and word preview. Regression coverage checks counter grouping, anchor/handle scaling and one commit per gesture. The existing design sheet is now labeled Components & masters. Automatic vector weight offsets and multicolor export remain deferred.
+
+0.34.1 validation: optimized warnings-as-errors build and full native suite passed, including 21,260 layout cases and object-selection/resize regressions. Canonical installation, code signature and installed/tested binary identity passed.

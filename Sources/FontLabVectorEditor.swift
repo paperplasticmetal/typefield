@@ -18,6 +18,8 @@ final class FontLabVectorEditor: ObservableObject {
     @Published var grid = true
     @Published var snap = true
     @Published var fill = true
+    @Published var objectSelection = true
+    @Published var inkColor = Color(nsColor: .labelColor)
     @Published var message = "V Select · P Bézier · R Rectangle · O Ellipse · Space-drag to pan"
     var onCommit: (FontLabGlyph) -> Void = { _ in }
     var onUndo: () -> Void = {}
@@ -49,6 +51,41 @@ final class FontLabVectorEditor: ObservableObject {
     func finishGesture(from before: FontLabGlyph) { if glyph != before { onCommit(glyph) } }
     func selectAll() { selection=Set(paths.flatMap(\.nodes).map(\.id)) }
     func fit() { zoom=1;pan = .zero }
+    func selectObject(_ index: Int, adding: Bool) {
+        let value = paths
+        guard value.indices.contains(index) else { return }
+        var outer = index
+        for i in value.indices where value[i].closed && i != index {
+            if value[i].cgPath.boundingBoxOfPath.contains(value[outer].cgPath.boundingBoxOfPath),
+               let first = value[outer].nodes.first,
+               value[i].cgPath.contains(CGPoint(x: first.point.x * 1000, y: first.point.y * 1000)) { outer = i }
+        }
+        let chosen = value.indices.filter { i in
+            i == outer || (value[i].closed && value[outer].closed && value[i].nodes.allSatisfy {
+                value[outer].cgPath.contains(CGPoint(x: $0.point.x * 1000, y: $0.point.y * 1000))
+            })
+        }
+        let ids = Set(chosen.flatMap { value[$0].nodes.map(\.id) })
+        selection = adding ? selection.union(ids) : ids
+    }
+    static func resized(_ paths: [FontLabVectorPath], selection: Set<UUID>, anchor: FontLabPoint, sx: Double, sy: Double) -> [FontLabVectorPath] {
+        var result = paths
+        func point(_ p: FontLabPoint) -> FontLabPoint {
+            var p = p; p.x = anchor.x + (p.x-anchor.x)*sx; p.y = anchor.y + (p.y-anchor.y)*sy; return p
+        }
+        for p in result.indices { for n in result[p].nodes.indices where selection.contains(result[p].nodes[n].id) {
+            result[p].nodes[n].point = point(result[p].nodes[n].point)
+            result[p].nodes[n].incoming = result[p].nodes[n].incoming.map(point)
+            result[p].nodes[n].outgoing = result[p].nodes[n].outgoing.map(point)
+        } }
+        return result
+    }
+    func setPenWidth(_ units: Double) {
+        guard units.isFinite, (2...200).contains(units) else { return }
+        var next = glyph
+        for i in next.strokes.indices where !next.strokes[i].points.isEmpty { next.strokes[i].width = units / 1000 }
+        if next != glyph { glyph = next; onCommit(next) }
+    }
     func modifySelected(_ change: (inout FontLabVectorNode, Int, FontLabVectorPath) -> Void) {
         var value=paths
         for p in value.indices { let original=value[p]; for n in value[p].nodes.indices where selection.contains(value[p].nodes[n].id) { change(&value[p].nodes[n],n,original) } }
@@ -234,6 +271,8 @@ struct FontLabVectorEditorView: View {
                     Button {editor.tool=tool;editor.activePath=nil} label: { Image(systemName:tool.icon).frame(width:28,height:24) }
                         .buttonStyle(.bordered).tint(editor.tool == tool ? .accentColor : .secondary).help(tool.rawValue).accessibilityLabel(tool.rawValue)
                 }
+                Picker("Selection", selection: $editor.objectSelection) { Text("Objects").tag(true); Text("Nodes").tag(false) }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 140)
                 Spacer(minLength:0)
                 Menu("Paths") {
                     Button("Smooth nodes") {editor.smooth(true)}.disabled(editor.selection.isEmpty)
@@ -282,13 +321,25 @@ struct FontLabVectorEditorView: View {
                 }.disabled(editor.selection.isEmpty).fixedSize()
             }.textFieldStyle(.roundedBorder).font(.caption)
             HStack(spacing:6) {
+                Button("Select all") { editor.selectAll() }.help("Select all outlines (⌘A)")
                 Text("Scale %");TextField("100",text:$scale).frame(width:50)
                 Button("Scale") {if let v=Double(scale),v>0,v<=1000 {editor.transform(scaleX:v/100,scaleY:v/100)}}.disabled(editor.selection.isEmpty)
                 Text("Rotate °");TextField("0",text:$angle).frame(width:45)
                 Button("Rotate") {if let v=Double(angle),v.isFinite {editor.transform(angle:v * .pi/180)}}.disabled(editor.selection.isEmpty)
                 Spacer(minLength:0)
             }.textFieldStyle(.roundedBorder).font(.caption)
-            Text(editor.openCount>0 ? "\(editor.openCount) open contour(s). Close them before exporting a font." : editor.message)
+            HStack {
+                ColorPicker("Preview ink", selection: $editor.inkColor, supportsOpacity: false).fixedSize()
+                    .help("Canvas preview color only. Font exports remain monochrome; choose text color in Spaces or the app using the font.")
+                if let stroke = editor.glyph.strokes.first(where: { !$0.points.isEmpty }) {
+                    Text("Pen width")
+                    TextField("Units", value: Binding(get: { stroke.width * 1000 }, set: { editor.setPenWidth($0) }), format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 55)
+                    Text("units").foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }.font(.caption)
+            Text(editor.objectSelection && editor.tool == .select ? "Click a shape to move it. Drag a box corner to resize; hold Shift to keep proportions. Nodes edits individual points." : editor.openCount>0 ? "\(editor.openCount) open contour(s). Close them before exporting a font." : editor.message)
                 .font(.caption2).foregroundStyle(editor.openCount>0 ? .orange : .secondary).fixedSize(horizontal:false,vertical:true)
         }
         .onChange(of:glyph) { editor.receive($0);updateCoordinates() }

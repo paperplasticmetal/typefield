@@ -1179,7 +1179,7 @@ struct FontLabView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Delete", systemImage: "trash", role: .destructive) { deleteRequest = project }
                     .disabled(store.readBlocked || isExportingFont).help("Delete this Font Lab project")
-                Button("Font design", systemImage: "square.stack.3d.up") { showFontDesign = true }.disabled(store.readBlocked || isExportingFont)
+                Button("Components & masters", systemImage: "square.stack.3d.up") { showFontDesign = true }.help("Components, masters, kerning groups and glyph set").disabled(store.readBlocked || isExportingFont)
                 Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
                     .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
                 if let undo = designUndo, undo.after == project {

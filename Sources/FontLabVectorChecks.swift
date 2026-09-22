@@ -10,6 +10,19 @@ enum FontLabVectorChecks {
     static func run() throws {
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
+        let objectEditor=FontLabVectorEditor(glyph:glyph,metrics:metrics)
+        objectEditor.selectObject(1,adding:false)
+        try check(objectEditor.selection.count == 8,"Object selection failed to include outer contour and counter")
+        let objectOriginal=objectEditor.paths,objectAnchor=FontLabPoint(x:0.1,y:0.18)
+        let objectResized=FontLabVectorEditor.resized(objectOriginal,selection:objectEditor.selection,anchor:objectAnchor,sx:0.5,sy:0.5)
+        for (before,after) in zip(objectOriginal.flatMap(\.nodes),objectResized.flatMap(\.nodes)) {
+            try check(abs(after.point.x-(objectAnchor.x+(before.point.x-objectAnchor.x)*0.5))<1e-10,"Object resize moved an anchor incorrectly")
+            if let a=before.outgoing,let b=after.outgoing { try check(abs(b.y-(objectAnchor.y+(a.y-objectAnchor.y)*0.5))<1e-10,"Object resize did not scale Bézier handles") }
+        }
+        var objectCommits=0;objectEditor.onCommit={_ in objectCommits += 1}
+        _=objectEditor.apply(objectResized,commit:false);objectEditor.finishGesture(from:glyph)
+        try check(objectCommits==1 && objectEditor.glyph.isValid,"Corner resizing must commit one undoable edit")
+
         try check(glyph.isValid && glyph.hasArtwork,"Cubic glyph is not valid artwork.")
         let decoded=try JSONDecoder().decode(FontLabGlyph.self,from:JSONEncoder().encode(glyph))
         try check(decoded==glyph,"Cubic handles or node identities did not persist.")

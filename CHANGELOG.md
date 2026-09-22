@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.1 — 2026-09-21
+
+- Added whole-object selection, visible corner resize handles and Shift-constrained scaling in Font Lab. Objects keeps nested counters together; Nodes retains precise point editing. Added a visible Select all action.
+- Added canvas preview ink color and width adjustment for existing freehand pen strokes. Export remains monochrome; vector outline weight changes remain future work.
+- Renamed the Font design entry to Components & masters, with a tooltip identifying kerning groups and glyph-set controls. Smooth trace remains beside the editor switch.
+
 ## 0.34.0 — 2026-09-21
 
 - Added Font design with live reusable glyph components, position/scale controls, source navigation and decomposition into independent editable outlines. Components resolve in previews, SVG and TrueType exports; cycles and invalid geometry are rejected.
