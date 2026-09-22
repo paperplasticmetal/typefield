@@ -1,6 +1,6 @@
 # Font Lab design controls
 
-Open a project and choose **Font design**. Changes are staged until **Apply**; Cancel preserves the current project. **Undo setup** restores the previous project while that applied setup is still the latest change.
+Open a project and choose **Components & masters**. Changes are staged until **Apply**; Cancel preserves the current project. **Undo setup** restores the previous project while that applied setup is still the latest change.
 
 ## Components
 
