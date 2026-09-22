@@ -373,7 +373,7 @@ enum CanvasDragPayload {
 
 extension TypeDirection {
     var isValid: Bool {
-        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (importedLayout?.isValid ?? (canvas != .imported)) && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy(Self.acceptsCanvasText) } ?? true) && TypeRole.allCases.allSatisfy { role in
+        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (importedLayout?.isValid ?? (canvas != .imported)) && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy(Self.acceptsCanvasText) } ?? true) && (textPositions.map { $0.count <= 5000 && $0.values.allSatisfy(\.isValid) } ?? true) && TypeRole.allCases.allSatisfy { role in
             guard let s = styles[role.rawValue] else { return false }
             return s.size.isFinite && (8...160).contains(s.size) && s.leading.isFinite && (1...2.5).contains(s.leading) && s.tracking.isFinite && (-3...12).contains(s.tracking) && s.axes.values.allSatisfy(\.isFinite) && (s.lineHeight.map { $0.isFinite && (8...400).contains($0) } ?? true) && [s.paragraphSpacing, s.indent].allSatisfy { $0.map { $0.isFinite && (0...200).contains($0) } ?? true } && (s.wordSpacing.map { $0.isFinite && (-3...40).contains($0) } ?? true)
         }
@@ -395,16 +395,16 @@ struct TypeBoardEditor: View {
         _shownCanvasIDs = State(initialValue: initialCanvasIDs)
         _summaryCanvasIDs = State(initialValue: Set(savedBoard.directions.map(\.id)))
     }
-    @State private var role = TypeRole.display
+    @State var role = TypeRole.display
     @State private var fontSearch = ""
     @State private var fontCollection = "All fonts"
     @State private var fontCategory = "All categories"
     @State private var shownCanvasIDs: Set<UUID>
-    @State private var selectedTextID: String?
+    @State var selectedTextID: String?
     @State private var zoom = 0.0
     @State private var showDelete = false
     @State private var status = ""
-    @State private var showFontPicker = false
+    @State var showFontPicker = false
     @State private var showPairingSuggestions = false
     @State private var pairingTargetRole = TypeRole.body
     @State private var showFontSummary = false
@@ -412,7 +412,7 @@ struct TypeBoardEditor: View {
     @State private var fontSummaryDetail = TypographySummaryDetail.roles
     @State private var summaryCanvasIDs: Set<UUID>
     @State private var draggedSection: String?
-    @State private var selectedSection: String?
+    @State var selectedSection: String?
     @State private var abID: UUID?
     @State private var inspectorTab = "Typography"
     @State private var discoveryNonce: UInt64 = 0
@@ -516,7 +516,7 @@ struct TypeBoardEditor: View {
             }.padding(.horizontal, 14).padding(.bottom, 12).fixedSize(horizontal: false, vertical: true)
             Divider()
             HSplitView {
-                inspector.frame(minWidth: 240, idealWidth: 310, maxWidth: 500).background(StudioSplitPosition())
+                inspector.frame(minWidth: 300, idealWidth: 330, maxWidth: 500).background(StudioSplitPosition())
                 VStack(alignment: .leading, spacing: 0) {
                     if library.loading { ProgressView(library.families.isEmpty ? "Loading font library…" : "Checking watched font folders…").controlSize(.small).padding(10) }
                     else if !missingFonts.isEmpty { Label("Unavailable fonts: " + missingFonts.joined(separator: ", ") + ". Preview uses fallback.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(12) }
@@ -626,7 +626,7 @@ struct TypeBoardEditor: View {
                     ShelfDropdown(title: "Layer", selection: Binding(get: { importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id } ?? "" }, set: { selectedSection = $0 }), options: (direction.importedLayout?.layers.filter { $0.style != nil } ?? []).map { ($0.name, $0.id) }, showsTitle: false)
                     Text("Edit each text layer independently. Drag layers on the canvas to position them.").font(.caption).foregroundStyle(.secondary)
                 } else {
-                Text("TYPE ROLES").font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup("Type roles · " + role.rawValue) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
                 ForEach(TypeRole.allCases) { item in
                     let count = plan.elements.filter { $0.role == item && $0.text != nil }.count
@@ -638,14 +638,14 @@ struct TypeBoardEditor: View {
                 }
                 Text("Click a role to select its first use on the canvas. Drag any role onto the canvas to add its saved sample text.").font(.caption2).foregroundStyle(.secondary)
                 }
+                }
                 Divider()
                 if importedNonTextSelected {
                     Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary)
                 } else {
                 Text(editingTitle).font(.headline)
                 if selectedTextID != nil && direction.canvas != .imported { Text("Editing the selected text. Font and spacing changes apply to its shared type role.").font(.caption).foregroundStyle(.secondary) }
-                Button { showFontPicker = true } label: { HStack { VStack(alignment: .leading, spacing: 4) { Text("Font").font(.caption).foregroundStyle(.secondary); Text(style.fontName).lineLimit(2) }; Spacer(); Image(systemName: "magnifyingglass") }.padding(10).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                    .popover(isPresented: $showFontPicker) { fontPicker }
+                characterPanel
                 if direction.canvas != .imported {
                     Menu {
                         ForEach(TypeRole.allCases.filter { $0 != role }) { target in
@@ -658,22 +658,11 @@ struct TypeBoardEditor: View {
                         .disabled(library.allFaces.first(where: { $0.name == style.fontName }) == nil)
                         .help("Rank compatible fonts from your local library and explain each suggestion")
                 }
-                numeric("Size", value: styleBinding(\.size), range: direction.canvas == .imported ? 1...1000 : 8...160, unit: direction.canvasUnitLabel)
-                numeric("Line height", value: Binding(get: { style.lineHeight ?? style.size * style.leading }, set: { var s = style; s.lineHeight = $0; setStyle(s); save("Change Line Height") }), range: direction.canvas == .imported ? 1...2000 : 8...400, unit: direction.canvasUnitLabel)
-                Button("Auto line height") { var s = style; s.lineHeight = nil; setStyle(s); save() }.font(.caption)
-                numeric("Letter spacing", value: styleBinding(\.tracking), range: -3...12, unit: direction.canvasUnitLabel)
-                ShelfDropdown(title: "Alignment", selection: optionalStyleBinding(\.alignment, default: .left), options: TextAlignmentOption.allCases.map { ($0.rawValue, $0) })
-                Toggle("Font kerning", isOn: kerningBinding).toggleStyle(.checkbox).help("Use the font’s built-in spacing adjustments between letter pairs")
-                DisclosureGroup("More text settings") {
-                    VStack(spacing: 12) {
-                        numeric("Word spacing", value: optionalStyleBinding(\.wordSpacing, default: 0), range: -3...40, unit: direction.canvasUnitLabel)
-                        numeric("Paragraph spacing", value: optionalStyleBinding(\.paragraphSpacing, default: 0), range: 0...200, unit: direction.canvasUnitLabel)
-                        numeric("First-line indent", value: optionalStyleBinding(\.indent, default: 0), range: 0...200, unit: direction.canvasUnitLabel)
-                        ShelfDropdown(title: "Case", selection: optionalStyleBinding(\.casing, default: .original), options: TextCaseOption.allCases.map { ($0.rawValue, $0) })
-                        HStack { Toggle("Underline", isOn: optionalStyleBinding(\.underline, default: false)); Toggle("Strike", isOn: optionalStyleBinding(\.strikethrough, default: false)) }.toggleStyle(.checkbox)
-                    }.padding(.top, 10)
-                }
-                axesEditor
+                paragraphPanel
+                listPanel
+                Divider()
+                canvasAlignmentPanel
+                DisclosureGroup("Variable font axes") { axesEditor }
                 if let face = library.allFaces.first(where: { $0.name == style.fontName }) {
                     let features = face.facts.features.filter { $0 != "kern" }
                     if !features.isEmpty {
@@ -689,6 +678,7 @@ struct TypeBoardEditor: View {
                 }
                 }
                 Divider()
+                if inspectorTab == "Arrangement" || importedNonTextSelected { canvasAlignmentPanel; Divider() }
                 if let warnings = direction.importWarnings, !warnings.isEmpty { DisclosureGroup("Import notes (\(warnings.count))") { Text(warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) } }
                 if !importedNonTextSelected { colorPicker("Text", key: \.ink) }; colorPicker("Background", key: \.paper); if direction.canvas != .imported { colorPicker("Accent", key: \.accent) }
                 Text("Canvas notes").font(.caption).foregroundStyle(.secondary)
@@ -1156,6 +1146,11 @@ struct CanvasPlan {
             part.rect.origin.y = y; sections.append(part); y += part.rect.height
         }
         size = CGSize(width: w, height: max(480, y + margin))
+        for i in elements.indices {
+            if let id = elements[i].textID, let position = d.textPositions?[id], position.isValid {
+                elements[i].rect.origin = CGPoint(x: position.x, y: position.y)
+            }
+        }
         updateAccessibilityText()
     }
 }
@@ -1201,7 +1196,11 @@ final class CanvasNativeView: NSView {
     init(plan: CanvasPlan) { self.plan = plan; super.init(frame: CGRect(origin: .zero, size: plan.size)); registerForDraggedTypes([.string]) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func resetCursorRects() { if directionID != nil { addCursorRect(bounds, cursor: .openHand) } }
-    func section(at point: NSPoint) -> CanvasSection? { let local = NSPoint(x: point.x / max(0.01, zoom), y: point.y / max(0.01, zoom)); return plan.sections.last { $0.rect.contains(local) } }
+    func section(at point: NSPoint) -> CanvasSection? {
+        let local = NSPoint(x: point.x / max(0.01, zoom), y: point.y / max(0.01, zoom))
+        if let text = plan.text(at: local), let section = plan.sections.first(where: { $0.id == text.sectionID }) { return section }
+        return plan.sections.last { $0.rect.contains(local) }
+    }
     override func mouseDown(with event: NSEvent) {
         guard directionID != nil, let window else { return }
         window.makeFirstResponder(self)

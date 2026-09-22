@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.32.0 (build 41).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.33.0 (build 42).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **[Download the latest FontShelf.zip](../../releases/latest/download/FontShelf.zip)** — unzip it, move `FontShelf.app` to Applications, and open it. This development build is ad-hoc signed rather than notarized.
 
@@ -15,6 +15,8 @@ Native macOS font browsing, previews, and organization, built with SwiftUI, AppK
 **Create a typeboard from fonts:** Multi-select families anywhere in Library, including Favorites and collections, then choose **Create typeboard**. In Shortlist, check any subset, choose each family's style and use the prominent **Create typeboard** action. Before anything is created, FontShelf shows all seven roles—Display, Heading, Subheading, Body, UI, Caption and Monospace—with a resettable suggested assignment. Choose any selected font for each role. This is only the first-canvas starting point: every role remains editable in Spaces and every chosen font remains a candidate.
 
 **Font pairing suggestions:** In a Spaces canvas, select a type role and choose **Pair this font with another role…**. Pick the target role, then compare Safe, Balanced and Expressive suggestions from the fonts already on this Mac. FontShelf previews the source and candidate together, exposes language/proportion/role/contrast reasons and relative scoring signals, and applies the result to the target role without replacing the source. These are explainable starting points, not universal taste scores or cloud-generated answers.
+
+**Spaces typography:** Compact Character, Paragraph, list and canvas-alignment controls make text editing easier to navigate. [Controls and behavior](docs/SPACES_TYPOGRAPHY.md).
 
 **Adobe round trip:** From a typeboard's typography summary, export an Illustrator or InDesign builder. Run the saved JSX inside Adobe to create a new editable native `.ai` or `.indd` document with artboards/pages, live text, simple shapes, named character/paragraph styles and hidden FontShelf metadata. To come back, export the Illustrator/InDesign return bridge from Spaces, run it on a document or selection, then import its JSON through **Spaces → Import → Adobe return JSON…**. Font files are never bundled. Native `.ai`/`.indd` decoding, live sync, mixed inline-style reconstruction, effects, clipping, rotation, columns, linked stories, variable-axis application and arbitrary OpenType fidelity are not promised; import notes identify what needs review.
 

@@ -105,6 +105,7 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var importedSource: ImportedLayoutSource?
     var importWarnings: [String]?
     var textOverrides: [String: String]?
+    var textPositions: [String: CanvasTextPosition]?
     var canvasDisplayName: String { canvas == .imported ? (importedSource ?? .figma).displayName : canvas.rawValue }
     var canvasUnitLabel: String { canvas == .imported ? (importedSource ?? .figma).unitLabel : "px" }
     static func seededFontIndex(for role: TypeRole, count: Int) -> Int {

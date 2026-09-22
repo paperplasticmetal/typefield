@@ -362,6 +362,31 @@ enum StudioChecks {
         let paragraph = styled.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as! NSParagraphStyle
         try verify(paragraph.alignment == .right && paragraph.minimumLineHeight == 32 && paragraph.paragraphSpacing == 12 && paragraph.firstLineHeadIndent == 20)
         try verify(styled.attribute(.kern, at: 3, effectiveRange: nil) as? Double == 3)
+        // Inspector actions must persist and feed the same plan used by PDF/Figma.
+        try verify(StudioListFormat.bullets.applying(to: "One\nTwo\n\nThree") == "• One\n• Two\n\n• Three", "Bullet formatting lost paragraph boundaries")
+        try verify(StudioListFormat.numbered.applying(to: "• One\n• Two\n\n• Three") == "1. One\n2. Two\n\n1. Three", "Numbered lists did not restart after an empty paragraph")
+        try verify(StudioListFormat.none.applying(to: "  1. Café 👋\n  • Second\n- hyphen") == "  Café 👋\n  Second\n- hyphen", "List removal damaged content or indentation")
+        let listed = StudioListFormat.bullets.applying(to: "First\nSecond")
+        try verify(StudioListFormat.bullets.applying(to: listed) == listed, "Repeated list formatting duplicated markers")
+        let alignRect = CGRect(x: 20, y: 30, width: 100, height: 40), alignSize = CGSize(width: 400, height: 300)
+        let expectedOrigins: [CGPoint] = [.init(x: 0,y: 30), .init(x: 150,y: 30), .init(x: 300,y: 30), .init(x: 20,y: 0), .init(x: 20,y: 130), .init(x: 20,y: 260)]
+        for (alignment, expected) in zip(StudioCanvasAlignment.allCases, expectedOrigins) {
+            try verify(alignment.origin(for: alignRect, in: alignSize) == expected, "Canvas alignment moved the wrong axis")
+        }
+        var positioned = TypeDirection()
+        let normalPlan = CanvasPlan(direction: positioned)
+        let selectedFrame = normalPlan.elements.first { $0.role == .display && $0.textID != nil }!
+        let frameID = selectedFrame.textID!
+        positioned.textPositions = [frameID: CanvasTextPosition(x: 12, y: 34)]
+        let positionedPlan = CanvasPlanCache.plan(for: positioned)
+        try verify(positionedPlan.elements.first { $0.textID == frameID }!.rect.origin == CGPoint(x: 12,y: 34), "Text position did not reach the canvas plan")
+        try verify(positionedPlan.size == normalPlan.size && positionedPlan.elements.filter { $0.textID != frameID }.map(\.rect) == normalPlan.elements.filter { $0.textID != frameID }.map(\.rect), "Aligning text moved unrelated frames or changed the artboard")
+        let positionRoundTrip = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(positioned))
+        try verify(positionRoundTrip == positioned && positionRoundTrip.isValid, "Text positioning did not persist")
+        positioned.textPositions = nil
+        try verify(CanvasPlanCache.plan(for: positioned).elements.first { $0.textID == frameID }!.rect == selectedFrame.rect, "Reset text position did not restore template layout")
+        positioned.textPositions = [frameID: CanvasTextPosition(x: .infinity, y: 0)]
+        try verify(!positioned.isValid, "Nonfinite canvas coordinates were accepted")
         let parsedSearch = FontSearchQuery("Helvetica #\"Client Work/Approved\" #!fontshelf/italic")
         try verify(parsedSearch.text == "Helvetica" && parsedSearch.tokens.count == 2)
         let regular = catalog.flatMap(\.faces).first { $0.name == "Helvetica" }!

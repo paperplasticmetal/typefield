@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.33.0 — 2026-09-21
+
+- Refined Spaces typography into Character, Paragraph, Bullets and numbering, and Align panels, with compact numeric entry, steppers, presets, family/style selection and one-click paragraph alignment. Type roles now collapse to keep the active controls easy to reach.
+- Added editable bullet/numbered-list formatting and six canvas-frame alignment actions. Template text positions persist independently, can be reset, and feed previews and layout exports. Imported text and shape alignment uses the saved artboard bounds.
+- Preserved shared role styling, explicit auto leading, Metrics/Off kerning, advanced font features and existing documents.
+
 ## 0.32.0 — 2026-09-21
 
 - Made Font Lab vector-first, with saved cubic Bézier nodes/handles, a click/drag pen, rectangles, ellipses, smooth/corner editing, multi-node selection, exact segment splitting and keyboard nudging. Sketch tools remain available.
