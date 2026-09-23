@@ -29,6 +29,7 @@ enum StudioChecks {
         try verify((value["axes"] as? [String: Double])?["wght"] == 520, "Variable axes preserved")
         let html = try read("index.html"), css = try read("typography.css")
         try verify(!html.contains("<script>") && html.contains("&lt;script&gt;") && html.contains("café 🖋"), "HTML must escape sample text and retain Unicode")
+        try verify(html.contains("TYPEFIELD / DEVELOPER HANDOFF") && !html.contains("FONTSHELF / DEVELOPER HANDOFF"), "Visible handoff branding must use Typefield")
         try verify(css.contains("clamp(") && css.contains("\"wght\" 520") && css.contains("font-display: swap") && css.contains("font-feature-settings: \"kern\" 0, \"liga\" 0") && css.contains("font-kerning: none"), "CSS carries axes, features, kerning and loading policy")
         try verify(DeveloperHandoff.fluid(16) == "1rem" && DeveloperHandoff.number(0) == "0" && DeveloperHandoff.number(100) == "100", "Fluid scale and numeric precision")
         let manifest = try read("fonts.json")
@@ -341,6 +342,7 @@ enum StudioChecks {
         try verify(broken.readBlocked && broken.state.spaces.count == blockedSpaceCount && !broken.save(), "Read-blocked workspace must reject new spaces")
         try verify(broken.addBoard(space: UUID()) == nil && broken.state.spaces.count == blockedSpaceCount, "Read-blocked workspace must reject new typeboards")
         let unchanged = try Data(contentsOf: corruptURL); try verify(unchanged == corrupt)
+        try checkSpacesSaveRollback(in: root)
         let shape = ImportedLayer(name: "Shape", x: 0, y: 0, width: 100, height: 100, color: "FFFFFF")
         let text = ImportedLayer(name: "Text", x: 0, y: 0, width: 100, height: 40, color: "000000", style: TypeStyle(fontName: "Helvetica", size: 18, text: "Text"))
         let importedLayout = ImportedLayout(width: 100, height: 100, layers: [shape, text])
@@ -469,6 +471,65 @@ enum StudioChecks {
         let figma = try JSONSerialization.jsonObject(with: figmaData) as! [String: Any]
         try verify(figma["format"] as? String == "fontshelf-figma" && (figma["frames"] as? [[String: Any]])?.count == 2)
         let frames = figma["frames"] as! [[String: Any]]
+        let boundedInput = root.appendingPathComponent("bounded-input.json")
+        try Data("abcd".utf8).write(to: boundedInput)
+        let boundedData = try TypefieldInputFile.read(boundedInput, maximumBytes: 4)
+        try verify(boundedData == Data("abcd".utf8), "A file at the input limit must remain readable")
+        var rejectedOversizedInput = false
+        do { _ = try TypefieldInputFile.read(boundedInput, maximumBytes: 3) }
+        catch { rejectedOversizedInput = true }
+        try verify(rejectedOversizedInput, "Input readers must stop at the byte limit")
+        let linkedFiles = root.appendingPathComponent("linked-saved-files")
+        try FileManager.default.createDirectory(at: linkedFiles, withIntermediateDirectories: true)
+        let linkedFixtures: [(String, Data)] = [
+            ("spaces.json", try JSONEncoder().encode(StudioState())),
+            ("library.json", try JSONEncoder().encode(SavedLibrary())),
+            ("font-lab.json", try JSONEncoder().encode(FontLabState()))
+        ]
+        for (name, original) in linkedFixtures {
+            let target = linkedFiles.appendingPathComponent("original-" + name)
+            let link = linkedFiles.appendingPathComponent(name)
+            try original.write(to: target)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+            var rejectedLink = false
+            do { _ = try TypefieldInputFile.read(link, maximumBytes: 1_000_000) }
+            catch { rejectedLink = true }
+            try verify(rejectedLink, "Imported files must reject symbolic links")
+            switch name {
+            case "spaces.json":
+                let linkedStore = StudioStore(url: link)
+                try verify(linkedStore.readBlocked && linkedStore.addSpace("Should fail") == nil, "Spaces must preserve a linked saved file")
+            case "library.json":
+                let linkedLibrary = Library(storageURL: link)
+                try verify(linkedLibrary.librarySaveBlocked && !linkedLibrary.save(), "Library must preserve a linked saved file")
+            default:
+                let linkedStore = FontLabStore(url: link)
+                try verify(linkedStore.readBlocked && !linkedStore.save(), "Letterform Editor must preserve a linked saved file")
+            }
+            let targetData = try Data(contentsOf: target)
+            try verify(targetData == original, "A linked file target changed")
+        }
+        var excessiveFrame = frames[0]
+        var excessiveTextLayer = (excessiveFrame["elements"] as! [[String: Any]]).first { $0["kind"] as? String == "text" }!
+        excessiveTextLayer["text"] = String(repeating: "A", count: 200_000)
+        excessiveFrame["elements"] = Array(repeating: excessiveTextLayer, count: 26)
+        var excessiveFigma = figma
+        excessiveFigma["frames"] = [excessiveFrame]
+        let excessiveData = try JSONSerialization.data(withJSONObject: excessiveFigma)
+        var rejectedExcessiveText = false
+        do { _ = try FigmaLayoutImporter.board(data: excessiveData, fonts: []) }
+        catch { rejectedExcessiveText = error.localizedDescription.contains("too much text") }
+        try verify(rejectedExcessiveText, "Figma import must bound aggregate text before creating a board")
+        var unsafeFrame = frames[0]
+        var unsafeLayers = unsafeFrame["elements"] as! [[String: Any]]
+        unsafeLayers[0]["section"] = String(repeating: "x", count: 257)
+        unsafeFrame["elements"] = unsafeLayers
+        var unsafeFigma = figma
+        unsafeFigma["frames"] = [unsafeFrame]
+        var rejectedUnsafeName = false
+        do { _ = try FigmaLayoutImporter.board(data: JSONSerialization.data(withJSONObject: unsafeFigma), fonts: []) }
+        catch { rejectedUnsafeName = error.localizedDescription.contains("invalid name") }
+        try verify(rejectedUnsafeName, "Figma import must bound untrusted layer names")
         let bodyLayer = (frames[1]["elements"] as! [[String: Any]]).first { $0["role"] as? String == TypeRole.body.rawValue }!
         try verify(bodyLayer["alignment"] as? String == "RIGHT" && bodyLayer["lineHeight"] as? Double == 32 && bodyLayer["kerning"] as? Bool == false)
         try verify((bodyLayer["features"] as? [String: Int])?["kern"] == nil, "Figma export must keep kerning out of generic feature settings")
@@ -501,9 +562,128 @@ enum StudioChecks {
         try verify(library.saved.collections["Keep"] == [catalog[0].name])
         try verify(library.saved.fontUsage?[usageName] == FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 30), applicationCount: 4), "Backup merge must keep the newest use date without double-counting applications")
         try verify(library.studio.state.spaces[0].id != store.state.spaces[0].id)
+        try verify(library.studio.state.spaces[0].boards[0].id != store.state.spaces[0].boards[0].id, "Backup merge must give copied typeboards independent identities")
+        try verify(library.studio.state.spaces[0].boards[0].directions[0].id != store.state.spaces[0].boards[0].directions[0].id, "Backup merge must give copied canvases independent identities")
         let importedFontLabProject = library.fontLab.state.projects.first { $0.id != fontLabProjectID }
         try verify(importedFontLabProject?.name == "Backup lettering (imported)" && importedFontLabProject?.glyphs["A"] == fontLabGlyph, "Backup merge must preserve Letterform Editor artwork in an independent project copy")
         try verify(FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path))
+        try checkBackupSafety(in: root)
         print("PASS: typography and legacy decoding, section reorder/removal, Figma layout payload, search tokens, independent directions and relaunch persistence, corrupt workspace preservation, nested AND/OR/NOT tags, recursive folder changes, Unicode lookup/SVG, \(plans) responsive canvases, specimen PDF and Library/Spaces/Letterform Editor backup merge.")
+    }
+
+    private static func checkSpacesSaveRollback(in root: URL) throws {
+        let fm = FileManager.default
+        let parent = root.appendingPathComponent("spaces-save-failure")
+        let savedParent = root.appendingPathComponent("spaces-save-failure-preserved")
+        let store = StudioStore(url: parent.appendingPathComponent("spaces.json"))
+        let space = try { () throws -> UUID in
+            guard let id = store.addSpace("Before") else { throw NSError(domain: "TypefieldCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create Spaces rollback fixture"]) }
+            return id
+        }()
+        guard let boardID = store.addBoard(space: space) else { throw NSError(domain: "TypefieldCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create typeboard rollback fixture"]) }
+        store.undoManager.groupsByEvent = false
+        let original = try Data(contentsOf: store.url)
+        let originalBoard = store.state.spaces[0].boards[0]
+        try fm.moveItem(at: parent, to: savedParent)
+        defer {
+            try? fm.removeItem(at: parent)
+            try? fm.moveItem(at: savedParent, to: parent)
+        }
+        try Data("Save obstruction".utf8).write(to: parent)
+        try verify(store.addSpace("Unsaved") == nil && store.state.spaces.count == 1, "Failed space creation must roll back")
+        try verify(store.addBoard(space: space) == nil && store.state.spaces[0].boards.count == 1, "Failed typeboard creation must roll back")
+        try verify(store.createBoard(in: nil, defaultSpaceName: "Unsaved project") == nil && store.state.spaces.count == 1, "Failed first typeboard creation must roll back its new space")
+        try verify(!store.renameSpace(space, to: "Unsaved") && store.state.spaces[0].name == "Before", "Failed space rename must roll back")
+        var edited = originalBoard; edited.name = "Unsaved typeboard"
+        try verify(!store.update(space: space, board: edited, action: "Rename Typeboard") && store.state.spaces[0].boards[0] == originalBoard && !store.undoManager.canUndo, "Failed typeboard edit must roll back without adding undo")
+        try verify(!store.removeBoard(space: space, id: boardID) && store.state.spaces[0].boards[0] == originalBoard && !store.undoManager.canUndo, "Failed typeboard deletion must roll back without adding undo")
+        try verify(!store.removeSpace(space) && store.state.spaces[0].id == space, "Failed space deletion must roll back")
+        let importedSpace = DesignSpace(name: "Unsaved import", boards: [TypeBoard()])
+        try verify(!store.importSpace(importedSpace) && store.state.spaces.count == 1, "Failed space import must roll back")
+        try verify(!store.importBoard(TypeBoard(), into: nil, defaultSpaceName: "Unsaved import") && store.state.spaces.count == 1, "Failed typeboard import must roll back its new space and board")
+        try verify(!store.importBoard(TypeBoard(), into: space, defaultSpaceName: "Unused") && store.state.spaces[0].boards.count == 1, "Failed typeboard import must roll back in an existing space")
+        try verify(!store.select(space: space, board: nil) && store.focusedSpace == space && store.focusedBoard == boardID, "Failed focus save must restore the prior focus")
+        try verify(!store.error.isEmpty && store.savedAt != nil, "Failed Spaces save must report its error and retain the last successful save time")
+        let retained = try Data(contentsOf: savedParent.appendingPathComponent("spaces.json"))
+        try verify(retained == original, "Failed Spaces operations must preserve the saved file")
+        print("PASS: failed Spaces creates, edits, deletions, imports and selection roll back memory and undo while preserving saved data.")
+    }
+
+    private static func checkBackupSafety(in root: URL) throws {
+        let fm = FileManager.default
+        let badData = Data("not valid JSON".utf8)
+        for filename in ["library.json", "pro-library.json", "spaces.json", "font-lab.json"] {
+            let folder = root.appendingPathComponent("backup-corrupt-" + filename)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent(filename)
+            try badData.write(to: file)
+            let source = Library(storageURL: folder.appendingPathComponent("library.json"))
+            var refused = false
+            do { _ = try LibraryBackupTools.snapshot(source) }
+            catch { refused = true }
+            try verify(refused, "Backup export must refuse an unreadable \(filename)")
+            let retained = try Data(contentsOf: file)
+            try verify(retained == badData, "Backup export changed unreadable \(filename)")
+        }
+
+        let invalid = Library(storageURL: root.appendingPathComponent("backup-invalid/library.json"))
+        invalid.studio.state.spaces = [DesignSpace(name: "Invalid", boards: [TypeBoard(directions: [])])]
+        var invalidRefused = false
+        do { _ = try LibraryBackupTools.snapshot(invalid) }
+        catch { invalidRefused = true }
+        try verify(invalidRefused, "Backup export must refuse invalid in-memory project state")
+
+        let folder = root.appendingPathComponent("backup-rollback")
+        let target = Library(storageURL: folder.appendingPathComponent("library.json"))
+        target.saved.favorites = ["Before"]
+        target.pro.tags["Before"] = ["keep"]
+        var originalSpace = DesignSpace(); originalSpace.name = "Before"
+        originalSpace.boards = [TypeBoard()]
+        target.studio.state.spaces = [originalSpace]
+        target.studio.focusedSpace = originalSpace.id
+        target.studio.focusedBoard = originalSpace.boards[0].id
+        try verify(target.save() && target.savePro() && target.studio.save(), "Could not create backup rollback fixture")
+        let projectID = target.fontLab.addProject(name: "Before")
+        try verify(projectID != nil, "Could not create Letterform Editor rollback fixture")
+        let names = ["library.json", "pro-library.json", "spaces.json", "font-lab.json"]
+        let bytesBefore = try Dictionary(uniqueKeysWithValues: names.map { name in
+            (name, try Data(contentsOf: folder.appendingPathComponent(name)))
+        })
+        let stableEncoder = JSONEncoder()
+        stableEncoder.outputFormatting = .sortedKeys
+        let libraryBefore = try stableEncoder.encode(target.saved)
+        let proBefore = try stableEncoder.encode(target.pro)
+        let spacesBefore = try stableEncoder.encode(target.studio.state)
+        let fontLabBefore = try stableEncoder.encode(target.fontLab.state)
+
+        var incomingLibrary = target.saved
+        incomingLibrary.favorites.insert("Imported")
+        var incomingPro = target.pro
+        incomingPro.tags["Imported"] = ["new"]
+        var incomingSpaces = StudioState()
+        incomingSpaces.spaces = [DesignSpace(name: "Imported", boards: [TypeBoard()])]
+        let incoming = LibraryBackup(library: incomingLibrary, pro: incomingPro, spaces: incomingSpaces, fontLab: target.fontLab.state)
+        var failed = false
+        do {
+            try LibraryBackupTools.merge(incoming, into: target) { data, url in
+                if url.lastPathComponent == "spaces.json" {
+                    throw NSError(domain: "Typefield.BackupTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "Injected late write failure"])
+                }
+                try data.write(to: url, options: .atomic)
+            }
+        } catch { failed = true }
+        try verify(failed, "A later backup write failure must be reported")
+        for name in names {
+            let retained = try Data(contentsOf: folder.appendingPathComponent(name))
+            try verify(retained == bytesBefore[name], "Backup rollback changed \(name)")
+        }
+        let memoryPreserved = try stableEncoder.encode(target.saved) == libraryBefore &&
+            stableEncoder.encode(target.pro) == proBefore &&
+            stableEncoder.encode(target.studio.state) == spacesBefore &&
+            stableEncoder.encode(target.fontLab.state) == fontLabBefore
+        try verify(memoryPreserved, "Backup rollback left partial in-memory changes")
+        let leftovers = try fm.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix(".typefield-backup-import-") }
+        try verify(leftovers.isEmpty, "Successful rollback left staged import files")
+        print("PASS: backup export rejects unreadable/invalid sources; late import failures restore every source file and live state.")
     }
 }

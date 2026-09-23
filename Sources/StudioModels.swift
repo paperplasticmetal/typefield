@@ -250,8 +250,9 @@ final class StudioStore: ObservableObject {
     init(url: URL) {
         self.url = url
         undoManager.levelsOfUndo = 100
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
+            try TypefieldInputFile.requireRegularFileIfPresent(url)
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
             let loaded = try JSONDecoder().decode(StudioState.self, from: Data(contentsOf: url))
             guard loaded.version == 1, loaded.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "The workspace has invalid data or requires a newer Typefield version."]) }
             state = loaded
@@ -261,6 +262,9 @@ final class StudioStore: ObservableObject {
     @discardableResult func save() -> Bool {
         guard !readBlocked else { return false }
         do {
+            guard state.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else {
+                throw NSError(domain: "Typefield", code: 1, userInfo: [NSLocalizedDescriptionKey: "A typeboard contains invalid data."])
+            }
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             if let focusedSpace, let space = state.spaces.first(where: { $0.id == focusedSpace }) {
                 if let focusedBoard, !space.boards.contains(where: { $0.id == focusedBoard }) { self.focusedBoard = nil }
@@ -277,33 +281,69 @@ final class StudioStore: ObservableObject {
             try data.write(to: url, options: .atomic); savedAt = Date(); error = ""; return true
         } catch { self.error = "Spaces could not be saved: " + error.localizedDescription; return false }
     }
+    /// A failed write must not leave a space or typeboard visible only in memory.
+    @discardableResult private func persist(_ edit: () -> Void) -> Bool {
+        guard !readBlocked else { return false }
+        let previousState = state
+        let previousSpace = focusedSpace
+        let previousBoard = focusedBoard
+        let previousSavedAt = savedAt
+        edit()
+        guard save() else {
+            state = previousState
+            focusedSpace = previousSpace
+            focusedBoard = previousBoard
+            savedAt = previousSavedAt
+            return false
+        }
+        return true
+    }
     func addSpace(_ name: String) -> UUID? {
-        guard !readBlocked else { return nil }
         let space = DesignSpace(name: name.isEmpty ? "Untitled space" : name)
-        state.spaces.append(space); focusedSpace = space.id; focusedBoard = nil; save(); return space.id
+        guard persist({ state.spaces.append(space); focusedSpace = space.id; focusedBoard = nil }) else { return nil }
+        return space.id
     }
     func addBoard(space: UUID, fonts: [String] = [], roleFonts: [String: String] = [:]) -> UUID? {
-        guard !readBlocked else { return nil }
-        guard let i = state.spaces.firstIndex(where: { $0.id == space }) else { return nil }
-        var number = state.spaces[i].boards.count + 1
-        while state.spaces[i].boards.contains(where: { $0.name == "Typeboard \(number)" }) { number += 1 }
-        let board = TypeBoard(name: "Typeboard \(number)", directions: [TypeDirection(fonts: fonts, roleFonts: roleFonts)], candidates: fonts)
-        state.spaces[i].boards.append(board); focusedSpace = space; focusedBoard = board.id; save(); return board.id
+        createBoard(in: space, defaultSpaceName: "My projects", fonts: fonts, roleFonts: roleFonts)?.board
     }
-    func update(space: UUID, board: TypeBoard, action: String = "Edit Typeboard") {
-        guard let i = state.spaces.firstIndex(where: { $0.id == space }), let j = state.spaces[i].boards.firstIndex(where: { $0.id == board.id }) else { return }
+    /// When the Library starts the first typeboard, create its Space and board in one save.
+    func createBoard(in space: UUID?, defaultSpaceName: String, fonts: [String] = [], roleFonts: [String: String] = [:]) -> (space: UUID, board: UUID)? {
+        guard space == nil || state.spaces.contains(where: { $0.id == space }) else { return nil }
+        let target = space ?? UUID()
+        let existing = state.spaces.first(where: { $0.id == target })
+        var number = (existing?.boards.count ?? 0) + 1
+        while existing?.boards.contains(where: { $0.name == "Typeboard \(number)" }) == true { number += 1 }
+        let board = TypeBoard(name: "Typeboard \(number)", directions: [TypeDirection(fonts: fonts, roleFonts: roleFonts)], candidates: fonts)
+        guard persist({
+            if space == nil { state.spaces.append(DesignSpace(id: target, name: defaultSpaceName)) }
+            guard let index = state.spaces.firstIndex(where: { $0.id == target }) else { return }
+            state.spaces[index].boards.append(board)
+            focusedSpace = target
+            focusedBoard = board.id
+        }) else { return nil }
+        return (target, board.id)
+    }
+    @discardableResult func update(space: UUID, board: TypeBoard, action: String = "Edit Typeboard") -> Bool {
+        update(space: space, board: board, action: action, focus: false)
+    }
+    @discardableResult private func update(space: UUID, board: TypeBoard, action: String, focus: Bool) -> Bool {
+        guard let i = state.spaces.firstIndex(where: { $0.id == space }), let j = state.spaces[i].boards.firstIndex(where: { $0.id == board.id }) else { return false }
         let previous = state.spaces[i].boards[j]
-        guard previous != board else { return }
+        guard previous != board else { return true }
         // Direction navigation isn't a document edit and shouldn't fill the undo stack.
         var content = previous; content.selectedDirection = board.selectedDirection
-        if content != board {
-            let replaying = undoManager.isUndoing || undoManager.isRedoing
-            let coalesced = !replaying && !undoManager.canRedo && undoManager.canUndo && action.hasPrefix("Change ") && action != "Change Font" && lastEdit?.board == board.id && lastEdit?.action == action && Date().timeIntervalSince(lastEdit!.date) < 0.8
+        let contentChanged = content != board
+        let replaying = undoManager.isUndoing || undoManager.isRedoing
+        let coalesced = contentChanged && !replaying && !undoManager.canRedo && undoManager.canUndo && action.hasPrefix("Change ") && action != "Change Font" && lastEdit?.board == board.id && lastEdit?.action == action && Date().timeIntervalSince(lastEdit!.date) < 0.8
+        guard persist({
+            state.spaces[i].boards[j] = board
+            if focus { focusedSpace = space; focusedBoard = board.id }
+        }) else { return false }
+        if contentChanged {
             if !coalesced {
                 if !replaying { undoManager.beginUndoGrouping() }
                 undoManager.registerUndo(withTarget: self) { store in
-                    store.update(space: space, board: previous, action: action)
-                    store.focusedSpace = space; store.focusedBoard = previous.id; store.save()
+                    store.update(space: space, board: previous, action: action, focus: true)
                 }
                 undoManager.setActionName(action)
                 if !replaying { undoManager.endUndoGrouping() }
@@ -312,27 +352,69 @@ final class StudioStore: ObservableObject {
         } else {
             lastEdit = nil
         }
-        state.spaces[i].boards[j] = board; save()
+        return true
     }
     func endUndoCoalescing() { lastEdit = nil }
-    func removeBoard(space: UUID, id: UUID) {
-        guard let i = state.spaces.firstIndex(where: { $0.id == space }), let j = state.spaces[i].boards.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult func removeBoard(space: UUID, id: UUID) -> Bool {
+        guard let i = state.spaces.firstIndex(where: { $0.id == space }), let j = state.spaces[i].boards.firstIndex(where: { $0.id == id }) else { return false }
         let board = state.spaces[i].boards[j]
+        guard persist({
+            state.spaces[i].boards.remove(at: j)
+            if focusedBoard == id { focusedBoard = state.spaces[i].boards.first?.id }
+        }) else { return false }
         let replaying = undoManager.isUndoing || undoManager.isRedoing
         if !replaying { undoManager.beginUndoGrouping() }
         undoManager.registerUndo(withTarget: self) { $0.restoreBoard(space: space, board: board, index: j) }
         undoManager.setActionName("Delete Typeboard")
         if !replaying { undoManager.endUndoGrouping() }
-        lastEdit = nil; state.spaces[i].boards.remove(at: j)
-        if focusedBoard == id { focusedBoard = state.spaces[i].boards.first?.id }
-        save()
+        lastEdit = nil
+        return true
     }
     private func restoreBoard(space: UUID, board: TypeBoard, index: Int) {
         guard let i = state.spaces.firstIndex(where: { $0.id == space }), !state.spaces[i].boards.contains(where: { $0.id == board.id }) else { return }
+        guard persist({
+            state.spaces[i].boards.insert(board, at: min(index, state.spaces[i].boards.count))
+            focusedSpace = space; focusedBoard = board.id
+        }) else { return }
         undoManager.registerUndo(withTarget: self) { $0.removeBoard(space: space, id: board.id) }
         undoManager.setActionName("Delete Typeboard")
-        state.spaces[i].boards.insert(board, at: min(index, state.spaces[i].boards.count))
-        focusedSpace = space; focusedBoard = board.id; lastEdit = nil; save()
+        lastEdit = nil
+    }
+    @discardableResult func removeSpace(_ id: UUID) -> Bool {
+        guard state.spaces.contains(where: { $0.id == id }) else { return false }
+        return persist {
+            state.spaces.removeAll { $0.id == id }
+            if focusedSpace == id { focusedSpace = nil; focusedBoard = nil }
+        }
+    }
+    @discardableResult func renameSpace(_ id: UUID, to name: String) -> Bool {
+        guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return false }
+        return persist { state.spaces[index].name = name }
+    }
+    @discardableResult func select(space: UUID, board: UUID? = nil) -> Bool {
+        guard let existing = state.spaces.first(where: { $0.id == space }), board.map({ id in existing.boards.contains { $0.id == id } }) ?? true else { return false }
+        return persist { focusedSpace = space; focusedBoard = board }
+    }
+    @discardableResult func importSpace(_ space: DesignSpace) -> Bool {
+        guard space.boards.allSatisfy(\.isValid) else { error = "Space could not be imported: a typeboard contains invalid data."; return false }
+        return persist { state.spaces.append(space); focusedSpace = space.id; focusedBoard = nil }
+    }
+    @discardableResult func importBoard(_ board: TypeBoard, into space: UUID?, defaultSpaceName: String) -> Bool {
+        guard board.isValid else { error = "Typeboard could not be imported: invalid layout data."; return false }
+        guard space == nil || state.spaces.contains(where: { $0.id == space }) else { return false }
+        return persist {
+            let target: UUID
+            if let space { target = space }
+            else {
+                let created = DesignSpace(name: defaultSpaceName)
+                state.spaces.append(created)
+                target = created.id
+            }
+            guard let index = state.spaces.firstIndex(where: { $0.id == target }) else { return }
+            state.spaces[index].boards.append(board)
+            focusedSpace = target
+            focusedBoard = board.id
+        }
     }
 }
 

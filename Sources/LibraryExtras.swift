@@ -2,6 +2,54 @@ import SwiftUI
 import AppKit
 import CoreText
 import UniformTypeIdentifiers
+import Darwin
+
+/// Read user-selected interchange files without allowing a changed or unusually
+/// large file to consume unbounded memory before its format is validated.
+enum TypefieldInputFile {
+    private static func unsupportedFile() -> NSError {
+        NSError(domain: "Typefield.InputFile", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a regular file. Symbolic links and special files are not supported."])
+    }
+
+    static func requireRegularFileIfPresent(_ url: URL) throws {
+        var metadata = stat()
+        let result = url.path.withCString { Darwin.lstat($0, &metadata) }
+        if result < 0 {
+            if errno == ENOENT { return }
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        guard metadata.st_mode & S_IFMT == S_IFREG else { throw unsupportedFile() }
+    }
+
+    static func read(_ url: URL, maximumBytes: Int) throws -> Data {
+        guard maximumBytes > 0, maximumBytes < Int.max else { throw unsupportedFile() }
+        let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_NOFOLLOW) }
+        if descriptor < 0 {
+            if errno == ELOOP { throw unsupportedFile() }
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        var metadata = stat()
+        guard Darwin.fstat(descriptor, &metadata) == 0 else {
+            let code = errno
+            Darwin.close(descriptor)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+        }
+        guard metadata.st_mode & S_IFMT == S_IFREG else {
+            Darwin.close(descriptor)
+            throw unsupportedFile()
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var data = Data()
+        while true {
+            let remaining = maximumBytes + 1 - data.count
+            let chunk = try handle.read(upToCount: min(1_048_576, remaining)) ?? Data()
+            if chunk.isEmpty { return data }
+            data.append(chunk)
+            if data.count > maximumBytes { throw CocoaError(.fileReadTooLarge) }
+        }
+    }
+}
 
 struct LibraryBackup: Codable {
     var version = 1
@@ -12,7 +60,29 @@ struct LibraryBackup: Codable {
     var fontLab: FontLabState? = nil
 }
 enum LibraryBackupTools {
+    private static func backupError(_ message: String) -> NSError {
+        NSError(domain: "Typefield.Backup", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    /// Never describe default in-memory state as a backup of a file that failed
+    /// to load. The saved source files are intentionally left untouched.
+    static func snapshot(_ library: Library) throws -> LibraryBackup {
+        guard !library.librarySaveBlocked else { throw backupError("The Library file could not be read. Repair or restore it before exporting a backup.") }
+        guard !library.proSaveBlocked else { throw backupError("The advanced Library settings could not be read. Repair or restore them before exporting a backup.") }
+        guard !library.studio.readBlocked else { throw backupError("The Spaces file could not be read. Repair or restore it before exporting a backup.") }
+        guard !library.fontLab.readBlocked else { throw backupError("The Letterform Editor file could not be read. Repair or restore it before exporting a backup.") }
+        let backup = LibraryBackup(library: library.saved, pro: library.pro, spaces: library.studio.state, fontLab: library.fontLab.state)
+        guard backup.spaces.version == 1,
+              backup.spaces.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }),
+              backup.fontLab?.isValid == true else {
+            throw backupError("The current projects contain invalid data. The backup was not exported.")
+        }
+        _ = try JSONEncoder().encode(backup)
+        return backup
+    }
+
     static func preserve(_ url: URL) throws {
+        try TypefieldInputFile.requireRegularFileIfPresent(url)
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         let directory = url.deletingLastPathComponent().appendingPathComponent("Backups")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -21,56 +91,139 @@ enum LibraryBackupTools {
         if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: url, to: target) }
     }
     static func export(_ library: Library) {
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Typefield-library.json"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            guard !library.fontLab.readBlocked else { throw CocoaError(.fileReadCorruptFile) }
-            let backup = LibraryBackup(library: library.saved, pro: library.pro, spaces: library.studio.state, fontLab: library.fontLab.state)
+            let backup = try snapshot(library)
+            let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Typefield-library.json"
+            guard panel.runModal() == .OK, let url = panel.url else { return }
             try JSONEncoder().encode(backup).write(to: url, options: .atomic)
             library.message = "Library, Spaces, and Letterform Editor backup exported. Font files are not included."
         } catch { library.message = error.localizedDescription }
     }
-    static func merge(_ backup: LibraryBackup, into library: Library) throws {
+    static func merge(_ backup: LibraryBackup, into library: Library,
+                      writeFile: (Data, URL) throws -> Void = { data, url in try data.write(to: url, options: .atomic) }) throws {
         let fontLabIsValid = backup.fontLab?.isValid ?? true
         let canImportFontLab = backup.fontLab == nil || !library.fontLab.readBlocked
         guard backup.version == 1, backup.spaces.version == 1, fontLabIsValid, canImportFontLab,
               !library.librarySaveBlocked, !library.proSaveBlocked, !library.studio.readBlocked,
               backup.spaces.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw CocoaError(.fileReadCorruptFile) }
-        library.saved.favorites.formUnion(backup.library.favorites)
-        for (key, values) in backup.library.collections { library.saved.collections[key, default: []].formUnion(values) }
-        library.saved.overrides.merge(backup.library.overrides) { existing, _ in existing }
+        let previousLibrary = library.saved, previousPro = library.pro, previousSpaces = library.studio.state
+        var mergedLibrary = previousLibrary, mergedPro = previousPro, mergedSpaces = previousSpaces
+        mergedLibrary.favorites.formUnion(backup.library.favorites)
+        for (key, values) in backup.library.collections { mergedLibrary.collections[key, default: []].formUnion(values) }
+        mergedLibrary.overrides.merge(backup.library.overrides) { existing, _ in existing }
         if let importedUsage = backup.library.fontUsage {
-            var usage = library.saved.fontUsage ?? [:]
+            var usage = mergedLibrary.fontUsage ?? [:]
             for (name, imported) in importedUsage {
                 if let existing = usage[name] { usage[name] = FontUsageRecord(lastAppliedAt: max(existing.lastAppliedAt, imported.lastAppliedAt), applicationCount: max(existing.applicationCount, imported.applicationCount)) }
                 else { usage[name] = imported }
             }
-            library.saved.fontUsage = usage
+            mergedLibrary.fontUsage = usage
         }
-        library.pro.familyOverrides.merge(backup.pro.familyOverrides) { existing, _ in existing }
-        library.pro.mainPreviews.merge(backup.pro.mainPreviews) { existing, _ in existing }
-        library.pro.notes.merge(backup.pro.notes) { existing, _ in existing }
-        library.pro.axes.merge(backup.pro.axes) { existing, _ in existing }
-        library.pro.features.merge(backup.pro.features) { existing, _ in existing }
-        for (key, tags) in backup.pro.tags { library.pro.tags[key, default: []].formUnion(tags) }
+        mergedPro.familyOverrides.merge(backup.pro.familyOverrides) { existing, _ in existing }
+        mergedPro.mainPreviews.merge(backup.pro.mainPreviews) { existing, _ in existing }
+        mergedPro.notes.merge(backup.pro.notes) { existing, _ in existing }
+        mergedPro.axes.merge(backup.pro.axes) { existing, _ in existing }
+        mergedPro.features.merge(backup.pro.features) { existing, _ in existing }
+        for (key, tags) in backup.pro.tags { mergedPro.tags[key, default: []].formUnion(tags) }
         for var space in backup.spaces.spaces {
             space.id = UUID(); space.name += " (imported)"
-            library.studio.state.spaces.append(space)
-        }
-        guard library.save(), library.savePro() else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Import may be partially saved. " + library.message]) }
-        guard library.studio.save() else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Import may be partially saved. " + library.studio.error]) }
-        if let fontLab = backup.fontLab, !fontLab.projects.isEmpty {
-            guard library.fontLab.importProjects(fontLab.projects) else {
-                throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Import may be partially saved. " + library.fontLab.error])
+            for index in space.boards.indices {
+                space.boards[index].id = UUID()
+                space.boards[index].directions = space.boards[index].directions.map { $0.copy(name: $0.name) }
+                space.boards[index].selectedDirection = nil
+                space.boards[index].checkpoints = space.boards[index].checkpoints?.map { checkpoint in
+                    var copy = checkpoint
+                    copy.id = UUID()
+                    copy.direction = checkpoint.direction.copy(name: checkpoint.direction.name)
+                    return copy
+                }
             }
+            mergedSpaces.spaces.append(space)
         }
+        mergedSpaces.selectedSpace = library.studio.focusedSpace
+        mergedSpaces.selectedBoard = library.studio.focusedBoard
+        guard mergedSpaces.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw CocoaError(.fileReadCorruptFile) }
+
+        // Encode and stage every replacement before touching any current file.
+        // Hard links retain the original inodes even after atomic replacement,
+        // so rollback can rename the originals back without allocating space.
+        let replacements: [(URL, Data)] = [
+            (library.saveURL, try JSONEncoder().encode(mergedLibrary)),
+            (library.proURL, try JSONEncoder().encode(mergedPro)),
+            (library.studio.url, try JSONEncoder().encode(mergedSpaces))
+        ]
+        let fm = FileManager.default
+        let folder = library.saveURL.deletingLastPathComponent()
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let stage = folder.appendingPathComponent(".typefield-backup-import-" + UUID().uuidString)
+        try fm.createDirectory(at: stage, withIntermediateDirectories: false)
+        var keepStage = false
+        defer { if !keepStage { try? fm.removeItem(at: stage) } }
+        var originalPaths: [String: URL] = [:]
+        for (target, data) in replacements {
+            guard target.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL else {
+                throw backupError("Backup import requires all saved files to share the same data folder.")
+            }
+            try data.write(to: stage.appendingPathComponent("new-" + target.lastPathComponent), options: .atomic)
+            guard fm.fileExists(atPath: target.path) else { continue }
+            let values = try target.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                throw backupError("The saved \(target.lastPathComponent) is not a regular file. Nothing was imported.")
+            }
+            let original = stage.appendingPathComponent("old-" + target.lastPathComponent)
+            do { try fm.linkItem(at: target, to: original) }
+            catch { try fm.copyItem(at: target, to: original) }
+            originalPaths[target.path] = original
+        }
+        for (target, _) in replacements { try preserve(target) }
+        if fm.fileExists(atPath: library.studio.url.path) {
+            try Data(contentsOf: library.studio.url).write(to: library.studio.url.appendingPathExtension("backup"), options: .atomic)
+        }
+
+        var attempted: [URL] = []
+        do {
+            for (target, data) in replacements {
+                attempted.append(target)
+                try writeFile(data, target)
+            }
+            if let fontLab = backup.fontLab, !fontLab.projects.isEmpty,
+               !library.fontLab.importProjects(fontLab.projects) {
+                throw backupError(library.fontLab.error.isEmpty ? "Letterform Editor projects could not be imported." : library.fontLab.error)
+            }
+        } catch {
+            var rollbackErrors: [String] = []
+            for target in attempted.reversed() {
+                if let original = originalPaths[target.path] {
+                    let result = original.path.withCString { source in
+                        target.path.withCString { destination in Darwin.rename(source, destination) }
+                    }
+                    if result != 0 { rollbackErrors.append(target.lastPathComponent + ": " + String(cString: strerror(errno))) }
+                } else if fm.fileExists(atPath: target.path) {
+                    do { try fm.removeItem(at: target) }
+                    catch { rollbackErrors.append(target.lastPathComponent + ": " + error.localizedDescription) }
+                }
+            }
+            library.saved = previousLibrary
+            library.pro = previousPro
+            library.studio.state = previousSpaces
+            if !rollbackErrors.isEmpty {
+                keepStage = true
+                throw backupError("Backup import failed and some files could not be restored automatically. Original copies remain at \(stage.path). " + rollbackErrors.joined(separator: "; "))
+            }
+            throw backupError("Backup import did not finish. Existing data was restored. " + error.localizedDescription)
+        }
+        library.saved = mergedLibrary
+        library.pro = mergedPro
+        library.studio.state = mergedSpaces
+        library.studio.savedAt = Date()
+        library.studio.error = ""
         library.regroup()
     }
     static func restore(_ library: Library) {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a Typefield backup. Existing settings are kept; spaces and Letterform Editor projects are imported as copies."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try merge(JSONDecoder().decode(LibraryBackup.self, from: Data(contentsOf: url)), into: library)
+            try merge(JSONDecoder().decode(LibraryBackup.self, from: TypefieldInputFile.read(url, maximumBytes: 512_000_000)), into: library)
             library.message = "Backup merged. Add font folders separately to grant access on this Mac."
         } catch { library.message = "Backup could not be imported: " + error.localizedDescription }
     }
@@ -109,7 +262,7 @@ enum StoreMigration {
             let file = source.appendingPathComponent(name)
             let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else { throw invalid("\(name) is not a regular file.") }
-            let data = try Data(contentsOf: file)
+            let data = try TypefieldInputFile.read(file, maximumBytes: 512_000_000)
             switch name {
             case "library.json":
                 var saved = try JSONDecoder().decode(SavedLibrary.self, from: data)
@@ -183,7 +336,7 @@ enum StoreMigration {
 
     static func importPreferences(from file: URL, into defaults: UserDefaults = .standard) throws -> Int {
         guard file.lastPathComponent == "local.fontshelf.app.plist",
-              let values = try PropertyListSerialization.propertyList(from: Data(contentsOf: file), format: nil) as? [String: Any] else {
+              let values = try PropertyListSerialization.propertyList(from: TypefieldInputFile.read(file, maximumBytes: 4_000_000), format: nil) as? [String: Any] else {
             throw NSError(domain: "FontShelf.Migration", code: 2, userInfo: [NSLocalizedDescriptionKey: "Choose the earlier local.fontshelf.app.plist preferences file."])
         }
         var imported = 0
@@ -330,7 +483,10 @@ enum FigmaLayoutExporter {
 enum FigmaLayoutImporter {
     static func board(data: Data, fonts: [Face]) throws -> TypeBoard {
         func invalid(_ message: String) -> NSError { NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
-        guard data.count <= 20_000_000, let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], root["format"] as? String == "fontshelf-figma", root["version"] as? Int == 1, let frames = root["frames"] as? [[String: Any]], !frames.isEmpty, frames.count <= 30 else { throw invalid("Choose a Typefield layout JSON exported by the Figma bridge. Native .fig files are not supported.") }
+        guard data.count <= 20_000_000, let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], root["format"] as? String == "fontshelf-figma", root["version"] as? Int == 1,
+              let title = root["name"] as? String, title.utf16.count <= 256,
+              let frames = root["frames"] as? [[String: Any]], !frames.isEmpty, frames.count <= 30 else { throw invalid("Choose a Typefield layout JSON exported by the Figma bridge. Native .fig files are not supported.") }
+        if let rawWarnings = root["warnings"], !(rawWarnings is [String]) { throw invalid("The Figma warnings are invalid.") }
         func number(_ object: [String: Any], _ key: String, fallback: Double? = nil) throws -> Double {
             guard let n = object[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite else { if let fallback, object[key] == nil { return fallback }; throw invalid("Invalid numeric value: " + key) }; return n.doubleValue
         }
@@ -341,16 +497,27 @@ enum FigmaLayoutImporter {
             return (NSColor(srgbRed: r, green: g, blue: b, alpha: a).rgbHex, a)
         }
         var directions: [TypeDirection] = []
+        var totalLayers = 0
+        var totalTextBytes = 0
         for frame in frames {
+            guard let frameName = frame["name"] as? String, frameName.utf16.count <= 256 else { throw invalid("A frame has an invalid name.") }
             let width = try number(frame, "width"), height = try number(frame, "height")
             guard let elements = frame["elements"] as? [[String: Any]], elements.count <= 5000 else { throw invalid("The frame contains too many layers.") }
-            var warnings = root["warnings"] as? [String] ?? []
+            totalLayers += elements.count
+            guard totalLayers <= 50_000 else { throw invalid("The layout contains too many layers.") }
+            var warnings = Array((root["warnings"] as? [String] ?? []).prefix(500)).map { String($0.prefix(512)) }
             var layers: [ImportedLayer] = []
             for e in elements {
+                guard let section = e["section"] as? String, section.utf16.count <= 256,
+                      (e["name"] == nil || (e["name"] as? String).map { $0.utf16.count <= 256 } == true),
+                      (e["role"] == nil || (e["role"] as? String).map { $0.utf16.count <= 256 } == true) else { throw invalid("A layer has an invalid name.") }
                 let (hex, opacity) = try color(e["color"])
-                var layer = ImportedLayer(name: e["name"] as? String ?? e["section"] as? String ?? "Layer", x: try number(e, "x"), y: try number(e, "y"), width: try number(e, "width"), height: try number(e, "height"), color: hex, opacity: opacity, radius: try number(e, "radius", fallback: 0))
+                var layer = ImportedLayer(name: e["name"] as? String ?? section, x: try number(e, "x"), y: try number(e, "y"), width: try number(e, "width"), height: try number(e, "height"), color: hex, opacity: opacity, radius: try number(e, "radius", fallback: 0))
                 if e["kind"] as? String == "text" {
                     guard let text = e["text"] as? String, let family = e["fontFamily"] as? String, let fontStyle = e["fontStyle"] as? String else { throw invalid("A text layer is incomplete.") }
+                    guard TypeDirection.acceptsCanvasText(text), family.count <= 256, fontStyle.count <= 256 else { throw invalid("A text layer is too large.") }
+                    totalTextBytes += text.utf8.count
+                    guard totalTextBytes <= 5_000_000 else { throw invalid("The layout contains too much text.") }
                     let face = fonts.first { $0.originalFamily.caseInsensitiveCompare(family) == .orderedSame && $0.style.caseInsensitiveCompare(fontStyle) == .orderedSame }
                     let name = face?.name ?? family
                     if face == nil { warnings.append("Font “\(family) \(fontStyle)” is unavailable; check the fallback for \(layer.name).") }
@@ -368,10 +535,10 @@ enum FigmaLayoutImporter {
             }
             let layout = ImportedLayout(width: width, height: height, layers: layers)
             guard layout.isValid else { throw invalid("The layout has invalid bounds or typography.") }
-            var direction = TypeDirection(name: frame["name"] as? String ?? "Figma frame")
+            var direction = TypeDirection(name: frameName)
             direction.canvas = .imported; direction.width = width; direction.paper = try color(frame["paper"]).0; direction.importedLayout = layout; direction.importedSource = .figma
             direction.importWarnings = Array(Set(warnings)).sorted(); directions.append(direction)
         }
-        return TypeBoard(name: root["name"] as? String ?? "Figma typeboard", directions: directions, selectedDirection: directions.first?.id)
+        return TypeBoard(name: title, directions: directions, selectedDirection: directions.first?.id)
     }
 }

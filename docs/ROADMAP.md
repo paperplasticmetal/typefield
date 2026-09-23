@@ -1,6 +1,6 @@
 # Typefield outstanding work and competitor reference
 
-Snapshot: **0.36.0 (47), 2026-09-22**. This is a continuation checklist, not a promise to implement everything. See the changelog for this pass.
+Snapshot: **0.40.0 (52), 2026-09-23**. This is a continuation checklist, not a promise to implement everything. See the [production readiness audit](PRODUCTION_READINESS.md) for release risks and the changelog for this pass.
 
 ## How to use this list
 
@@ -26,7 +26,7 @@ The inventory combines current source, current workflow documents, recorded QA l
 ## Recommended restart order
 
 1. **FL-01 / FL-02:** make whole-object editing consistent; add a safe, previewed outline-weight tool.
-2. **SP-01 / SP-02:** give shapes a proper appearance inspector and make selected-object versus shared-role edits explicit.
+2. **SP-01 / SP-02:** finish shape stroke controls and make selected-object versus shared-role edits explicit.
 3. **FL-03 / FL-04:** preserve imported vectors and prove the artwork workflow with real Procreate/alphabet sheets.
 4. **FL-05 / SP-03 / X-01:** make features discoverable and complete the critical interaction/Undo checks.
 5. **FL-11 / FL-12:** improve component assembly and kerning/export reliability.
@@ -75,7 +75,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 
 | ID | Priority / state / effort | Outstanding work |
 | --- | --- | --- |
-| SP-01 | **P0 · Missing/partial · M** | **A real shape appearance inspector.** Fill, stroke, stroke width, opacity, corner radius and eventually gradients. Imported shapes store color/opacity/radius, but the current inspector hides Text color for a selected shape and does not expose a proper shape-color replacement. Aligned color wells did not solve shape styling. |
+| SP-01 | **P0 · Partial · M** | **Finish shape appearance.** A selected imported shape now has its own fill, opacity, and corner-radius controls. Add stroke and stroke width across native rendering, persistence, Figma/Adobe bridges, and exported handoffs. Gradients are later scope. |
 | SP-02 | **P0 · Partial · M** | **Explicit editing scope.** Clearly show whether a change affects one selected text object, a shared typography role or the whole canvas; support local style overrides and reset. Template objects currently share role styling while imported text has independent styles. |
 | SP-03 | **P0 · Partial + QA · M** | **Selection and transform consistency.** Clear selected-object bounds, discoverable move/resize controls, robust click targeting, keyboard nudging, predictable Undo and consistent behavior across template and imported canvases. Audit before expanding the drawing toolset. |
 | SP-04 | P1 · Partial · M | **Multi-object selection and alignment.** Align/distribute relative to selection, key object or canvas; group/ungroup, lock/hide and joint movement. Current Align controls position one selected frame relative to the canvas. |
@@ -131,7 +131,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 | X-04 | P1 · QA · M | macOS 13 and second-machine testing, sleep/wake, offline behavior, inaccessible files, crash recovery, accessibility/VoiceOver and keyboard-only workflows. Intel is not shipped; decide support intentionally. |
 | X-05 | P1 · Partial · S–M | Keep in-app help and docs aligned with releases; avoid calling shipped foundations missing or calling prototypes complete. Add a concise feature/status page and useful changelog. |
 | X-06 | P1 before public release · Partial · S | Typefield branding, icon and first-run tour are implemented; internal project keys remain compatible. Trademark and App Store clearance remain before public distribution. See [rebrand plan](REBRAND_PLAN.md). |
-| X-07 | P1 · Partial + QA · M | Backup/restore/migration stress tests across versions, corrupt files and large projects; accessible restore UI and export portability. Backups and preservation safeguards already exist. |
+| X-07 | P1 · Partial + QA · M | Backup/restore/migration stress tests across versions, corrupt files and large projects; accessible restore UI and export portability. Export now rejects unreadable sources, and ordinary merge failures roll back files and live state. Add next-launch recovery after an abrupt interruption between writes. |
 | X-08 | P2 · Research · M | Extend the new onboarding with localized copy, documentation examples and support diagnostics that avoid collecting private fonts or project content by default. |
 | X-09 | P3 · Research · XL | Cloud architecture, accounts, billing, team permissions and optional AI services only if those strategic directions are approved. Do not let these block local editing quality. |
 

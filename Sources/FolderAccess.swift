@@ -10,13 +10,14 @@ final class FolderAccess {
     init(directory: URL) {
         managedDirectory = directory.standardizedFileURL
         file = managedDirectory.appendingPathComponent("folder-access.json")
-        if FileManager.default.fileExists(atPath: file.path) {
-            do { bookmarks = try JSONDecoder().decode([String: Data].self, from: Data(contentsOf: file)) }
-            catch { loadFailed = true }
-        }
+        do {
+            try TypefieldInputFile.requireRegularFileIfPresent(file)
+            if FileManager.default.fileExists(atPath: file.path) { bookmarks = try JSONDecoder().decode([String: Data].self, from: Data(contentsOf: file)) }
+        } catch { loadFailed = true }
     }
     private func persist() throws {
         guard !loadFailed else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Saved folder access could not be read. The existing file was preserved."]) }
+        try TypefieldInputFile.requireRegularFileIfPresent(file)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(bookmarks).write(to: file, options: .atomic)
     }

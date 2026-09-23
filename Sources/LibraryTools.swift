@@ -203,7 +203,7 @@ struct TagEditorView: View {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let tags = try JSONDecoder().decode([String: Set<String>].self, from: Data(contentsOf: url))
+            let tags = try JSONDecoder().decode([String: Set<String>].self, from: TypefieldInputFile.read(url, maximumBytes: 20_000_000))
             guard library.mergeTagBackup(tags) else {
                 status = library.message.isEmpty ? "Could not save tag settings." : library.message
                 return
@@ -337,6 +337,39 @@ final class GoogleFontStore: ObservableObject {
         guard data.count <= 50_000_000 else { throw NSError(domain: "Typefield", code: 3, userInfo: [NSLocalizedDescriptionKey: "Font download exceeded 50 MB."]) }
         return data
     }
+    /// Publish the complete licensed download together. A failed library save
+    /// restores the previous managed folder and the in-memory folder list.
+    static func commitStagedDownload(_ staged: URL, to folder: URL, library: Library) throws {
+        let fm = FileManager.default
+        let previous = folder.deletingLastPathComponent().appendingPathComponent(".typefield-previous-" + UUID().uuidString)
+        let savedFolders = library.saved.folders
+        var movedPrevious = false
+        var movedStaged = false
+        do {
+            if fm.fileExists(atPath: folder.path) {
+                let values = try folder.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                guard values.isDirectory == true, values.isSymbolicLink != true else { throw CocoaError(.fileReadInvalidFileName) }
+                try fm.moveItem(at: folder, to: previous)
+                movedPrevious = true
+            }
+            try fm.moveItem(at: staged, to: folder)
+            movedStaged = true
+            if !library.saved.folders.contains(folder.path) { library.saved.folders.append(folder.path) }
+            guard library.save() else {
+                throw NSError(domain: "Typefield.GoogleFonts", code: 8, userInfo: [NSLocalizedDescriptionKey: library.message])
+            }
+        } catch {
+            library.saved.folders = savedFolders
+            do {
+                if movedStaged { try fm.removeItem(at: folder) }
+                if movedPrevious { try fm.moveItem(at: previous, to: folder) }
+            } catch let recoveryError {
+                throw NSError(domain: "Typefield.GoogleFonts", code: 9, userInfo: [NSLocalizedDescriptionKey: "Download was not completed. The earlier font files remain at \(previous.path). Restore them before retrying. \(recoveryError.localizedDescription)"])
+            }
+            throw error
+        }
+        if movedPrevious { try? fm.removeItem(at: previous) }
+    }
     func download(_ font: GoogleVariableFont, library: Library) {
         guard busy == nil else { return }
         busy = font.family; status = "Downloading \(font.family)…"
@@ -355,24 +388,35 @@ final class GoogleFontStore: ObservableObject {
                     throw NSError(domain: "Typefield", code: 7, userInfo: [NSLocalizedDescriptionKey: "No license found for this download."])
                 }
                 let folder = library.saveURL.deletingLastPathComponent().appendingPathComponent("Google Fonts/" + slug)
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let parent = folder.deletingLastPathComponent()
+                let staged = parent.appendingPathComponent(".typefield-download-" + UUID().uuidString)
+                let fm = FileManager.default
+                try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+                if fm.fileExists(atPath: folder.path) {
+                    let values = try folder.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                    guard values.isDirectory == true, values.isSymbolicLink != true else { throw CocoaError(.fileReadInvalidFileName) }
+                    try fm.copyItem(at: folder, to: staged)
+                } else { try fm.createDirectory(at: staged, withIntermediateDirectories: false) }
+                defer { try? fm.removeItem(at: staged) }
                 var fontCount = 0
                 var licenseCount = 0
                 for file in files.sorted(by: { !$0.name.hasSuffix(".ttf") && $1.name.hasSuffix(".ttf") }) {
-                    guard file.name == (file.name as NSString).lastPathComponent, let address = file.download_url, let url = URL(string: address), url.scheme == "https", url.host == "raw.githubusercontent.com", url.path.hasPrefix("/google/fonts/"), file.size <= 50_000_000 else { continue }
+                    guard file.name == (file.name as NSString).lastPathComponent, let address = file.download_url, let url = URL(string: address), url.scheme == "https", url.host == "raw.githubusercontent.com", url.path.hasPrefix("/google/fonts/"), file.size <= 50_000_000 else { throw NSError(domain: "Typefield.GoogleFonts", code: 10, userInfo: [NSLocalizedDescriptionKey: "A font or license download has an invalid source path."]) }
                     let data = try await Self.fetch(url)
                     if file.name.hasSuffix(".ttf") {
                         guard licenseCount > 0 else { throw NSError(domain: "Typefield", code: 7, userInfo: [NSLocalizedDescriptionKey: "The license could not be saved. No font files were installed."]) }
                         guard let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData) as? [CTFontDescriptor], !descriptors.isEmpty else { throw NSError(domain: "Typefield", code: 5, userInfo: [NSLocalizedDescriptionKey: "Downloaded file is not a readable font."]) }
                         fontCount += 1
                     }
-                    try data.write(to: folder.appendingPathComponent(file.name), options: .atomic)
+                    let target = staged.appendingPathComponent(file.name)
+                    if (try? target.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true { throw CocoaError(.fileReadInvalidFileName) }
+                    try data.write(to: target, options: .atomic)
                     if !file.name.hasSuffix(".ttf") { licenseCount += 1 }
                 }
                 guard fontCount > 0 && licenseCount > 0 else { throw NSError(domain: "Typefield", code: 6, userInfo: [NSLocalizedDescriptionKey: "No font files were downloaded."]) }
                 let downloadedCount = fontCount
-                await MainActor.run {
-                    if !library.saved.folders.contains(folder.path) { library.saved.folders.append(folder.path); library.save() }
+                try await MainActor.run {
+                    try Self.commitStagedDownload(staged, to: folder, library: library)
                     library.pendingImportFolder = folder.path
                     library.reload(register: true)
                     status = "Downloaded \(font.family) (\(downloadedCount) files). Available in the library; use its inspector to tune variable axes."

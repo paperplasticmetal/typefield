@@ -12,8 +12,14 @@ xcuserdata/
 *.xcuserstate
 .env
 .env.*
+.envrc
 *.p12
+*.pfx
 *.p8
+*.pem
+*.key
+*.keystore
+*.jks
 *.mobileprovision
 *.provisionprofile
 # Personal library state is never source

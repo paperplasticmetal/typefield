@@ -21,6 +21,10 @@ function mock(failFont = false, failText = false) {
   const missing = mock(true); assert.match(await importLayout(data, missing), /Missing font/); assert.equal(missing.frames[0].children[0].fontName.family, 'Inter');
   const failing = mock(false, true); await assert.rejects(importLayout(data, failing), /simulated/); assert(failing.frames.every(f => f.removed));
   const invalid = fixture(); invalid.frames[0].elements[0].width = -1; const clean = mock(); await assert.rejects(importLayout(invalid, clean), /bounds/); assert.equal(clean.frames.length, 0);
+  const badName = fixture(); badName.frames[0].elements[0].section = { unexpected: 'object' }; assert.throws(() => validate(badName), /layer name/);
+  const badAxes = fixture(); badAxes.frames[0].elements[0].axes = JSON.parse('{"__proto__":100}'); assert.throws(() => validate(badAxes), /text layer/);
+  const largeUnicodeText = fixture(); largeUnicodeText.frames[0].elements[0].text = '👋'.repeat(50001); assert.throws(() => validate(largeUnicodeText), /text layer/);
+  const excessiveText = fixture(); excessiveText.frames[0].elements = Array.from({ length: 26 }, () => ({ ...fixture().frames[0].elements[0], text: 'A'.repeat(200000) })); assert.throws(() => validate(excessiveText), /too much text/);
   const warn = fixture(); warn.frames[0].elements[0].wordSpacing = 3; assert.match(await importLayout(warn, mock()), /manual|Review/);
   const solid = [{ type: 'SOLID', color: { r: .2, g: .3, b: .4 }, opacity: 1 }];
   const text = { type: 'TEXT', name: 'Headline', width: 300, height: 90, absoluteTransform: [[1,0,140],[0,1,260]], characters: 'From Figma', fontName: { family: 'Georgia', style: 'Regular' }, fontSize: 72, lineHeight: { unit: 'PIXELS', value: 100 }, letterSpacing: { unit: 'PIXELS', value: 2 }, textAlignHorizontal: 'CENTER', fills: solid, textCase: 'ORIGINAL' };

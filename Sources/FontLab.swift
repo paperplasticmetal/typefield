@@ -464,8 +464,9 @@ final class FontLabStore: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in self?.flushPendingSave() }
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
+            try TypefieldInputFile.requireRegularFileIfPresent(url)
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
             let loaded = try JSONDecoder().decode(FontLabState.self, from: Data(contentsOf: url))
             guard loaded.isValid else {
                 throw NSError(domain: "Typefield.FontLab", code: 1, userInfo: [NSLocalizedDescriptionKey: "The file contains invalid or unsupported Letterform Editor data."])

@@ -150,16 +150,14 @@ final class Library: ObservableObject {
         let unique = names.reduce(into: [String]()) { values, name in if !values.contains(name) { values.append(name) } }
         if !unique.isEmpty { typeboardDraft = TypeboardSeedDraft(fonts: unique, source: source, spaceID: spaceID); return }
         let active = studio.state.spaces.first(where: { $0.id == studio.focusedSpace })?.id
-        guard let space = active ?? studio.state.spaces.first?.id ?? studio.addSpace("My projects") else { message = studio.error; return }
-        guard studio.addBoard(space: space) != nil else { message = studio.error; return }
+        guard studio.createBoard(in: active ?? studio.state.spaces.first?.id, defaultSpaceName: "My projects") != nil else { message = studio.error; return }
         workspace = .spaces
     }
     func createTypeboard(from draft: TypeboardSeedDraft, roles: [String: String]) {
         guard !studio.readBlocked else { message = studio.error; return }
         let requested = draft.spaceID.flatMap { id in studio.state.spaces.first(where: { $0.id == id })?.id }
         let active = requested ?? studio.state.spaces.first(where: { $0.id == studio.focusedSpace })?.id
-        guard let space = active ?? studio.state.spaces.first?.id ?? studio.addSpace("My projects") else { message = studio.error; return }
-        guard studio.addBoard(space: space, fonts: draft.fonts, roleFonts: roles) != nil else { message = studio.error; return }
+        guard studio.createBoard(in: active ?? studio.state.spaces.first?.id, defaultSpaceName: "My projects", fonts: draft.fonts, roleFonts: roles) != nil else { message = studio.error; return }
         _ = recordFontUses(Array(Set(roles.values)))
         typeboardDraft = nil
         workspace = .spaces
@@ -250,7 +248,28 @@ final class Library: ObservableObject {
             return Family(name: name, faces: sorted, automaticCategory: category, variable: sorted.contains { $0.facts.variable }, writingSystems: sorted.reduce(into: []) { $0.formUnion($1.writingSystems) })
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
-    func editFamily(names: Set<String>, target: String?) {
+    @discardableResult func editFamily(names: Set<String>, target: String?) -> Bool {
+        guard !librarySaveBlocked else { _ = save(); return false }
+        guard !proSaveBlocked else { _ = savePro(); return false }
+        let previousLibraryFile: Data?
+        do {
+            previousLibraryFile = FileManager.default.fileExists(atPath: saveURL.path) ? try Data(contentsOf: saveURL) : nil
+        } catch {
+            message = "Could not read the existing library before changing families: \(error.localizedDescription)"
+            return false
+        }
+        let previousSaved = saved
+        let previousPro = pro
+        let previousFamilies = families
+        let previousComparison = comparison
+        let previousSelection = selectedFamilies
+        func restoreMemory() {
+            saved = previousSaved
+            pro = previousPro
+            families = previousFamilies
+            comparison = previousComparison
+            selectedFamilies = previousSelection
+        }
         let old = families
         for name in names { if let target = target { pro.familyOverrides[name] = target } else { pro.familyOverrides.removeValue(forKey: name) } }
         regroup()
@@ -262,7 +281,23 @@ final class Library: ObservableObject {
         for (key, members) in saved.collections { saved.collections[key] = remap(members) }
         comparison = Array(remap(Set(comparison))).sorted().prefix(6).map { $0 }
         selectedFamilies = remap(selectedFamilies)
-        savePro(); save()
+        guard save() else { restoreMemory(); return false }
+        guard savePro() else {
+            let saveError = message
+            do {
+                if let previousLibraryFile {
+                    try previousLibraryFile.write(to: saveURL, options: .atomic)
+                } else if FileManager.default.fileExists(atPath: saveURL.path) {
+                    try FileManager.default.removeItem(at: saveURL)
+                }
+                message = saveError
+            } catch {
+                message = saveError + " The previous library file could not be restored: \(error.localizedDescription)"
+            }
+            restoreMemory()
+            return false
+        }
+        return true
     }
     func tags(_ family: Family) -> Set<String> { family.faces.reduce(into: []) { $0.formUnion(pro.tags[$1.name] ?? []) } }
 
@@ -301,14 +336,14 @@ final class Library: ObservableObject {
     init(storageURL: URL? = nil) {
         saveURL = storageURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("FontShelf/library.json")
         saved = SavedLibrary()
-        if FileManager.default.fileExists(atPath: saveURL.path) {
-            do { saved = try JSONDecoder().decode(SavedLibrary.self, from: Data(contentsOf: saveURL)) }
-            catch { librarySaveBlocked = true; message = "Could not read your library. The existing file was preserved; restore it from a backup before making changes." }
-        }
-        if FileManager.default.fileExists(atPath: proURL.path) {
-            do { pro = try JSONDecoder().decode(ProState.self, from: Data(contentsOf: proURL)) }
-            catch { proSaveBlocked = true; message = "Could not read advanced library settings. Existing settings were preserved." }
-        }
+        do {
+            try TypefieldInputFile.requireRegularFileIfPresent(saveURL)
+            if FileManager.default.fileExists(atPath: saveURL.path) { saved = try JSONDecoder().decode(SavedLibrary.self, from: Data(contentsOf: saveURL)) }
+        } catch { librarySaveBlocked = true; message = "Could not read your library. The existing file was preserved; restore it from a backup before making changes." }
+        do {
+            try TypefieldInputFile.requireRegularFileIfPresent(proURL)
+            if FileManager.default.fileExists(atPath: proURL.path) { pro = try JSONDecoder().decode(ProState.self, from: Data(contentsOf: proURL)) }
+        } catch { proSaveBlocked = true; message = "Could not read advanced library settings. Existing settings were preserved." }
     }
     @discardableResult func save() -> Bool {
         guard !librarySaveBlocked else { message = "The unreadable library file was preserved. Restore it from a backup before saving changes."; return false }
@@ -359,7 +394,43 @@ final class Library: ObservableObject {
         }
     }
     func category(_ f: Family) -> Category { saved.overrides[f.name] ?? f.automaticCategory }
-    func favorite(_ f: Family) { if saved.favorites.contains(f.name) { saved.favorites.remove(f.name) } else { saved.favorites.insert(f.name) }; save() }
+    @discardableResult func updateSaved(_ change: (inout SavedLibrary) -> Void) -> Bool {
+        let previous = saved
+        change(&saved)
+        guard save() else { saved = previous; return false }
+        return true
+    }
+    @discardableResult func favorite(_ f: Family) -> Bool {
+        updateSaved { saved in
+            if saved.favorites.contains(f.name) { saved.favorites.remove(f.name) }
+            else { saved.favorites.insert(f.name) }
+        }
+    }
+    @discardableResult func setCategory(_ category: Category?, for familyName: String) -> Bool {
+        updateSaved { saved in saved.overrides[familyName] = category }
+    }
+    @discardableResult func toggleCollectionMembership(_ familyName: String, in name: String) -> Bool {
+        guard saved.collections[name] != nil else { message = "That collection is no longer available."; return false }
+        return updateSaved { saved in
+            if saved.collections[name, default: []].contains(familyName) { saved.collections[name]?.remove(familyName) }
+            else { saved.collections[name]?.insert(familyName) }
+        }
+    }
+    @discardableResult func createEmptyCollection(_ name: String) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return false }
+        if saved.collections[name] == nil {
+            guard updateSaved({ $0.collections[name] = [] }) else { return false }
+        }
+        selection = "collection:" + name
+        return true
+    }
+    @discardableResult func deleteCollection(_ name: String) -> Bool {
+        guard saved.collections[name] != nil else { return false }
+        guard updateSaved({ $0.collections.removeValue(forKey: name) }) else { return false }
+        if selection == "collection:" + name { selection = "All Fonts" }
+        return true
+    }
     func matchesSection(_ f: Family, _ section: String) -> Bool {
         if section == "All Fonts" { return true }
         if section == "Last Import" { return f.faces.contains { saved.lastImportNames?.contains($0.name) == true } }
@@ -592,7 +663,7 @@ struct ContentView: View {
         }
         .alert("New collection", isPresented: $showCollection) {
             TextField("Collection name", text: $collectionName)
-            Button("Create") { let name = collectionName.trimmingCharacters(in: .whitespacesAndNewlines); if !name.isEmpty { if library.saved.collections[name] == nil { library.saved.collections[name] = [] }; library.save(); library.selection = "collection:" + name }; collectionName = "" }
+            Button("Create") { _ = library.createEmptyCollection(collectionName); collectionName = "" }
             Button("Cancel", role: .cancel) { collectionName = "" }
         } message: { Text("Add families through their ••• menu or by right-clicking a preview.") }
         .alert("Typefield", isPresented: Binding(get: { !library.message.isEmpty }, set: { if !$0 { library.message = "" } })) { Button("OK") { library.message = "" } } message: { Text(library.message) }
@@ -751,7 +822,7 @@ struct ContentView: View {
                             Button { library.workspace = .library; library.selection = "collection:" + name } label: { Image(systemName: "folder").frame(width: 28) }.buttonStyle(.plain).accessibilityLabel("Open collection " + name)
                             ShelfEditableName(name: name, selected: library.selection == "collection:" + name, onSelect: { library.workspace = .library; library.selection = "collection:" + name }, onRename: { library.renameCollection(name, to: $0) })
                             Text("\(snapshot.count(section: "collection:" + name))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                        }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection", role: .destructive) { library.saved.collections.removeValue(forKey: name); library.save(); if library.selection == "collection:" + name { library.selection = "All Fonts" } } }
+                        }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection", role: .destructive) { _ = library.deleteCollection(name) } }
                     }
                     if library.saved.collections.isEmpty { Text("No collections").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 5) }
                 }
@@ -872,13 +943,13 @@ struct ContentView: View {
         Button("View all styles") { library.detail = family }
         Button(library.saved.favorites.contains(family.name) ? "Remove favorite" : "Add favorite") { library.favorite(family) }
         Menu("Set category") {
-            Button("Automatic (\(family.automaticCategory.rawValue))") { library.saved.overrides.removeValue(forKey: family.name); library.save() }
-            ForEach(Category.allCases, id: \.self) { c in Button(c.rawValue) { library.saved.overrides[family.name] = c; library.save() } }
+            Button("Automatic (\(family.automaticCategory.rawValue))") { _ = library.setCategory(nil, for: family.name) }
+            ForEach(Category.allCases, id: \.self) { c in Button(c.rawValue) { _ = library.setCategory(c, for: family.name) } }
         }
         Menu("Collections") {
             if library.saved.collections.isEmpty { Button("Create a collection…") { showCollection = true } }
             ForEach(library.saved.collections.keys.sorted(), id: \.self) { name in
-                Button((library.saved.collections[name]!.contains(family.name) ? "✓ " : "") + name) { if library.saved.collections[name]!.contains(family.name) { library.saved.collections[name]!.remove(family.name) } else { library.saved.collections[name]!.insert(family.name) }; library.save() }
+                Button((library.saved.collections[name]!.contains(family.name) ? "✓ " : "") + name) { _ = library.toggleCollectionMembership(family.name, in: name) }
             }
         }
         Button("Export font family…") { if let result = FontExporter.export(family.faces) { library.message = result } }
@@ -1372,7 +1443,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

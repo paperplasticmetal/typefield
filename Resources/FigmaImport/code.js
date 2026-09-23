@@ -1,20 +1,46 @@
 /* Local, network-free importer. It only creates new frames; existing nodes are untouched. */
 function number(value, min, max) { return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max; }
+function shortText(value, max) { return typeof value === 'string' && value.length <= max; }
+function utf8Bytes(value) {
+  let bytes = 0;
+  for (let i = 0; i < value.length; i++) {
+    const unit = value.charCodeAt(i);
+    if (unit < 0x80) bytes++;
+    else if (unit < 0x800) bytes += 2;
+    else if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < value.length && value.charCodeAt(i + 1) >= 0xdc00 && value.charCodeAt(i + 1) <= 0xdfff) { bytes += 4; i++; }
+    else bytes += 3;
+  }
+  return bytes;
+}
+function tags(value, min, max) {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= 32 && entries.every(([tag, setting]) => /^[A-Za-z0-9]{4}$/.test(tag) && number(setting, min, max));
+}
 function paint(c) {
   if (!c || !['r', 'g', 'b', 'a'].every(key => number(c[key], 0, 1))) throw Error('Invalid color.');
   return [{ type: 'SOLID', color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
 }
 function validate(data) {
-  if (!data || data.format !== 'fontshelf-figma' || data.version !== 1 || !Array.isArray(data.frames) || !data.frames.length || data.frames.length > 30) throw Error('Unsupported Typefield layout.');
+  if (!data || data.format !== 'fontshelf-figma' || data.version !== 1 || !shortText(data.name, 256) || !Array.isArray(data.frames) || !data.frames.length || data.frames.length > 30) throw Error('Unsupported Typefield layout.');
+  let totalLayers = 0, totalText = 0;
   for (const frame of data.frames) {
-    if (!number(frame.width, 1, 10000) || !number(frame.height, 1, 100000) || typeof frame.name !== 'string' || !Array.isArray(frame.elements) || frame.elements.length > 5000) throw Error('Invalid frame.');
+    if (!frame || !number(frame.width, 1, 10000) || !number(frame.height, 1, 100000) || !shortText(frame.name, 256) || !Array.isArray(frame.elements) || frame.elements.length > 5000) throw Error('Invalid frame.');
+    totalLayers += frame.elements.length;
+    if (totalLayers > 50000) throw Error('The layout has too many layers.');
     paint(frame.paper);
     for (const e of frame.elements) {
+      if (!e || !shortText(e.section, 256) || (e.name !== undefined && !shortText(e.name, 256)) || (e.role !== undefined && !shortText(e.role, 256))) throw Error('Invalid layer name.');
       if (!['x', 'y'].every(k => number(e[k], 0, 100000)) || !['width', 'height'].every(k => number(e[k], 1, 100000))) throw Error('Invalid layer bounds.');
       paint(e.color);
       if (e.kind === 'text') {
-        if (typeof e.text !== 'string' || e.text.length > 200000 || typeof e.fontFamily !== 'string' || typeof e.fontStyle !== 'string' || !number(e.fontSize, 1, 1000) || !number(e.lineHeight, 1, 1000) || !number(e.letterSpacing, -100, 100) || !number(e.paragraphSpacing, 0, 1000) || !number(e.paragraphIndent, 0, 1000) || !['LEFT', 'CENTER', 'RIGHT', 'JUSTIFIED'].includes(e.alignment)) throw Error('Invalid text layer.');
-      } else if (e.kind !== 'rectangle' || !number(e.radius, 0, 1000)) throw Error('Invalid shape.');
+        if (!shortText(e.text, 200000) || !shortText(e.fontFamily, 256) || !shortText(e.fontStyle, 256) || (e.fontName !== undefined && !shortText(e.fontName, 256)) || !number(e.fontSize, 1, 1000) || !number(e.lineHeight, 1, 2000) || !number(e.letterSpacing, -100, 100) || !number(e.paragraphSpacing, 0, 1000) || !number(e.paragraphIndent, 0, 1000) || !['LEFT', 'CENTER', 'RIGHT', 'JUSTIFIED'].includes(e.alignment) || (e.wordSpacing !== undefined && !number(e.wordSpacing, -1000, 1000)) || !tags(e.axes, -10000, 10000) || !tags(e.features, -1, 1000) || ['kerning', 'underline', 'strikethrough'].some(key => e[key] !== undefined && typeof e[key] !== 'boolean')) throw Error('Invalid text layer.');
+        const textBytes = utf8Bytes(e.text);
+        if (textBytes > 200000) throw Error('Invalid text layer.');
+        totalText += textBytes;
+        if (totalText > 5000000) throw Error('The layout contains too much text.');
+      } else if (e.kind !== 'rectangle' || !number(e.radius, 0, 10000)) throw Error('Invalid shape.');
     }
   }
 }

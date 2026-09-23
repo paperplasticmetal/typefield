@@ -4,11 +4,11 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.37.0 (build 48).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.40.0 (build 52).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 
-**First run:** A four-step tour introduces Library, Spaces and Letterform Editor in about a minute. Skip it at any time, or reopen it from **Help → Take the Typefield Tour…**. **About Typefield** includes local-storage, network and font/artwork rights guidance.
+**First run:** A four-step tour introduces Library, Spaces and Letterform Editor in about a minute. Skip it at any time, or reopen it from **Help → Getting Started Tour…** or **About Typefield**. About also includes local-storage, network and font/artwork rights guidance.
 
 **Developer handoff:** In a typeboard, choose **Export → Developer handoff…** for all its canvases, or use the space actions menu to export the whole project. One folder contains `@font-face` declarations, axes/features, CSS variables and suggested fluid `clamp()` scales, fallback stacks, preload examples, font-display guidance, Tailwind v3/v4 setup, versioned token JSON, SwiftUI and Compose starter definitions, and a standalone printable HTML specimen. Font binaries are never bundled: supply licensed web/app assets at the manifest paths. The README documents defaults and native integration work; the specimen is a typography reference, not a pixel-perfect layout export.
 
@@ -18,7 +18,7 @@ Native macOS font browsing, previews, and organization, built with SwiftUI, AppK
 
 **Font pairing suggestions:** In a Spaces canvas, select a type role and choose **Pair this font with another role…**. Pick the target role, then compare Safe, Balanced and Expressive suggestions from the fonts already on this Mac. Typefield previews the source and candidate together, exposes language/proportion/role/contrast reasons and relative scoring signals, and applies the result to the target role without replacing the source. These are explainable starting points, not universal taste scores or cloud-generated answers.
 
-**Roadmap:** [Prioritized outstanding work and competitor references](docs/ROADMAP.md), updated for 0.37.0. [App rebrand plan](docs/REBRAND_PLAN.md).
+**Roadmap:** [Prioritized outstanding work and competitor references](docs/ROADMAP.md) and the [production readiness audit](docs/PRODUCTION_READINESS.md), updated for 0.40.0. [App rebrand plan](docs/REBRAND_PLAN.md).
 
 **Spaces typography:** Compact Character, Paragraph, list and canvas-alignment controls make text editing easier to navigate. [Controls and behavior](docs/SPACES_TYPOGRAPHY.md).
 

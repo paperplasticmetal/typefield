@@ -7,3 +7,5 @@ Report vulnerabilities through GitHub private vulnerability reporting when avail
 Reports should include the affected version, impact, reproduction steps, and a minimal non-sensitive example. No response-time SLA is currently offered.
 
 The app uses local library storage, user-granted folder access in the sandbox build, and HTTPS for Google font requests. It has no account system, analytics, ads, or library upload service. Public font downloads and previews contact GitHub. Distribution signing, notarization and App Store validation are separate from local build checks.
+
+The current [production readiness audit](docs/PRODUCTION_READINESS.md#security-applicability) records which web-service security controls apply to this local app and the untrusted-file checks performed for this build.

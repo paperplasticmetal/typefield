@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.40.0 — 2026-09-23
+
+- Audited current documentation and historical QA against the app, with a separate production-readiness list of confirmed release risks, external validation, and larger product gaps.
+- Made backup export reject unreadable saved sources and made ordinary multi-file backup-import failures restore previous files and live state. Imported nested canvas/checkpoint IDs are regenerated.
+- Restored prior Library and Spaces state when supported edits cannot be saved; covered the failure paths with disposable fixtures. Google Fonts updates now stage and validate the complete licensed folder before replacing the prior managed copy.
+- Added direct fill, opacity, and corner-radius controls for selected imported shapes in Spaces. Corrected the visible Typefield name in developer handoff output while retaining compatible interchange markers.
+- Hardened local interchange imports with bounded reads and stricter Figma payload validation. Added untrusted-input checks and expanded ignores for local credential files.
+- Added newer Swift sources to the Xcode target so its archive compiles the same app as the script build. Updated release documentation and security applicability for this local-only app.
+
 ## 0.39.0 — 2026-09-22
 
 - Moved the labeled Spaces inspector layout control beside the canvas selector so it remains visible in every docked layout.

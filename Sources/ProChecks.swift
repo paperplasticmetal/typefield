@@ -37,6 +37,12 @@ enum ProChecks {
         let broken = Library(storageURL: corruptURL)
         broken.saved.collections["Must not overwrite"] = ["Test"]
         broken.selection = "collection:Must not overwrite"
+        let failureFamily = catalog[0]
+        precondition(!broken.favorite(failureFamily) && !broken.saved.favorites.contains(failureFamily.name), "Failed favorite save retained an in-memory change")
+        precondition(!broken.setCategory(.script, for: failureFamily.name) && broken.saved.overrides[failureFamily.name] == nil, "Failed category save retained an in-memory change")
+        precondition(!broken.toggleCollectionMembership(failureFamily.name, in: "Must not overwrite") && broken.saved.collections["Must not overwrite"] == ["Test"], "Failed collection membership save retained an in-memory change")
+        precondition(!broken.deleteCollection("Must not overwrite") && broken.saved.collections["Must not overwrite"] == ["Test"] && broken.selection == "collection:Must not overwrite", "Failed collection deletion did not restore membership and selection")
+        precondition(!broken.createEmptyCollection("Unsaved") && broken.saved.collections["Unsaved"] == nil && broken.selection == "collection:Must not overwrite", "Failed collection creation retained an in-memory change")
         precondition(!broken.renameCollection("Must not overwrite", to: "Renamed"), "Unreadable library permitted a collection rename")
         precondition(broken.saved.collections["Must not overwrite"] == ["Test"] && broken.saved.collections["Renamed"] == nil && broken.selection == "collection:Must not overwrite", "Failed collection rename was not rolled back")
         broken.save()
@@ -47,6 +53,22 @@ enum ProChecks {
         let previousTags = broken.pro.tags
         precondition(!broken.mergeTagBackup(["imported": ["tag"]]), "Unreadable pro settings permitted a tag import")
         precondition(broken.pro.tags == previousTags, "Failed tag import was not rolled back")
+        let splitURL = root.appendingPathComponent("split-save/library.json")
+        let split = Library(storageURL: splitURL)
+        split.acceptCatalog(catalog)
+        split.saved.collections["Keep"] = [failureFamily.name]
+        split.saved.favorites = [failureFamily.name]
+        split.comparison = [failureFamily.name]
+        split.selectedFamilies = [failureFamily.name]
+        precondition(split.save(), "Could not prepare family edit failure fixture")
+        let beforeFamilyEdit = try Data(contentsOf: splitURL)
+        let beforeFamilyNames = split.families.map(\.name)
+        try FileManager.default.createDirectory(at: split.proURL, withIntermediateDirectories: true)
+        precondition(!split.editFamily(names: [failureFamily.representative.name], target: "Unsaved merged family"), "Family edit succeeded despite a blocked second settings file")
+        let afterFamilyEdit = try Data(contentsOf: splitURL)
+        precondition(afterFamilyEdit == beforeFamilyEdit, "Family edit changed the library file after the second save failed")
+        precondition(split.families.map(\.name) == beforeFamilyNames && split.pro.familyOverrides.isEmpty && split.saved.collections["Keep"] == [failureFamily.name] && split.saved.favorites == [failureFamily.name] && split.comparison == [failureFamily.name] && split.selectedFamilies == [failureFamily.name], "Failed family edit retained an in-memory remapping")
+        precondition(!split.message.isEmpty, "Failed family edit did not report the save error")
         let journal = root.appendingPathComponent("bad-activation.json")
         try corrupt.write(to: journal)
         let manager = ActivationManager(journal: journal)

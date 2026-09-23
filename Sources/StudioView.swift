@@ -215,8 +215,11 @@ struct StudioView: View {
                 .fixedSize(horizontal: false, vertical: true) }
                 if !focusCanvas { Divider() }
                 if let board {
-                    TypeBoardEditor(library: library, savedBoard: board, projectName: space.displayName, projectBoards: space.boards, focusCanvas: $focusCanvas, sidebarCollapsed: $sidebarCollapsed, onSave: { store.update(space: space.id, board: $0, action: $1) }, onDelete: {
-                        store.removeBoard(space: space.id, id: board.id); boardID = store.focusedBoard
+                    TypeBoardEditor(library: library, savedBoard: board, projectName: space.displayName, projectBoards: space.boards, focusCanvas: $focusCanvas, sidebarCollapsed: $sidebarCollapsed, onSave: { edited, action in
+                        _ = store.update(space: space.id, board: edited, action: action)
+                        return store.state.spaces.first(where: { $0.id == space.id })?.boards.first(where: { $0.id == edited.id }) ?? board
+                    }, onDelete: {
+                        if store.removeBoard(space: space.id, id: board.id) { boardID = store.focusedBoard }
                     }).id(board.id)
                 } else {
                     VStack(spacing: 14) { Image(systemName: "rectangle.3.group").font(.system(size: 38)); Text("No typeboards").font(.title2); Button("Create typeboard") { boardID = store.addBoard(space: space.id) }.disabled(store.readBlocked) }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -248,11 +251,11 @@ struct StudioView: View {
             Button("Cancel", role: .cancel) { newName = "" }
         }
         .alert("Delete this space and its typeboards?", isPresented: $confirmDelete) {
-            Button("Delete", role: .destructive) { if let space { store.state.spaces.removeAll { $0.id == space.id }; store.focusedSpace = nil; store.focusedBoard = nil; store.save(); spaceID = nil; boardID = nil } }
+            Button("Delete", role: .destructive) { if let space, store.removeSpace(space.id) { spaceID = nil; boardID = nil } }
             Button("Cancel", role: .cancel) {}
         }
         .alert("Delete “\(deletingBoard?.board.name ?? "typeboard")”?", isPresented: Binding(get: { deletingBoard != nil }, set: { if !$0 { deletingBoard = nil } })) {
-            Button("Delete", role: .destructive) { if let target = deletingBoard { store.removeBoard(space: target.space, id: target.board.id); if boardID == target.board.id { boardID = store.focusedBoard } }; deletingBoard = nil }
+            Button("Delete", role: .destructive) { if let target = deletingBoard, store.removeBoard(space: target.space, id: target.board.id), boardID == target.board.id { boardID = store.focusedBoard }; deletingBoard = nil }
             Button("Cancel", role: .cancel) { deletingBoard = nil }
         } message: { Text("Its canvases will be removed from this space. You can undo this with ⌘Z.") }
     }
@@ -269,9 +272,9 @@ struct StudioView: View {
                             ShelfEditableName(name: item.displayName, selected: space?.id == item.id, onSelect: { selectSpace(item.id) }, onRename: { setSpaceName(item.id, $0) })
                         }.fontWeight(.medium).padding(10).background(space?.id == item.id ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8)).contextMenu { Button("Rename space…") { renameSpace(item) } }
                         ForEach(item.boards) { child in
-                            StudioBoardRow(name: child.name, selected: board?.id == child.id, onSelect: { spaceID = item.id; boardID = child.id; store.focusedSpace = item.id; store.focusedBoard = child.id; store.save() }, onRename: {
+                            StudioBoardRow(name: child.name, selected: board?.id == child.id, onSelect: { if store.select(space: item.id, board: child.id) { spaceID = item.id; boardID = child.id } }, onRename: {
                                 if let name = ShelfRename.prompt("Rename typeboard", current: child.name) { var renamed = child; renamed.name = name; store.update(space: item.id, board: renamed, action: "Rename Typeboard") }
-                            }, onRenameInline: { name in var renamed = child; renamed.name = name; store.update(space: item.id, board: renamed, action: "Rename Typeboard"); return true }, onDelete: { deletingBoard = (item.id, child) })
+                            }, onRenameInline: { name in var renamed = child; renamed.name = name; return store.update(space: item.id, board: renamed, action: "Rename Typeboard") }, onDelete: { deletingBoard = (item.id, child) })
                         }
                     }
                     }
@@ -293,8 +296,8 @@ struct StudioView: View {
     func renameSpace(_ target: DesignSpace) {
         if let name = ShelfRename.prompt("Rename space", current: target.displayName) { _ = setSpaceName(target.id, name) }
     }
-    func selectSpace(_ id: UUID) { spaceID = id; boardID = nil; store.focusedSpace = id; store.focusedBoard = nil; store.save() }
-    func setSpaceName(_ id: UUID, _ name: String) -> Bool { guard let index = store.state.spaces.firstIndex(where: { $0.id == id }) else { return false }; store.state.spaces[index].name = name; store.save(); return true }
+    func selectSpace(_ id: UUID) { if store.select(space: id) { spaceID = id; boardID = nil } }
+    func setSpaceName(_ id: UUID, _ name: String) -> Bool { store.renameSpace(id, to: name) }
     func exportHandoff(_ space: DesignSpace) {
         do { if let folder = try DeveloperHandoff.selectFolder(title: space.displayName, boards: space.boards, catalog: library.families) { store.error = ""; NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
         catch { store.error = "Handoff export failed: " + error.localizedDescription }
@@ -323,11 +326,11 @@ struct StudioView: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            var space = try JSONDecoder().decode(DesignSpace.self, from: Data(contentsOf: url))
+            var space = try JSONDecoder().decode(DesignSpace.self, from: TypefieldInputFile.read(url, maximumBytes: 256_000_000))
             guard space.boards.allSatisfy(\.isValid) else { throw CocoaError(.fileReadCorruptFile) }
             space.id = UUID()
             for i in space.boards.indices { space.boards[i].id = UUID(); space.boards[i].directions = space.boards[i].directions.map { $0.copy(name: $0.name) }; space.boards[i].selectedDirection = nil }
-            store.state.spaces.append(space); store.focusedSpace = space.id; store.focusedBoard = nil; store.save(); spaceID = space.id; boardID = nil
+            if store.importSpace(space) { spaceID = space.id; boardID = nil }
         } catch { store.error = "Space could not be imported: " + error.localizedDescription }
     }
     func importFigma() {
@@ -336,11 +339,8 @@ struct StudioView: View {
         panel.message = "In the Typefield Figma bridge, export selected frames to Typefield, then choose that JSON file. Native .fig files are not supported."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 20_000_000 else { throw CocoaError(.fileReadTooLarge) }
-            let imported = try FigmaLayoutImporter.board(data: Data(contentsOf: url), fonts: library.allFaces)
-            guard let target = space?.id ?? store.addSpace("Figma imports") else { return }
-            guard let index = store.state.spaces.firstIndex(where: { $0.id == target }) else { return }
-            store.state.spaces[index].boards.append(imported); store.focusedSpace = target; store.focusedBoard = imported.id; store.save(); spaceID = target; boardID = imported.id
+            let imported = try FigmaLayoutImporter.board(data: TypefieldInputFile.read(url, maximumBytes: 20_000_000), fonts: library.allFaces)
+            if store.importBoard(imported, into: space?.id, defaultSpaceName: "Figma imports") { spaceID = store.focusedSpace; boardID = imported.id }
         } catch { store.error = "Figma layout could not be imported: " + error.localizedDescription }
     }
     func importAdobe() {
@@ -349,12 +349,8 @@ struct StudioView: View {
         panel.message = "Run Typefield's return bridge inside Illustrator or InDesign, save its JSON, then choose that file here. Native .ai and .indd files are not decoded directly."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 20_000_000 else { throw AdobeTypeSystemReturnBridge.ImportError.tooLarge }
-            let imported = try AdobeTypeSystemReturnBridge.board(data: Data(contentsOf: url), fonts: library.allFaces)
-            guard let target = space?.id ?? store.addSpace("Adobe imports") else { return }
-            guard let index = store.state.spaces.firstIndex(where: { $0.id == target }) else { return }
-            store.state.spaces[index].boards.append(imported)
-            store.focusedSpace = target; store.focusedBoard = imported.id; store.save(); spaceID = target; boardID = imported.id
+            let imported = try AdobeTypeSystemReturnBridge.board(data: TypefieldInputFile.read(url, maximumBytes: 20_000_000), fonts: library.allFaces)
+            if store.importBoard(imported, into: space?.id, defaultSpaceName: "Adobe imports") { spaceID = store.focusedSpace; boardID = imported.id }
         } catch {
             store.error = "Adobe layout could not be imported: " + error.localizedDescription
         }
@@ -435,9 +431,9 @@ struct TypeBoardEditor: View {
     let projectBoards: [TypeBoard]
     @Binding var focusCanvas: Bool
     @Binding var sidebarCollapsed: Bool
-    let onSave: (TypeBoard, String) -> Void
+    let onSave: (TypeBoard, String) -> TypeBoard
     let onDelete: () -> Void
-    init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], focusCanvas: Binding<Bool>, sidebarCollapsed: Binding<Bool>, onSave: @escaping (TypeBoard, String) -> Void, onDelete: @escaping () -> Void) {
+    init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], focusCanvas: Binding<Bool>, sidebarCollapsed: Binding<Bool>, onSave: @escaping (TypeBoard, String) -> TypeBoard, onDelete: @escaping () -> Void) {
         self.library = library; self.savedBoard = savedBoard; self.projectName = projectName; self.projectBoards = projectBoards; self._focusCanvas = focusCanvas; self._sidebarCollapsed = sidebarCollapsed; self.onSave = onSave; self.onDelete = onDelete
         _editorSession = StateObject(wrappedValue: StudioEditorSession(board: savedBoard))
         _inspectorMode = State(initialValue: StudioInspectorPreference.mode())
@@ -480,6 +476,11 @@ struct TypeBoardEditor: View {
     var showingAllCanvases: Bool { !board.directions.isEmpty && Set(board.directions.map(\.id)).isSubset(of: shownCanvasIDs) }
     var importedLayerIndex: Int? { guard direction.canvas == .imported else { return nil }; return direction.importedLayout?.textLayerIndex(selectedID: selectedSection) }
     var importedNonTextSelected: Bool { direction.canvas == .imported && importedLayerIndex == nil }
+    var selectedImportedShapeIndex: Int? {
+        guard direction.canvas == .imported, let selectedSection else { return nil }
+        return direction.importedLayout?.layers.firstIndex { $0.id == selectedSection && $0.style == nil }
+    }
+    var selectedImportedShape: ImportedLayer? { selectedImportedShapeIndex.flatMap { direction.importedLayout?.layers[$0] } }
     var selectedText: CanvasElement? { guard let selectedTextID else { return nil }; return CanvasPlanCache.plan(for: direction).elements.first { $0.textID == selectedTextID } }
     var style: TypeStyle { if let index = importedLayerIndex, let style = direction.importedLayout?.layers[index].style { return style }; return selectedText?.style ?? direction.style(role) }
     var selectedSummaryDirections: [TypeDirection] { board.directions.filter { summaryCanvasIDs.contains($0.id) } }
@@ -497,14 +498,25 @@ struct TypeBoardEditor: View {
     }
     var faces: [Face] { StudioFontFilter.faces(library: library, collection: fontCollection, category: fontCategory, search: fontSearch) }
     var missingFonts: [String] { Set(direction.canvas == .imported ? direction.importedLayout?.layers.compactMap { $0.style?.fontName } ?? [] : direction.styles.values.map(\.fontName)).subtracting(Set(library.allFaces.map(\.name))).sorted() }
-    func save(_ action: String = "Edit Typeboard") { onSave(board, action) }
+    @discardableResult func save(_ action: String = "Edit Typeboard") -> Bool {
+        let proposed = board
+        let persisted = onSave(proposed, action)
+        guard persisted == proposed else { board = persisted; return false }
+        return true
+    }
+    func updateSelectedShape(_ action: String, _ change: (inout ImportedLayer) -> Void) {
+        guard let index = selectedImportedShapeIndex, var layout = board.directions[directionIndex].importedLayout else { return }
+        change(&layout.layers[index])
+        board.directions[directionIndex].importedLayout = layout
+        save(action)
+    }
     func directionBinding<T>(_ key: WritableKeyPath<TypeDirection, T>) -> Binding<T> { Binding(get: { direction[keyPath: key] }, set: { board.directions[directionIndex][keyPath: key] = $0; save() }) }
     func styleBinding<T>(_ key: WritableKeyPath<TypeStyle, T>) -> Binding<T> { Binding(get: { style[keyPath: key] }, set: { var updated = style; updated[keyPath: key] = $0; setStyle(updated); save(key == \TypeStyle.size ? "Change Size" : key == \TypeStyle.tracking ? "Change Letter Spacing" : key == \TypeStyle.text ? "Change Sample Text" : "Edit Typography") }) }
     var body: some View {
         VStack(spacing: 0) {
             if !focusCanvas {
             HStack(spacing: 12) {
-                ShelfEditableName(name: board.name, onRename: { name in board.name = name; save("Rename Typeboard"); return true }).font(.headline).frame(minWidth: 110)
+                ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") }).font(.headline).frame(minWidth: 110)
                 Spacer(minLength: 12)
                 Menu {
                     Button("Blank canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; summaryCanvasIDs.insert(canvas.id); save("Add Canvas") }
@@ -868,6 +880,7 @@ struct TypeBoardEditor: View {
                         .textFieldStyle(.roundedBorder)
                 }
                 Picker("Inspector", selection: $editorSession.inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
+                if selectedImportedShapeIndex != nil { selectedShapeAppearance; Divider() }
                 if inspectorTab == "Arrangement" { layoutSections }
                 else {
                 if direction.canvas == .imported {
@@ -899,7 +912,7 @@ struct TypeBoardEditor: View {
                 }
                 Divider()
                 if importedNonTextSelected {
-                    Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary)
+                    if selectedImportedShapeIndex == nil { Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary) }
                 } else {
                 if direction.canvas == .imported { Text(editingTitle).font(.headline) }
                 if selectedTextID != nil && direction.canvas != .imported { Text("Editing the selected text. Font and spacing changes apply to its shared type role.").font(.caption).foregroundStyle(.secondary) }
@@ -1136,6 +1149,56 @@ struct TypeBoardEditor: View {
     }
     func numeric(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 4) { HStack { Text(title); Spacer(); TextField(title, value: Binding(get: { value.wrappedValue }, set: { if $0.isFinite { value.wrappedValue = min(range.upperBound, max(range.lowerBound, $0)) } }), format: .number.precision(.fractionLength(0...2))).multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 65).onSubmit { NSApp.keyWindow?.makeFirstResponder(nil) }; Text(unit).foregroundStyle(.secondary) }.font(.caption); Slider(value: value, in: range) }
+    }
+    var selectedShapeFill: Binding<Color> {
+        Binding(get: { Color(nsColor: NSColor(hex: selectedImportedShape?.color ?? "000000")) }, set: { color in
+            updateSelectedShape("Change Shape Fill") { $0.color = NSColor(color).rgbHex }
+        })
+    }
+    var selectedShapeOpacity: Binding<Double> {
+        Binding(get: { (selectedImportedShape?.opacity ?? 1) * 100 }, set: { value in
+            guard value.isFinite else { return }
+            updateSelectedShape("Change Shape Opacity") { $0.opacity = min(1, max(0, value / 100)) }
+        })
+    }
+    var selectedShapeRadiusLimit: Double {
+        guard let shape = selectedImportedShape else { return 10 }
+        return min(10_000, max(max(10, min(shape.width, shape.height) / 2), shape.radius))
+    }
+    var selectedShapeRadius: Binding<Double> {
+        Binding(get: { selectedImportedShape?.radius ?? 0 }, set: { value in
+            guard value.isFinite else { return }
+            let limit = selectedShapeRadiusLimit
+            updateSelectedShape("Change Shape Corners") { $0.radius = min(limit, max(0, value)) }
+        })
+    }
+    var selectedShapeAppearance: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Text("Selected shape").font(.headline)
+                Spacer(minLength: 4)
+                Text(selectedImportedShape?.name ?? "Shape").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Text("Appearance changes apply only to this shape.").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("Fill")
+                Spacer()
+                ColorPicker("Selected shape fill", selection: selectedShapeFill, supportsOpacity: false).labelsHidden().fixedSize()
+            }.font(.caption)
+            HStack(spacing: 7) {
+                Text("Opacity")
+                Slider(value: selectedShapeOpacity, in: 0...100) { Text("Opacity") }.labelsHidden()
+                TextField("Opacity", value: selectedShapeOpacity, format: .number.precision(.fractionLength(0...1)))
+                    .multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 52)
+                Text("%").foregroundStyle(.secondary)
+            }.font(.caption)
+            HStack(spacing: 7) {
+                Text("Corners")
+                Slider(value: selectedShapeRadius, in: 0...selectedShapeRadiusLimit) { Text("Corner radius") }.labelsHidden()
+                TextField("Corner radius", value: selectedShapeRadius, format: .number.precision(.fractionLength(0...1)))
+                    .multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 52)
+            }.font(.caption)
+        }
     }
     var axesEditor: some View {
         let axes = CTFontCopyVariationAxes(CTFontCreateWithName(style.fontName as CFString, 24, nil)) as? [[String: Any]] ?? []
