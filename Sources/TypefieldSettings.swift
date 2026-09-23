@@ -241,7 +241,7 @@ private extension TypefieldPalette {
         case .neutral: return "Clean serif"
         case .amber: return "Layered cutouts"
         case .ocean: return "Guides and metrics"
-        case .forest: return "Calligraphic ink"
+        case .forest: return "Pen-drawn lettering"
         case .plum: return "Chalk and grain"
         case .rose: return "Dimensional relief"
         }

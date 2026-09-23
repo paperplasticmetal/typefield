@@ -105,10 +105,11 @@ enum TypefieldIcon {
         CTLineDraw(textLine, context)
     }
 
-    /// Extend Bodoni's tiny f bar and tighten its gap to the T. Small sizes get
-    /// a little more separation because they have fewer physical pixels.
-    private static func mark(size: Int) -> Mark? {
-        let font = CTFontCreateWithName("BodoniSvtyTwoITCTT-Bold" as CFString, 700, nil)
+    /// Keep the upright monogram tight and extend its small f bar. Ink Sketch
+    /// uses the same Bodoni family in italic, with separate optical spacing.
+    private static func mark(size: Int, italic: Bool = false) -> Mark? {
+        let fontName = italic ? "BodoniSvtyTwoITCTT-BookIta" : "BodoniSvtyTwoITCTT-Bold"
+        let font = CTFontCreateWithName(fontName as CFString, 700, nil)
         var chars: [UniChar] = [84, 102]
         var glyphs: [CGGlyph] = [0, 0]
         guard CTFontGetGlyphsForCharacters(font, &chars, &glyphs, 2),
@@ -128,15 +129,17 @@ enum TypefieldIcon {
         extendedF.addQuadCurve(to: CGPoint(x: end - 6, y: y), control: CGPoint(x: end, y: y))
         extendedF.closeSubpath()
         let rawT = CGMutablePath()
-        rawT.addPath(tSource, transform: CGAffineTransform(translationX: -tb.minX, y: 0))
+        let tallT = italic ? CGFloat(1.39) : CGFloat(1)
+        rawT.addPath(tSource, transform: CGAffineTransform(a: 1, b: 0, c: 0, d: tallT,
+            tx: -tb.minX, ty: italic ? tb.maxY * (1 - tallT) : 0))
         let rawF = CGMutablePath()
-        rawF.addPath(extendedF, transform: CGAffineTransform(
-            translationX: tb.width + (size <= 32 ? 60 : 24) - fb.minX, y: 0))
+        rawF.addPath(italic ? fSource : extendedF, transform: CGAffineTransform(
+            translationX: tb.width + (italic ? -90 : (size <= 32 ? 60 : 24)) - fb.minX, y: 0))
         let raw = CGMutablePath()
         raw.addPath(rawT)
         raw.addPath(rawF)
         let bounds = raw.boundingBoxOfPath
-        let scale = min((size <= 32 ? 760 : 700) / bounds.width, 600 / bounds.height)
+        let scale = min((italic ? (size <= 32 ? 700 : 660) : (size <= 32 ? 760 : 700)) / bounds.width, 600 / bounds.height)
         let transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
             tx: 512 - bounds.midX * scale, ty: 510 - bounds.midY * scale)
         let t = CGMutablePath(); t.addPath(rawT, transform: transform)
@@ -171,24 +174,29 @@ enum TypefieldIcon {
             stroke(ctx, t, c(dark ? "FFB467" : "EE754E"), 21)
             stroke(ctx, f, c(dark ? "B4E9D8" : "245D73"), 21)
         }
-        if size >= 64 {
-            dot(ctx, 793, 324, 21, c(dark ? "F7D779" : "D44850"))
-            dot(ctx, 224, 697, 12, c(dark ? "A4DCD0" : "287991"))
-        }
     }
 
     private static func typeStudy(_ ctx: CGContext, _ m: Mark, _ dark: Bool, _ size: Int) {
         gradient(ctx, top: c(dark ? "18394B" : "EAF7F8"), bottom: c(dark ? "102531" : "DDECF0"))
-        let guide = c(dark ? "70B8C3" : "4B9CA9", dark ? 0.55 : 0.48)
+        let guide = c(dark ? "70B8C3" : "4B9CA9", dark ? 0.48 : 0.40)
+        let measured = c(dark ? "FFBE7F" : "E87951")
         let baseline = m.bounds.minY + 7
         let cap = m.bounds.maxY - 8
         let xHeight = baseline + (cap - baseline) * 0.52
+        let left = m.bounds.minX
+        let right = m.bounds.maxX
+        // Guide intersections are tied to the actual letter bounds.
         for (y, width) in [(baseline, CGFloat(5)), (xHeight, CGFloat(3)), (cap, CGFloat(3))] {
             line(ctx, 123, y, 901, y, guide, width)
-            if size >= 64 { dot(ctx, 124, y, 8, guide); dot(ctx, 899, y, 8, guide) }
+        }
+        if size >= 64 {
+            line(ctx, left, baseline - 32, left, cap + 32, guide, 2.5)
+            line(ctx, right, baseline - 32, right, cap + 32, guide, 2.5)
+            for (x, y) in [(left, cap), (left, baseline), (right, cap), (right, baseline)] {
+                dot(ctx, x, y, 7, measured)
+            }
         }
         if size >= 128 {
-            for x in stride(from: 176, through: 856, by: 68) { line(ctx, CGFloat(x), 145, CGFloat(x), 160, guide, 3) }
             label("CAP", ctx, 132, cap + 18, guide)
             label("x", ctx, 132, xHeight + 18, guide)
             label("BASE", ctx, 132, baseline - 43, guide)
@@ -196,95 +204,52 @@ enum TypefieldIcon {
         let ink = c(dark ? "F1F9F6" : "183949")
         fill(ctx, m.both, ink)
         if size <= 32 { stroke(ctx, m.both, ink, 22) }
-        if size >= 64 {
-            dot(ctx, m.bounds.minX - 25, baseline, 13, c(dark ? "FFBE7F" : "E87951"))
-            dot(ctx, m.bounds.maxX + 25, xHeight, 13, c(dark ? "FFBE7F" : "E87951"))
-        }
     }
 
     private static func inkSketch(_ ctx: CGContext, _ m: Mark, _ dark: Bool, _ size: Int) {
-        gradient(ctx, top: c(dark ? "2D3640" : "F9F2E5"),
-            bottom: c(dark ? "18222A" : "E9DAC2"))
-        let tb = m.t.boundingBoxOfPath
-        let fb = m.f.boundingBoxOfPath
-        let ink = c(dark ? "DEE9E7" : "1A3944")
-        let deep = c(dark ? "9FB8B9" : "061922")
-
-        if size >= 64 {
-            // A broad pen enters the cap. Its pressure widens, then joins
-            // the unmodified T instead of turning the letters into script.
-            let entry = CGMutablePath()
-            entry.move(to: CGPoint(x: tb.minX - 55, y: tb.maxY + 31))
-            entry.addCurve(to: CGPoint(x: tb.minX + 168, y: tb.maxY - 12),
-                control1: CGPoint(x: tb.minX + 28, y: tb.maxY + 42),
-                control2: CGPoint(x: tb.minX + 100, y: tb.maxY + 6))
-            entry.addCurve(to: CGPoint(x: tb.minX + 22, y: tb.maxY - 18),
-                control1: CGPoint(x: tb.minX + 119, y: tb.maxY - 26),
-                control2: CGPoint(x: tb.minX + 62, y: tb.maxY - 27))
-            entry.addQuadCurve(to: CGPoint(x: tb.minX - 55, y: tb.maxY + 31),
-                control: CGPoint(x: tb.minX - 23, y: tb.maxY + 6))
-            entry.closeSubpath()
-            fill(ctx, entry, ink)
-
-            // The f serif releases a single broad-to-fine ink stroke.
-            // A small uneven pool at the join resolves into a sharp nib tip.
-            let tail = CGMutablePath()
-            tail.move(to: CGPoint(x: fb.minX + 119, y: fb.minY + 15))
-            tail.addCurve(to: CGPoint(x: fb.maxX + 8, y: fb.minY - 18),
-                control1: CGPoint(x: fb.minX + 176, y: fb.minY + 15),
-                control2: CGPoint(x: fb.maxX - 8, y: fb.minY - 13))
-            tail.addCurve(to: CGPoint(x: fb.minX + 189, y: fb.minY - 36),
-                control1: CGPoint(x: fb.maxX - 3, y: fb.minY - 27),
-                control2: CGPoint(x: fb.minX + 237, y: fb.minY - 39))
-            tail.addCurve(to: CGPoint(x: fb.minX + 119, y: fb.minY + 15),
-                control1: CGPoint(x: fb.minX + 148, y: fb.minY - 35),
-                control2: CGPoint(x: fb.minX + 108, y: fb.minY - 9))
-            tail.closeSubpath()
-            fill(ctx, tail, ink)
-            ctx.setFillColor(ink.cgColor)
-            ctx.fillEllipse(in: CGRect(x: fb.maxX - 12, y: fb.minY - 27, width: 23, height: 14))
-        }
+        gradient(ctx, top: c(dark ? "2A363C" : "FBF6EC"),
+            bottom: c(dark ? "1B2930" : "EDE1CD"))
+        let ink = c(dark ? "E8F0E9" : "142D35")
         fill(ctx, m.both, ink)
-        if size <= 32 { stroke(ctx, m.both, ink, 22) }
-
         if size >= 64 {
+            let tb = m.t.boundingBoxOfPath
+            let fb = m.f.boundingBoxOfPath
+            let pressure = c(dark ? "7F9B9D" : "031923", dark ? 0.29 : 0.29)
             ctx.saveGState()
             ctx.addPath(m.both)
             ctx.clip()
-            // Darker deposits at cap joins and serif ends make the wet ink
-            // visible at settings-card size, without outlining the glyph.
-            ctx.setFillColor(deep.withAlphaComponent(dark ? 0.34 : 0.50).cgColor)
-            ctx.fillEllipse(in: CGRect(x: tb.minX + 120, y: tb.maxY - 74, width: 148, height: 95))
-            ctx.fillEllipse(in: CGRect(x: fb.minX + 58, y: fb.maxY - 83, width: 148, height: 95))
-            ctx.fillEllipse(in: CGRect(x: fb.minX + 95, y: fb.minY - 11, width: 136, height: 61))
-
-            let dry = c(dark ? "243943" : "E0D8C1", dark ? 0.78 : 0.82)
-            let tDrag = CGMutablePath()
-            tDrag.move(to: CGPoint(x: tb.midX - 24, y: tb.maxY - 91))
-            tDrag.addCurve(to: CGPoint(x: tb.midX - 35, y: tb.maxY - 281),
-                control1: CGPoint(x: tb.midX - 16, y: tb.maxY - 139),
-                control2: CGPoint(x: tb.midX - 37, y: tb.maxY - 226))
-            tDrag.addQuadCurve(to: CGPoint(x: tb.midX - 55, y: tb.maxY - 185),
-                control: CGPoint(x: tb.midX - 44, y: tb.maxY - 271))
-            tDrag.addQuadCurve(to: CGPoint(x: tb.midX - 24, y: tb.maxY - 91),
-                control: CGPoint(x: tb.midX - 36, y: tb.maxY - 131))
-            tDrag.closeSubpath()
-            fill(ctx, tDrag, dry)
-
-            let fDrag = CGMutablePath()
-            fDrag.move(to: CGPoint(x: fb.minX + 84, y: fb.maxY - 114))
-            fDrag.addCurve(to: CGPoint(x: fb.minX + 75, y: fb.maxY - 286),
-                control1: CGPoint(x: fb.minX + 91, y: fb.maxY - 166),
-                control2: CGPoint(x: fb.minX + 67, y: fb.maxY - 247))
-            fDrag.addQuadCurve(to: CGPoint(x: fb.minX + 53, y: fb.maxY - 201),
-                control: CGPoint(x: fb.minX + 60, y: fb.maxY - 277))
-            fDrag.addQuadCurve(to: CGPoint(x: fb.minX + 84, y: fb.maxY - 114),
-                control: CGPoint(x: fb.minX + 76, y: fb.maxY - 153))
-            fDrag.closeSubpath()
-            fill(ctx, fDrag, dry)
-
+            // A tapered second nib pass follows the natural italic T diagonal.
+            let tInk = CGMutablePath()
+            tInk.move(to: CGPoint(x: tb.midX + 29, y: tb.maxY - 42))
+            tInk.addCurve(to: CGPoint(x: tb.minX + 82, y: tb.minY + 47),
+                control1: CGPoint(x: tb.midX + 17, y: tb.maxY - 154),
+                control2: CGPoint(x: tb.minX + 120, y: tb.minY + 159))
+            tInk.addCurve(to: CGPoint(x: tb.midX + 29, y: tb.maxY - 42),
+                control1: CGPoint(x: tb.minX + 132, y: tb.minY + 174),
+                control2: CGPoint(x: tb.midX + 44, y: tb.maxY - 149))
+            tInk.closeSubpath()
+            fill(ctx, tInk, pressure)
+            // The f's descender gets a narrower, continuous ink pass.
+            let fInk = CGMutablePath()
+            fInk.move(to: CGPoint(x: fb.minX + 57, y: fb.minY + 31))
+            fInk.addCurve(to: CGPoint(x: fb.minX + 254, y: fb.maxY - 91),
+                control1: CGPoint(x: fb.minX + 120, y: fb.minY + 60),
+                control2: CGPoint(x: fb.minX + 203, y: fb.minY + 343))
+            fInk.addCurve(to: CGPoint(x: fb.minX + 57, y: fb.minY + 31),
+                control1: CGPoint(x: fb.minX + 215, y: fb.minY + 330),
+                control2: CGPoint(x: fb.minX + 108, y: fb.minY + 73))
+            fInk.closeSubpath()
+            fill(ctx, fInk, pressure)
+            // One restrained contour pass tracks the f's curled shoulder.
+            let shoulder = CGMutablePath()
+            shoulder.move(to: CGPoint(x: fb.minX + 219, y: fb.maxY - 46))
+            shoulder.addCurve(to: CGPoint(x: fb.maxX - 33, y: fb.maxY - 22),
+                control1: CGPoint(x: fb.minX + 263, y: fb.maxY + 4),
+                control2: CGPoint(x: fb.maxX - 47, y: fb.maxY + 2))
+            stroke(ctx, shoulder, pressure, 7)
             ctx.restoreGState()
         }
+        stroke(ctx, m.both, ink, size <= 32 ? 22 : (size <= 64 ? 11 : 6))
     }
 
     private static func chalkboard(_ ctx: CGContext, _ m: Mark, _ dark: Bool, _ size: Int) {
@@ -357,7 +322,7 @@ enum TypefieldIcon {
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
             let graphics = NSGraphicsContext(bitmapImageRep: bitmap),
-            let monogram = mark(size: size) else { return image }
+            let monogram = mark(size: size, italic: palette == .forest) else { return image }
         let context = graphics.cgContext
         context.scaleBy(x: CGFloat(size) / 1024, y: CGFloat(size) / 1024)
         context.setAllowsAntialiasing(true)

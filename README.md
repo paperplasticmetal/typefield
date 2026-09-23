@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.45.1 (build 59).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.45.2 (build 60).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 
@@ -134,6 +134,6 @@ No open-source license has been granted at this time. All rights are reserved by
 
 ### Settings and icon designs
 
-Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The workspace uses Porcelain's neutral light and dark surfaces. Choose Porcelain, Amber, Ocean, Forest, Plum, or Rose as an accent for controls and selections. The App Icon pane offers six designs: clean Porcelain, layered Paper Play, typographic Type Study, calligraphic Ink Sketch, textured Chalkboard, and dimensional Pressed Type. Each has one preview. The Dock icon can follow the app or stay Light/Dark independently of app and macOS appearance. Selections persist; Finder uses the bundled Porcelain light icon. Accent colors do not recolor font previews or saved typeboards.
+Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The workspace uses Porcelain's neutral light and dark surfaces. Choose Porcelain, Amber, Ocean, Forest, Plum, or Rose as an accent for controls and selections. The App Icon pane offers six designs: clean Porcelain, layered Paper Play, typographic Type Study, pen-drawn Ink Sketch, textured Chalkboard, and dimensional Pressed Type. Each has one preview. The Dock icon can follow the app or stay Light/Dark independently of app and macOS appearance. Selections persist; Finder uses the bundled Porcelain light icon. Accent colors do not recolor font previews or saved typeboards.
 
 Icon artwork is generated from native type outlines by `scripts/make-icon.swift`; its header documents the compilation command. The same renderer powers Settings previews and the Dock.

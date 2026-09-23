@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.45.2 — 2026-09-23
+
+- Replaced Ink Sketch's pooled shapes with Bodoni-family italic lettering and restrained ink-pressure detail, keeping the serif monogram recognizable.
+- Removed stray confetti from Paper Play and aligned Type Study's guides and measurement points with the letter bounds.
+
 ## 0.45.1 — 2026-09-23
 
 - Reworked Ink Sketch as blue-black ink on warm paper. The shared Tf letterforms now carry a visible broad-nib entry, a pooled tapered exit and dry strokes within the thick stems; the design remains legible at small Dock sizes.
