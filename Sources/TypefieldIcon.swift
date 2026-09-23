@@ -203,49 +203,86 @@ enum TypefieldIcon {
     }
 
     private static func inkSketch(_ ctx: CGContext, _ m: Mark, _ dark: Bool, _ size: Int) {
-        gradient(ctx, top: c(dark ? "28372D" : "F3EAD4"), bottom: c(dark ? "18261F" : "E8D8B7"))
-        let ink = c(dark ? "DDE9CA" : "213A2B")
-        // Keep the shared Bodoni outlines intact. A broad pen gently enters the
-        // T cap, and its exit grows directly out of the f's lower serif.
+        gradient(ctx, top: c(dark ? "2D3640" : "F9F2E5"),
+            bottom: c(dark ? "18222A" : "E9DAC2"))
         let tb = m.t.boundingBoxOfPath
         let fb = m.f.boundingBoxOfPath
+        let ink = c(dark ? "DEE9E7" : "1A3944")
+        let deep = c(dark ? "9FB8B9" : "061922")
+
         if size >= 64 {
+            // A broad pen enters the cap. Its pressure widens, then joins
+            // the unmodified T instead of turning the letters into script.
             let entry = CGMutablePath()
-            let left = tb.minX
-            let top = tb.maxY
-            entry.move(to: CGPoint(x: left - 25, y: top + 8))
-            entry.addCurve(to: CGPoint(x: left + 86, y: top - 1),
-                control1: CGPoint(x: left + 8, y: top + 14), control2: CGPoint(x: left + 46, y: top + 5))
-            entry.addQuadCurve(to: CGPoint(x: left + 12, y: top - 8),
-                control: CGPoint(x: left + 42, y: top - 9))
+            entry.move(to: CGPoint(x: tb.minX - 55, y: tb.maxY + 31))
+            entry.addCurve(to: CGPoint(x: tb.minX + 168, y: tb.maxY - 12),
+                control1: CGPoint(x: tb.minX + 28, y: tb.maxY + 42),
+                control2: CGPoint(x: tb.minX + 100, y: tb.maxY + 6))
+            entry.addCurve(to: CGPoint(x: tb.minX + 22, y: tb.maxY - 18),
+                control1: CGPoint(x: tb.minX + 119, y: tb.maxY - 26),
+                control2: CGPoint(x: tb.minX + 62, y: tb.maxY - 27))
+            entry.addQuadCurve(to: CGPoint(x: tb.minX - 55, y: tb.maxY + 31),
+                control: CGPoint(x: tb.minX - 23, y: tb.maxY + 6))
             entry.closeSubpath()
             fill(ctx, entry, ink)
 
-            let foot = CGPoint(x: fb.minX + fb.width * 0.69, y: fb.minY + 11)
-            let exit = CGMutablePath()
-            exit.move(to: CGPoint(x: foot.x - 28, y: foot.y + 8))
-            exit.addCurve(to: CGPoint(x: foot.x + 114, y: foot.y - 31),
-                control1: CGPoint(x: foot.x + 25, y: foot.y + 1),
-                control2: CGPoint(x: foot.x + 83, y: foot.y - 32))
-            exit.addQuadCurve(to: CGPoint(x: foot.x + 45, y: foot.y - 24),
-                control: CGPoint(x: foot.x + 89, y: foot.y - 27))
-            exit.addCurve(to: CGPoint(x: foot.x - 28, y: foot.y - 6),
-                control1: CGPoint(x: foot.x + 10, y: foot.y - 11),
-                control2: CGPoint(x: foot.x - 12, y: foot.y - 5))
-            exit.closeSubpath()
-            fill(ctx, exit, ink)
+            // The f serif releases a single broad-to-fine ink stroke.
+            // A small uneven pool at the join resolves into a sharp nib tip.
+            let tail = CGMutablePath()
+            tail.move(to: CGPoint(x: fb.minX + 119, y: fb.minY + 15))
+            tail.addCurve(to: CGPoint(x: fb.maxX + 8, y: fb.minY - 18),
+                control1: CGPoint(x: fb.minX + 176, y: fb.minY + 15),
+                control2: CGPoint(x: fb.maxX - 8, y: fb.minY - 13))
+            tail.addCurve(to: CGPoint(x: fb.minX + 189, y: fb.minY - 36),
+                control1: CGPoint(x: fb.maxX - 3, y: fb.minY - 27),
+                control2: CGPoint(x: fb.minX + 237, y: fb.minY - 39))
+            tail.addCurve(to: CGPoint(x: fb.minX + 119, y: fb.minY + 15),
+                control1: CGPoint(x: fb.minX + 148, y: fb.minY - 35),
+                control2: CGPoint(x: fb.minX + 108, y: fb.minY - 9))
+            tail.closeSubpath()
+            fill(ctx, tail, ink)
+            ctx.setFillColor(ink.cgColor)
+            ctx.fillEllipse(in: CGRect(x: fb.maxX - 12, y: fb.minY - 27, width: 23, height: 14))
         }
         fill(ctx, m.both, ink)
         if size <= 32 { stroke(ctx, m.both, ink, 22) }
-        if size >= 128 {
-            // Two continuous nib highlights suggest varying pressure inside the
-            // thick strokes, without introducing speckle or changing the glyphs.
-            ctx.saveGState(); ctx.addPath(m.both); ctx.clip()
-            let nib = c(dark ? "F5F4DA" : "91A98C", dark ? 0.26 : 0.30)
-            line(ctx, tb.midX - 27, tb.minY + 59,
-                tb.midX - 34, tb.maxY - 51, nib, 16)
-            line(ctx, fb.minX + fb.width * 0.36, fb.minY + 54,
-                fb.minX + fb.width * 0.32, fb.maxY - 100, nib, 13)
+
+        if size >= 64 {
+            ctx.saveGState()
+            ctx.addPath(m.both)
+            ctx.clip()
+            // Darker deposits at cap joins and serif ends make the wet ink
+            // visible at settings-card size, without outlining the glyph.
+            ctx.setFillColor(deep.withAlphaComponent(dark ? 0.34 : 0.50).cgColor)
+            ctx.fillEllipse(in: CGRect(x: tb.minX + 120, y: tb.maxY - 74, width: 148, height: 95))
+            ctx.fillEllipse(in: CGRect(x: fb.minX + 58, y: fb.maxY - 83, width: 148, height: 95))
+            ctx.fillEllipse(in: CGRect(x: fb.minX + 95, y: fb.minY - 11, width: 136, height: 61))
+
+            let dry = c(dark ? "243943" : "E0D8C1", dark ? 0.78 : 0.82)
+            let tDrag = CGMutablePath()
+            tDrag.move(to: CGPoint(x: tb.midX - 24, y: tb.maxY - 91))
+            tDrag.addCurve(to: CGPoint(x: tb.midX - 35, y: tb.maxY - 281),
+                control1: CGPoint(x: tb.midX - 16, y: tb.maxY - 139),
+                control2: CGPoint(x: tb.midX - 37, y: tb.maxY - 226))
+            tDrag.addQuadCurve(to: CGPoint(x: tb.midX - 55, y: tb.maxY - 185),
+                control: CGPoint(x: tb.midX - 44, y: tb.maxY - 271))
+            tDrag.addQuadCurve(to: CGPoint(x: tb.midX - 24, y: tb.maxY - 91),
+                control: CGPoint(x: tb.midX - 36, y: tb.maxY - 131))
+            tDrag.closeSubpath()
+            fill(ctx, tDrag, dry)
+
+            let fDrag = CGMutablePath()
+            fDrag.move(to: CGPoint(x: fb.minX + 84, y: fb.maxY - 114))
+            fDrag.addCurve(to: CGPoint(x: fb.minX + 75, y: fb.maxY - 286),
+                control1: CGPoint(x: fb.minX + 91, y: fb.maxY - 166),
+                control2: CGPoint(x: fb.minX + 67, y: fb.maxY - 247))
+            fDrag.addQuadCurve(to: CGPoint(x: fb.minX + 53, y: fb.maxY - 201),
+                control: CGPoint(x: fb.minX + 60, y: fb.maxY - 277))
+            fDrag.addQuadCurve(to: CGPoint(x: fb.minX + 84, y: fb.maxY - 114),
+                control: CGPoint(x: fb.minX + 76, y: fb.maxY - 153))
+            fDrag.closeSubpath()
+            fill(ctx, fDrag, dry)
+
             ctx.restoreGState()
         }
     }

@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.45.0 (build 58).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.45.1 (build 59).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 

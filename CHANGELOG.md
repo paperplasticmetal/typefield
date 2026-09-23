@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.45.1 — 2026-09-23
+
+- Reworked Ink Sketch as blue-black ink on warm paper. The shared Tf letterforms now carry a visible broad-nib entry, a pooled tapered exit and dry strokes within the thick stems; the design remains legible at small Dock sizes.
+
 ## 0.45.0 — 2026-09-23
 
 - Exposed Spaces sections, text and imported layers, plus Letterform contours and nodes, as selectable VoiceOver objects with edit, move and delete actions where appropriate. Added keyboard selection, section reorder and imported-layer nudging without a drag.
