@@ -457,13 +457,18 @@ final class FontLabStore: ObservableObject {
     private var deferredSnapshotSave: SnapshotSave?
     private var persistenceErrorMessage: String?
 
-    init(url: URL) {
+    init(url: URL, recoveryError: String? = nil) {
         self.url = url
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in self?.flushPendingSave() }
+        if let recoveryError {
+            readBlocked = true
+            error = recoveryError
+            return
+        }
         do {
             try TypefieldInputFile.requireRegularFileIfPresent(url)
             guard FileManager.default.fileExists(atPath: url.path) else { return }
@@ -480,6 +485,23 @@ final class FontLabStore: ObservableObject {
 
     deinit {
         if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
+    }
+
+    func blockForBackupRecovery(_ message: String) {
+        pendingSave?.cancel()
+        pendingSave = nil
+        readBlocked = true
+        error = message
+    }
+
+    /// Drain any queued artwork write before staging the multi-file import.
+    @discardableResult func prepareForBackupImport() -> Bool { save() }
+
+    /// Called only after the journal has committed the matching saved file.
+    func acceptSavedBackupImport(_ imported: FontLabState) {
+        state = imported
+        savedAt = Date()
+        error = ""
     }
 
     var selectedProject: FontLabProject? {
@@ -582,12 +604,24 @@ final class FontLabStore: ObservableObject {
 
     @discardableResult func importProjects(_ projects: [FontLabProject]) -> Bool {
         guard !readBlocked else { return false }
-        guard projects.allSatisfy(\.isValid) else {
+        guard let imported = stateByImportingProjects(projects) else {
             error = "The backup contains invalid Letterform Editor project data."
             return false
         }
         guard !projects.isEmpty else { return true }
         let previous = state
+        state = imported
+        guard save() else {
+            state = previous
+            return false
+        }
+        return true
+    }
+
+    /// Produces independent backup copies without changing the live store.
+    func stateByImportingProjects(_ projects: [FontLabProject]) -> FontLabState? {
+        guard !readBlocked, projects.allSatisfy(\.isValid) else { return nil }
+        var imported = state
         let suffix = " (imported)"
         let copies = projects.map { project -> FontLabProject in
             var copy = project
@@ -595,13 +629,9 @@ final class FontLabStore: ObservableObject {
             copy.name = String(project.name.prefix(max(1, 200 - suffix.count))) + suffix
             return copy
         }
-        state.projects.append(contentsOf: copies)
-        if state.selectedProject == nil { state.selectedProject = copies.first?.id }
-        guard save() else {
-            state = previous
-            return false
-        }
-        return true
+        imported.projects.append(contentsOf: copies)
+        if imported.selectedProject == nil { imported.selectedProject = copies.first?.id }
+        return imported.isValid ? imported : nil
     }
 
     @discardableResult func save() -> Bool {

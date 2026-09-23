@@ -64,6 +64,18 @@ final class FolderWatcher {
     deinit { timer?.cancel() }
 }
 
+extension SavedLibrary {
+    mutating func replaceWatchedFolder(_ oldPath: String, with newPath: String) {
+        guard let oldIndex = folders.firstIndex(of: oldPath) else { return }
+        if folders.contains(newPath) && oldPath != newPath { folders.removeAll { $0 == oldPath } }
+        else {
+            folders.removeAll { $0 == oldPath }
+            folders.insert(newPath, at: min(oldIndex, folders.count))
+        }
+        if autoActivateFolders?.remove(oldPath) != nil { autoActivateFolders?.insert(newPath) }
+    }
+}
+
 extension Library {
     @discardableResult func stopWatchingFolder(_ path: String) -> Bool {
         let previous = saved
@@ -127,7 +139,7 @@ struct WatchedFoldersView: View {
                                 Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path) }
                                 if !library.resolvedFolders.contains(path) {
                                     Label("Access needs attention", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
-                                    Button("Choose Folder Again…") { library.addFolder() }
+                                    Button("Choose Folder Again…") { library.addFolder(replacing: path) }
                                 }
                             }
                             Toggle("Activate fonts for other apps", isOn: Binding(get: { library.saved.autoActivateFolders?.contains(path) == true }, set: { enabled in library.setFolderActivation(path, enabled: enabled) })).toggleStyle(.checkbox).disabled(library.loading)

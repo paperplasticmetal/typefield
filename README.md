@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.46.1 (build 63).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.47.0 (build 64).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 
@@ -18,7 +18,7 @@ Native macOS font browsing, previews, and organization, built with SwiftUI, AppK
 
 **Font pairing suggestions:** In a Spaces canvas, select a type role and choose **Pair this font with another role…**. Pick the target role, then compare Safe, Balanced and Expressive suggestions from the fonts already on this Mac. Typefield previews the source and candidate together, exposes language/proportion/role/contrast reasons and relative scoring signals, and applies the result to the target role without replacing the source. These are explainable starting points, not universal taste scores or cloud-generated answers.
 
-**Roadmap:** [Prioritized outstanding work and competitor references](docs/ROADMAP.md) and the [production readiness audit](docs/PRODUCTION_READINESS.md), updated for 0.40.0. [App rebrand plan](docs/REBRAND_PLAN.md).
+**Roadmap:** [Prioritized outstanding work and competitor references](docs/ROADMAP.md) and the [production readiness audit](docs/PRODUCTION_READINESS.md), updated for 0.47.0. [App rebrand plan](docs/REBRAND_PLAN.md).
 
 **Spaces typography:** Compact Character, Paragraph, list and canvas-alignment controls make text editing easier to navigate. [Controls and behavior](docs/SPACES_TYPOGRAPHY.md).
 
@@ -36,7 +36,7 @@ The typography summary also includes a **Web font cost** audit for the selected 
 
 **Saved searches:** Set Library search, category, tags, source, writing system, sorting or coverage filters, then choose **Tools → Save current search…**. Saved searches appear in the sidebar and recompute against the current catalog. Right-click one to delete it.
 
-**Live folders:** Add font folder explains recursive watching in the picker, then opens the folder manager. **Live folders** is always accessible in the Library sidebar. Watching updates additions, replacements and removals while the app is open; activation for other apps remains a separate opt-in. If macOS revokes a protected-folder bookmark, Typefield reports it once and waits for you to choose the folder again instead of repeatedly touching the protected path.
+**Live folders:** Add font folder explains recursive watching in the picker, then opens the folder manager. **Live folders** is always accessible in the Library sidebar. Watching updates additions, replacements and removals while the app is open; activation for other apps remains a separate opt-in. An unavailable location is reported separately from expired permission. **Choose Folder Again** replaces the saved location and keeps its activation choice; local development builds accept a readable folder without requiring a sandbox security scope.
 
 **Font health:** Open **Tools → Font Health** to scan user fonts and watched folders, or choose **Inspect font file…** from a family's action menu. Typefield checks SFNT structure, required tables, bounds, overlaps, checksums and common name-table failures, then separates actual warnings/errors from optional compatibility notes. Proposed fixes are individually reviewable. Export creates a new Core Text-validated copy; in-place repair is limited to writable user fonts, requires a separate confirmation, and keeps a `.typefield-backup` beside the original. System fonts, TTC/OTC collections, unsupported containers and ambiguous identity conflicts remain inspection-only.
 
@@ -59,7 +59,7 @@ The typography summary also includes a **Web font cost** audit for the selected 
 - Local font-health inspection with conservative name-table/checksum repairs, before/after identity summaries, repaired-copy export and backed-up in-place repair for writable user fonts.
 - Recursive watched folders refreshed every three seconds while open, with opt-in temporary activation for other apps using original files. No copying into system font folders.
 - Selected-canvas web-font cost audits with exact WOFF2 provenance, ambiguity reporting, Unicode/script coverage, compatible variable-versus-static comparisons, fallback-layout probes and removable-style estimates.
-- Daily local state backups and merge-based backup import. Folder access permissions must be granted separately.
+- Daily local state backups and merge-based backup import. An interrupted import is recovered from staged copies before saved projects open; if recovery cannot be verified, editing is blocked to preserve those files. Folder access permissions must be granted separately.
 
 Library, Spaces and Letterform Editor share one stable workspace sidebar, including the same Typefield mark and three-way workspace switcher in the same position. Use the header control or **View → Hide Sidebar** (Control-Command-S) to reclaim the full window; the choice persists across workspace switches and relaunches, and a large connected pull-tab on the left edge restores it. Shared cards, glass sidebars and Letterform Editor's native canvases are clipped to their rounded outlines so their backgrounds stay inside the border. Spaces has a resizable inspector with alignment, kerning, exact line height, tracking, paragraph/word spacing, indents, case and decorations. **Font kerning** uses or suppresses the font designer's built-in pair spacing (for combinations such as AV or To); it is independent of the explicit Letter spacing value. Drag sections in the arrangement list or directly on the canvas. Choose an A/B partner with the same format and width, then use **Swap A/B** (Command-backslash). Fit zoom adapts to panel resizing.
 
@@ -69,7 +69,7 @@ The 0.28 Letterform Editor persistence path keeps an active gesture local until 
 
 Search accepts `#tag`, `#!tag`, and quoted names such as `#"Client Work"`. Typing `#` opens tag and font-property suggestions. Built-ins include `#typefield/active`, `#typefield/user`, `#typefield/bold`, `#typefield/italic`, and `#typefield/feature/tnum`; `#fontshelf/` and `#typeface/` remain compatibility aliases for saved searches. Tokens combine with AND and match the same style. A parent tag includes its descendants. Removable search chips show active filters.
 
-**Figma round trip:** Use the typeboard's **Export** menu to create an editable Figma package. The bundled local plugin can also export selected Figma frames; import that JSON using **Spaces → Import → Figma typeboard…**. Imported text layers can be edited independently and moved directly on the canvas. Fonts must be available on each side. Native `.fig` files, live sync and full Figma fidelity are not supported; unsupported elements/settings are reported. See [bridge instructions](Resources/FigmaImport/README.md) and [interaction checks](docs/INTERACTION_AUDIT.md).
+**Figma round trip:** Use the typeboard's **Export** menu to create an editable Figma package. The bundled local plugin can also export selected Figma frames; import that JSON using **Spaces → Import → Figma typeboard…**. Imported text layers can be edited independently and moved directly on the canvas. Selected simple shapes support fill, corner radius, stroke color, stroke opacity and stroke width. Fonts must be available on each side. Native `.fig` files, live sync and full Figma fidelity are not supported; unsupported elements/settings are reported. See [bridge instructions](Resources/FigmaImport/README.md) and [interaction checks](docs/INTERACTION_AUDIT.md).
 
 This is not complete Typeface feature parity. Native Adobe-file decoding and live sync, production-compatible master interpolation, advanced GPOS kerning export, opt-in model-backed font generation, a published Figma plug-in, document-triggered activation, importing third-party collection databases, screenshot-based font matching and cloud team collaboration are not implemented. Session activation is verified in the local development build; App Store sandbox verification remains outstanding.
 

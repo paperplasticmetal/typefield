@@ -152,7 +152,9 @@ struct TypeDirection: Codable, Identifiable, Equatable {
         let widest = max(width, importedLayout?.layers.map { $0.x + $0.width }.max() ?? width)
         let tallest = max(importedLayout?.height ?? 1, importedLayout?.layers.map { $0.y + $0.height }.max() ?? 1)
         let fontSize = (canvas == .imported ? importedLayout?.layers.compactMap { $0.style?.size }.max() : styles.values.map(\.size).max()) ?? 1
-        let exportSafe = min(4, 10_000 / max(1, widest), 10_000 / max(1, tallest), 1_000 / max(1, fontSize))
+        let strokeWidth = importedLayout?.layers.map(\.visibleStrokeWidth).max() ?? 0
+        let exportSafe = min(4, 10_000 / max(1, widest), 10_000 / max(1, tallest),
+                             1_000 / max(1, fontSize), 1_000 / max(1, strokeWidth))
         // A legacy imported artboard may already exceed an exporter's bounds.
         // Keep its existing 1× size reachable and allow gradual reduction.
         return canvas == .imported ? max(1, exportSafe) : exportSafe
@@ -219,6 +221,11 @@ struct ImportedLayer: Codable, Identifiable, Equatable {
     var opacity: Double = 1
     var radius: Double = 0
     var style: TypeStyle?
+    /// Optional fields keep Spaces saved before stroke editing readable.
+    var strokeColor: String?
+    var strokeOpacity: Double?
+    var strokeWidth: Double?
+    var visibleStrokeWidth: Double { strokeColor == nil ? 0 : (strokeWidth ?? 0) }
     var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
 struct ImportedLayout: Codable, Equatable {
@@ -233,7 +240,12 @@ struct ImportedLayout: Codable, Equatable {
     }
     var isValid: Bool {
         width.isFinite && height.isFinite && (1...10000).contains(width) && (1...100000).contains(height) && layers.count <= 5000 && Set(layers.map(\.id)).count == layers.count && layers.allSatisfy { layer in
-            [layer.x, layer.y, layer.width, layer.height, layer.opacity, layer.radius].allSatisfy(\.isFinite) && abs(layer.x) <= 100000 && abs(layer.y) <= 100000 && (0.01...100000).contains(layer.width) && (0.01...100000).contains(layer.height) && (0...1).contains(layer.opacity) && (0...10000).contains(layer.radius) && (layer.style.map { $0.size.isFinite && (1...1000).contains($0.size) && TypeDirection.acceptsCanvasText($0.text) && $0.tracking.isFinite && abs($0.tracking) <= 100 && ($0.lineHeight.map { $0.isFinite && (1...2000).contains($0) } ?? true) && $0.axes.values.allSatisfy(\.isFinite) && [$0.paragraphSpacing, $0.indent, $0.wordSpacing].allSatisfy { $0.map { $0.isFinite && abs($0) <= 1000 } ?? true } } ?? true)
+            [layer.x, layer.y, layer.width, layer.height, layer.opacity, layer.radius].allSatisfy(\.isFinite) && abs(layer.x) <= 100000 && abs(layer.y) <= 100000 && (0.01...100000).contains(layer.width) && (0.01...100000).contains(layer.height) && (0...1).contains(layer.opacity) && (0...10000).contains(layer.radius) &&
+            (layer.strokeColor.map { $0.range(of: #"^[0-9A-Fa-f]{6}$"#, options: .regularExpression) != nil } ?? true) &&
+            (layer.strokeWidth.map { $0.isFinite && (0...1000).contains($0) && ($0 == 0 || layer.strokeColor != nil) } ?? true) &&
+            (layer.strokeOpacity.map { $0.isFinite && (0...1).contains($0) } ?? true) &&
+            (layer.style == nil || (layer.strokeColor == nil && layer.strokeWidth == nil && layer.strokeOpacity == nil)) &&
+            (layer.style.map { $0.size.isFinite && (1...1000).contains($0.size) && TypeDirection.acceptsCanvasText($0.text) && $0.tracking.isFinite && abs($0.tracking) <= 100 && ($0.lineHeight.map { $0.isFinite && (1...2000).contains($0) } ?? true) && $0.axes.values.allSatisfy(\.isFinite) && [$0.paragraphSpacing, $0.indent, $0.wordSpacing].allSatisfy { $0.map { $0.isFinite && abs($0) <= 1000 } ?? true } } ?? true)
         }
     }
 }
@@ -278,9 +290,14 @@ final class StudioStore: ObservableObject {
     let undoManager = UndoManager()
     private var lastEdit: (board: UUID, action: String, date: Date)?
     private(set) var readBlocked = false
-    init(url: URL) {
+    init(url: URL, recoveryError: String? = nil) {
         self.url = url
         undoManager.levelsOfUndo = 100
+        if let recoveryError {
+            readBlocked = true
+            error = recoveryError
+            return
+        }
         do {
             try TypefieldInputFile.requireRegularFileIfPresent(url)
             guard FileManager.default.fileExists(atPath: url.path) else { return }
@@ -289,6 +306,10 @@ final class StudioStore: ObservableObject {
             state = loaded
             focusedSpace = loaded.selectedSpace; focusedBoard = loaded.selectedBoard
         } catch { readBlocked = true; self.error = "Spaces could not be opened. The saved file has been preserved. " + error.localizedDescription }
+    }
+    func blockForBackupRecovery(_ message: String) {
+        readBlocked = true
+        error = message
     }
     @discardableResult func save() -> Bool {
         guard !readBlocked else { return false }

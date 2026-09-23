@@ -1368,6 +1368,29 @@ struct TypeBoardEditor: View {
             updateSelectedShape("Change Shape Fill") { $0.color = hex }
         })
     }
+    var selectedShapeStroke: Binding<String> {
+        Binding(get: { selectedImportedShape?.strokeColor ?? "222222" }, set: { hex in
+            updateSelectedShape("Change Shape Stroke") {
+                $0.strokeColor = hex
+                if ($0.strokeWidth ?? 0) == 0 { $0.strokeWidth = 1 }
+            }
+        })
+    }
+    var selectedShapeStrokeWidth: Binding<Double> {
+        Binding(get: { selectedImportedShape?.visibleStrokeWidth ?? 0 }, set: { value in
+            guard value.isFinite else { return }
+            updateSelectedShape("Change Shape Stroke Width") {
+                $0.strokeWidth = min(1_000, max(0, value))
+                if $0.strokeWidth! > 0 && $0.strokeColor == nil { $0.strokeColor = "222222" }
+            }
+        })
+    }
+    var selectedShapeStrokeOpacity: Binding<Double> {
+        Binding(get: { (selectedImportedShape?.strokeOpacity ?? 1) * 100 }, set: { value in
+            guard value.isFinite else { return }
+            updateSelectedShape("Change Shape Stroke Opacity") { $0.strokeOpacity = min(1, max(0, value / 100)) }
+        })
+    }
     var selectedShapeOpacity: Binding<Double> {
         Binding(get: { (selectedImportedShape?.opacity ?? 1) * 100 }, set: { value in
             guard value.isFinite else { return }
@@ -1394,10 +1417,27 @@ struct TypeBoardEditor: View {
             }
             Text("Appearance changes apply only to this shape.").font(.caption).foregroundStyle(.secondary)
             StudioHexColorPicker(title: "Fill", hex: selectedShapeFill)
+            StudioHexColorPicker(title: "Stroke", hex: selectedShapeStroke)
             HStack(spacing: 7) {
-                Text("Opacity")
-                Slider(value: selectedShapeOpacity, in: 0...100) { Text("Opacity") }.labelsHidden()
-                TextField("Opacity", value: selectedShapeOpacity, format: .number.precision(.fractionLength(0...1)))
+                Text("Stroke width")
+                Spacer(minLength: 4)
+                TextField("Stroke width", value: selectedShapeStrokeWidth, format: .number.precision(.fractionLength(0...2)))
+                    .multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 70)
+                Text(direction.canvasUnitLabel).foregroundStyle(.secondary)
+            }.font(.caption)
+            if (selectedImportedShape?.visibleStrokeWidth ?? 0) > 0 {
+                HStack(spacing: 7) {
+                    Text("Stroke opacity")
+                    Slider(value: selectedShapeStrokeOpacity, in: 0...100) { Text("Stroke opacity") }.labelsHidden()
+                    TextField("Stroke opacity", value: selectedShapeStrokeOpacity, format: .number.precision(.fractionLength(0...1)))
+                        .multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 52)
+                    Text("%").foregroundStyle(.secondary)
+                }.font(.caption)
+            }
+            HStack(spacing: 7) {
+                Text("Fill opacity")
+                Slider(value: selectedShapeOpacity, in: 0...100) { Text("Fill opacity") }.labelsHidden()
+                TextField("Fill opacity", value: selectedShapeOpacity, format: .number.precision(.fractionLength(0...1)))
                     .multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 52)
                 Text("%").foregroundStyle(.secondary)
             }.font(.caption)
@@ -1479,6 +1519,8 @@ struct CanvasElement {
     var text: NSAttributedString?
     var color: NSColor?
     var radius: Double = 0
+    var strokeColor: NSColor?
+    var strokeWidth: Double = 0
     var sectionID = ""
     var style: TypeStyle?
     var role: TypeRole?
@@ -1556,7 +1598,11 @@ struct CanvasPlan {
                     let text = style.attributed(color: color)
                     rect.size.height = max(rect.height, ceil(text.boundingRect(with: CGSize(width: max(1, rect.width), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading]).height) + 4)
                     elements.append(CanvasElement(rect: rect, text: text, sectionID: layer.id, style: style))
-                } else { elements.append(CanvasElement(rect: rect, color: color, radius: layer.radius, sectionID: layer.id)) }
+                } else {
+                    let stroke = layer.strokeColor.map { NSColor(hex: $0).withAlphaComponent(layer.strokeOpacity ?? 1) }
+                    elements.append(CanvasElement(rect: rect, color: color, radius: layer.radius,
+                                                  strokeColor: stroke, strokeWidth: layer.visibleStrokeWidth, sectionID: layer.id))
+                }
                 sections.append(CanvasSection(id: layer.id, title: layer.name, rect: rect))
                 size.width = max(size.width, rect.maxX)
                 size.height = max(size.height, rect.maxY)
@@ -1738,6 +1784,7 @@ struct CanvasPlan {
         for index in elements.indices {
             elements[index].rect = scaled(elements[index].rect)
             elements[index].radius *= factor
+            elements[index].strokeWidth *= factor
             if let style = elements[index].style { elements[index].style = style.scaledForCanvas(factor) }
             if let text = elements[index].text {
                 let scaledText = NSMutableAttributedString(attributedString: text)
@@ -2206,7 +2253,13 @@ final class CanvasNativeView: NSView {
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSGraphicsContext.current?.cgContext.scaleBy(x: zoom, y: zoom)
         for element in plan.elements {
-            if let color = element.color { color.setFill(); NSBezierPath(roundedRect: element.rect, xRadius: element.radius, yRadius: element.radius).fill() }
+            if element.color != nil || element.strokeColor != nil {
+                let shape = NSBezierPath(roundedRect: element.rect, xRadius: element.radius, yRadius: element.radius)
+                if let color = element.color { color.setFill(); shape.fill() }
+                if let stroke = element.strokeColor, element.strokeWidth > 0 {
+                    stroke.setStroke(); shape.lineWidth = element.strokeWidth; shape.stroke()
+                }
+            }
             element.text?.draw(with: element.rect, options: [.usesLineFragmentOrigin, .usesFontLeading])
         }
         if directionID != nil, let textID = selectedTextID, let selected = plan.elements.first(where: { $0.textID == textID }) {

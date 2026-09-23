@@ -26,7 +26,7 @@ The inventory combines current source, current workflow documents, recorded QA l
 ## Recommended restart order
 
 1. **FL-01 / FL-02:** make whole-object editing consistent; add a safe, previewed outline-weight tool.
-2. **SP-01 / SP-02:** finish shape stroke controls and make selected-object versus shared-role edits explicit.
+2. **SP-02:** make selected-object versus shared-role edits explicit; shape stroke controls shipped in 0.47.0.
 3. **FL-03 / FL-04:** preserve imported vectors and prove the artwork workflow with real Procreate/alphabet sheets.
 4. **FL-05 / SP-03 / X-01:** make features discoverable and complete the critical interaction/Undo checks.
 5. **FL-11 / FL-12:** improve component assembly and kerning/export reliability.
@@ -75,7 +75,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 
 | ID | Priority / state / effort | Outstanding work |
 | --- | --- | --- |
-| SP-01 | **P0 · Partial · M** | **Finish shape appearance.** A selected imported shape now has its own fill, opacity, and corner-radius controls. Add stroke and stroke width across native rendering, persistence, Figma/Adobe bridges, and exported handoffs. Gradients are later scope. |
+| SP-01 | **Shipped in 0.47.0** | Selected imported shapes have fill, opacity, corner radius, stroke color and width across rendering, persistence and supported Figma/Adobe bridges. Gradients remain a separate later scope. |
 | SP-02 | **P0 · Partial · M** | **Explicit editing scope.** Clearly show whether a change affects one selected text object, a shared typography role or the whole canvas; support local style overrides and reset. Template objects currently share role styling while imported text has independent styles. |
 | SP-03 | **P0 · Partial + QA · M** | **Selection and transform consistency.** Clear selected-object bounds, discoverable move/resize controls, robust click targeting, keyboard nudging, predictable Undo and consistent behavior across template and imported canvases. Audit before expanding the drawing toolset. |
 | SP-04 | P1 · Partial · M | **Multi-object selection and alignment.** Align/distribute relative to selection, key object or canvas; group/ungroup, lock/hide and joint movement. Current Align controls position one selected frame relative to the canvas. |
@@ -101,7 +101,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 
 | ID | Priority / state / effort | Outstanding work |
 | --- | --- | --- |
-| LB-01 | **P0 · Partial + QA · M** | **Folder access and activation reliability.** Diagnose the repeated access-renewal notice seen during local launches; distinguish valid permission renewal from avoidable repeated prompting. Test relocation, revocation, unavailable volumes and recovery without repeated scans. Verify session activation under final App Store sandbox entitlements. |
+| LB-01 | **P0 · Partial + QA · M** | **Folder access and activation reliability.** The local-build false renewal and saved-path replacement are addressed in 0.47.0. Verify actual bookmark revocation, relocation, offline volumes, sleep/wake, and session activation under final App Store sandbox entitlements. |
 | LB-02 | **P1 · Missing · L–XL** | **Document-triggered activation.** Identify missing fonts requested by another app and activate the correct face/version. This is a major Typeface/Extensis workflow gap, distinct from current manual session activation and watched-folder refresh. Investigate supported macOS/app integration before promising broad coverage. |
 | LB-03 | P1 · Missing · M–L | **Collection migration.** Import Font Book/Typeface/FontBase/legacy-manager organization where accessible, with mapping, duplicate/conflict review and source preservation. Reading font files is not importing another manager's collection database. |
 | LB-04 | P1 · Partial · M | **Saved searches / smart collections.** Named searches now persist the active section, query, sorting, source, writing system, tag, property and required-text filters; reapplying recomputes membership from the current catalog. Add management polish and robustness for renamed/deleted sections. |

@@ -85,6 +85,42 @@ enum ProChecks {
         let restoredManagedChild = try managedAccess.restore(managedChild)
         precondition(restoredManagedChild == managedChild, "App-managed folders unexpectedly require a bookmark")
         do { _ = try managedAccess.restore(root.appendingPathComponent("external-fonts").path); preconditionFailure("An external folder without a bookmark was accessed") } catch {}
+        let external = root.appendingPathComponent("external-fonts")
+        let relocated = root.appendingPathComponent("relocated-fonts")
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: relocated, withIntermediateDirectories: true)
+        let localAccessRoot = root.appendingPathComponent("local-access")
+        let localAccess = FolderAccess(directory: localAccessRoot, sandboxed: false)
+        let readableWithoutBookmark = try localAccess.restore(external.path)
+        precondition(readableWithoutBookmark == external.path, "A readable folder without a bookmark was mislabeled as needing renewed access in the local build")
+        try localAccess.remember(external)
+        let restoredLocalBookmark = try FolderAccess(directory: localAccessRoot, sandboxed: false).restore(external.path)
+        precondition(restoredLocalBookmark == external.path, "Local folder bookmark did not survive relaunch")
+        let alternateSpelling = "/private" + external.path
+        precondition(FileManager.default.fileExists(atPath: alternateSpelling), "Expected a temporary-folder alias for the watched-folder check")
+        let aliasAccessRoot = root.appendingPathComponent("alias-access")
+        let aliasAccess = FolderAccess(directory: aliasAccessRoot, sandboxed: false)
+        let restoredAlias = try aliasAccess.restore(alternateSpelling)
+        precondition(restoredAlias == alternateSpelling, "Local folder access changed the saved path through a system alias")
+        try aliasAccess.remember(URL(fileURLWithPath: alternateSpelling))
+        let restoredBookmarkAlias = try FolderAccess(directory: aliasAccessRoot, sandboxed: false).restore(alternateSpelling)
+        precondition(restoredBookmarkAlias == alternateSpelling, "Relaunch changed the watched-folder path through a system alias")
+        var watched = SavedLibrary()
+        watched.folders = [external.path]
+        watched.autoActivateFolders = [external.path]
+        watched.replaceWatchedFolder(external.path, with: relocated.path)
+        precondition(watched.folders == [relocated.path] && watched.autoActivateFolders == [relocated.path], "Renewal left a failing old path or lost its activation setting")
+        watched.folders = [external.path, relocated.path]
+        watched.replaceWatchedFolder(external.path, with: relocated.path)
+        precondition(watched.folders == [relocated.path], "Renewal duplicated a folder that was already watched")
+        try FileManager.default.removeItem(at: external)
+        do {
+            _ = try localAccess.restore(external.path)
+            preconditionFailure("A missing watched folder was treated as readable")
+        } catch {
+            let issue = error as NSError
+            precondition(issue.code == 4 && issue.localizedDescription.contains("unavailable"), "A missing watched folder was mislabeled as an expired permission")
+        }
         print("PASS: empty refresh and corrupt library, activation journal, and folder-permission protection.")
         let samples = ["", "i can feel", "अक्षर 日本語 العربية", "a\n\nb\r\nc", "👩🏽‍💻 é " + String(repeating: "W", count: 60)]
         var layouts = 0

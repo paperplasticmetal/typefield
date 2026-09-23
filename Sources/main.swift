@@ -143,8 +143,8 @@ final class Library: ObservableObject {
     let folderWatcher = FolderWatcher()
     var autoActivatedPaths: Set<String> = []
     var autoActivatedStamps: [String: FontFileStamp] = [:]
-    lazy var studio = StudioStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("spaces.json"))
-    lazy var fontLab = FontLabStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("font-lab.json"))
+    lazy var studio = StudioStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("spaces.json"), recoveryError: backupRecoveryError)
+    lazy var fontLab = FontLabStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("font-lab.json"), recoveryError: backupRecoveryError)
     func pairSelection(_ names: [String], source: String = "Selected fonts", spaceID: UUID? = nil) {
         guard !studio.readBlocked else { message = studio.error; return }
         let unique = names.reduce(into: [String]()) { values, name in if !values.contains(name) { values.append(name) } }
@@ -183,6 +183,7 @@ final class Library: ObservableObject {
     @Published var repairURL: URL?
     @Published var showAdvanced = false
     var librarySaveBlocked = false
+    var backupRecoveryError: String?
     var pendingImportFolder: String?
     var queuedReload = false
     var queuedRegistration = false
@@ -340,6 +341,20 @@ final class Library: ObservableObject {
         saveURL = storageURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("FontShelf/library.json")
         saved = SavedLibrary()
         do {
+            switch try LibraryBackupTools.recoverPendingImport(in: saveURL.deletingLastPathComponent()) {
+            case .none: break
+            case .rolledBack: message = "An interrupted backup import was rolled back. Your previous saved data is intact."
+            case .completed: message = "An interrupted backup import was completed from its saved copies."
+            }
+        } catch {
+            let warning = "Backup import recovery needs attention. Saved files were preserved and editing is disabled. " + error.localizedDescription
+            backupRecoveryError = warning
+            librarySaveBlocked = true
+            proSaveBlocked = true
+            message = warning
+            return
+        }
+        do {
             try TypefieldInputFile.requireRegularFileIfPresent(saveURL)
             if FileManager.default.fileExists(atPath: saveURL.path) { saved = try JSONDecoder().decode(SavedLibrary.self, from: Data(contentsOf: saveURL)) }
         } catch { librarySaveBlocked = true; message = "Could not read your library. The existing file was preserved; restore it from a backup before making changes." }
@@ -358,10 +373,13 @@ final class Library: ObservableObject {
         loading = true
         var folders: [String] = []
         for path in saved.folders {
-            do { folders.append(try folderAccess.restore(path)) }
+            do {
+                folders.append(try folderAccess.restore(path))
+                reportedFolderAccessFailures.remove(path)
+            }
             catch {
                 if reportedFolderAccessFailures.insert(path).inserted {
-                    message = "Folder access needs to be renewed. Open Live folders and choose \(URL(fileURLWithPath: path).lastPathComponent) again."
+                    message = error.localizedDescription
                 }
             }
         }
@@ -481,16 +499,31 @@ final class Library: ObservableObject {
             return a.name.localizedStandardCompare(b.name) == (sort == "Name Z–A" ? .orderedDescending : .orderedAscending)
         }
     }
-    func addFolder() {
+    func addFolder(replacing oldPath: String? = nil) {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
-        panel.prompt = "Add & Watch"
-        panel.message = "Add this folder and watch it live. Fonts in its subfolders are included, and additions, replacements and removals update automatically every three seconds while Typefield is open. Nothing is installed or moved."
+        panel.prompt = oldPath == nil ? "Add & Watch" : "Use Folder"
+        panel.message = oldPath == nil ? "Add this folder and watch it live. Fonts in its subfolders are included, and additions, replacements and removals update automatically every three seconds while Typefield is open. Nothing is installed or moved." : "Choose the watched folder again, or choose its new location. Typefield will replace the old saved path and keep its activation setting."
+        if let oldPath { panel.directoryURL = URL(fileURLWithPath: oldPath).deletingLastPathComponent() }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try folderAccess.remember(url) } catch { message = "Could not retain folder access: " + error.localizedDescription; return }
         reportedFolderAccessFailures.remove(url.path)
-        if !saved.folders.contains(url.path) { let previous = saved; saved.folders.append(url.path); guard save() else { saved = previous; return } }
+        if let oldPath { reportedFolderAccessFailures.remove(oldPath) }
+        let previous = saved
+        if let oldPath, saved.folders.contains(oldPath) { saved.replaceWatchedFolder(oldPath, with: url.path) }
+        else if !saved.folders.contains(url.path) { saved.folders.append(url.path) }
+        if let oldPath, oldPath != url.path, saved.folders != previous.folders || saved.autoActivateFolders != previous.autoActivateFolders {
+            guard save() else { saved = previous; return }
+        } else if oldPath == nil, saved.folders != previous.folders {
+            guard save() else { saved = previous; return }
+        }
         if !resolvedFolders.contains(url.path) { resolvedFolders.append(url.path) }
         openTools("Folders")
+        if let oldPath {
+            resolvedFolders.removeAll { $0 == oldPath && $0 != url.path }
+            reload(register: true)
+            message = "Watching \(url.lastPathComponent). The previous folder location has been replaced."
+            return
+        }
         if loading {
             folderStatus = "Folder added. Its first scan is queued behind the current scan; live watching starts when that scan finishes."
             reload(register: true)

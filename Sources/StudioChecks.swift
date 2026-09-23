@@ -383,6 +383,45 @@ enum StudioChecks {
         let text = ImportedLayer(name: "Text", x: 0, y: 0, width: 100, height: 40, color: "000000", style: TypeStyle(fontName: "Helvetica", size: 18, text: "Text"))
         let importedLayout = ImportedLayout(width: 100, height: 100, layers: [shape, text])
         try verify(importedLayout.textLayerIndex(selectedID: shape.id) == nil && importedLayout.textLayerIndex(selectedID: nil) == 1, "Selecting an imported shape must not redirect to the first text layer")
+        let legacyShape = try JSONDecoder().decode(ImportedLayer.self, from: JSONEncoder().encode(shape))
+        try verify(legacyShape.strokeColor == nil && legacyShape.strokeWidth == nil && legacyShape.strokeOpacity == nil,
+                   "Shapes saved before stroke editing must remain readable")
+        var outlined = shape
+        outlined.strokeColor = "32547A"; outlined.strokeOpacity = 0.75; outlined.strokeWidth = 5
+        let outlinedRoundTrip = try JSONDecoder().decode(ImportedLayer.self, from: JSONEncoder().encode(outlined))
+        try verify(outlinedRoundTrip == outlined && ImportedLayout(width: 100, height: 100, layers: [outlined]).isValid,
+                   "Shape stroke color, opacity, and width must persist")
+        var badStroke = outlined; badStroke.strokeWidth = .infinity
+        try verify(!ImportedLayout(width: 100, height: 100, layers: [badStroke]).isValid,
+                   "Invalid persisted stroke widths must be rejected")
+        badStroke = outlined; badStroke.strokeColor = "not-a-color"
+        try verify(!ImportedLayout(width: 100, height: 100, layers: [badStroke]).isValid,
+                   "Invalid persisted stroke colors must be rejected")
+        var outlinedDirection = TypeDirection(name: "Outlined")
+        outlinedDirection.canvas = .imported; outlinedDirection.width = 100
+        outlinedDirection.importedLayout = ImportedLayout(width: 100, height: 100, layers: [outlined])
+        var wideStrokeDirection = outlinedDirection
+        wideStrokeDirection.importedLayout?.layers[0].strokeWidth = 500
+        try verify(wideStrokeDirection.maximumCanvasScale == 2,
+                   "Canvas scaling must keep imported stroke widths inside the Figma and Adobe export limit")
+        outlinedDirection.canvasScale = 2
+        let outlinedPlan = CanvasPlan(direction: outlinedDirection)
+        try verify(outlinedPlan.elements[0].strokeWidth == 10 && outlinedPlan.elements[0].strokeColor?.rgbHex == "32547A"
+                   && abs((outlinedPlan.elements[0].strokeColor?.alphaComponent ?? 0) - 0.75) < 0.001,
+                   "Canvas resize must scale stroke width while retaining its color and opacity")
+        var outlinedBoard = TypeBoard(); outlinedBoard.directions = [outlinedDirection]
+        let outlinedFrame = (FigmaLayoutExporter.payload(board: outlinedBoard)["frames"] as! [[String: Any]])[0]
+        let outlinedElement = (outlinedFrame["elements"] as! [[String: Any]])[0]
+        try verify((outlinedElement["strokeWidth"] as? Double) == 10
+                   && abs(((outlinedElement["stroke"] as? [String: Double])?["a"] ?? 0) - 0.75) < 0.001,
+                   "Figma export must retain rendered stroke width and opacity")
+        let outlinedImport = try FigmaLayoutImporter.board(data: JSONSerialization.data(withJSONObject: FigmaLayoutExporter.payload(board: outlinedBoard)), fonts: [])
+        try verify(outlinedImport.directions[0].importedLayout?.layers[0].strokeWidth == 10
+                   && outlinedImport.directions[0].importedLayout?.layers[0].strokeColor == "32547A",
+                   "Figma round-trip must preserve editable shape strokes")
+        let outlinedAdobe = try AdobeTypeSystemExporter.script(directions: [outlinedDirection], title: "Outlined", target: .illustrator)
+        try verify(outlinedAdobe.contains("\"strokeWidth\":10") && outlinedAdobe.contains("shape.strokeColor = rgbColor(item.stroke)"),
+                   "Adobe export must create a native stroke at the rendered width")
         var invalid = duplicate; invalid.width = -1
         try verify(!invalid.isValid)
         var invalidText = duplicate; invalidText.styles[TypeRole.body.rawValue]!.lineHeight = -4
@@ -662,6 +701,7 @@ enum StudioChecks {
         try verify(importedFontLabProject?.name == "Backup lettering (imported)" && importedFontLabProject?.glyphs["A"] == fontLabGlyph, "Backup merge must preserve Letterform Editor artwork in an independent project copy")
         try verify(FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path))
         try checkBackupSafety(in: root)
+        try checkBackupCrashRecovery(in: root)
         print("PASS: typography and legacy decoding, section reorder/removal, Figma layout payload, search tokens, independent directions and relaunch persistence, corrupt workspace preservation, nested AND/OR/NOT tags, recursive folder changes, Unicode lookup/SVG, \(plans) responsive canvases, specimen PDF and Library/Spaces/Letterform Editor backup merge.")
     }
 
@@ -779,5 +819,124 @@ enum StudioChecks {
         let leftovers = try fm.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix(".typefield-backup-import-") }
         try verify(leftovers.isEmpty, "Successful rollback left staged import files")
         print("PASS: backup export rejects unreadable/invalid sources; late import failures restore every source file and live state.")
+    }
+
+    private static func checkBackupCrashRecovery(in root: URL) throws {
+        let fm = FileManager.default
+        let names = ["library.json", "pro-library.json", "spaces.json", "font-lab.json"]
+        var beforeLibrary = SavedLibrary(); beforeLibrary.favorites = ["Before"]
+        var afterLibrary = beforeLibrary; afterLibrary.favorites.insert("After")
+        var beforePro = ProState(); beforePro.tags["Before"] = ["keep"]
+        var afterPro = beforePro; afterPro.tags["After"] = ["new"]
+        var beforeSpaces = StudioState(); beforeSpaces.spaces = [DesignSpace(name: "Before", boards: [TypeBoard()])]
+        var afterSpaces = beforeSpaces; afterSpaces.spaces.append(DesignSpace(name: "After", boards: [TypeBoard()]))
+        var beforeFontLab = FontLabState(); beforeFontLab.projects = [FontLabProject(name: "Before", characters: ["A"])]
+        var afterFontLab = beforeFontLab; afterFontLab.projects.append(FontLabProject(name: "After", characters: ["B"]))
+        let oldBytes = [
+            try JSONEncoder().encode(beforeLibrary), try JSONEncoder().encode(beforePro),
+            try JSONEncoder().encode(beforeSpaces), try JSONEncoder().encode(beforeFontLab)
+        ]
+        let newBytes = [
+            try JSONEncoder().encode(afterLibrary), try JSONEncoder().encode(afterPro),
+            try JSONEncoder().encode(afterSpaces), try JSONEncoder().encode(afterFontLab)
+        ]
+        func setup(_ label: String, missingLibrary: Bool = false) throws -> (URL, [(URL, Data)]) {
+            let folder = root.appendingPathComponent("backup-interrupted-" + label)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            for index in names.indices where !(missingLibrary && index == 0) {
+                try oldBytes[index].write(to: folder.appendingPathComponent(names[index]))
+            }
+            return (folder, names.indices.map { (folder.appendingPathComponent(names[$0]), newBytes[$0]) })
+        }
+        func verifyFiles(_ folder: URL, expected: [Data], missingLibrary: Bool = false) throws {
+            for index in names.indices {
+                let file = folder.appendingPathComponent(names[index])
+                if missingLibrary && index == 0 {
+                    try verify(!fm.fileExists(atPath: file.path), "Interrupted import must remove a newly created Library file")
+                } else {
+                    let recovered = try Data(contentsOf: file)
+                    try verify(recovered == expected[index], "Interrupted import recovered the wrong \(names[index])")
+                }
+            }
+            try verify(!fm.fileExists(atPath: LibraryBackupTools.journalURL(in: folder).path), "Recovered import left its journal")
+            let leftovers = try fm.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix(".typefield-backup-import-") }
+            try verify(leftovers.isEmpty, "Recovered import left staged copies")
+        }
+
+        do {
+            let (folder, replacements) = try setup("prepared")
+            _ = try LibraryBackupTools.prepareImport(replacements, in: folder)
+            try newBytes[0].write(to: replacements[0].0, options: .atomic)
+            try newBytes[1].write(to: replacements[1].0, options: .atomic)
+            let reopened = Library(storageURL: replacements[0].0)
+            try verify(reopened.saved.favorites == ["Before"] && reopened.pro.tags["After"] == nil,
+                       "Startup must roll back an uncommitted import before reading saved stores")
+            try verify(reopened.studio.state.spaces.count == 1 && reopened.fontLab.state.projects.count == 1)
+            try verifyFiles(folder, expected: oldBytes)
+        }
+        do {
+            let (folder, replacements) = try setup("committed")
+            let journal = try LibraryBackupTools.prepareImport(replacements, in: folder)
+            try newBytes[0].write(to: replacements[0].0, options: .atomic)
+            try LibraryBackupTools.markImportCommitted(journal, in: folder)
+            let reopened = Library(storageURL: replacements[0].0)
+            try verify(reopened.saved.favorites.contains("After") && reopened.pro.tags["After"] == ["new"],
+                       "Startup must finish a committed import before reading saved stores")
+            try verify(reopened.studio.state.spaces.count == 2 && reopened.fontLab.state.projects.count == 2)
+            try verifyFiles(folder, expected: newBytes)
+        }
+        do {
+            let (folder, replacements) = try setup("missing-original", missingLibrary: true)
+            _ = try LibraryBackupTools.prepareImport(replacements, in: folder)
+            try newBytes[0].write(to: replacements[0].0, options: .atomic)
+            try newBytes[1].write(to: replacements[1].0, options: .atomic)
+            let reopened = Library(storageURL: replacements[0].0)
+            try verify(reopened.saved.favorites.isEmpty && reopened.pro.tags["After"] == nil,
+                       "Startup must restore the absence of a pre-import file")
+            try verifyFiles(folder, expected: oldBytes, missingLibrary: true)
+        }
+        do {
+            let (folder, replacements) = try setup("damaged-stage")
+            let journal = try LibraryBackupTools.prepareImport(replacements, in: folder)
+            try newBytes[0].write(to: replacements[0].0, options: .atomic)
+            try fm.removeItem(at: folder.appendingPathComponent(journal.stageName + "/old-pro-library.json"))
+            let reopened = Library(storageURL: replacements[0].0)
+            try verify(reopened.backupRecoveryError != nil && reopened.librarySaveBlocked && reopened.proSaveBlocked &&
+                       reopened.studio.readBlocked && reopened.fontLab.readBlocked,
+                       "Damaged recovery copies must block all saved stores")
+            let retained = try Data(contentsOf: replacements[0].0)
+            try verify(retained == newBytes[0] &&
+                       fm.fileExists(atPath: LibraryBackupTools.journalURL(in: folder).path),
+                       "Damaged recovery must preserve partial files and the journal for manual repair")
+        }
+        do {
+            let (folder, replacements) = try setup("non-file-target", missingLibrary: true)
+            _ = try LibraryBackupTools.prepareImport(replacements, in: folder)
+            let obstruction = replacements[0].0
+            try fm.createDirectory(at: obstruction, withIntermediateDirectories: false)
+            try Data("Keep me".utf8).write(to: obstruction.appendingPathComponent("sentinel"))
+            let reopened = Library(storageURL: obstruction)
+            try verify(reopened.backupRecoveryError != nil &&
+                       fm.fileExists(atPath: obstruction.appendingPathComponent("sentinel").path),
+                       "Recovery must not recursively delete a directory at an originally absent file path")
+        }
+        do {
+            let (folder, replacements) = try setup("cleanup-failure")
+            let journal = try LibraryBackupTools.prepareImport(replacements, in: folder)
+            try LibraryBackupTools.markImportCommitted(journal, in: folder)
+            let marker = LibraryBackupTools.journalURL(in: folder)
+            try fm.setAttributes([.immutable: true], ofItemAtPath: marker.path)
+            defer { try? fm.setAttributes([.immutable: false], ofItemAtPath: marker.path) }
+            let blocked = Library(storageURL: replacements[0].0)
+            try verify(blocked.backupRecoveryError != nil && blocked.librarySaveBlocked && blocked.proSaveBlocked &&
+                       blocked.studio.readBlocked && blocked.fontLab.readBlocked && fm.fileExists(atPath: marker.path),
+                       "A committed journal that cannot be removed must keep all stores read-only")
+            try fm.setAttributes([.immutable: false], ofItemAtPath: marker.path)
+            let reopened = Library(storageURL: replacements[0].0)
+            try verify(reopened.backupRecoveryError == nil && reopened.saved.favorites.contains("After"),
+                       "Committed import must finish after journal cleanup becomes possible")
+            try verifyFiles(folder, expected: newBytes)
+        }
+        print("PASS: interrupted backup imports roll back prepared writes, complete committed writes, restore missing files, and fail closed on damaged copies, non-file targets, or cleanup failure.")
     }
 }

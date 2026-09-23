@@ -3,6 +3,7 @@ import AppKit
 import CoreText
 import UniformTypeIdentifiers
 import Darwin
+import CryptoKit
 
 /// Read user-selected interchange files without allowing a changed or unusually
 /// large file to consume unbounded memory before its format is validated.
@@ -60,6 +61,198 @@ struct LibraryBackup: Codable {
     var fontLab: FontLabState? = nil
 }
 enum LibraryBackupTools {
+    struct ImportJournal: Codable {
+        struct Entry: Codable {
+            let name: String
+            let oldDigest: String?
+            let newDigest: String
+        }
+        enum Phase: String, Codable { case prepared, committed }
+        let version: Int
+        let stageName: String
+        let entries: [Entry]
+        var phase: Phase
+    }
+
+    enum RecoveryResult { case none, rolledBack, completed }
+    private static let journalName = ".typefield-backup-import-journal.json"
+    private static let stagePrefix = ".typefield-backup-import-"
+    private static let importFileNames: Set<String> = ["library.json", "pro-library.json", "spaces.json", "font-lab.json"]
+
+    static func journalURL(in folder: URL) -> URL { folder.appendingPathComponent(journalName) }
+
+    private static func syncFile(_ url: URL) throws {
+        let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_NOFOLLOW) }
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { Darwin.close(descriptor) }
+        guard Darwin.fsync(descriptor) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+    }
+
+    private static func syncDirectory(_ url: URL) throws {
+        let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY) }
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { Darwin.close(descriptor) }
+        guard Darwin.fsync(descriptor) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+    }
+
+    private static func digest(_ url: URL) throws -> String {
+        try TypefieldInputFile.requireRegularFileIfPresent(url)
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hash = SHA256()
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty { hash.update(data: chunk) }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func writeJournal(_ journal: ImportJournal, in folder: URL) throws {
+        let marker = journalURL(in: folder)
+        try JSONEncoder().encode(journal).write(to: marker, options: .atomic)
+        try syncFile(marker)
+        try syncDirectory(folder)
+    }
+
+    /// The journal is the only signal that targets may be between versions.
+    /// Unmarked older staging folders are left alone, including any copies
+    /// retained after a failed rollback in an older Typefield release.
+    static func prepareImport(_ replacements: [(URL, Data)], in folder: URL) throws -> ImportJournal {
+        let fm = FileManager.default
+        try TypefieldInputFile.requireRegularFileIfPresent(journalURL(in: folder))
+        guard !fm.fileExists(atPath: journalURL(in: folder).path) else {
+            throw backupError("An earlier backup import still needs recovery. Relaunch Typefield before importing another backup.")
+        }
+        guard !replacements.isEmpty,
+              Set(replacements.map { $0.0.lastPathComponent }).count == replacements.count,
+              replacements.allSatisfy({ importFileNames.contains($0.0.lastPathComponent) &&
+                  $0.0.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL }) else {
+            throw backupError("Backup import requires known saved files in one data folder.")
+        }
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let stageName = stagePrefix + UUID().uuidString
+        let stage = folder.appendingPathComponent(stageName)
+        try fm.createDirectory(at: stage, withIntermediateDirectories: false)
+        var prepared = false
+        // An atomic marker write can succeed just before its fsync fails.
+        // Keep its staged sources if the marker exists so the next recovery
+        // never sees a journal pointing at files we already deleted.
+        defer {
+            if !prepared && !fm.fileExists(atPath: journalURL(in: folder).path) {
+                try? fm.removeItem(at: stage)
+            }
+        }
+        var entries: [ImportJournal.Entry] = []
+        for (target, data) in replacements {
+            let name = target.lastPathComponent
+            let new = stage.appendingPathComponent("new-" + name)
+            try data.write(to: new, options: .atomic)
+            try syncFile(new)
+            var oldDigest: String?
+            try TypefieldInputFile.requireRegularFileIfPresent(target)
+            if fm.fileExists(atPath: target.path) {
+                let old = stage.appendingPathComponent("old-" + name)
+                // A real copy stays intact even if a future writer changes an
+                // existing inode in place instead of replacing it atomically.
+                try fm.copyItem(at: target, to: old)
+                try syncFile(old)
+                oldDigest = try digest(old)
+            }
+            entries.append(.init(name: name, oldDigest: oldDigest, newDigest: digest(data)))
+        }
+        try syncDirectory(stage)
+        let journal = ImportJournal(version: 1, stageName: stageName, entries: entries, phase: .prepared)
+        try writeJournal(journal, in: folder)
+        prepared = true
+        return journal
+    }
+
+    static func markImportCommitted(_ journal: ImportJournal, in folder: URL) throws {
+        var committed = journal
+        committed.phase = .committed
+        try writeJournal(committed, in: folder)
+    }
+
+    private static func finishImportJournal(_ journal: ImportJournal, in folder: URL) throws {
+        let fm = FileManager.default
+        let marker = journalURL(in: folder)
+        // Keep staged copies until removal of the marker itself is durable.
+        try fm.removeItem(at: marker)
+        try syncDirectory(folder)
+        try? fm.removeItem(at: folder.appendingPathComponent(journal.stageName))
+    }
+
+    private static func replaceTarget(with source: URL, target: URL) throws {
+        let fm = FileManager.default
+        let temporary = target.deletingLastPathComponent().appendingPathComponent(".typefield-backup-recovery-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: temporary) }
+        try fm.copyItem(at: source, to: temporary)
+        try syncFile(temporary)
+        let result = temporary.path.withCString { from in target.path.withCString { to in Darwin.rename(from, to) } }
+        guard result == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        try syncDirectory(target.deletingLastPathComponent())
+    }
+
+    /// Reapply every file from an immutable stage, so another interruption
+    /// during recovery can safely retry on the next launch.
+    @discardableResult static func recoverPendingImport(in folder: URL) throws -> RecoveryResult {
+        let marker = journalURL(in: folder)
+        try TypefieldInputFile.requireRegularFileIfPresent(marker)
+        guard FileManager.default.fileExists(atPath: marker.path) else { return .none }
+        let journal = try JSONDecoder().decode(ImportJournal.self, from: TypefieldInputFile.read(marker, maximumBytes: 16_384))
+        let prefix = stagePrefix
+        guard journal.version == 1, journal.stageName.hasPrefix(prefix),
+              UUID(uuidString: String(journal.stageName.dropFirst(prefix.count))) != nil,
+              !journal.entries.isEmpty,
+              Set(journal.entries.map(\.name)).count == journal.entries.count,
+              journal.entries.allSatisfy({ importFileNames.contains($0.name) && (($0.oldDigest == nil) || $0.oldDigest!.count == 64) && $0.newDigest.count == 64 }) else {
+            throw backupError("The backup recovery journal is invalid. Saved files were left untouched.")
+        }
+        let stage = folder.appendingPathComponent(journal.stageName)
+        var metadata = stat()
+        let stageResult = stage.path.withCString { Darwin.lstat($0, &metadata) }
+        guard stageResult == 0, metadata.st_mode & S_IFMT == S_IFDIR else {
+            throw backupError("The backup recovery copies are missing. Saved files were left untouched.")
+        }
+        let committed = journal.phase == .committed
+        // Verify all staged sources before changing even one saved file.
+        for entry in journal.entries {
+            guard let expected = committed ? entry.newDigest : entry.oldDigest else { continue }
+            let source = stage.appendingPathComponent((committed ? "new-" : "old-") + entry.name)
+            guard try digest(source) == expected else {
+                throw backupError("A staged backup recovery copy is damaged. Saved files were left untouched at \(stage.path).")
+            }
+        }
+        for entry in journal.entries {
+            let target = folder.appendingPathComponent(entry.name)
+            if committed {
+                try replaceTarget(with: stage.appendingPathComponent("new-" + entry.name), target: target)
+            } else if entry.oldDigest != nil {
+                try replaceTarget(with: stage.appendingPathComponent("old-" + entry.name), target: target)
+            } else {
+                // An absent pre-import file can only become a regular file
+                // through this transaction. Never recursively delete a
+                // directory or follow a link left at that path.
+                var targetMetadata = stat()
+                let found = target.path.withCString { Darwin.lstat($0, &targetMetadata) }
+                if found == 0 {
+                    guard targetMetadata.st_mode & S_IFMT == S_IFREG else {
+                        throw backupError("Recovery found a non-file at \(target.path). It was preserved for review.")
+                    }
+                    let removed = target.path.withCString { Darwin.unlink($0) }
+                    guard removed == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+                    try syncDirectory(folder)
+                } else if errno != ENOENT {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                }
+            }
+        }
+        try syncDirectory(folder)
+        try finishImportJournal(journal, in: folder)
+        return committed ? .completed : .rolledBack
+    }
+
     private static func backupError(_ message: String) -> NSError {
         NSError(domain: "Typefield.Backup", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
@@ -144,80 +337,109 @@ enum LibraryBackupTools {
         mergedSpaces.selectedBoard = library.studio.focusedBoard
         guard mergedSpaces.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw CocoaError(.fileReadCorruptFile) }
 
-        // Encode and stage every replacement before touching any current file.
-        // Hard links retain the original inodes even after atomic replacement,
-        // so rollback can rename the originals back without allocating space.
-        let replacements: [(URL, Data)] = [
+        // A synchronous Letterform Editor save drains older background writes
+        // before its state joins this multi-file transaction.
+        let importedProjects = backup.fontLab?.projects ?? []
+        var mergedFontLab: FontLabState?
+        if !importedProjects.isEmpty {
+            guard library.fontLab.prepareForBackupImport(),
+                  let state = library.fontLab.stateByImportingProjects(importedProjects) else {
+                throw backupError(library.fontLab.error.isEmpty ? "Letterform Editor projects could not be imported." : library.fontLab.error)
+            }
+            mergedFontLab = state
+        }
+
+        var replacements: [(URL, Data)] = [
             (library.saveURL, try JSONEncoder().encode(mergedLibrary)),
             (library.proURL, try JSONEncoder().encode(mergedPro)),
             (library.studio.url, try JSONEncoder().encode(mergedSpaces))
         ]
+        if let mergedFontLab {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            replacements.append((library.fontLab.url, try encoder.encode(mergedFontLab)))
+        }
         let fm = FileManager.default
         let folder = library.saveURL.deletingLastPathComponent()
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        let stage = folder.appendingPathComponent(".typefield-backup-import-" + UUID().uuidString)
-        try fm.createDirectory(at: stage, withIntermediateDirectories: false)
-        var keepStage = false
-        defer { if !keepStage { try? fm.removeItem(at: stage) } }
-        var originalPaths: [String: URL] = [:]
-        for (target, data) in replacements {
-            guard target.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL else {
-                throw backupError("Backup import requires all saved files to share the same data folder.")
-            }
-            try data.write(to: stage.appendingPathComponent("new-" + target.lastPathComponent), options: .atomic)
-            guard fm.fileExists(atPath: target.path) else { continue }
-            let values = try target.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-            guard values.isRegularFile == true, values.isSymbolicLink != true else {
-                throw backupError("The saved \(target.lastPathComponent) is not a regular file. Nothing was imported.")
-            }
-            let original = stage.appendingPathComponent("old-" + target.lastPathComponent)
-            do { try fm.linkItem(at: target, to: original) }
-            catch { try fm.copyItem(at: target, to: original) }
-            originalPaths[target.path] = original
-        }
         for (target, _) in replacements { try preserve(target) }
         if fm.fileExists(atPath: library.studio.url.path) {
             try Data(contentsOf: library.studio.url).write(to: library.studio.url.appendingPathExtension("backup"), options: .atomic)
         }
+        if mergedFontLab != nil, fm.fileExists(atPath: library.fontLab.url.path) {
+            try Data(contentsOf: library.fontLab.url).write(to: library.fontLab.url.appendingPathExtension("backup"), options: .atomic)
+        }
 
-        var attempted: [URL] = []
+        func blockAfterRecoveryFailure(_ warning: String) {
+            library.backupRecoveryError = warning
+            library.librarySaveBlocked = true
+            library.proSaveBlocked = true
+            library.studio.blockForBackupRecovery(warning)
+            library.fontLab.blockForBackupRecovery(warning)
+            library.message = warning
+        }
+        let journal: ImportJournal
+        do { journal = try prepareImport(replacements, in: folder) }
+        catch {
+            // The atomic marker may have been installed before a failed sync.
+            // Leave its sources intact and prevent newer edits until startup
+            // can reconcile the journal against the on-disk stores.
+            if fm.fileExists(atPath: journalURL(in: folder).path) {
+                let warning = "Backup import preparation left a recovery journal. Restart Typefield before editing. " + error.localizedDescription
+                blockAfterRecoveryFailure(warning)
+                throw backupError(warning)
+            }
+            throw error
+        }
+        func acceptMergedState() {
+            library.saved = mergedLibrary
+            library.pro = mergedPro
+            library.studio.state = mergedSpaces
+            library.studio.savedAt = Date()
+            library.studio.error = ""
+            if let mergedFontLab {
+                library.fontLab.acceptSavedBackupImport(mergedFontLab)
+            }
+            library.regroup()
+        }
+
         do {
             for (target, data) in replacements {
-                attempted.append(target)
                 try writeFile(data, target)
+                try syncFile(target)
+                try syncDirectory(folder)
             }
-            if let fontLab = backup.fontLab, !fontLab.projects.isEmpty,
-               !library.fontLab.importProjects(fontLab.projects) {
-                throw backupError(library.fontLab.error.isEmpty ? "Letterform Editor projects could not be imported." : library.fontLab.error)
-            }
+            try markImportCommitted(journal, in: folder)
         } catch {
-            var rollbackErrors: [String] = []
-            for target in attempted.reversed() {
-                if let original = originalPaths[target.path] {
-                    let result = original.path.withCString { source in
-                        target.path.withCString { destination in Darwin.rename(source, destination) }
-                    }
-                    if result != 0 { rollbackErrors.append(target.lastPathComponent + ": " + String(cString: strerror(errno))) }
-                } else if fm.fileExists(atPath: target.path) {
-                    do { try fm.removeItem(at: target) }
-                    catch { rollbackErrors.append(target.lastPathComponent + ": " + error.localizedDescription) }
-                }
+            let writeError = error
+            let recovery: RecoveryResult
+            do { recovery = try recoverPendingImport(in: folder) }
+            catch {
+                let warning = "Backup import stopped and automatic recovery could not finish. Restart Typefield; staged copies remain in \(folder.path). " + error.localizedDescription
+                blockAfterRecoveryFailure(warning)
+                throw backupError(warning)
             }
-            library.saved = previousLibrary
-            library.pro = previousPro
-            library.studio.state = previousSpaces
-            if !rollbackErrors.isEmpty {
-                keepStage = true
-                throw backupError("Backup import failed and some files could not be restored automatically. Original copies remain at \(stage.path). " + rollbackErrors.joined(separator: "; "))
+            switch recovery {
+            case .rolledBack:
+                library.saved = previousLibrary
+                library.pro = previousPro
+                library.studio.state = previousSpaces
+                throw backupError("Backup import did not finish. Existing data was restored. " + writeError.localizedDescription)
+            case .completed:
+                acceptMergedState()
+                return
+            case .none:
+                let warning = "Backup import state could not be verified after a write error. Restart Typefield before editing. " + writeError.localizedDescription
+                blockAfterRecoveryFailure(warning)
+                throw backupError(warning)
             }
-            throw backupError("Backup import did not finish. Existing data was restored. " + error.localizedDescription)
         }
-        library.saved = mergedLibrary
-        library.pro = mergedPro
-        library.studio.state = mergedSpaces
-        library.studio.savedAt = Date()
-        library.studio.error = ""
-        library.regroup()
+        acceptMergedState()
+        do { try finishImportJournal(journal, in: folder) }
+        catch {
+            let warning = "Backup import data was saved, but recovery cleanup did not finish. Restart Typefield before editing; staged copies remain in \(folder.path). " + error.localizedDescription
+            blockAfterRecoveryFailure(warning)
+            throw backupError(warning)
+        }
     }
     static func restore(_ library: Library) {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a Typefield backup. Existing settings are kept; spaces and Letterform Editor projects are imported as copies."
@@ -464,7 +686,13 @@ enum FigmaLayoutExporter {
                     var axes: [String: Double] = [:]
                     for (key, value) in style.axes { axes[String(bytes: [UInt8((key >> 24) & 255), UInt8((key >> 16) & 255), UInt8((key >> 8) & 255), UInt8(key & 255)], encoding: .ascii) ?? ""] = value }
                     object.merge(["kind": "text", "text": text.string, "role": item.role?.rawValue ?? "Text", "fontFamily": CTFontCopyFamilyName(font) as String, "fontStyle": CTFontCopyName(font, kCTFontStyleNameKey) as String? ?? "Regular", "fontName": style.fontName, "fontSize": style.size, "lineHeight": style.lineHeight ?? style.size * style.leading, "letterSpacing": style.tracking, "paragraphSpacing": style.paragraphSpacing ?? 0, "paragraphIndent": style.indent ?? 0, "wordSpacing": style.wordSpacing ?? 0, "alignment": (style.alignment ?? .left).rawValue.uppercased(), "underline": style.underline ?? false, "strikethrough": style.strikethrough ?? false, "kerning": style.effectiveKerning, "features": style.featuresWithoutKerning, "axes": axes, "color": color((text.length > 0 ? text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor : nil) ?? NSColor(hex: direction.ink))]) { _, new in new }
-                } else { object["kind"] = "rectangle"; object["color"] = color(item.color ?? .clear); object["radius"] = item.radius }
+                } else {
+                    object["kind"] = "rectangle"; object["color"] = color(item.color ?? .clear); object["radius"] = item.radius
+                    if let stroke = item.strokeColor, item.strokeWidth > 0 {
+                        object["stroke"] = color(stroke)
+                        object["strokeWidth"] = item.strokeWidth
+                    }
+                }
                 return object
             }
             return ["name": direction.name, "width": plan.size.width, "height": plan.size.height, "paper": color(plan.paper), "elements": elements]
@@ -514,6 +742,7 @@ enum FigmaLayoutImporter {
                 let (hex, opacity) = try color(e["color"])
                 var layer = ImportedLayer(name: e["name"] as? String ?? section, x: try number(e, "x"), y: try number(e, "y"), width: try number(e, "width"), height: try number(e, "height"), color: hex, opacity: opacity, radius: try number(e, "radius", fallback: 0))
                 if e["kind"] as? String == "text" {
+                    guard e["stroke"] == nil && e["strokeWidth"] == nil else { throw invalid("Text strokes are not supported.") }
                     guard let text = e["text"] as? String, let family = e["fontFamily"] as? String, let fontStyle = e["fontStyle"] as? String else { throw invalid("A text layer is incomplete.") }
                     guard TypeDirection.acceptsCanvasText(text), family.count <= 256, fontStyle.count <= 256 else { throw invalid("A text layer is too large.") }
                     totalTextBytes += text.utf8.count
@@ -530,7 +759,15 @@ enum FigmaLayoutImporter {
                     style.wordSpacing = try number(e, "wordSpacing", fallback: 0)
                     for (tag, value) in e["axes"] as? [String: Double] ?? [:] where tag.utf8.count == 4 { style.axes[tag.utf8.reduce(0) { ($0 << 8) | Int($1) }] = value }
                     layer.style = style
-                } else if e["kind"] as? String != "rectangle" { throw invalid("Unsupported layer kind. Export it again with the Typefield bridge.") }
+                } else if e["kind"] as? String == "rectangle" {
+                    if e["stroke"] != nil || e["strokeWidth"] != nil {
+                        guard e["stroke"] != nil && e["strokeWidth"] != nil else { throw invalid("A shape has an incomplete stroke.") }
+                        let (strokeHex, strokeOpacity) = try color(e["stroke"])
+                        layer.strokeColor = strokeHex
+                        layer.strokeOpacity = strokeOpacity
+                        layer.strokeWidth = try number(e, "strokeWidth")
+                    }
+                } else { throw invalid("Unsupported layer kind. Export it again with the Typefield bridge.") }
                 layers.append(layer)
             }
             let layout = ImportedLayout(width: width, height: height, layers: layers)

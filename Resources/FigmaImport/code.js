@@ -35,12 +35,17 @@ function validate(data) {
       if (!['x', 'y'].every(k => number(e[k], 0, 100000)) || !['width', 'height'].every(k => number(e[k], 1, 100000))) throw Error('Invalid layer bounds.');
       paint(e.color);
       if (e.kind === 'text') {
+        if (e.stroke !== undefined || e.strokeWidth !== undefined) throw Error('Text strokes are not supported.');
         if (!shortText(e.text, 200000) || !shortText(e.fontFamily, 256) || !shortText(e.fontStyle, 256) || (e.fontName !== undefined && !shortText(e.fontName, 256)) || !number(e.fontSize, 1, 1000) || !number(e.lineHeight, 1, 2000) || !number(e.letterSpacing, -100, 100) || !number(e.paragraphSpacing, 0, 1000) || !number(e.paragraphIndent, 0, 1000) || !['LEFT', 'CENTER', 'RIGHT', 'JUSTIFIED'].includes(e.alignment) || (e.wordSpacing !== undefined && !number(e.wordSpacing, -1000, 1000)) || !tags(e.axes, -10000, 10000) || !tags(e.features, -1, 1000) || ['kerning', 'underline', 'strikethrough'].some(key => e[key] !== undefined && typeof e[key] !== 'boolean')) throw Error('Invalid text layer.');
         const textBytes = utf8Bytes(e.text);
         if (textBytes > 200000) throw Error('Invalid text layer.');
         totalText += textBytes;
         if (totalText > 5000000) throw Error('The layout contains too much text.');
       } else if (e.kind !== 'rectangle' || !number(e.radius, 0, 10000)) throw Error('Invalid shape.');
+      if (e.kind === 'rectangle' && (e.stroke !== undefined || e.strokeWidth !== undefined)) {
+        if (e.stroke === undefined || !number(e.strokeWidth, 0, 1000)) throw Error('Invalid shape stroke.');
+        paint(e.stroke);
+      }
     }
   }
 }
@@ -79,7 +84,12 @@ async function importLayout(data, api) {
           if (e.wordSpacing || e.kerning === false || (e.features && Object.keys(e.features).length) || (e.underline && e.strikethrough)) warnings.add('Review word spacing, kerning, OpenType or combined decorations in Figma; these settings are retained as layer metadata.');
           // Shared, namespaced metadata also works for an unpublished local manifest without an ID.
           node.setSharedPluginData('fontshelf', 'typography', JSON.stringify({ fontName: e.fontName, axes: e.axes, features: e.features, wordSpacing: e.wordSpacing, kerning: e.kerning, underline: e.underline, strikethrough: e.strikethrough }));
-        } else { node = api.createRectangle(); frame.appendChild(node); node.resize(e.width, e.height); node.cornerRadius = e.radius; }
+        } else {
+          node = api.createRectangle(); frame.appendChild(node); node.resize(e.width, e.height); node.cornerRadius = e.radius;
+          node.strokes = e.strokeWidth > 0 ? paint(e.stroke) : [];
+          node.strokeWeight = e.strokeWidth || 0;
+          node.strokeAlign = 'CENTER';
+        }
         node.name = e.section + (e.role ? ' / ' + e.role : ' / Shape'); node.x = e.x; node.y = e.y; node.fills = paint(e.color);
       }
       x += layout.width + 80;
@@ -98,6 +108,16 @@ function exportSelection(api) {
     if (fills.some(p => p.type !== 'SOLID') || fills.length > 1) warnings.add(node.name + ': gradients, images and extra fills are omitted.');
     return paint ? { ...paint.color, a: opacity * (paint.opacity === undefined ? 1 : paint.opacity) } : null;
   }
+  function solidStroke(node, opacity) {
+    const strokes = Array.isArray(node.strokes) ? node.strokes.filter(p => p.visible !== false) : [];
+    const paint = strokes.find(p => p.type === 'SOLID');
+    if (strokes.some(p => p.type !== 'SOLID') || strokes.length > 1) warnings.add(node.name + ': complex or extra strokes are omitted.');
+    if (!paint) return null;
+    if (!number(node.strokeWeight, 0, 1000)) { warnings.add(node.name + ': unsupported stroke width was omitted.'); return null; }
+    if (node.strokeAlign && node.strokeAlign !== 'CENTER') warnings.add(node.name + ': stroke alignment was converted to center.');
+    if (Array.isArray(node.dashPattern) && node.dashPattern.length) warnings.add(node.name + ': stroke dashes were converted to a solid line.');
+    return { color: { ...paint.color, a: opacity * (paint.opacity === undefined ? 1 : paint.opacity) }, width: node.strokeWeight };
+  }
   const frames = selected.map(root => {
     if (!number(root.width, 1, 10000) || !number(root.height, 1, 100000)) throw Error('Frame "' + root.name + '" exceeds Typefield limits: width must be 1–10,000 px and height must be 1–100,000 px. Resize the frame or export a smaller selection.');
     const elements = [], origin = root.absoluteTransform;
@@ -107,12 +127,13 @@ function exportSelection(api) {
       const opacity = parentOpacity * (node.opacity === undefined ? 1 : node.opacity), t = node.absoluteTransform;
       if (node.isMask) { warnings.add(node.name + ': masks are omitted.'); return; }
       if (Math.abs(t[0][1]) > .001 || Math.abs(t[1][0]) > .001) { warnings.add(node.name + ': rotated layers are omitted.'); return; }
-      if ((node.effects || []).some(e => e.visible !== false) || (node.strokes || []).length) warnings.add(node.name + ': effects and strokes are omitted.');
+      if ((node.effects || []).some(e => e.visible !== false)) warnings.add(node.name + ': effects are omitted.');
       if (node.layoutMode && node.layoutMode !== 'NONE') warnings.add(node.name + ': auto layout is captured as fixed positions.');
       const color = solid(node, opacity);
       const base = { name: node.name, section: node.name, x: t[0][2] - origin[0][2], y: t[1][2] - origin[1][2], width: Math.max(.01, node.width), height: Math.max(.01, node.height), color };
       if (base.x < 0 || base.y < 0) { warnings.add(node.name + ': layers outside the top or left of the frame are omitted.'); return; }
       if (node.type === 'TEXT') {
+        if (Array.isArray(node.strokes) && node.strokes.some(p => p.visible !== false)) warnings.add(node.name + ': text strokes are omitted.');
         if (!node.characters || !color) { if (node.characters) warnings.add(node.name + ': text without a solid fill is omitted.'); return; }
         const font = node.fontName === api.mixed ? node.getRangeFontName(0, 1) : node.fontName;
         const size = node.fontSize === api.mixed ? node.getRangeFontSize(0, 1) : node.fontSize;
@@ -130,7 +151,8 @@ function exportSelection(api) {
           paragraphIndent: typeof node.paragraphIndent === 'number' ? node.paragraphIndent : 0,
           alignment: node.textAlignHorizontal, underline: node.textDecoration === 'UNDERLINE', strikethrough: node.textDecoration === 'STRIKETHROUGH', axes: font.variationSettings || {}, features: {}, kerning: true });
       } else if (node.type === 'RECTANGLE' || ['FRAME', 'COMPONENT', 'INSTANCE', 'GROUP'].includes(node.type)) {
-        if (color) elements.push({ ...base, kind: 'rectangle', radius: typeof node.cornerRadius === 'number' ? node.cornerRadius : 0 });
+        const stroke = solidStroke(node, opacity);
+        if (color || stroke) elements.push({ ...base, color: color || { r: 0, g: 0, b: 0, a: 0 }, kind: 'rectangle', radius: typeof node.cornerRadius === 'number' ? node.cornerRadius : 0, ...(stroke ? { stroke: stroke.color, strokeWidth: stroke.width } : {}) });
         if (node.type === 'INSTANCE' || node.type === 'COMPONENT') warnings.add(node.name + ': component is imported as independent editable layers.');
         if (node.clipsContent) warnings.add(node.name + ': nested clipping needs review.');
         for (const child of node.children || []) visit(child, opacity);

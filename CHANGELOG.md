@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.47.0 — 2026-09-23
+
+- Added a durable backup-import journal and next-launch recovery for interrupted changes to Library, Spaces, advanced settings and Letterform Editor projects. Editing stays blocked if recovery cannot verify or finish the saved copies.
+- Added stroke color and width for selected imported shapes, with persistence, canvas and PDF rendering, and supported Figma/Adobe bridge round trips. InDesign preserves separate fill and stroke opacity; Illustrator reports when its object-opacity limit needs review.
+- Corrected watched-folder access in local builds, distinguished unavailable folders from expired permission, and made Choose Folder Again replace the old saved location while retaining its activation choice.
+
 ## 0.46.1 — 2026-09-23
 
 - Fixed the Appearance pane remaining light after choosing System while macOS is dark. Settings and the main window now inherit the same live AppKit appearance.

@@ -26,12 +26,25 @@ function mock(failFont = false, failText = false) {
   const largeUnicodeText = fixture(); largeUnicodeText.frames[0].elements[0].text = '👋'.repeat(50001); assert.throws(() => validate(largeUnicodeText), /text layer/);
   const excessiveText = fixture(); excessiveText.frames[0].elements = Array.from({ length: 26 }, () => ({ ...fixture().frames[0].elements[0], text: 'A'.repeat(200000) })); assert.throws(() => validate(excessiveText), /too much text/);
   const warn = fixture(); warn.frames[0].elements[0].wordSpacing = 3; assert.match(await importLayout(warn, mock()), /manual|Review/);
+  const outlined = fixture(); outlined.frames[0].elements.push({ kind: 'rectangle', section: 'Card', x: 10, y: 180, width: 200, height: 100,
+    color: { r: 0, g: 0, b: 0, a: 0 }, radius: 8, stroke: { r: .2, g: .3, b: .4, a: .75 }, strokeWidth: 4 });
+  const outlinedApi = mock(); await importLayout(outlined, outlinedApi);
+  assert.equal(outlinedApi.frames[0].children[1].strokeWeight, 4);
+  assert.equal(outlinedApi.frames[0].children[1].strokes[0].opacity, .75);
+  const badStroke = fixture(); badStroke.frames[0].elements.push({ ...outlined.frames[0].elements[1], strokeWidth: Infinity });
+  assert.throws(() => validate(badStroke), /stroke/);
+  badStroke.frames[0].elements[1].strokeWidth = 4; badStroke.frames[0].elements[1].stroke.a = 2;
+  assert.throws(() => validate(badStroke), /color/);
   const solid = [{ type: 'SOLID', color: { r: .2, g: .3, b: .4 }, opacity: 1 }];
   const text = { type: 'TEXT', name: 'Headline', width: 300, height: 90, absoluteTransform: [[1,0,140],[0,1,260]], characters: 'From Figma', fontName: { family: 'Georgia', style: 'Regular' }, fontSize: 72, lineHeight: { unit: 'PIXELS', value: 100 }, letterSpacing: { unit: 'PIXELS', value: 2 }, textAlignHorizontal: 'CENTER', fills: solid, textCase: 'ORIGINAL' };
-  const frame = { type: 'FRAME', name: 'Website', width: 960, height: 800, absoluteTransform: [[1,0,100],[0,1,200]], fills: solid, children: [text, { type: 'VECTOR', name: 'Logo', width: 10, height: 10, absoluteTransform: [[1,0,110],[0,1,220]], fills: solid }] };
+  const outlinedShape = { type: 'RECTANGLE', name: 'Border', width: 200, height: 100, absoluteTransform: [[1,0,130],[0,1,420]], fills: [], strokes: [{ type: 'SOLID', color: { r: .2, g: .3, b: .4 }, opacity: .75 }], strokeWeight: 4, cornerRadius: 8 };
+  const frame = { type: 'FRAME', name: 'Website', width: 960, height: 800, absoluteTransform: [[1,0,100],[0,1,200]], fills: solid, children: [text, outlinedShape, { type: 'VECTOR', name: 'Logo', width: 10, height: 10, absoluteTransform: [[1,0,110],[0,1,220]], fills: solid }] };
   const reverse = exportSelection({ root: { name: 'Round trip' }, currentPage: { selection: [frame] }, mixed: Symbol('mixed') });
   assert.equal(reverse.frames[0].elements[0].x, 40); assert.equal(reverse.frames[0].elements[0].y, 60);
   assert.equal(reverse.frames[0].elements[0].fontSize, 72); assert.match(reverse.warnings.join(' '), /Logo.*not supported/);
+  assert.equal(reverse.frames[0].elements[1].strokeWidth, 4);
+  assert.equal(reverse.frames[0].elements[1].stroke.a, .75);
+  assert.equal(reverse.frames[0].elements[1].color.a, 0);
   const oversized = { ...frame, name: 'Too wide', width: 10001 };
   assert.throws(() => exportSelection({ root: { name: 'Round trip' }, currentPage: { selection: [oversized] }, mixed: Symbol('mixed') }), /10,000/);
   assert.throws(() => exportSelection({ currentPage: { selection: [] } }), /Select/);

@@ -56,6 +56,8 @@ enum AdobeTypeSystemExporter {
         let height: Double
         let color: RGBA
         let radius: Double
+        let stroke: RGBA?
+        let strokeWidth: Double?
         let text: String?
         let fontName: String?
         let fontSize: Double?
@@ -205,7 +207,7 @@ enum AdobeTypeSystemExporter {
                         section: section,
                         role: role,
                         x: rounded(element.rect.minX), y: rounded(element.rect.minY), width: rounded(element.rect.width), height: rounded(element.rect.height),
-                        color: rgba(foreground ?? plan.ink), radius: 0,
+                        color: rgba(foreground ?? plan.ink), radius: 0, stroke: nil, strokeWidth: nil,
                         text: text, fontName: style.fontName, fontSize: fontSize,
                         lineHeight: rounded(style.lineHeight ?? style.size * style.leading),
                         trackingPoints: tracking,
@@ -227,6 +229,8 @@ enum AdobeTypeSystemExporter {
                         kind: "shape", name: itemName("Shape", index: itemIndex), section: section, role: nil,
                         x: rounded(element.rect.minX), y: rounded(element.rect.minY), width: rounded(element.rect.width), height: rounded(element.rect.height),
                         color: rgba(element.color ?? .clear), radius: rounded(max(0, element.radius)),
+                        stroke: element.strokeColor.flatMap { element.strokeWidth > 0 ? rgba($0) : nil },
+                        strokeWidth: element.strokeWidth > 0 ? rounded(element.strokeWidth) : nil,
                         text: nil, fontName: nil, fontSize: nil, lineHeight: nil, trackingPoints: nil, trackingThousandths: nil,
                         alignment: nil, paragraphSpacing: nil, wordSpacing: nil, firstLineIndent: nil, underline: nil, strikethrough: nil, kerning: nil,
                         axes: nil, features: nil, paragraphStyle: nil, characterStyle: nil, warnings: []
@@ -244,13 +248,16 @@ enum AdobeTypeSystemExporter {
             ))
         }
         guard totalItems <= 50_000, totalTextBytes <= 5_000_000 else { throw ExportError.tooMuchContent }
-        let limitations = [
+        var limitations = [
             "Font files are not included. Every referenced font must be installed and licensed on the Adobe workstation.",
             "One Typefield canvas unit is mapped to one Adobe point; line wrapping can change between Core Text and Adobe text engines.",
             "Variable-axis coordinates and arbitrary OpenType feature tags are preserved in legacy export metadata but are not applied automatically.",
             "Word spacing and explicit kerning preferences remain metadata because the Illustrator and InDesign DOMs use different controls.",
             "The builder creates a new native document and never modifies an already-open Adobe document."
         ]
+        if target == .illustrator {
+            limitations.append("Illustrator scripting applies one opacity to each path. Shapes with different fill and stroke opacities use the stroke opacity for both; keep the Typefield canvas for exact appearance.")
+        }
         limitations.forEach { collectedWarnings.insert($0) }
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Typefield Type System" : title
         return Manifest(
@@ -409,10 +416,12 @@ enum AdobeTypeSystemExporter {
                 if (item.radius > 0) shape = layer.pathItems.roundedRectangle(top - item.y, left + item.x, item.width, item.height, item.radius, item.radius);
                 else shape = layer.pathItems.rectangle(top - item.y, left + item.x, item.width, item.height);
                 shape.name = item.name;
-                shape.stroked = false;
+                shape.stroked = !!item.stroke && item.strokeWidth > 0;
+                if (shape.stroked) { shape.strokeColor = rgbColor(item.stroke); shape.strokeWidth = item.strokeWidth; }
                 shape.filled = item.color.a > 0;
                 if (shape.filled) shape.fillColor = rgbColor(item.color);
-                shape.opacity = item.color.a * 100;
+                if (shape.stroked && shape.filled && Math.abs(item.stroke.a - item.color.a) > .01) warn("Fill and stroke opacity differ for “" + item.name + "”; review opacity in Illustrator.");
+                shape.opacity = (shape.stroked ? item.stroke.a : item.color.a) * 100;
                 return shape;
             }
             function addText(doc, layer, item, left, top) {
@@ -557,9 +566,12 @@ enum AdobeTypeSystemExporter {
                 shape.name = item.name;
                 shape.geometricBounds = pageBounds(page, item);
                 shape.fillColor = getColor(doc, item.color);
-                shape.strokeColor = doc.swatches.itemByName("None");
-                shape.strokeWeight = 0;
-                setOpacity(shape, item.color.a);
+                shape.strokeColor = item.stroke && item.strokeWidth > 0 ? getColor(doc, item.stroke) : doc.swatches.itemByName("None");
+                shape.strokeWeight = item.stroke && item.strokeWidth > 0 ? item.strokeWidth : 0;
+                shape.strokeAlignment = StrokeAlignment.CENTER_ALIGNMENT;
+                setOpacity(shape, 1);
+                shape.fillTransparencySettings.blendingSettings.opacity = item.color.a * 100;
+                if (item.stroke && item.strokeWidth > 0) shape.strokeTransparencySettings.blendingSettings.opacity = item.stroke.a * 100;
                 if (item.radius > 0) {
                     try {
                         shape.topLeftCornerOption = CornerOptions.ROUNDED_CORNER; shape.topRightCornerOption = CornerOptions.ROUNDED_CORNER;
@@ -670,6 +682,16 @@ enum AdobeTypeSystemExporter {
                 precondition(first.contains("characterStyle") && first.contains("paragraphStyle"))
                 precondition(first.contains("Variable axes") && first.contains("OpenType features"))
                 precondition(first.contains(target == .illustrator ? "doc.saveAs(outputFile" : "doc.save(outputFile"))
+                if target == .illustrator {
+                    precondition(first.contains("Shapes with different fill and stroke opacities use the stroke opacity for both"),
+                                 "Illustrator's one-opacity limitation must be disclosed in export metadata")
+                }
+                if target == .indesign {
+                    precondition(first.contains("shape.fillTransparencySettings.blendingSettings.opacity = item.color.a * 100") &&
+                                 first.contains("shape.strokeTransparencySettings.blendingSettings.opacity = item.stroke.a * 100") &&
+                                 first.contains("shape.strokeAlignment = StrokeAlignment.CENTER_ALIGNMENT"),
+                                 "InDesign shapes must preserve independently editable fill and centered stroke appearance")
+                }
                 precondition(suggestedScriptFilename(title: "Type/System:*?", target: target).hasSuffix(".jsx"))
                 let context = JSContext()!
                 context.evaluateScript("""
@@ -718,6 +740,8 @@ struct AdobeReturnLayer: Codable, Equatable {
     var height: Double
     var color: AdobeReturnColor
     var radius: Double?
+    var stroke: AdobeReturnColor?
+    var strokeWidth: Double?
     var text: String?
     var fontName: String?
     var fontFamily: String?
@@ -823,13 +847,20 @@ enum AdobeTypeSystemReturnBridge {
             warnings.insert("Imported from \(document.sourceApplication). Adobe effects, clipping paths, rotations, columns, linked frames, and mixed inline styles are not reconstructed.")
             for (layerIndex, layer) in canvas.layers.enumerated() {
                 let numeric = [layer.x, layer.y, layer.width, layer.height, layer.radius ?? 0]
-                guard ["text", "shape"].contains(layer.kind), numeric.allSatisfy(\.isFinite), abs(layer.x) <= 100_000, abs(layer.y) <= 100_000, valid(layer.width, range: 0.01...100_000), valid(layer.height, range: 0.01...100_000), valid(layer.color), valid(layer.radius ?? 0, range: 0...10_000) else { throw ImportError.invalidLayer(layer.name) }
+                guard ["text", "shape"].contains(layer.kind), numeric.allSatisfy(\.isFinite), abs(layer.x) <= 100_000, abs(layer.y) <= 100_000, valid(layer.width, range: 0.01...100_000), valid(layer.height, range: 0.01...100_000), valid(layer.color), valid(layer.radius ?? 0, range: 0...10_000),
+                      (layer.stroke.map(valid) ?? true), (layer.strokeWidth.map { valid($0, range: 0...1_000) && ($0 == 0 || layer.stroke != nil) } ?? true),
+                      (layer.kind == "shape" || (layer.stroke == nil && layer.strokeWidth == nil)) else { throw ImportError.invalidLayer(layer.name) }
                 let color = NSColor(srgbRed: layer.color.r, green: layer.color.g, blue: layer.color.b, alpha: 1)
                 var imported = ImportedLayer(
                     name: layer.name.isEmpty ? "Layer \(layerIndex + 1)" : layer.name,
                     x: layer.x, y: layer.y, width: layer.width, height: layer.height,
                     color: color.rgbHex, opacity: layer.color.a, radius: layer.radius ?? 0
                 )
+                if layer.kind == "shape", let stroke = layer.stroke, let width = layer.strokeWidth, width > 0 {
+                    imported.strokeColor = NSColor(srgbRed: stroke.r, green: stroke.g, blue: stroke.b, alpha: 1).rgbHex
+                    imported.strokeOpacity = stroke.a
+                    imported.strokeWidth = width
+                }
                 (layer.warnings ?? []).forEach { warnings.insert($0) }
                 if layer.kind == "text" {
                     guard let text = layer.text, TypeDirection.acceptsCanvasText(text), let fontSize = layer.fontSize, valid(fontSize, range: 1...1_000) else { throw ImportError.invalidLayer(layer.name) }
@@ -1010,7 +1041,9 @@ enum AdobeTypeSystemReturnBridge {
             }
             function shapeLayer(item, artboard) {
                 var bounds = item.geometricBounds, fill = item.filled ? item.fillColor : null;
-                return { kind: "shape", name: item.name || "Shape", x: bounds[0] - artboard[0], y: artboard[1] - bounds[1], width: bounds[2] - bounds[0], height: bounds[1] - bounds[3], color: colorValue(fill, item.opacity), radius: 0, warnings: item.closed ? [] : ["An open path was imported as its rectangular bounds."] };
+                return { kind: "shape", name: item.name || "Shape", x: bounds[0] - artboard[0], y: artboard[1] - bounds[1], width: bounds[2] - bounds[0], height: bounds[1] - bounds[3], color: colorValue(fill, item.opacity), radius: 0,
+                    stroke: item.stroked ? colorValue(item.strokeColor, item.opacity) : null, strokeWidth: item.stroked ? safeNumber(item.strokeWidth, 0) : 0,
+                    warnings: item.closed ? [] : ["An open path was imported as its rectangular bounds."] };
             }
 
             try {
@@ -1068,6 +1101,13 @@ enum AdobeTypeSystemReturnBridge {
             function opacityValue(item) {
                 try { return item.transparencySettings.blendingSettings.opacity; } catch (ignoredOpacity) { return 100; }
             }
+            function componentOpacityValue(item, component) {
+                var objectOpacity = opacityValue(item);
+                try {
+                    var settings = component === "stroke" ? item.strokeTransparencySettings : item.fillTransparencySettings;
+                    return objectOpacity * Math.max(0, Math.min(100, safeNumber(settings.blendingSettings.opacity, 100))) / 100;
+                } catch (ignoredComponent) { return objectOpacity; }
+            }
             function alignmentValue(value) {
                 if (value === Justification.CENTER_ALIGN) return "center";
                 if (value === Justification.RIGHT_ALIGN) return "right";
@@ -1087,7 +1127,11 @@ enum AdobeTypeSystemReturnBridge {
             }
             function shapeLayer(item, pageBounds) {
                 var bounds = item.geometricBounds;
-                return { kind: "shape", name: item.name || "Shape", x: bounds[1] - pageBounds[1], y: bounds[0] - pageBounds[0], width: bounds[3] - bounds[1], height: bounds[2] - bounds[0], color: colorValue(item.fillColor, opacityValue(item)), radius: 0, warnings: item.typename === "Rectangle" ? [] : ["A non-rectangular item was imported as its rectangular bounds."] };
+                var strokeWidth = safeNumber(item.strokeWeight, 0), hasStroke = strokeWidth > 0;
+                try { hasStroke = hasStroke && item.strokeColor.name !== "None"; } catch (ignoredStrokeColor) {}
+                return { kind: "shape", name: item.name || "Shape", x: bounds[1] - pageBounds[1], y: bounds[0] - pageBounds[0], width: bounds[3] - bounds[1], height: bounds[2] - bounds[0], color: colorValue(item.fillColor, componentOpacityValue(item, "fill")), radius: 0,
+                    stroke: hasStroke ? colorValue(item.strokeColor, componentOpacityValue(item, "stroke")) : null, strokeWidth: hasStroke ? strokeWidth : 0,
+                    warnings: item.typename === "Rectangle" ? [] : ["A non-rectangular item was imported as its rectangular bounds."] };
             }
             function supported(item) { return item && (item.typename === "TextFrame" || item.typename === "Rectangle" || item.typename === "Oval" || item.typename === "Polygon"); }
 
@@ -1108,7 +1152,7 @@ enum AdobeTypeSystemReturnBridge {
                         try { if (item.itemLayer && (item.itemLayer.name === "Typefield Export Metadata" || item.itemLayer.name === "FontShelf Export Metadata")) continue; } catch (ignoredLayer) {}
                         try { if (!item.parentPage || !item.parentPage.isValid || item.parentPage.id !== page.id) continue; } catch (ignoredPage) { continue; }
                         if (!supported(item)) { if (!selectedOnly) warn("Unsupported InDesign item “" + item.typename + "” was skipped."); continue; }
-                        if (item.typename === "Rectangle" && item.name === "Canvas background") { paper = colorValue(item.fillColor, opacityValue(item)); continue; }
+                        if (item.typename === "Rectangle" && item.name === "Canvas background") { paper = colorValue(item.fillColor, componentOpacityValue(item, "fill")); continue; }
                         layers.push(item.typename === "TextFrame" ? textLayer(item, pageBounds) : shapeLayer(item, pageBounds));
                     }
                     if (!selectedOnly || layers.length) canvases.push({ name: page.extractLabel("FontShelfCanvas") || ("Page " + (pageIndex + 1)), width: pageBounds[3] - pageBounds[1], height: pageBounds[2] - pageBounds[0], paper: paper, layers: layers, warnings: [] });
@@ -1126,15 +1170,21 @@ enum AdobeTypeSystemReturnBridge {
     static func selfTest() {
         do {
             let fixture = """
-            {"format":"fontshelf-adobe-return","version":1,"sourceApplication":"Illustrator","name":"Returned typeboard","warnings":["Review effects."],"canvases":[{"name":"Artboard 1","width":640,"height":480,"paper":{"r":1,"g":0.98,"b":0.95,"a":1},"layers":[{"kind":"shape","name":"Card","x":20,"y":20,"width":600,"height":200,"color":{"r":0.2,"g":0.3,"b":0.4,"a":0.5},"radius":12},{"kind":"text","name":"Heading","x":40,"y":50,"width":560,"height":80,"color":{"r":0.1,"g":0.1,"b":0.1,"a":1},"text":"Editable heading","fontName":"TestPS","fontSize":48,"lineHeight":52,"trackingThousandths":20,"alignment":"center","paragraphSpacing":4,"firstLineIndent":0,"underline":false,"strikethrough":false,"kerning":true,"axes":{"wght":650},"features":{"liga":1}}]}]}
+            {"format":"fontshelf-adobe-return","version":1,"sourceApplication":"Illustrator","name":"Returned typeboard","warnings":["Review effects."],"canvases":[{"name":"Artboard 1","width":640,"height":480,"paper":{"r":1,"g":0.98,"b":0.95,"a":1},"layers":[{"kind":"shape","name":"Card","x":20,"y":20,"width":600,"height":200,"color":{"r":0.2,"g":0.3,"b":0.4,"a":0.5},"radius":12,"stroke":{"r":0.1,"g":0.2,"b":0.3,"a":0.75},"strokeWidth":4},{"kind":"text","name":"Heading","x":40,"y":50,"width":560,"height":80,"color":{"r":0.1,"g":0.1,"b":0.1,"a":1},"text":"Editable heading","fontName":"TestPS","fontSize":48,"lineHeight":52,"trackingThousandths":20,"alignment":"center","paragraphSpacing":4,"firstLineIndent":0,"underline":false,"strikethrough":false,"kerning":true,"axes":{"wght":650},"features":{"liga":1}}]}]}
             """
             let document = try decode(Data(fixture.utf8))
             let board = try board(document: document, installedFontNames: ["TestPS"])
             precondition(board.directions.count == 1 && board.directions[0].canvas == .imported)
             precondition(board.directions[0].importedSource == .illustrator && board.directions[0].canvasDisplayName == "Illustrator layout" && board.directions[0].canvasUnitLabel == "pt")
             precondition(board.directions[0].importedLayout?.layers.count == 2)
+            precondition(board.directions[0].importedLayout?.layers[0].strokeWidth == 4 && board.directions[0].importedLayout?.layers[0].strokeColor == "1A334D")
+            precondition(board.directions[0].importedLayout?.layers[0].opacity == 0.5 && board.directions[0].importedLayout?.layers[0].strokeOpacity == 0.75,
+                         "Adobe return must preserve independent fill and stroke opacity")
             precondition(board.directions[0].importedLayout?.layers[1].style?.fontName == "TestPS")
             precondition(board.directions[0].importedLayout?.layers[1].style?.axes[tagID("wght")] == 650)
+            var invalidStroke = document
+            invalidStroke.canvases[0].layers[0].strokeWidth = 1_001
+            precondition((try? self.board(document: invalidStroke)) == nil, "Adobe return import must reject oversized strokes")
             for target in AdobeTypeSystemTarget.allCases {
                 let first = script(target: target, scope: .document)
                 precondition(first == script(target: target, scope: .document), "Adobe return script must be deterministic")
@@ -1145,6 +1195,9 @@ enum AdobeTypeSystemReturnBridge {
                     precondition(!first.contains("result.b = 1 - color.gray / 100"), "Illustrator grayscale must not be inverted")
                 } else {
                     precondition(first.contains("color.name === \"None\"") && first.contains("item.parentPage.id !== page.id"), "InDesign return export must preserve no-fill and compare stable page IDs")
+                    precondition(first.contains("function componentOpacityValue(item, component)") &&
+                                 first.contains("componentOpacityValue(item, \"fill\")") && first.contains("componentOpacityValue(item, \"stroke\")"),
+                                 "InDesign return export must read independent fill and stroke opacity")
                     precondition(!first.contains("item.parentPage !== page"), "InDesign DOM objects must not be compared by JavaScript identity")
                 }
                 let context = JSContext()!

@@ -1,8 +1,16 @@
 # Typefield production readiness audit
 
-Updated 2026-09-23 for the 0.40 development build. This audit reconciles the repository Markdown files, current source, and relevant historical project notes. Historical QA records describe the build tested at the time; they are not current verification. The [roadmap](ROADMAP.md) tracks product depth separately from the release checks below.
+Updated 2026-09-23 for the 0.47.0 development build. The earlier 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [roadmap](ROADMAP.md) tracks product depth separately from the release checks below.
 
-## Release risks found and addressed in this pass
+## Changes in 0.47.0
+
+| Risk or gap | Change | Verification scope |
+| --- | --- | --- |
+| A crash between backup-import file replacements could leave Library, Spaces, advanced settings and Letterform Editor in different versions | Stage old and new copies, publish a durable transaction journal before writing targets, and recover on next launch. If copies or journal cleanup cannot be verified, preserve them and block editing. | Interrupted-write and obstructed-recovery fixtures in the native suite; a real power-loss test remains external validation. |
+| Selected imported shapes had no stroke controls | Add stroke color and width to saved layers, canvas/PDF rendering, proportional canvas scaling, and supported Figma/Adobe interchange. | Native model/export and mocked Figma bridge checks; live editor and Adobe/Figma application checks remain open. |
+| A readable local watched folder could be reported as an expired sandbox permission | Distinguish local and sandboxed bookmark behavior, report unavailable folders separately, and replace the old saved path when a folder is chosen again. | Disposable local-folder fixtures; final signed sandbox, offline volume and session activation checks remain open. |
+
+## Earlier release risks addressed in 0.40.0
 
 | Risk | Change | Verification |
 | --- | --- | --- |
@@ -16,16 +24,16 @@ Updated 2026-09-23 for the 0.40 development build. This audit reconciles the rep
 | Imported shapes lacked direct appearance controls | Added selected-shape fill, opacity, and corner radius with single-shape scope and Undo | Native model/export checks; direct control interaction remains manual QA |
 | Generated developer handoff still carried the old visible name | Changed the displayed heading to Typefield; retained versioned interchange identifiers for old handoffs | Native handoff assertion |
 
-The backup merge protects against normal reported errors. An abrupt crash or power loss between file replacements still needs a next-launch transaction recovery design; staged originals are retained if an ordinary rollback fails. This is the highest remaining data-integrity engineering item.
+Backup import now includes next-launch recovery. The recovery checks protect local saved files on the exercised interruption paths; a real power-loss run and an upgrade on another Mac remain open validation.
 
 ## Open release validation
 
 1. **Clean and upgrade installs.** Use disposable macOS accounts on another Mac, including macOS 13. Exercise a new Library, old FontShelf-to-Typefield upgrade, Store-container migration, external-folder permission renewal, managed font licenses, backup restore, and recovery from an unavailable or relocated volume. Current same-machine fixtures do not prove these flows.
-2. **Hands-on workflow matrix.** Inspect small-window layout, VoiceOver, keyboard-only navigation, object selection and dragging, Shift resizing, Undo, numeric and color controls, pinch/scroll, and actual drag/drop. Focus on Spaces and Letterform Editor. Record the exact build and OS in a new QA matrix.
+2. **Hands-on workflow matrix.** The [0.47 focused QA record](QA_2026-09-23_0.47.md) covers shape stroke and a local watched folder. Continue with small-window layout, VoiceOver, keyboard-only navigation, object selection and dragging, Shift resizing, Undo, numeric and color controls, pinch/scroll, and actual drag/drop. Focus on Spaces and Letterform Editor.
 3. **Real integration fidelity.** Run the generated Illustrator/InDesign builders and return bridge in supported Adobe versions. Compare Figma and Adobe round trips for wrapping, leading, variable axes, OpenType settings, shape appearance, unsupported effects, and missing-font behavior. The current JSON/JSX checks are narrower.
 4. **Artwork and font proofing.** Test actual Procreate-produced documents, diverse alphabet sheets, and exported fonts in other apps. Current synthetic fixtures cover format safety and common geometry, not broad real-artwork quality.
 5. **Public product details.** Complete independent Typefield name clearance, set final public support/privacy destinations, and capture current storefront screenshots and feature copy. The [rebrand plan](REBRAND_PLAN.md), [privacy copy](PRIVACY.md), and historical [screenshots log](SCREENSHOTS.md) are starting points, not clearance evidence.
-6. **Library permission and activation behavior.** Reproduce or close the repeated access-renewal notice, then test revocation, relocation, offline volumes, sleep/wake, and session activation under final sandbox entitlements. Track as [LB-01](ROADMAP.md).
+6. **Library permission and activation behavior.** The local false-renewal path is covered by a disposable fixture. Test actual bookmark revocation, relocation, offline volumes, sleep/wake, and session activation under final sandbox entitlements. Track as [LB-01](ROADMAP.md).
 
 ## Product gaps to decide deliberately
 
@@ -34,8 +42,8 @@ These are meaningful capability limits, but the existing feature should be descr
 | Area | Highest-priority gap | Current honest scope |
 | --- | --- | --- |
 | Letterform Editor | [FL-01](ROADMAP.md) whole-object/group editing; [FL-02](ROADMAP.md) previewed vector weight; [FL-03](ROADMAP.md) direct outlined-SVG path import | Complete-outline selection and resizing exist. Pen width affects freehand strokes; SVG artwork is rendered and traced. |
-| Spaces | [SP-01](ROADMAP.md) finish stroke appearance; [SP-02](ROADMAP.md) local text override and reset; [SP-03](ROADMAP.md) consistent selection and transforms | Selected imported shapes now expose fill, opacity, and corners. Template role styles remain shared; imported text is individually editable. |
-| Library | [LB-01](ROADMAP.md) permission reliability; later [LB-02](ROADMAP.md) document-triggered activation and [LB-03](ROADMAP.md) collection migration | Watched folders and manual session activation already work; other apps do not trigger activation automatically. |
+| Spaces | [SP-02](ROADMAP.md) local text override and reset; [SP-03](ROADMAP.md) consistent selection and transforms | Imported shapes now have fill, opacity, corners and stroke. Canvases move and resize proportionally. Template role styles remain shared; imported text is individually editable. |
+| Library | [LB-01](ROADMAP.md) signed-sandbox permission and activation QA; later [LB-02](ROADMAP.md) document-triggered activation and [LB-03](ROADMAP.md) collection migration | Local watched-folder recovery is improved, and manual session activation exists; other apps do not trigger activation automatically. |
 
 The rest of the roadmap includes optional professional/editor depth, research items, and strategic cloud/team features. Those should not be advertised as shipping capabilities.
 
