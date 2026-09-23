@@ -130,7 +130,7 @@ struct WorkspaceSidebarRevealButton: View {
             in: WorkspaceSidebarEdgeShape()
         )
         .overlay(WorkspaceSidebarEdgeShape().stroke(Color.primary.opacity(hovered ? 0.24 : 0.13), lineWidth: 1))
-        .shadow(color: .black.opacity(hovered ? 0.16 : 0.09), radius: hovered ? 8 : 5, x: 2, y: 2)
+        .shelfElevation(.floating)
         .scaleEffect(hovered && !reduceMotion ? 1.025 : 1, anchor: .leading)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)
         .onHover { hovered = $0 }
@@ -771,7 +771,7 @@ struct TypeBoardEditor: View {
         .font(.caption)
         .padding(7)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
-        .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
+        .shelfElevation(.floating)
     }
     func setInspectorMode(_ mode: StudioInspectorMode) {
         if focusCanvas { leaveCanvasFocus(restoreInspector: false) }
@@ -850,7 +850,7 @@ struct TypeBoardEditor: View {
                 else if visibleDirections.count > 1 { Button("Only this") { showOnlyCurrent() }.buttonStyle(.borderless).font(.caption).help("Hide the other canvases") }
             }.frame(width: plan.size.width * zoom)
             CanvasPreview(plan: plan, zoom: zoom, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, selectedTextID: direction.id == self.direction.id ? selectedTextID : nil, onSelect: { id in selectedSection = id; selectedTextID = nil; inspectorTab = "Arrangement" }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.canvas == .imported ? moveLayer : nil, onTextSelect: { element in selectText(element) }, onTextEdit: direction.id == self.direction.id ? { element, text in editText(element, text, directionID: direction.id) } : nil)
-                .frame(width: plan.size.width * zoom, height: plan.size.height * zoom).shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                .frame(width: plan.size.width * zoom, height: plan.size.height * zoom).shelfElevation(.canvas)
         }
     }
     func selectText(_ element: CanvasElement) {
@@ -950,14 +950,26 @@ struct TypeBoardEditor: View {
                             .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
                         Divider()
                         Text("Proofing").font(.caption).fontWeight(.semibold)
-                        let ink = importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink
-                        if let ratio = SpacesProofing.contrastRatio(ink: ink, paper: direction.paper) {
-                            Text(String(format: "Ink/canvas contrast: %.2f:1", ratio)).font(.caption).foregroundStyle(.secondary)
-                            if ratio < 4.5 { Label("Below the 4.5:1 small-text reference", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                        let proofPlan = CanvasPlanCache.plan(for: direction)
+                        let proofElement = proofPlan.elements.first { element in
+                            guard element.text != nil else { return false }
+                            if direction.canvas == .imported { return element.sectionID == selectedSection }
+                            return selectedTextID != nil ? element.textID == selectedTextID : element.role == role
                         }
-                        Text("Longest entered line: \(SpacesProofing.longestLine(style.text)) characters").font(.caption).foregroundStyle(.secondary)
-                        if direction.canvas == .imported { Text("Contrast uses saved layer ink and canvas color; overlapping artwork may change the result.").font(.caption).foregroundStyle(.secondary) }
-                        else { Text("Wrapping and rendered line length depend on the frame and font.").font(.caption).foregroundStyle(.secondary) }
+                        if let proofElement {
+                            if let contrast = CanvasProofing.contrast(for: proofElement, in: proofPlan) {
+                                Text(String(format: "Lowest sampled text/background contrast: %.2f:1", contrast.minimum)).font(.caption).foregroundStyle(.secondary)
+                                if contrast.minimum < 4.5 { Label("Below the 4.5:1 small-text reference", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                                if contrast.overlaid { Text("Later artwork overlaps this text frame; inspect the final composition.").font(.caption).foregroundStyle(.secondary) }
+                            }
+                            if let lines = CanvasProofing.renderedLines(for: proofElement) {
+                                Text("Longest rendered line: \(lines.longestCharacters) characters across \(lines.count) \(lines.count == 1 ? "line" : "lines")").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Text("Contrast samples the saved colors under the text frame; actual glyphs and overlapping artwork may differ.").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("Longest entered line: \(SpacesProofing.longestLine(style.text)) characters").font(.caption).foregroundStyle(.secondary)
+                            Text("Select text on the canvas to see rendered line and background measurements.").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.top, 8)
                 }
@@ -1022,7 +1034,7 @@ struct TypeBoardEditor: View {
             let plan = CanvasPlanCache.plan(for: direction)
             GeometryReader { geometry in
                 ZStack(alignment: .topTrailing) {
-                    CanvasPreview(plan: CanvasPlan(arrangement: plan.sections, width: geometry.size.width), directionID: direction.id, selectedSection: selectedSection, onSelect: { selectedSection = $0 }, onMove: moveSection)
+                    CanvasPreview(plan: CanvasPlan(arrangement: plan.sections, width: geometry.size.width), directionID: direction.id, selectedSection: selectedSection, onSelect: { selectedSection = $0; selectedTextID = nil }, onMove: moveSection)
                     VStack(spacing: 0) {
                         ForEach(plan.sections) { section in
                             Button { var hidden = direction.hiddenSections ?? []; hidden.insert(section.id); board.directions[directionIndex].hiddenSections = hidden; save("Remove Section") } label: { Image(systemName: "minus").frame(width: 28, height: 42) }.buttonStyle(.borderless).help("Remove " + section.title).accessibilityLabel("Remove " + section.title)
@@ -1030,7 +1042,7 @@ struct TypeBoardEditor: View {
                     }
                 }
             }.frame(height: Double(plan.sections.count) * 42)
-            Text(direction.canvas == .imported ? "Drag here to change layer stacking order; drag on the canvas to move a layer." : "Drag sections here or on the canvas.").font(.caption2).foregroundStyle(.secondary)
+            Text(direction.canvas == .imported ? "Drag to reorder or move layers. On a focused canvas, use arrows to select, ⌘⌥↑/↓ to reorder, or ⌥arrow to nudge." : "Drag to reorder sections. On a focused canvas, use arrows to select and ⌘⌥↑/↓ to reorder.").font(.caption2).foregroundStyle(.secondary)
         }
     }
     func chooseFont(_ name: String) { let changed = style.fontName != name; var s = style; s.fontName = name; s.axes = library.pro.axes[name] ?? [:]; s.features = library.pro.features[name] ?? [:]; setStyle(s); save("Change Font"); if changed && library.studio.error.isEmpty { _ = library.recordFontUse(name) } }
@@ -1503,6 +1515,80 @@ struct CanvasPlan {
         updateAccessibilityText()
     }
 }
+
+enum CanvasProofing {
+    struct RenderedLines { let count: Int; let longestCharacters: Int }
+    struct Contrast { let minimum: Double; let overlaid: Bool }
+
+    static func renderedLines(for element: CanvasElement) -> RenderedLines? {
+        guard let text = element.text else { return nil }
+        guard text.length > 0 else { return RenderedLines(count: 1, longestCharacters: 0) }
+        let storage = NSTextStorage(attributedString: text)
+        let manager = NSLayoutManager(); manager.usesFontLeading = true
+        let container = NSTextContainer(containerSize: CGSize(width: max(1, element.rect.width), height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        manager.addTextContainer(container); storage.addLayoutManager(manager)
+        manager.ensureLayout(for: container)
+        var count = 0, longest = 0
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { _, _, _, glyphRange, _ in
+            let range = manager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            let line = (text.string as NSString).substring(with: range).trimmingCharacters(in: .newlines)
+            longest = max(longest, line.count)
+            count += 1
+        }
+        return RenderedLines(count: max(1, count), longestCharacters: longest)
+    }
+
+    private struct RGB {
+        var red: Double; var green: Double; var blue: Double; var alpha: Double
+        init?(_ color: NSColor) {
+            guard let value = color.usingColorSpace(.sRGB) else { return nil }
+            red = value.redComponent; green = value.greenComponent; blue = value.blueComponent; alpha = value.alphaComponent
+        }
+        static let white = RGB(red: 1, green: 1, blue: 1, alpha: 1)
+        private init(red: Double, green: Double, blue: Double, alpha: Double) {
+            self.red = red; self.green = green; self.blue = blue; self.alpha = alpha
+        }
+        func over(_ below: RGB) -> RGB {
+            let coverage = alpha + below.alpha * (1 - alpha)
+            guard coverage > 0 else { return .white }
+            return RGB(red: (red * alpha + below.red * below.alpha * (1 - alpha)) / coverage,
+                       green: (green * alpha + below.green * below.alpha * (1 - alpha)) / coverage,
+                       blue: (blue * alpha + below.blue * below.alpha * (1 - alpha)) / coverage,
+                       alpha: coverage)
+        }
+        var luminance: Double {
+            func linear(_ component: Double) -> Double { component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+    }
+
+    static func contrast(for element: CanvasElement, in plan: CanvasPlan) -> Contrast? {
+        guard let text = element.text, text.length > 0,
+              let inkColor = text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor,
+              let ink = RGB(inkColor), let paper = RGB(plan.paper),
+              let index = plan.elements.firstIndex(where: { $0.sectionID == element.sectionID && $0.textID == element.textID && $0.rect == element.rect && $0.text?.string == text.string }) else { return nil }
+        let frame = plan.textBounds(for: element)
+        guard !frame.isNull, frame.width > 0, frame.height > 0 else { return nil }
+        var minimum = Double.infinity
+        for row in 0..<3 {
+            for column in 0..<5 {
+                let point = CGPoint(x: frame.minX + frame.width * (Double(column) + 0.5) / 5,
+                                    y: frame.minY + frame.height * (Double(row) + 0.5) / 3)
+                var background = paper.over(.white)
+                for item in plan.elements[..<index] where item.rect.contains(point) {
+                    if let color = item.color, let fill = RGB(color) { background = fill.over(background) }
+                }
+                let foreground = ink.over(background)
+                let high = max(foreground.luminance, background.luminance)
+                let low = min(foreground.luminance, background.luminance)
+                minimum = min(minimum, (high + 0.05) / (low + 0.05))
+            }
+        }
+        let overlaid = plan.elements.dropFirst(index + 1).contains { $0.color != nil && $0.rect.intersects(frame) }
+        return Contrast(minimum: minimum, overlaid: overlaid)
+    }
+}
 final class CanvasInlineTextView: NSTextView {
     var commit: (() -> Void)?
     var cancel: (() -> Void)?
@@ -1523,6 +1609,16 @@ final class CanvasInlineTextView: NSTextView {
         return accepted
     }
 }
+private enum CanvasAccessibleTarget: Hashable {
+    case section(String)
+    case text(String)
+    case layer(String)
+}
+private final class CanvasAccessibilityItem: NSAccessibilityElement {
+    var onPress: (() -> Bool)?
+    var actionCapabilities = -1
+    override func accessibilityPerformPress() -> Bool { onPress?() ?? false }
+}
 final class CanvasNativeView: NSView {
     var plan: CanvasPlan
     var zoom = 1.0
@@ -1540,11 +1636,181 @@ final class CanvasNativeView: NSView {
     private weak var inlineEditor: CanvasInlineTextView?
     private var editingElement: CanvasElement?
     private var activeTextEdit: ((CanvasElement, String) -> Void)?
+    private var accessibleItems: [CanvasAccessibleTarget: CanvasAccessibilityItem] = [:]
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { directionID != nil }
+    override func becomeFirstResponder() -> Bool { let accepted = super.becomeFirstResponder(); if accepted { needsDisplay = true }; return accepted }
+    override func resignFirstResponder() -> Bool { let accepted = super.resignFirstResponder(); if accepted { needsDisplay = true }; return accepted }
     init(plan: CanvasPlan) { self.plan = plan; super.init(frame: CGRect(origin: .zero, size: plan.size)); registerForDraggedTypes([.string]) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func resetCursorRects() { if directionID != nil { addCursorRect(bounds, cursor: .openHand) } }
+    private var navigationTargets: [CanvasAccessibleTarget] {
+        if plan.sections.isEmpty { return [] }
+        if plan.elements.contains(where: { $0.textID != nil }) {
+            let texts = Dictionary(grouping: plan.elements.compactMap { element -> (String, String)? in
+                element.textID.map { (element.sectionID, $0) }
+            }, by: { $0.0 })
+            return plan.sections.flatMap { section -> [CanvasAccessibleTarget] in
+                [.section(section.id)] + (texts[section.id] ?? []).map { .text($0.1) }
+            }
+        }
+        if plan.elements.count == plan.sections.count && plan.elements.contains(where: { $0.style != nil || $0.color != nil }) {
+            return plan.sections.map { .layer($0.id) }
+        }
+        return plan.sections.map { .section($0.id) }
+    }
+    private var currentTarget: CanvasAccessibleTarget? {
+        guard let selectedSection else { return nil }
+        if let selectedTextID { return .text(selectedTextID) }
+        return navigationTargets.contains(.layer(selectedSection)) ? .layer(selectedSection) : .section(selectedSection)
+    }
+    private func element(for target: CanvasAccessibleTarget) -> CanvasElement? {
+        switch target {
+        case .text(let id): return plan.elements.first { $0.textID == id }
+        case .layer(let id): return plan.elements.first { $0.sectionID == id }
+        case .section: return nil
+        }
+    }
+    @discardableResult private func activate(_ target: CanvasAccessibleTarget) -> Bool {
+        guard directionID != nil else { return false }
+        switch target {
+        case .section(let id):
+            guard plan.sections.contains(where: { $0.id == id }) else { return false }
+            selectedSection = id; selectedTextID = nil; onSelect?(id)
+        case .text(let id):
+            guard let text = plan.elements.first(where: { $0.textID == id }) else { return false }
+            selectedSection = text.sectionID; selectedTextID = id; onTextSelect?(text)
+        case .layer(let id):
+            guard let layer = plan.elements.first(where: { $0.sectionID == id }) else { return false }
+            selectedSection = id; selectedTextID = nil
+            if layer.text != nil { onTextSelect?(layer) } else { onSelect?(id) }
+        }
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+        updateAccessibilityItems()
+        return true
+    }
+    @discardableResult private func edit(_ target: CanvasAccessibleTarget) -> Bool {
+        guard onTextEdit != nil, let text = element(for: target), text.text != nil, activate(target) else { return false }
+        beginEditing(text)
+        return true
+    }
+    @discardableResult private func reorder(_ target: CanvasAccessibleTarget, offset: Int) -> Bool {
+        guard directionID != nil, onMove != nil else { return false }
+        let id: String
+        switch target { case .section(let value), .layer(let value): id = value
+        case .text(let value): guard let element = element(for: .text(value)) else { return false }; id = element.sectionID }
+        guard let index = plan.sections.firstIndex(where: { $0.id == id }), plan.sections.indices.contains(index + offset) else { return false }
+        onMove?(id, plan.sections[index + offset].id, offset < 0)
+        return true
+    }
+    @discardableResult private func nudge(_ target: CanvasAccessibleTarget, dx: Double, dy: Double) -> Bool {
+        guard directionID != nil, let onTranslate else { return false }
+        let id: String
+        switch target { case .layer(let value), .section(let value): id = value
+        case .text(let value): guard let element = element(for: .text(value)) else { return false }; id = element.sectionID }
+        guard plan.sections.contains(where: { $0.id == id }) else { return false }
+        onTranslate(id, dx, dy)
+        return true
+    }
+    private func selectAdjacent(_ offset: Int) -> Bool {
+        let targets = navigationTargets
+        guard !targets.isEmpty else { return false }
+        let index = currentTarget.flatMap { targets.firstIndex(of: $0) }
+        let next = index.map { min(max(0, $0 + offset), targets.count - 1) } ?? (offset > 0 ? 0 : targets.count - 1)
+        return activate(targets[next])
+    }
+    override func keyDown(with event: NSEvent) {
+        guard directionID != nil else { super.keyDown(with: event); return }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).intersection([.command, .option, .shift, .control])
+        let offset: Int? = event.keyCode == 126 || event.keyCode == 123 ? -1 : event.keyCode == 125 || event.keyCode == 124 ? 1 : nil
+        if let offset, modifiers == [.command, .option], let currentTarget, reorder(currentTarget, offset: offset) { return }
+        if modifiers == [.option] || modifiers == [.option, .shift] {
+            let step = modifiers.contains(.shift) ? 10.0 : 1.0
+            let dx = event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0
+            let dy = event.keyCode == 126 ? -step : event.keyCode == 125 ? step : 0
+            if (dx != 0 || dy != 0), let currentTarget, nudge(currentTarget, dx: dx, dy: dy) { return }
+        }
+        if let offset, modifiers.isEmpty, selectAdjacent(offset) { return }
+        if (event.keyCode == 36 || event.keyCode == 76), modifiers.isEmpty, let currentTarget, edit(currentTarget) { return }
+        super.keyDown(with: event)
+    }
+    func updateAccessibilityItems() {
+        let targets = navigationTargets
+        let active = directionID != nil
+        let selected = currentTarget
+        let sections = Dictionary(uniqueKeysWithValues: plan.sections.enumerated().map { ($0.element.id, ($0.offset, $0.element)) })
+        let texts = Dictionary(uniqueKeysWithValues: plan.elements.compactMap { element -> (String, CanvasElement)? in element.textID.map { ($0, element) } })
+        var layers: [String: CanvasElement] = [:]
+        if targets.contains(where: { if case .layer = $0 { return true }; return false }) {
+            for element in plan.elements { layers[element.sectionID] = element }
+        }
+        var ordered: [CanvasAccessibilityItem] = []
+        for target in targets {
+            let item = accessibleItems[target] ?? CanvasAccessibilityItem()
+            item.setAccessibilityParent(self)
+            item.setAccessibilityRole(active ? .button : .staticText)
+            item.setAccessibilityEnabled(true)
+            item.setAccessibilitySelected(active && selected == target)
+            let frame: CGRect
+            let label: String
+            var editable = false
+            switch target {
+            case .section(let id):
+                guard let (index, section) = sections[id] else { continue }
+                frame = section.rect
+                label = "Section \(index + 1) of \(plan.sections.count): \(section.title)"
+                item.setAccessibilityIdentifier("spaces-section-" + id)
+            case .text(let id):
+                guard let element = texts[id] else { continue }
+                frame = element.rect
+                let content = element.text?.string.replacingOccurrences(of: "\n", with: " ") ?? ""
+                label = "\(element.role?.rawValue ?? "Text") text at x \(Int(frame.minX)), y \(Int(frame.minY)): \(String(content.prefix(160)))"
+                item.setAccessibilityValue(element.text.map { String($0.string.prefix(4_000)) })
+                item.setAccessibilityIdentifier("spaces-text-" + id)
+                editable = element.text != nil
+            case .layer(let id):
+                guard let (index, section) = sections[id], let element = layers[id] else { continue }
+                frame = section.rect
+                label = "\(element.text == nil ? "Artwork" : "Text") layer \(index + 1) of \(plan.sections.count): \(section.title), x \(Int(frame.minX)), y \(Int(frame.minY))"
+                if let text = element.text { item.setAccessibilityValue(String(text.string.prefix(4_000))) }
+                item.setAccessibilityIdentifier("spaces-layer-" + id)
+                editable = element.text != nil
+            }
+            item.setAccessibilityLabel(label)
+            item.setAccessibilityFrameInParentSpace(frame.applying(CGAffineTransform(scaleX: zoom, y: zoom)))
+            item.setAccessibilityHelp(active ? "Press to select. Use custom actions to edit or move this object. Keyboard: arrows select; Command-Option-Up or Down reorders; Option-arrow nudges imported layers." : "Preview canvas. Select this canvas to edit its objects.")
+            if item.onPress == nil { item.onPress = { [weak self] in self?.activate(target) ?? false } }
+            let capabilities = active ? (editable && onTextEdit != nil ? 1 : 0) | (onMove != nil ? 2 : 0) | (onTranslate != nil ? 4 : 0) : 0
+            if item.actionCapabilities != capabilities {
+                var actions: [NSAccessibilityCustomAction] = []
+                if capabilities & 1 != 0 {
+                    actions.append(NSAccessibilityCustomAction(name: "Edit text") { [weak self] in self?.edit(target) ?? false })
+                }
+                if capabilities & 2 != 0 {
+                    actions.append(NSAccessibilityCustomAction(name: "Move up in arrangement") { [weak self] in self?.reorder(target, offset: -1) ?? false })
+                    actions.append(NSAccessibilityCustomAction(name: "Move down in arrangement") { [weak self] in self?.reorder(target, offset: 1) ?? false })
+                }
+                if capabilities & 4 != 0 {
+                    actions.append(NSAccessibilityCustomAction(name: "Nudge left") { [weak self] in self?.nudge(target, dx: -1, dy: 0) ?? false })
+                    actions.append(NSAccessibilityCustomAction(name: "Nudge right") { [weak self] in self?.nudge(target, dx: 1, dy: 0) ?? false })
+                    actions.append(NSAccessibilityCustomAction(name: "Nudge up") { [weak self] in self?.nudge(target, dx: 0, dy: -1) ?? false })
+                    actions.append(NSAccessibilityCustomAction(name: "Nudge down") { [weak self] in self?.nudge(target, dx: 0, dy: 1) ?? false })
+                }
+                item.setAccessibilityCustomActions(actions)
+                item.actionCapabilities = capabilities
+            }
+            accessibleItems[target] = item
+            ordered.append(item)
+        }
+        let valid = Set(targets)
+        accessibleItems = accessibleItems.filter { valid.contains($0.key) }
+        setAccessibilityChildren(ordered + (inlineEditor.map { [$0] } ?? []))
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Typography canvas, \(plan.sections.count) sections")
+        setAccessibilityHelp("Use arrow keys to select objects. Press Return to edit text, Command-Option-Up or Down to reorder, and Option-arrow keys to move imported layers.")
+    }
     func section(at point: NSPoint) -> CanvasSection? {
         let local = NSPoint(x: point.x / max(0.01, zoom), y: point.y / max(0.01, zoom))
         if let text = plan.text(at: local), let section = plan.sections.first(where: { $0.id == text.sectionID }) { return section }
@@ -1614,6 +1880,7 @@ final class CanvasNativeView: NSView {
         addSubview(editor)
         window.makeFirstResponder(editor)
         editor.selectAll(nil)
+        updateAccessibilityItems()
     }
     static func editorTextColor(_ attributed: NSAttributedString, fallback: NSColor) -> NSColor {
         guard attributed.length > 0 else { return fallback }
@@ -1648,6 +1915,7 @@ final class CanvasNativeView: NSView {
         activeTextEdit = nil
         if window?.firstResponder === editor { window?.makeFirstResponder(self) }
         editor.removeFromSuperview()
+        updateAccessibilityItems()
         if shouldCommit { edit?(element, value) }
     }
     func endInlineEditing(commit: Bool) { finishEditing(commit: commit) }
@@ -1692,6 +1960,11 @@ final class CanvasNativeView: NSView {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSGraphicsContext.current?.cgContext.scaleBy(x: zoom, y: zoom)
+        if window?.firstResponder === self {
+            ShelfPalette.nativeAccent.withAlphaComponent(0.7).setStroke()
+            let focus = NSBezierPath(rect: CGRect(x: 2 / zoom, y: 2 / zoom, width: max(0, plan.size.width - 4 / zoom), height: max(0, plan.size.height - 4 / zoom)))
+            focus.lineWidth = 2 / zoom; focus.stroke()
+        }
         for element in plan.elements {
             if let color = element.color { color.setFill(); NSBezierPath(roundedRect: element.rect, xRadius: element.radius, yRadius: element.radius).fill() }
             element.text?.draw(with: element.rect, options: [.usesLineFragmentOrigin, .usesFontLeading])
@@ -1720,10 +1993,10 @@ struct CanvasPreview: NSViewRepresentable {
     var onTranslate: ((String, Double, Double) -> Void)?
     var onTextSelect: ((CanvasElement) -> Void)?
     var onTextEdit: ((CanvasElement, String) -> Void)?
-    final class Coordinator { var accessibilityText = "" }
+    final class Coordinator {}
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> CanvasNativeView { CanvasNativeView(plan: plan) }
-    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.selectedTextID = selectedTextID; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onTextSelect = onTextSelect; view.onTextEdit = onTextEdit; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.synchronizeInlineEditor(); view.setAccessibilityElement(true); if context.coordinator.accessibilityText != plan.accessibilityText { context.coordinator.accessibilityText = plan.accessibilityText; view.setAccessibilityLabel(plan.accessibilityText) }; view.needsDisplay = true }
+    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.selectedTextID = selectedTextID; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onTextSelect = onTextSelect; view.onTextEdit = onTextEdit; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.synchronizeInlineEditor(); view.setAccessibilityElement(true); view.updateAccessibilityItems(); view.needsDisplay = true }
     static func dismantleNSView(_ view: CanvasNativeView, coordinator: Coordinator) { DispatchQueue.main.async { view.endInlineEditing(commit: true) } }
 }
 

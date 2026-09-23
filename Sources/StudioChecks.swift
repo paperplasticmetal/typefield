@@ -113,6 +113,28 @@ enum StudioChecks {
         let textElement = originalPlan.elements.first { $0.role == .label }!
         let preciseTextBounds = originalPlan.textBounds(for: textElement)
         try verify(originalPlan.text(at: NSPoint(x: preciseTextBounds.midX, y: preciseTextBounds.midY))?.textID == textElement.textID, "Exact text hit-test must select the clicked text element")
+        let proofText = NSAttributedString(string: "abcdefghij klmnopqrst", attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular), .foregroundColor: NSColor.black])
+        let narrowProof = CanvasElement(rect: CGRect(x: 0, y: 0, width: 70, height: 100), text: proofText, sectionID: "proof")
+        let wideProof = CanvasElement(rect: CGRect(x: 0, y: 0, width: 400, height: 100), text: proofText, sectionID: "proof")
+        let narrowLines = CanvasProofing.renderedLines(for: narrowProof)!, wideLines = CanvasProofing.renderedLines(for: wideProof)!
+        try verify(narrowLines.count > wideLines.count && narrowLines.longestCharacters < wideLines.longestCharacters, "Proofing must count actual wrapped line fragments in the rendered text frame")
+        var contrastPlan = CanvasPlan(arrangement: [], width: 120)
+        contrastPlan.paper = .white
+        contrastPlan.elements = [CanvasElement(rect: CGRect(x: 0, y: 0, width: 120, height: 100), color: NSColor(white: 0.95, alpha: 1)), narrowProof]
+        let lightContrast = CanvasProofing.contrast(for: narrowProof, in: contrastPlan)!
+        contrastPlan.elements[0].color = .black
+        let darkContrast = CanvasProofing.contrast(for: narrowProof, in: contrastPlan)!
+        try verify(lightContrast.minimum > 4.5 && darkContrast.minimum < 1.1, "Proofing must sample overlapping fills behind the selected text instead of canvas paper alone")
+        contrastPlan.elements.append(CanvasElement(rect: narrowProof.rect, color: .gray))
+        try verify(CanvasProofing.contrast(for: narrowProof, in: contrastPlan)?.overlaid == true, "Proofing must disclose artwork painted over the text frame")
+        let accessibleCanvas = CanvasNativeView(plan: originalPlan)
+        accessibleCanvas.directionID = UUID()
+        var accessibleSelection: String?
+        accessibleCanvas.onTextSelect = { accessibleSelection = $0.textID }
+        accessibleCanvas.updateAccessibilityItems()
+        let accessibleChildren = accessibleCanvas.accessibilityChildren() as? [NSAccessibilityElement] ?? []
+        let accessibleText = accessibleChildren.first { $0.accessibilityIdentifier() == "spaces-text-" + textElement.textID! }
+        try verify(accessibleText?.accessibilityPerformPress() == true && accessibleSelection == textElement.textID, "Each drawn text object must be a navigable accessibility child that selects its matching object")
         let trailingWhitespace = NSPoint(x: textElement.rect.maxX - 1, y: textElement.rect.midY)
         if !preciseTextBounds.contains(trailingWhitespace) { try verify(originalPlan.text(at: trailingWhitespace)?.textID != textElement.textID, "Text hit-testing must not treat the full section-width layout box as glyph content") }
         var indentedCanvas = textCanvas; indentedCanvas.styles[TypeRole.label.rawValue]!.indent = 80; indentedCanvas.styles[TypeRole.label.rawValue]!.text = "Indented label"

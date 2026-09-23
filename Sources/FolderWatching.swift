@@ -221,9 +221,25 @@ struct SearchTokenChips: View {
     var body: some View {
         let tokens = FontSearchQuery(library.search).tokens
         if !tokens.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) {
-                ForEach(tokens) { token in Button { library.search = FontSearchQuery.removing(token.raw, from: library.search) } label: { HStack(spacing: 4) { Text(token.raw); Image(systemName: "xmark") }.font(.caption).padding(.horizontal, 9).padding(.vertical, 5).foregroundStyle(token.excluded ? Color.orange : ShelfPalette.ink).background((token.excluded ? Color.orange : Color.accentColor).opacity(0.09), in: Capsule()) }.buttonStyle(.plain) }
-            } }.padding(.bottom, 10)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(tokens) { token in
+                        Button {
+                            library.search = FontSearchQuery.removing(token.raw, from: library.search)
+                        } label: {
+                            HStack(spacing: 4) { Text(token.raw); Image(systemName: "xmark") }
+                                .font(.caption)
+                                .padding(.horizontal, 9)
+                                .frame(minHeight: 28)
+                                .foregroundStyle(token.excluded ? ShelfPalette.exclusion : ShelfPalette.ink)
+                                .background((token.excluded ? ShelfPalette.exclusion : ShelfPalette.ink).opacity(0.09), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove search filter \(token.raw)")
+                        .accessibilityLabel(token.excluded ? "Remove excluded search filter \(token.raw)" : "Remove search filter \(token.raw)")
+                    }
+                }
+            }.padding(.bottom, 10)
         }
     }
 }
@@ -235,8 +251,10 @@ struct LibrarySearchView: View {
         HStack {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search fonts or #tags", text: $library.search).textFieldStyle(.plain).onSubmit { suggestions = false }
-            if !library.search.isEmpty { Button { library.search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help("Clear search") }
-            Button { suggestions.toggle() } label: { Image(systemName: "tag") }.buttonStyle(.plain).help("Search tags and font properties")
+            if !library.search.isEmpty { Button { library.search = "" } label: { Image(systemName: "xmark.circle.fill").frame(minWidth: 28, minHeight: 28) }.buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear font search") }
+            Button { suggestions.toggle() } label: { Image(systemName: "tag").frame(minWidth: 28, minHeight: 28) }.buttonStyle(.plain).help("Search tags and font properties")
+                .accessibilityLabel("Search tags and font properties")
+                .accessibilityValue(suggestions ? "Open" : "Closed")
                 .popover(isPresented: $suggestions, arrowEdge: .bottom) { panel }
         }.padding(10).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         .onChange(of: library.search) { value in if value.hasSuffix("#") || value.hasSuffix("#!") { suggestions = true; exclude = value.hasSuffix("#!") } }
@@ -261,7 +279,7 @@ struct LibrarySearchView: View {
                     let fragment = library.search.split(separator: "#").last.map(String.init)?.trimmingCharacters(in: CharacterSet(charactersIn: "!\" ")) ?? ""
                     let tags = TagQuery.hierarchy(Set(library.pro.tags.values.flatMap { $0 }))
                     ForEach(tags.filter { !library.search.contains("#") || fragment.isEmpty || $0.localizedCaseInsensitiveContains(fragment) }, id: \.self) { tag in
-                        Button { add(tag) } label: { Text(FontSearchQuery.token(tag, excluded: exclude)).foregroundStyle(exclude ? Color.orange : Color.accentColor).padding(.vertical, 4) }.buttonStyle(.plain)
+                        Button { add(tag) } label: { Text(FontSearchQuery.token(tag, excluded: exclude)).foregroundStyle(exclude ? ShelfPalette.exclusion : ShelfPalette.ink).padding(.vertical, 4) }.buttonStyle(.plain)
                     }
                     if tags.isEmpty { Text("Add tags from Library → Tools → Tags.").font(.caption).foregroundStyle(.secondary) }
                     Divider()

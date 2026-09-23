@@ -692,16 +692,35 @@ struct ContentView: View {
                     } label: { Image(systemName: "text.quote") }.shelfIconMenu().help("Preview text presets")
                     Divider().frame(height: 20)
                     Text("Aa").font(.system(size: 12))
-                    Slider(value: $size, in: 16...160, step: 1).frame(width: 135)
+                    Slider(value: $size, in: 16...160, step: 1)
+                        .frame(width: 135)
+                        .accessibilityLabel("Preview size")
+                        .accessibilityValue("\(Int(size)) points")
+                        .accessibilityHint("Adjusts the size of Library font previews")
                     Text("\(Int(size)) pt").monospacedDigit().foregroundStyle(.secondary).frame(width: 48)
                 }.padding(14).shelfGlass(radius: 16).padding(.horizontal, 16).padding(.bottom, 12)
-                HStack {
-                    Button(library.tagQuery.active ? "Tag filters •" : "Tag filters") { showTagFilters.toggle() }.popover(isPresented: $showTagFilters) { TagFilterView(library: library) }
-                    ShelfDropdown(title: "Source", selection: $library.source, options: ["All sources", "User / third-party", "System"].map { ($0, $0) }, showsTitle: false).frame(width: 165)
-                    Toggle("Variable fonts", isOn: $library.variableOnly).toggleStyle(.checkbox)
-                    Spacer()
-                    ShelfDropdown(title: "Sort", selection: $library.sort, options: ["Name A–Z", "Name Z–A", "Most styles", "Category"].map { ($0, $0) }).frame(width: 180)
-                    Picker("Layout", selection: $grid) { Image(systemName: "list.bullet").help("Full-width list").tag(false); Image(systemName: "square.grid.2x2").help("Adaptive grid: cards fit your preview text").tag(true) }.pickerStyle(.segmented).labelsHidden().frame(width: 70)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        tagFilterControl
+                        sourceFilterControl
+                        variableFilterControl
+                        Spacer(minLength: 0)
+                        sortFilterControl
+                        layoutFilterControl
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            tagFilterControl
+                            sourceFilterControl
+                            variableFilterControl
+                            Spacer(minLength: 0)
+                        }
+                        HStack(spacing: 10) {
+                            sortFilterControl
+                            layoutFilterControl
+                            Spacer(minLength: 0)
+                        }
+                    }
                 }.padding(.horizontal, 16).padding(.vertical, 10)
                 HStack {
                     if let writing = library.writing {
@@ -799,6 +818,7 @@ struct ContentView: View {
                 Button { library.writing = library.writing == writing ? nil : writing } label: {
                     HStack { Text(writing.mark).frame(width: 20); Text(writing.rawValue).lineLimit(1); Spacer(); Text("\(snapshot.count(writingSystem: writing))").font(.caption).foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
                 }.buttonStyle(.plain).background(library.writing == writing ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
+                    .accessibilityAddTraits(library.writing == writing ? .isSelected : [])
             }
             }
             SidebarSection(title: "Tags", key: "sidebar.tags") {
@@ -809,7 +829,7 @@ struct ContentView: View {
                 }
             }
             }
-            SidebarSection(title: "Saved searches", key: "sidebar.saved-searches", onAdd: { saveSearch() }) {
+            SidebarSection(title: "Saved searches", key: "sidebar.saved-searches", addLabel: "Save current search", onAdd: { saveSearch() }) {
                 ForEach((library.saved.savedSearches ?? [:]).keys.sorted(), id: \.self) { name in
                     Button { library.applySavedSearch(name) } label: {
                         HStack { Image(systemName: "magnifyingglass").frame(width: 20); Text(name).lineLimit(1); Spacer() }
@@ -828,7 +848,9 @@ struct ContentView: View {
                     ForEach(library.saved.collections.keys.sorted(), id: \.self) { name in
                         HStack(spacing: 0) {
                             Button { library.workspace = .library; library.selection = "collection:" + name } label: { Image(systemName: "folder").frame(width: 28) }.buttonStyle(.plain).accessibilityLabel("Open collection " + name)
+                                .accessibilityAddTraits(library.workspace == .library && library.selection == "collection:" + name ? .isSelected : [])
                             ShelfEditableName(name: name, selected: library.selection == "collection:" + name, onSelect: { library.workspace = .library; library.selection = "collection:" + name }, onRename: { library.renameCollection(name, to: $0) })
+                                .accessibilityAddTraits(library.workspace == .library && library.selection == "collection:" + name ? .isSelected : [])
                             Text("\(snapshot.count(section: "collection:" + name))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection", role: .destructive) { _ = library.deleteCollection(name) } }
                     }
@@ -842,6 +864,29 @@ struct ContentView: View {
             Button { library.openTools("Folders") } label: { Label("Live folders · \(library.saved.folders.count)", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.horizontal, 22).padding(.bottom, 8).help("Manage folders that update automatically, including subfolders")
             HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
         }
+    }
+    private var tagFilterControl: some View {
+        Button(library.tagQuery.active ? "Tag filters •" : "Tag filters") { showTagFilters.toggle() }
+            .popover(isPresented: $showTagFilters) { TagFilterView(library: library) }
+            .fixedSize(horizontal: true, vertical: false)
+    }
+    private var sourceFilterControl: some View {
+        ShelfDropdown(title: "Source", selection: $library.source, options: ["All sources", "User / third-party", "System"].map { ($0, $0) }, showsTitle: false)
+            .frame(width: 165)
+    }
+    private var variableFilterControl: some View {
+        Toggle("Variable fonts", isOn: $library.variableOnly).toggleStyle(.checkbox)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+    private var sortFilterControl: some View {
+        ShelfDropdown(title: "Sort", selection: $library.sort, options: ["Name A–Z", "Name Z–A", "Most styles", "Category"].map { ($0, $0) })
+            .frame(width: 180)
+    }
+    private var layoutFilterControl: some View {
+        Picker("Layout", selection: $grid) {
+            Image(systemName: "list.bullet").help("Full-width list").tag(false)
+            Image(systemName: "square.grid.2x2").help("Adaptive grid: cards fit your preview text").tag(true)
+        }.pickerStyle(.segmented).labelsHidden().frame(width: 70)
     }
     func sectionLabel(_ title: String) -> some View { Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 5) }
     @ViewBuilder func navIcon(_ icon: String, key: String) -> some View {
@@ -863,6 +908,7 @@ struct ContentView: View {
         Button { library.workspace = .library; library.selection = key } label: {
             HStack { navIcon(icon, key: key); Text(title).lineLimit(1); Spacer(); Text("\(count)").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
         }.buttonStyle(.plain).background(library.workspace == .library && library.selection == key ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
+            .accessibilityAddTraits(library.workspace == .library && library.selection == key ? .isSelected : [])
     }
     func renameCollection(_ name: String) {
         if let renamed = ShelfRename.prompt("Rename collection", current: name, validate: { candidate in candidate != name && library.saved.collections[candidate] != nil ? "A collection with this name already exists. Choose another name." : nil }) { _ = library.renameCollection(name, to: renamed) }

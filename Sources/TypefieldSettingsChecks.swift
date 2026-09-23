@@ -11,11 +11,50 @@ enum TypefieldSettingsChecks {
             func linear(_ value: CGFloat) -> CGFloat { value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
             return 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
         }
+        func contrast(_ foreground: NSColor, _ background: NSColor) -> CGFloat {
+            let values = [luminance(foreground), luminance(background)].sorted()
+            return (values[1] + 0.05) / (values[0] + 0.05)
+        }
+        func blend(_ foreground: NSColor, over background: NSColor, opacity: CGFloat) -> NSColor {
+            let front = foreground.usingColorSpace(.sRGB)!
+            let back = background.usingColorSpace(.sRGB)!
+            return NSColor(srgbRed: front.redComponent * opacity + back.redComponent * (1 - opacity),
+                           green: front.greenComponent * opacity + back.greenComponent * (1 - opacity),
+                           blue: front.blueComponent * opacity + back.blueComponent * (1 - opacity), alpha: 1)
+        }
         for palette in TypefieldPalette.allCases {
             for dark in [false, true] {
-                let foreground = luminance(palette.accent(dark: dark))
-                let workspaceBackground = luminance(ShelfPalette.workspaceColor(dark: dark))
-                try require((max(foreground, workspaceBackground) + 0.05) / (min(foreground, workspaceBackground) + 0.05) >= 4.5, "Accent contrast on neutral workspace: \(palette.title)")
+                let accent = palette.accent(dark: dark)
+                let workspace = ShelfPalette.workspaceColor(dark: dark)
+                let card = blend(.white, over: workspace, opacity: dark ? 0.025 : 0.8)
+                let selectedRow = blend(accent, over: workspace, opacity: 0.13)
+                try require(contrast(accent, workspace) >= 4.5, "Accent contrast on neutral workspace: \(palette.title)")
+                try require(contrast(accent, card) >= 4.5, "Accent contrast on Library card: \(palette.title)")
+                try require(contrast(accent, selectedRow) >= 4.5, "Selected Settings label contrast: \(palette.title)")
+            }
+        }
+        for dark in [false, true] {
+            let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
+            var label = NSColor.black
+            var control = NSColor.white
+            var window = NSColor.white
+            appearance.performAsCurrentDrawingAppearance {
+                label = NSColor.labelColor.usingColorSpace(.sRGB)!
+                control = NSColor.controlBackgroundColor.usingColorSpace(.sRGB)!
+                window = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)!
+            }
+            let workspace = ShelfPalette.workspaceColor(dark: dark)
+            let exclusion = ShelfPalette.exclusionColor(dark: dark)
+            let exclusionChip = blend(exclusion, over: workspace, opacity: 0.09)
+            try require(contrast(exclusion, exclusionChip) >= 4.5, "Excluded search chip text contrast")
+            for palette in TypefieldPalette.allCases {
+                let accent = palette.accent(dark: dark)
+                let opaqueSelectedRow = blend(accent, over: window, opacity: 0.13)
+                try require(contrast(accent, opaqueSelectedRow) >= 4.5, "Selected Settings label with Reduce Transparency: \(palette.title)")
+            }
+            for background in [workspace, control] {
+                let renderedLabel = blend(label, over: background, opacity: label.alphaComponent)
+                try require(contrast(renderedLabel, background) >= 4.5, "Primary label contrast on workspace and opaque controls")
             }
         }
         try require(ShelfPalette.workspaceColor(dark: false).isEqual(TypefieldPalette.color("F6F7F9")), "Light workspace uses Porcelain surface")
@@ -58,6 +97,6 @@ enum TypefieldSettingsChecks {
         try require(library.saved.folders == [path] && library.saved.autoActivateFolders == [path], "Failed stop-watching must restore selected folders")
         try require(!library.setFolderActivation(path, enabled: false), "Unreadable library cannot change activation")
         try require(library.saved.autoActivateFolders == [path], "Failed activation edit must restore setting")
-        print("Settings checks passed: six accent contrasts, distinct icon designs at 32/64/128 pixels, serif icon at 16 pixels, appearance modes, folder-save rollback.")
+        print("Settings checks passed: accent, card, selected-label, and opaque-control contrast; distinct icon designs at 32/64/128 pixels; serif icon at 16 pixels; appearance modes; folder-save rollback.")
     }
 }

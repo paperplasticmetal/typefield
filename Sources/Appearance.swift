@@ -16,6 +16,14 @@ enum ShelfPalette {
     static func workspaceColor(dark: Bool) -> NSColor {
         TypefieldPalette.color(dark ? "171A20" : "F6F7F9")
     }
+    static func exclusionColor(dark: Bool) -> NSColor {
+        TypefieldPalette.color(dark ? "F1B462" : "8E4C07")
+    }
+    static var exclusion: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            exclusionColor(dark: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+        })
+    }
     static var canvas: Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             workspaceColor(dark: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
@@ -48,6 +56,31 @@ struct ShelfGlass: ViewModifier {
         }
     }
 }
+
+/// Shared depth roles keep adjacent workspaces from inventing their own shadows.
+/// Borders and fills still define the edge when shadows have little contrast.
+enum ShelfElevation {
+    case card, canvas, floating, modal
+
+    var metrics: (lightOpacity: Double, darkOpacity: Double, radius: CGFloat, y: CGFloat) {
+        switch self {
+        case .card: return (0.04, 0.10, 6, 2)
+        case .canvas: return (0.11, 0.25, 16, 6)
+        case .floating: return (0.16, 0.33, 20, 9)
+        case .modal: return (0.20, 0.40, 28, 14)
+        }
+    }
+}
+
+private struct ShelfElevationModifier: ViewModifier {
+    let level: ShelfElevation
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        let metrics = level.metrics
+        content.shadow(color: .black.opacity(scheme == .dark ? metrics.darkOpacity : metrics.lightOpacity), radius: metrics.radius, y: metrics.y)
+    }
+}
+
 struct ShelfCardSurface: ViewModifier {
     var selected: Bool
     @Environment(\.colorScheme) private var scheme
@@ -60,13 +93,14 @@ struct ShelfCardSurface: ViewModifier {
             .background(scheme == .dark ? Color.white.opacity(hovered ? 0.055 : 0.025) : Color.white.opacity(0.8), in: shape)
             .clipShape(shape)
             .overlay(shape.strokeBorder(selected ? ShelfPalette.ink : hovered ? ShelfPalette.ink.opacity(contrast == .increased ? 0.5 : 0.25) : Color.primary.opacity(contrast == .increased ? 0.45 : 0.07), lineWidth: selected ? 1.5 : 1))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.07 : 0.025), radius: 5, y: 2)
+            .shelfElevation(.card)
             .onHover { hovered = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
     }
 }
 extension View {
     func shelfGlass(radius: CGFloat = 18) -> some View { modifier(ShelfGlass(radius: radius)) }
+    func shelfElevation(_ level: ShelfElevation) -> some View { modifier(ShelfElevationModifier(level: level)) }
     // Let AppKit measure the complete menu control; an undersized outer frame lets
     // its native indicator draw into the next button on newer macOS versions.
     func shelfIconMenu() -> some View { menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().padding(.horizontal, 6).frame(minWidth: 30, minHeight: 28) }
@@ -146,11 +180,13 @@ struct ShelfSidebarGlass: ViewModifier {
 
 struct SidebarSection<Content: View>: View {
     let title: String
+    let addLabel: String
     @AppStorage private var expanded: Bool
     let content: Content
     let onAdd: (() -> Void)?
-    init(title: String, key: String, onAdd: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+    init(title: String, key: String, addLabel: String = "New collection", onAdd: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.addLabel = addLabel
         self.onAdd = onAdd
         self._expanded = AppStorage(wrappedValue: true, key)
         self.content = content()
@@ -167,8 +203,8 @@ struct SidebarSection<Content: View>: View {
             }.buttonStyle(.plain)
                 .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             if let onAdd {
-                Button(action: onAdd) { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).frame(width: 20, height: 20) }
-                    .buttonStyle(.plain).help("New collection").accessibilityLabel("New collection")
+                Button(action: onAdd) { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).help(addLabel).accessibilityLabel(addLabel)
             }
             }.padding(.horizontal, 14)
             if expanded { content }

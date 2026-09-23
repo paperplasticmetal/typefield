@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.45.0 — 2026-09-23
+
+- Exposed Spaces sections, text and imported layers, plus Letterform contours and nodes, as selectable VoiceOver objects with edit, move and delete actions where appropriate. Added keyboard selection, section reorder and imported-layer nudging without a drag.
+- Clarified Saved searches, search chips, preview sliders, Library navigation selection and artwork-region controls for assistive technology.
+- Let Library filters wrap in compact windows and Settings navigation grow with text; Reduce Transparency now gives the Settings sidebar an opaque surface.
+- Added visible keyboard focus and selection feedback to drawing canvases, and stopped animated artwork-region scrolling when Reduce Motion is on.
+- Applied shared depth roles to cards, canvases and floating surfaces in light and dark appearances.
+- Expanded Spaces proofing to count rendered lines and sample saved fills beneath text, with explicit warnings for later overlapping artwork and approximate contrast.
+
 ## 0.44.1 — 2026-09-23
 
 - Brought Ink Sketch back into the shared Tf icon family, retaining the same serif letterforms and proportions with restrained calligraphic ink detail.

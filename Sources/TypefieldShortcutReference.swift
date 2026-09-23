@@ -41,6 +41,10 @@ struct TypefieldShortcutReference: View {
             .init(action: "Typography or Arrangement controls", keys: "⌥⌘T / ⌥⌘A"),
             .init(action: "Full / slim / hidden / floating inspector", keys: "⌥⌘1 / 2 / 3 / 4"),
             .init(action: "Enter or leave canvas focus", keys: "⌘."),
+            .init(action: "Select previous or next canvas object while focused", keys: "← / → / ↑ / ↓"),
+            .init(action: "Reorder selected canvas section or layer", keys: "⌘⌥↑ / ⌘⌥↓"),
+            .init(action: "Move selected imported layer (Shift moves 10 units)", keys: "⌥arrow / ⇧⌥arrow"),
+            .init(action: "Edit selected canvas text", keys: "Return"),
             .init(action: "Swap A/B canvases", keys: "⌘\\")
         ]),
         .init(title: "Letterform Editor", symbol: "pencil.and.outline", shortcuts: [
@@ -49,6 +53,8 @@ struct TypefieldShortcutReference: View {
             .init(action: "Vector tools: Select / Pen / Rectangle / Ellipse / Hand", keys: "V / P / R / O / H"),
             .init(action: "Sketch tools: Pen / Eraser / Reshape", keys: "P / E / V"),
             .init(action: "Nudge selected vector points", keys: "← / → / ↑ / ↓"),
+            .init(action: "Select previous or next contour or node", keys: "⌥← / ⌥→"),
+            .init(action: "Extend contour or node selection", keys: "⇧⌥← / ⇧⌥→"),
             .init(action: "Duplicate selected vector paths", keys: "⌘D"),
             .init(action: "Fit vector canvas", keys: "⌘0")
         ]),

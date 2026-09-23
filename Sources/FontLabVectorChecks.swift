@@ -23,6 +23,19 @@ enum FontLabVectorChecks {
         _=objectEditor.apply(objectResized,commit:false);objectEditor.finishGesture(from:glyph)
         try check(objectCommits==1 && objectEditor.glyph.isValid,"Corner resizing must commit one undoable edit")
 
+        let accessibilityEditor=FontLabVectorEditor(glyph:glyph,metrics:metrics)
+        let accessibilityCanvas=FontLabVectorNSView(editor:accessibilityEditor)
+        accessibilityCanvas.frame=CGRect(x:0,y:0,width:600,height:600)
+        let contours=accessibilityCanvas.accessibilityChildren() as? [NSAccessibilityElement] ?? []
+        try check(contours.count==2 && contours[0].accessibilityLabel()?.contains("Contour 1") == true,"Vector contours are missing from the accessibility hierarchy")
+        let nodes=contours[0].accessibilityChildren() as? [NSAccessibilityElement] ?? []
+        try check(nodes.count==4 && nodes[0].accessibilityLabel()?.contains("node 1") == true,"Vector nodes are missing from the accessibility hierarchy")
+        try check(nodes[0].accessibilityPerformPress() && accessibilityEditor.selection==[glyph.strokes[0].vectorPaths![0].nodes[0].id] && !accessibilityEditor.objectSelection,"Accessible node selection did not enter node mode")
+        let beforeNudge=accessibilityEditor.paths[0].nodes[0].point.x
+        let moveRight=nodes[0].accessibilityCustomActions()?.first { $0.name == "Move node right one unit" }
+        try check(moveRight?.handler?() == true && accessibilityEditor.paths[0].nodes[0].point.x>beforeNudge,"Accessible node movement did not edit the glyph")
+        try check(contours[1].accessibilityPerformPress() && accessibilityEditor.objectSelection && accessibilityEditor.selection.count==8,"Accessible contour selection did not select the shape")
+
         try check(glyph.isValid && glyph.hasArtwork,"Cubic glyph is not valid artwork.")
         let decoded=try JSONDecoder().decode(FontLabGlyph.self,from:JSONEncoder().encode(glyph))
         try check(decoded==glyph,"Cubic handles or node identities did not persist.")

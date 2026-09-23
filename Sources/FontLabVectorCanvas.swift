@@ -10,12 +10,137 @@ final class FontLabVectorNSView: NSView {
     private var spaceDown = false
     private var panStart = CGPoint.zero
     private var resizeBox = CGRect.zero
+    private var accessibilityContours: [UUID: FontLabVectorAccessibilityElement] = [:]
+    private var accessibilityNodes: [UUID: FontLabVectorAccessibilityElement] = [:]
+    private var navigatedID: UUID?
     private enum Drag { case none, nodes, handle(Int,Int,Bool), pen(Int,Int), shape, marquee, pan, resize(Int) }
     private var drag = Drag.none
-    init(editor:FontLabVectorEditor) {self.editor=editor;super.init(frame:.zero);setAccessibilityLabel("Vector glyph canvas");setAccessibilityRole(.group)}
+    init(editor:FontLabVectorEditor) {
+        self.editor=editor;super.init(frame:.zero)
+        setAccessibilityElement(true)
+        setAccessibilityLabel("Vector glyph canvas")
+        setAccessibilityRole(.group)
+        setAccessibilityHelp("Explore contours and nodes with VoiceOver. Option-Left and Option-Right select the previous or next contour or node. Add Shift to extend the selection. Arrow keys move selected points; Shift moves them ten units.")
+    }
     required init?(coder:NSCoder) {fatalError("init(coder:) has not been implemented")}
     override var acceptsFirstResponder:Bool {true}
     override func acceptsFirstMouse(for event:NSEvent?)->Bool {true}
+    override func becomeFirstResponder() -> Bool { needsDisplay = true; return super.becomeFirstResponder() }
+    override func resignFirstResponder()->Bool {spaceDown=false;needsDisplay=true;return super.resignFirstResponder()}
+    override func accessibilityChildren() -> [Any]? {
+        let paths = editor.paths
+        let pathIDs = Set(paths.map(\.id))
+        let nodeIDs = Set(paths.flatMap(\.nodes).map(\.id))
+        accessibilityContours = accessibilityContours.filter { pathIDs.contains($0.key) }
+        accessibilityNodes = accessibilityNodes.filter { nodeIDs.contains($0.key) }
+        return paths.enumerated().map { index, path in
+            let element = contourElement(for: path.id)
+            let frame = contourFrame(path)
+            element.setAccessibilityFrameInParentSpace(frame)
+            element.setAccessibilityLabel("Contour \(index + 1), \(path.closed ? "closed" : "open"), \(path.nodes.count) nodes")
+            element.setAccessibilityValue(path.nodes.allSatisfy { editor.selection.contains($0.id) } ? "Selected" : "Not selected")
+            element.setAccessibilitySelected(!path.nodes.isEmpty && path.nodes.allSatisfy { editor.selection.contains($0.id) })
+            return element
+        }
+    }
+    override var accessibilityFocusedUIElement: Any? {
+        guard window?.firstResponder === self, let navigatedID else { return self }
+        if let contour = editor.paths.first(where: { $0.id == navigatedID }) { return contourElement(for: contour.id) }
+        if let node = editor.paths.flatMap(\.nodes).first(where: { $0.id == navigatedID }) { return nodeElement(for: node.id) }
+        return self
+    }
+    fileprivate func nodeAccessibilityElements(in pathID: UUID) -> [Any]? {
+        guard let index = editor.paths.firstIndex(where: { $0.id == pathID }) else { return nil }
+        let path = editor.paths[index], parentFrame = contourFrame(path)
+        return path.nodes.enumerated().map { nodeIndex, node in
+            let element = nodeElement(for: node.id)
+            let position = screen(node.point)
+            element.setAccessibilityFrameInParentSpace(CGRect(x: position.x - parentFrame.minX - 7, y: position.y - parentFrame.minY - 7, width: 14, height: 14))
+            let x = Int((node.point.x * editor.glyph.resolvedDesignWidth * 1000).rounded())
+            let y = Int(((node.point.y - editor.metrics.baseline) * 1000).rounded())
+            element.setAccessibilityLabel("Contour \(index + 1), node \(nodeIndex + 1), \(node.smooth ? "smooth" : "corner")")
+            element.setAccessibilityValue("\(editor.selection.contains(node.id) ? "Selected" : "Not selected"), X \(x), Y \(y) units")
+            element.setAccessibilitySelected(editor.selection.contains(node.id))
+            return element
+        }
+    }
+    private func contourFrame(_ path: FontLabVectorPath) -> CGRect {
+        let points = path.nodes.map { screen($0.point) }
+        let anchors = points.reduce(CGRect.null) { $0.union(CGRect(x: $1.x, y: $1.y, width: 1, height: 1)) }
+        let outline = path.bezier(in: designRect).bounds
+        let frame = anchors.union(outline)
+        return frame.isNull ? .zero : frame.insetBy(dx: -7, dy: -7)
+    }
+    private func contourElement(for id: UUID) -> FontLabVectorAccessibilityElement {
+        if let element = accessibilityContours[id] { return element }
+        let element = FontLabVectorAccessibilityElement(canvas: self, pathID: id, nodeID: nil)
+        element.setAccessibilityParent(self)
+        accessibilityContours[id] = element
+        return element
+    }
+    private func nodeElement(for id: UUID) -> FontLabVectorAccessibilityElement {
+        if let element = accessibilityNodes[id] { return element }
+        guard let path = editor.paths.first(where: { $0.nodes.contains(where: { $0.id == id }) }) else {
+            preconditionFailure("Accessibility node must belong to a contour")
+        }
+        let element = FontLabVectorAccessibilityElement(canvas: self, pathID: path.id, nodeID: id)
+        element.setAccessibilityParent(contourElement(for: path.id))
+        accessibilityNodes[id] = element
+        return element
+    }
+    fileprivate func selectAccessibilityItem(pathID: UUID, nodeID: UUID?, adding: Bool) -> Bool {
+        guard let index = editor.paths.firstIndex(where: { $0.id == pathID }) else { return false }
+        if let nodeID {
+            guard editor.paths[index].nodes.contains(where: { $0.id == nodeID }) else { return false }
+            editor.objectSelection = false
+            editor.selection = adding ? editor.selection.union([nodeID]) : [nodeID]
+            navigatedID = nodeID
+        } else {
+            editor.objectSelection = true
+            editor.selectObject(index, adding: adding)
+            navigatedID = pathID
+        }
+        editor.tool = .select
+        editor.activePath = nil
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+        if window != nil { NSAccessibility.post(element: self, notification: .selectedChildrenChanged) }
+        return true
+    }
+    fileprivate func moveAccessibilityItem(pathID: UUID, nodeID: UUID?, dx: Double, dy: Double) -> Bool {
+        guard selectAccessibilityItem(pathID: pathID, nodeID: nodeID, adding: false) else { return false }
+        let before = editor.glyph
+        editor.move(dx: dx / editor.glyph.resolvedDesignWidth, dy: dy)
+        if editor.glyph != before {
+            if window != nil { NSAccessibility.post(element: self, notification: .selectedChildrenMoved) }
+            return true
+        }
+        return false
+    }
+    fileprivate func deleteAccessibilityItem(pathID: UUID, nodeID: UUID?) -> Bool {
+        guard selectAccessibilityItem(pathID: pathID, nodeID: nodeID, adding: false) else { return false }
+        let before = editor.glyph
+        editor.deleteSelection()
+        if editor.glyph != before {
+            navigatedID = nil
+            if window != nil { NSAccessibility.post(element: self, notification: .layoutChanged) }
+            return true
+        }
+        return false
+    }
+    private func navigateSelection(forward: Bool, adding: Bool) {
+        let ids = editor.objectSelection ? editor.paths.map(\.id) : editor.paths.flatMap(\.nodes).map(\.id)
+        guard !ids.isEmpty else { return }
+        let current = navigatedID.flatMap { ids.firstIndex(of: $0) } ?? ids.firstIndex(where: { id in
+            editor.objectSelection ? editor.paths.first(where: { $0.id == id })?.nodes.contains(where: { editor.selection.contains($0.id) }) == true : editor.selection.contains(id)
+        })
+        let index = current.map { ($0 + (forward ? 1 : ids.count - 1)) % ids.count } ?? (forward ? 0 : ids.count - 1)
+        let id = ids[index]
+        if editor.objectSelection { _ = selectAccessibilityItem(pathID: id, nodeID: nil, adding: adding) }
+        else if let path = editor.paths.first(where: { $0.nodes.contains(where: { $0.id == id }) }) {
+            _ = selectAccessibilityItem(pathID: path.id, nodeID: id, adding: adding)
+        }
+    }
     var designRect:CGRect {
         let width=editor.glyph.resolvedDesignWidth
         let em=max(80,min((bounds.width-90)/width,bounds.height-75))*editor.zoom
@@ -91,6 +216,12 @@ final class FontLabVectorNSView: NSView {
         if paths.isEmpty && pens.isEmpty && editor.componentStrokes.isEmpty {
             ("Choose Bézier and click to place nodes. Drag for curves.\nClick the first node to close a contour." as NSString).draw(in:bounds.insetBy(dx:40,dy:60),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor])
         }
+        if window?.firstResponder === self {
+            NSColor.keyboardFocusIndicatorColor.setStroke()
+            let focus = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8)
+            focus.lineWidth = 2
+            focus.stroke()
+        }
     }
     private func corners(_ r: CGRect) -> [CGPoint] { [CGPoint(x:r.minX,y:r.minY),CGPoint(x:r.maxX,y:r.minY),CGPoint(x:r.maxX,y:r.maxY),CGPoint(x:r.minX,y:r.maxY)] }
     private var selectionBox: CGRect? {
@@ -155,28 +286,31 @@ final class FontLabVectorNSView: NSView {
                 }
                 let hit = hitSegment(start)?.0 ?? originalPaths.indices.reversed().first { originalPaths[$0].closed && originalPaths[$0].bezier(in:designRect).contains(start) }
                 if let hit {
+                    navigatedID = originalPaths[hit].id
                     let alreadySelected = originalPaths[hit].nodes.allSatisfy { editor.selection.contains($0.id) }
                     if !alreadySelected || event.modifierFlags.contains(.shift) { editor.selectObject(hit, adding:event.modifierFlags.contains(.shift)) }
                     drag = .nodes; needsDisplay = true; return
                 }
-                if !event.modifierFlags.contains(.shift) { editor.selection = [] }
+                if !event.modifierFlags.contains(.shift) { editor.selection = []; navigatedID = nil }
                 drag = .marquee; marquee = CGRect(origin:start,size:.zero); needsDisplay = true; return
             }
             if let (a,b,handle)=hitNode(start) {
                 if let handle {drag = .handle(a,b,handle);return}
                 let id=originalPaths[a].nodes[b].id
+                navigatedID = id
                 if event.clickCount==2 {editor.selection=[id];editor.smooth(!originalPaths[a].nodes[b].smooth);drag = .none;return}
                 if event.modifierFlags.contains(.shift) {if editor.selection.contains(id) {editor.selection.remove(id)} else {editor.selection.insert(id)}}
                 else if !editor.selection.contains(id) {editor.selection=[id]}
                 drag = .nodes
             } else if let (a,b,t)=hitSegment(start) {
+                navigatedID = originalPaths[a].nodes[b].id
                 if event.clickCount==2 {
                     var paths=editor.paths;paths[a].insertNode(segment:b,t:t);_=editor.apply(paths);editor.selection=[paths[a].nodes[b+1].id];drag = .none
                 } else {
                     let ids=Set(originalPaths[a].nodes.map(\.id));editor.selection=event.modifierFlags.contains(.shift) ? editor.selection.union(ids):ids;drag = .nodes
                 }
             } else {
-                if !event.modifierFlags.contains(.shift) {editor.selection=[]}
+                if !event.modifierFlags.contains(.shift) {editor.selection=[];navigatedID=nil}
                 drag = .marquee;marquee=CGRect(origin:start,size:.zero)
             }
         case .hand:break
@@ -255,6 +389,10 @@ final class FontLabVectorNSView: NSView {
     override func keyDown(with event:NSEvent) {
         if handleCommandShortcut(event) { return }
         let modifiers=event.modifierFlags.intersection([.command,.shift,.option,.control])
+        if (modifiers == .option || modifiers == [.option, .shift]), event.keyCode == 123 || event.keyCode == 124 {
+            navigateSelection(forward: event.keyCode == 124, adding: modifiers.contains(.shift))
+            return
+        }
         guard modifiers.isEmpty || modifiers == .shift else {super.keyDown(with:event);return}
         let key=event.charactersIgnoringModifiers?.lowercased() ?? ""
         let shift=modifiers.contains(.shift)
@@ -280,7 +418,6 @@ final class FontLabVectorNSView: NSView {
         }
     }
     override func keyUp(with event:NSEvent) {if event.keyCode==49 {spaceDown=false} else {super.keyUp(with:event)}}
-    override func resignFirstResponder()->Bool {spaceDown=false;return super.resignFirstResponder()}
     override func performKeyEquivalent(with event:NSEvent)->Bool {
         if window?.firstResponder === self,handleCommandShortcut(event) {return true}
         return super.performKeyEquivalent(with:event)
@@ -310,5 +447,53 @@ final class FontLabVectorNSView: NSView {
     private func zoom(by factor:Double,at point:CGPoint) {
         let before=design(point,clamp:false);editor.zoom=min(8,max(0.5,editor.zoom*factor));let after=screen(before)
         editor.pan=CGPoint(x:editor.pan.x+point.x-after.x,y:editor.pan.y+point.y-after.y)
+    }
+}
+
+private final class FontLabVectorAccessibilityElement: NSAccessibilityElement {
+    private weak var canvas: FontLabVectorNSView?
+    private let pathID: UUID
+    private let nodeID: UUID?
+
+    init(canvas: FontLabVectorNSView, pathID: UUID, nodeID: UUID?) {
+        self.canvas = canvas
+        self.pathID = pathID
+        self.nodeID = nodeID
+        super.init()
+        setAccessibilityElement(true)
+        setAccessibilityRole(nodeID == nil ? .group : .button)
+        setAccessibilityHelp(nodeID == nil
+            ? "Press to select this contour. Use the Actions menu to add it to the selection, move it, or delete it."
+            : "Press to select this node. Use the Actions menu to add it to the selection, move it, or delete it.")
+        let kind = nodeID == nil ? "contour" : "node"
+        setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Add \(kind) to selection", handler: { [weak canvas] in
+                canvas?.selectAccessibilityItem(pathID: pathID, nodeID: nodeID, adding: true) ?? false
+            }),
+            NSAccessibilityCustomAction(name: "Move \(kind) left one unit", handler: { [weak canvas] in
+                canvas?.moveAccessibilityItem(pathID: pathID, nodeID: nodeID, dx: -0.001, dy: 0) ?? false
+            }),
+            NSAccessibilityCustomAction(name: "Move \(kind) right one unit", handler: { [weak canvas] in
+                canvas?.moveAccessibilityItem(pathID: pathID, nodeID: nodeID, dx: 0.001, dy: 0) ?? false
+            }),
+            NSAccessibilityCustomAction(name: "Move \(kind) down one unit", handler: { [weak canvas] in
+                canvas?.moveAccessibilityItem(pathID: pathID, nodeID: nodeID, dx: 0, dy: -0.001) ?? false
+            }),
+            NSAccessibilityCustomAction(name: "Move \(kind) up one unit", handler: { [weak canvas] in
+                canvas?.moveAccessibilityItem(pathID: pathID, nodeID: nodeID, dx: 0, dy: 0.001) ?? false
+            }),
+            NSAccessibilityCustomAction(name: "Delete \(kind)", handler: { [weak canvas] in
+                canvas?.deleteAccessibilityItem(pathID: pathID, nodeID: nodeID) ?? false
+            })
+        ])
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        guard nodeID == nil else { return nil }
+        return canvas?.nodeAccessibilityElements(in: pathID)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        canvas?.selectAccessibilityItem(pathID: pathID, nodeID: nodeID, adding: false) ?? false
     }
 }

@@ -51,18 +51,23 @@ struct TypefieldSettingsView: View {
     @AppStorage("previewSize") private var size = 64.0
     @AppStorage("adaptiveGridView") private var grid = true
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     private var darkIcon: Bool { iconAppearance == "Dark" || (iconAppearance == "Automatic" && scheme == .dark) }
 
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Settings").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 12)
+                Text("Settings").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 12)
                 ForEach(TypefieldSettingsPage.allCases) { page in
                     Button { selection.page = page } label: {
                         HStack(spacing: 10) {
                             Image(systemName: page.symbol).frame(width: 20)
-                            Text(page.rawValue).font(.system(size: 13, weight: selection.page == page ? .semibold : .regular))
+                            Text(page.rawValue).font(.subheadline.weight(selection.page == page ? .semibold : .regular))
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
+                            if selection.page == page {
+                                Image(systemName: "checkmark").font(.caption.weight(.semibold)).accessibilityHidden(true)
+                            }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 10)
                         .foregroundStyle(selection.page == page ? ShelfPalette.ink : Color.primary)
@@ -71,8 +76,11 @@ struct TypefieldSettingsView: View {
                     }.buttonStyle(.plain).accessibilityAddTraits(selection.page == page ? .isSelected : [])
                 }
                 Spacer()
-                Text("Typefield").font(.system(size: 14, weight: .semibold)).padding(12).foregroundStyle(.secondary)
-            }.padding(12).frame(width: 204).background(.regularMaterial)
+                Text("Typefield").font(.subheadline.weight(.semibold)).padding(12).foregroundStyle(.secondary)
+            }.padding(12).frame(width: 216).background {
+                if reduceTransparency { Color(nsColor: .windowBackgroundColor) }
+                else { Rectangle().fill(.regularMaterial) }
+            }
             Divider()
             VStack(alignment: .leading, spacing: 18) {
                 if selection.page != .shortcuts {
@@ -168,7 +176,13 @@ struct TypefieldSettingsView: View {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Font previews").font(.headline)
                 TextField("Default preview text", text: $preview).textFieldStyle(.roundedBorder)
-                HStack { Text("Preview size"); Slider(value: $size, in: 16...160, step: 1); Text("\(Int(size)) pt").monospacedDigit().frame(width: 50) }
+                HStack {
+                    Text("Preview size")
+                    Slider(value: $size, in: 16...160, step: 1)
+                        .accessibilityLabel("Preview size")
+                        .accessibilityValue("\(Int(size)) points")
+                    Text("\(Int(size)) pt").monospacedDigit().frame(width: 50)
+                }
                 Toggle("Use a grid for the font library", isOn: $grid)
                 Divider()
                 Text("Library backup").font(.headline)

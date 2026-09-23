@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct FontLabArtworkImportSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let currentProject: FontLabProject?
     let selectedCharacter: String
     let onImport: (FontLabProject, FontLabProject?) -> Bool
@@ -90,7 +91,10 @@ struct FontLabArtworkImportSheet: View {
                                     }
                                 }
                             }
-                            .onChange(of: selectedRegion) { if let id = $0 { withAnimation { proxy.scrollTo(id, anchor: .center) } } }
+                            .onChange(of: selectedRegion) { if let id = $0 {
+                                if reduceMotion { proxy.scrollTo(id, anchor: .center) }
+                                else { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) } }
+                            } }
                         }
                         Text("Recognition suggests labels only. Check I / l / 1, O / 0, dots, punctuation and counters.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -166,10 +170,14 @@ struct FontLabArtworkImportSheet: View {
         HStack(spacing: 8) {
             Toggle("Include region \(index + 1)", isOn: Binding(get: { region.included }, set: { value in mutate(region.id) { $0.included = value } }))
                 .labelsHidden().toggleStyle(.checkbox)
-            FontLabArtworkShapePreview(contours: region.contours, aspectRatio: region.rect.width / region.rect.height)
-                .frame(width: 66, height: 68).background(.white, in: RoundedRectangle(cornerRadius: 5))
-                .onTapGesture { selectedRegion = region.id }
-                .accessibilityLabel("Traced region \(index + 1)")
+            Button { selectedRegion = region.id } label: {
+                FontLabArtworkShapePreview(contours: region.contours, aspectRatio: region.rect.width / region.rect.height)
+                    .frame(width: 66, height: 68).background(.white, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Select traced region \(index + 1)")
+            .accessibilityValue(selectedRegion == region.id ? "Selected" : "Not selected")
+            .accessibilityAddTraits(selectedRegion == region.id ? .isSelected : [])
             VStack(alignment: .leading, spacing: 3) {
                 Text("Region \(index + 1)").font(.caption2).foregroundStyle(.secondary)
                 TextField("Letter", text: Binding(get: { region.character }, set: { value in mutate(region.id) { $0.character = String(value.prefix(1)); $0.confidence = 1 } }))
@@ -179,7 +187,7 @@ struct FontLabArtworkImportSheet: View {
             }
             Spacer(minLength: 0)
             Button { scan?.regions.removeAll { $0.id == region.id }; reviewed = false } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).help("Remove region \(index + 1)")
+                .buttonStyle(.plain).help("Remove region \(index + 1)").accessibilityLabel("Remove region \(index + 1)")
         }
         .padding(7).background(selectedRegion == region.id ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
     }

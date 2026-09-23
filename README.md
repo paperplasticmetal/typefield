@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.44.1 (build 57).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.45.0 (build 58).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 
@@ -62,6 +62,8 @@ The typography summary also includes a **Web font cost** audit for the selected 
 - Daily local state backups and merge-based backup import. Folder access permissions must be granted separately.
 
 Library, Spaces and Letterform Editor share one stable workspace sidebar, including the same Typefield mark and three-way workspace switcher in the same position. Use the header control or **View → Hide Sidebar** (Control-Command-S) to reclaim the full window; the choice persists across workspace switches and relaunches, and a large connected pull-tab on the left edge restores it. Shared cards, glass sidebars and Letterform Editor's native canvases are clipped to their rounded outlines so their backgrounds stay inside the border. Spaces has a resizable inspector with alignment, kerning, exact line height, tracking, paragraph/word spacing, indents, case and decorations. **Font kerning** uses or suppresses the font designer's built-in pair spacing (for combinations such as AV or To); it is independent of the explicit Letter spacing value. Drag sections in the arrangement list or directly on the canvas. Choose an A/B partner with the same format and width, then use **Swap A/B** (Command-backslash). Fit zoom adapts to panel resizing.
+
+With a Spaces canvas focused, arrow keys select its sections and text objects; Return edits selected text, Command-Option-Up/Down reorders a selected section or layer, and Option-arrow nudges imported layers. Letterform Editor uses Option-Left/Right to select the previous or next contour or node, with Shift to extend selection. VoiceOver exposes these objects and their available actions. Spaces proofing reports wrapped lines and samples saved background fills; overlapping artwork and actual glyph shapes can change the final contrast.
 
 The 0.28 Letterform Editor persistence path keeps an active gesture local until mouse-up, coalesces stroke/selection/project edits, snapshots large generated projects and performs compact deterministic encoding and disk I/O on a serial utility queue. Catalog face/family indexes, one-pass Library sidebar counts and finalist-only pairing/similarity explanations remain in place. Exact machine-specific measurements live in the status page after release verification.
 
