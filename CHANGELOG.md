@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.41.0 — 2026-09-23
+
+- Added a persistent sidebar Settings window, available from the Typefield menu, ⌘ comma, and the Library gear button. Appearance, App Icon, Live Folders, Library, searchable Keyboard Shortcuts, Privacy & Permissions, and About share one home.
+- Added six workspace palettes and six independent Dock-icon palettes, with Light, Dark, and Automatic icon appearance. Choices persist across launches; Finder uses the standard bundled light icon.
+- Replaced the decorative icon spike and connected monogram with conventional, separated t/f outlines rendered directly at every size. The icon chooser includes small-size previews.
+- Reused live-folder and backup workflows in Settings; folder removal and activation edits now roll back in-memory changes when saving fails. Added a visible path, access warning, and Finder action for each folder.
+- Kept font previews and saved canvas colors independent of workspace palettes. Added palette/icon preferences to Store preference migration.
+
 ## 0.40.0 — 2026-09-23
 
 - Audited current documentation and historical QA against the app, with a separate production-readiness list of confirmed release risks, external validation, and larger product gaps.

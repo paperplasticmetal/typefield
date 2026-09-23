@@ -1,0 +1,217 @@
+import SwiftUI
+import AppKit
+
+final class TypefieldSettingsSelection: ObservableObject {
+    @Published var page: TypefieldSettingsPage = .appearance
+}
+enum TypefieldSettingsPage: String, CaseIterable, Identifiable {
+    case appearance = "Appearance", icon = "App Icon", folders = "Live Folders", library = "Library", shortcuts = "Keyboard Shortcuts", privacy = "Privacy & Permissions", about = "About Typefield"
+    var id: String { rawValue }
+    var symbol: String {
+        switch self {
+        case .appearance: return "paintpalette"
+        case .icon: return "app"
+        case .folders: return "folder"
+        case .library: return "textformat"
+        case .shortcuts: return "keyboard"
+        case .privacy: return "hand.raised"
+        case .about: return "info.circle"
+        }
+    }
+}
+
+final class TypefieldSettingsWindow {
+    private var window: NSWindow?
+    private let selection = TypefieldSettingsSelection()
+    func show(library: Library, page: TypefieldSettingsPage? = nil) {
+        if let page { selection.page = page }
+        if window == nil {
+            let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 880, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            panel.title = "Typefield Settings"
+            panel.minSize = NSSize(width: 820, height: 620)
+            panel.isReleasedWhenClosed = false
+            panel.contentView = NSHostingView(rootView: TypefieldSettingsView(library: library, selection: selection))
+            panel.setFrameAutosaveName("TypefieldSettingsWindow")
+            panel.center()
+            window = panel
+        }
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+struct TypefieldSettingsView: View {
+    @ObservedObject var library: Library
+    @ObservedObject var selection: TypefieldSettingsSelection
+    @AppStorage("appearance") private var appearance = "Dark"
+    @AppStorage("typefield.palette") private var palette = "amber"
+    @AppStorage("typefield.iconPalette") private var iconPalette = "neutral"
+    @AppStorage("typefield.iconAppearance") private var iconAppearance = "Automatic"
+    @AppStorage("previewText") private var preview = "The quick brown fox jumps over the lazy dog."
+    @AppStorage("previewSize") private var size = 64.0
+    @AppStorage("adaptiveGridView") private var grid = true
+    @Environment(\.colorScheme) private var scheme
+    private var darkIcon: Bool { iconAppearance == "Dark" || (iconAppearance == "Automatic" && scheme == .dark) }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("SETTINGS").font(.system(size: 11, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 12)
+                ForEach(TypefieldSettingsPage.allCases) { page in
+                    Button { selection.page = page } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: page.symbol).frame(width: 20)
+                            Text(page.rawValue).font(.system(size: 13, weight: selection.page == page ? .semibold : .regular))
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .foregroundStyle(selection.page == page ? ShelfPalette.ink : Color.primary)
+                        .background(selection.page == page ? ShelfPalette.indiaYellow.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityAddTraits(selection.page == page ? .isSelected : [])
+                }
+                Spacer()
+                Text("Typefield").font(.system(size: 14, weight: .semibold)).padding(12).foregroundStyle(.secondary)
+            }.padding(12).frame(width: 204).background(.regularMaterial)
+            Divider()
+            VStack(alignment: .leading, spacing: 18) {
+                if selection.page != .shortcuts {
+                    Text(selection.page.rawValue).font(.system(size: 27, weight: .semibold)).padding(.top, 6)
+                }
+                content
+            }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .background(ShelfPalette.canvas)
+        .tint(ShelfPalette.ink).accentColor(ShelfPalette.ink)
+        .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
+        .onChange(of: appearance) { value in
+            NSApp.appearance = value == "System" ? nil : NSAppearance(named: value == "Dark" ? .darkAqua : .aqua)
+            TypefieldIcon.apply()
+        }
+        .onChange(of: scheme) { _ in TypefieldIcon.apply() }
+        .onChange(of: iconPalette) { _ in TypefieldIcon.apply() }
+        .onChange(of: iconAppearance) { _ in TypefieldIcon.apply() }
+        .accessibilityIdentifier("typefield-settings")
+    }
+    @ViewBuilder private var content: some View {
+        switch selection.page {
+        case .appearance: appearancePane
+        case .icon: iconPane
+        case .folders: WatchedFoldersView(library: library)
+        case .library: libraryPane
+        case .shortcuts: TypefieldShortcutReference(dismiss: {}, embedded: true)
+        case .privacy: privacyPane
+        case .about: aboutPane
+        }
+    }
+    private var appearancePane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("Choose the appearance of your workspace. Your typeboard and font preview colors stay as you set them.").foregroundStyle(.secondary)
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(["System", "Light", "Dark"], id: \.self) { Text($0).tag($0) }
+                }.pickerStyle(.segmented)
+                Text("Color palette").font(.headline)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(TypefieldPalette.allCases) { item in
+                        Button { palette = item.rawValue } label: {
+                            HStack(spacing: 12) {
+                                Circle().fill(Color(nsColor: item.accent(dark: scheme == .dark))).frame(width: 26, height: 26)
+                                Text(item.title).foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: palette == item.rawValue ? "checkmark.circle.fill" : "circle").foregroundStyle(.secondary)
+                            }.padding(16).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(.plain).accessibilityLabel(item.title + " workspace palette").accessibilityAddTraits(palette == item.rawValue ? .isSelected : [])
+                    }
+                }
+                Label("Selected controls, accents, and the workspace surface use this palette.", systemImage: "paintbrush.pointed").font(.callout).foregroundStyle(.secondary)
+                Text("Motion and transparency follow your macOS Accessibility settings.").font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    private var iconPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("A simple typographic mark, with a separate t and f. Choose a palette independently of your workspace.").foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: 24) {
+                    Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon)).resizable().frame(width: 118, height: 118)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("At Dock size").font(.caption).foregroundStyle(.secondary)
+                        HStack(alignment: .bottom, spacing: 18) {
+                            ForEach([16, 32, 64], id: \.self) { pixels in
+                                VStack(spacing: 6) {
+                                    Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon, size: pixels * 2)).resizable().frame(width: CGFloat(pixels), height: CGFloat(pixels))
+                                    Text("\(pixels)").font(.system(size: 10)).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                Picker("Icon appearance", selection: $iconAppearance) {
+                    ForEach(["Automatic", "Light", "Dark"], id: \.self) { Text($0).tag($0) }
+                }.pickerStyle(.segmented)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(TypefieldPalette.allCases) { item in
+                        Button { iconPalette = item.rawValue } label: {
+                            VStack(spacing: 7) {
+                                Image(nsImage: TypefieldIcon.image(palette: item, dark: darkIcon, size: 128)).resizable().frame(width: 74, height: 74)
+                                HStack(spacing: 5) {
+                                    Text(item.title)
+                                    if iconPalette == item.rawValue { Image(systemName: "checkmark.circle.fill") }
+                                }.font(.caption).foregroundStyle(.primary)
+                            }.frame(maxWidth: .infinity).padding(10)
+                                .background(iconPalette == item.rawValue ? ShelfPalette.indiaYellow.opacity(0.12) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(.plain).accessibilityLabel(item.title + " Dock icon").accessibilityAddTraits(iconPalette == item.rawValue ? .isSelected : [])
+                    }
+                }
+                Text("Changes apply to the Dock while Typefield is running and are restored on launch. Finder and the app’s closed-state icon use the standard Porcelain artwork. Automatic follows the app appearance.").font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    private var libraryPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("Font previews").font(.headline)
+                TextField("Default preview text", text: $preview).textFieldStyle(.roundedBorder)
+                HStack { Text("Preview size"); Slider(value: $size, in: 16...160, step: 1); Text("\(Int(size)) pt").monospacedDigit().frame(width: 50) }
+                Toggle("Use a grid for the font library", isOn: $grid)
+                Divider()
+                Text("Library backup").font(.headline)
+                Text("Export collections, tags, notes, live-folder references, Spaces, and Letterform Editor projects. Font binaries are not included.").foregroundStyle(.secondary)
+                Button("Export Library Backup…") { LibraryBackupTools.export(library) }
+                Button("Import Library Backup…") { LibraryBackupTools.restore(library) }
+                Button("Show Library Data in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: library.saveURL.deletingLastPathComponent().path) }
+                Text("Your library stays in its existing storage location. Changing appearance does not move or modify fonts.").font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    private var privacyPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                section("Stored on this Mac", "Your collections, tags, notes, settings, projects, and folder bookmarks are stored locally. Typefield has no account, advertising, analytics, or tracking. It does not upload fonts, preview text, or your library.")
+                section("Live-folder permissions", "You grant access through the macOS folder picker. Live Folders lists your selected folders and lets you stop watching them. Stopping a watch leaves the original font files in place.")
+                Button("Manage Live Folders") { selection.page = .folders }
+                section("Google Fonts & network access", "Browsing Google Fonts contacts Google’s public font repository on GitHub for previews. Downloads also retrieve font files and licenses. GitHub receives normal connection information such as your IP address and the requested public file path. Preview text is rendered locally and is not sent. Remote previews use an ephemeral network session and an in-memory font cache; explicit downloads are saved locally.")
+                section("Exports & licensing", "Exports are saved where you choose. Figma, Adobe, and developer handoffs refer to fonts by name and do not contain font binaries. Adobe scripts are saved for you to run manually. Use or export only fonts and artwork you have permission to use; Typefield cannot verify redistribution, embedding, or commercial-use rights.")
+            }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        }
+    }
+    private func section(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+    }
+    private var aboutPane: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon)).resizable().frame(width: 100, height: 100)
+            Text("A place for fonts, typeboards, and your own letterforms.").font(.title3)
+            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))").foregroundStyle(.secondary)
+            Divider()
+            Button("Take the Tour") {
+                NSApp.windows.first(where: { $0.title == "Typefield" })?.makeKeyAndOrderFront(nil)
+                NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "tour")
+            }
+            Button("Keyboard Shortcuts") { selection.page = .shortcuts }
+            Button("Privacy & Permissions") { selection.page = .privacy }
+            Spacer()
+        }
+    }
+}

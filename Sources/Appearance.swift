@@ -2,17 +2,20 @@ import SwiftUI
 import AppKit
 
 enum ShelfPalette {
-    static let indiaYellow = Color(red: 227 / 255, green: 168 / 255, blue: 87 / 255)
-    static let ink = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.89, green: 0.66, blue: 0.34, alpha: 1)
-            : NSColor(srgbRed: 0.47, green: 0.28, blue: 0.08, alpha: 1)
-    })
-    static let canvas = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.105, green: 0.10, blue: 0.09, alpha: 1)
-            : NSColor(srgbRed: 0.975, green: 0.965, blue: 0.945, alpha: 1)
-    })
+    static var selected: TypefieldPalette { .resolve(UserDefaults.standard.string(forKey: "typefield.palette") ?? "amber") }
+    static var indiaYellow: Color { Color(nsColor: selected.accent(dark: true)) }
+    static var ink: Color {
+        let palette = selected
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            palette.accent(dark: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+        })
+    }
+    static var canvas: Color {
+        let palette = selected
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            TypefieldPalette.color(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? palette.night : palette.paper)
+        })
+    }
 }
 
 private struct InsideGlassKey: EnvironmentKey { static let defaultValue = false }

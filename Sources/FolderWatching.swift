@@ -65,6 +65,23 @@ final class FolderWatcher {
 }
 
 extension Library {
+    @discardableResult func stopWatchingFolder(_ path: String) -> Bool {
+        let previous = saved
+        saved.folders.removeAll { $0 == path }
+        saved.autoActivateFolders?.remove(path)
+        guard save() else { saved = previous; return false }
+        reload(register: true)
+        return true
+    }
+    @discardableResult func setFolderActivation(_ path: String, enabled: Bool) -> Bool {
+        let previous = saved
+        var paths = saved.autoActivateFolders ?? []
+        if enabled { paths.insert(path) } else { paths.remove(path) }
+        saved.autoActivateFolders = paths
+        guard save() else { saved = previous; return false }
+        applyFolderActivation()
+        return true
+    }
     func configureWatcher() {
         folderWatcher.configure(
             roots: resolvedFolders,
@@ -104,9 +121,16 @@ struct WatchedFoldersView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(library.saved.folders, id: \.self) { path in
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack { Label(URL(fileURLWithPath: path).lastPathComponent, systemImage: "folder").font(.headline); Spacer(); Button("Stop watching") { library.saved.folders.removeAll { $0 == path }; library.saved.autoActivateFolders?.remove(path); library.save(); library.reload(register: true) } }
+                            HStack { Label(URL(fileURLWithPath: path).lastPathComponent, systemImage: "folder").font(.headline); Spacer(); Button("Stop watching") { library.stopWatchingFolder(path) }.disabled(library.loading) }
                             Text(path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                            Toggle("Activate fonts for other apps", isOn: Binding(get: { library.saved.autoActivateFolders?.contains(path) == true }, set: { enabled in var paths = library.saved.autoActivateFolders ?? []; if enabled { paths.insert(path) } else { paths.remove(path) }; library.saved.autoActivateFolders = paths; library.save(); library.applyFolderActivation() })).toggleStyle(.checkbox).disabled(library.loading)
+                            HStack {
+                                Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path) }
+                                if !library.resolvedFolders.contains(path) {
+                                    Label("Access needs attention", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                                    Button("Choose Folder Again…") { library.addFolder() }
+                                }
+                            }
+                            Toggle("Activate fonts for other apps", isOn: Binding(get: { library.saved.autoActivateFolders?.contains(path) == true }, set: { enabled in library.setFolderActivation(path, enabled: enabled) })).toggleStyle(.checkbox).disabled(library.loading)
                         }.padding(14).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
                     }
                     if library.saved.folders.isEmpty { Text("No watched folders").foregroundStyle(.secondary).padding(25) }

@@ -218,7 +218,10 @@ final class Library: ObservableObject {
         catalogFaceNames = Set(facesByName.keys)
         styleCount = faces.count
     }
-    func openTools(_ tab: String) { toolsTab = tab; showTools = true }
+    func openTools(_ tab: String) {
+        if tab == "Folders", let delegate = NSApp.delegate as? AppDelegate { delegate.settingsWindow.show(library: self, page: .folders); return }
+        toolsTab = tab; showTools = true
+    }
     @discardableResult func savePro() -> Bool {
         guard !proSaveBlocked else { message = "Pro settings could not be read. The existing file has been preserved."; return false }
         do { try FileManager.default.createDirectory(at: proURL.deletingLastPathComponent(), withIntermediateDirectories: true); try LibraryBackupTools.preserve(proURL); try JSONEncoder().encode(pro).write(to: proURL, options: .atomic); return true }
@@ -485,7 +488,7 @@ final class Library: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try folderAccess.remember(url) } catch { message = "Could not retain folder access: " + error.localizedDescription; return }
         reportedFolderAccessFailures.remove(url.path)
-        if !saved.folders.contains(url.path) { saved.folders.append(url.path); save() }
+        if !saved.folders.contains(url.path) { let previous = saved; saved.folders.append(url.path); guard save() else { saved = previous; return } }
         if !resolvedFolders.contains(url.path) { resolvedFolders.append(url.path) }
         openTools("Folders")
         if loading {
@@ -584,6 +587,8 @@ struct ContentView: View {
     @AppStorage("adaptiveGridView") var grid = true
     @State var metadataView = false
     @AppStorage("appearance") var appearance = "Dark"
+    @AppStorage("typefield.palette") private var palette = "amber"
+    @Environment(\.colorScheme) private var systemScheme
     @State var collectionName = ""
     @State var showCollection = false
     @State var showColors = false
@@ -621,6 +626,9 @@ struct ContentView: View {
         }
         }
         .background(ShelfPalette.canvas)
+        .tint(Color(nsColor: TypefieldPalette.resolve(palette).accent(dark: appearance == "Dark" || (appearance == "System" && systemScheme == .dark))))
+        .accentColor(ShelfPalette.ink)
+        .onChange(of: systemScheme) { _ in TypefieldIcon.apply() }
         .frame(minWidth: 980, minHeight: 620)
         .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
@@ -643,7 +651,7 @@ struct ContentView: View {
             default: break
             }
         }
-        .onChange(of: appearance) { value in NSApp.appearance = value == "System" ? nil : NSAppearance(named: value == "Dark" ? .darkAqua : .aqua) }
+        .onChange(of: appearance) { value in NSApp.appearance = value == "System" ? nil : NSAppearance(named: value == "Dark" ? .darkAqua : .aqua); TypefieldIcon.apply() }
         .onAppear {
             library.requiredText = preview == "{family}" ? "" : preview
             if !onboardingComplete { DispatchQueue.main.async { guide = .tour } }
@@ -832,7 +840,7 @@ struct ContentView: View {
             Spacer(minLength: 4)
             Button { library.addFolder() } label: { Label("Add font folder", systemImage: "folder.badge.plus").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(Color.black.opacity(0.85)).padding(10).background(ShelfPalette.indiaYellow, in: RoundedRectangle(cornerRadius: 12)).padding(12)
             Button { library.openTools("Folders") } label: { Label("Live folders · \(library.saved.folders.count)", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.horizontal, 22).padding(.bottom, 8).help("Manage folders that update automatically, including subfolders")
-            HStack { ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
+            HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
         }
     }
     func sectionLabel(_ title: String) -> some View { Text(title).font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 5) }
@@ -1079,6 +1087,7 @@ private struct TypefieldAbout: View {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var window: NSWindow!
     let library = Library()
+    let settingsWindow = TypefieldSettingsWindow()
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Bundle.main.bundleIdentifier == "local.typefield.app", !UserDefaults.standard.bool(forKey: "typefield.legacyPreferencesChecked") {
             let old = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences/local.fontshelf.app.plist")
@@ -1088,7 +1097,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.setActivationPolicy(.regular)
         let theme = UserDefaults.standard.string(forKey: "appearance") ?? "Dark"
         NSApp.appearance = theme == "System" ? nil : NSAppearance(named: theme == "Dark" ? .darkAqua : .aqua)
-        let root = ContentView(library: library).tint(ShelfPalette.indiaYellow).accentColor(ShelfPalette.indiaYellow)
+        TypefieldIcon.apply()
+        let root = ContentView(library: library)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.titlebarAppearsTransparent = false
         window.collectionBehavior.insert(.fullScreenPrimary)
@@ -1099,7 +1109,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let appItem = NSMenuItem(title: "Typefield", action: nil, keyEquivalent: ""); menu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         addCommand("About Typefield", "about", to: appMenu)
-        addCommand("Privacy & Permissions…", "about", to: appMenu)
+        addCommand("Privacy & Permissions…", "privacy", to: appMenu)
+        addCommand("Settings…", "settings", to: appMenu, key: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Typefield", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -1217,6 +1228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return NSApp.isActive && window.attachedSheet == nil
         }
         guard let command = item.representedObject as? String else { return true }
+        if ["settings", "about", "privacy", "shortcuts"].contains(command) { return true }
         let inspectorIsKey = NSApp.keyWindow?.title == "Typefield · Inspector" && library.workspace == .spaces
         if command == "dockInspector" { return NSApp.isActive && inspectorIsKey && window.attachedSheet == nil }
         guard NSApp.isActive, window.attachedSheet == nil, window.isKeyWindow || inspectorIsKey else { return false }
@@ -1244,7 +1256,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return true
     }
     var activeUndoManager: UndoManager? {
-        if let text = window.firstResponder as? NSTextView, !(library.workspace == .spaces && text.isFieldEditor), let manager = text.undoManager, manager.canUndo || manager.canRedo { return manager }
+        if let text = NSApp.keyWindow?.firstResponder as? NSTextView, !(library.workspace == .spaces && text.isFieldEditor), let manager = text.undoManager, manager.canUndo || manager.canRedo { return manager }
+        guard NSApp.keyWindow === window || NSApp.keyWindow?.title == "Typefield · Inspector" else { return nil }
         return library.workspace == .spaces ? library.studio.undoManager : nil
     }
     @objc func undo(_ sender: Any?) { let manager = activeUndoManager; if manager === library.studio.undoManager { window.makeFirstResponder(window) }; manager?.undo() }
@@ -1261,7 +1274,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "dockInspector":
             NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.full")
             window.makeKeyAndOrderFront(nil)
-        case "about", "tour", "shortcuts":
+        case "settings": settingsWindow.show(library: library)
+        case "about": settingsWindow.show(library: library, page: .about)
+        case "privacy": settingsWindow.show(library: library, page: .privacy)
+        case "shortcuts": settingsWindow.show(library: library, page: .shortcuts)
+        case "Folders": settingsWindow.show(library: library, page: .folders)
+        case "tour":
             window.makeKeyAndOrderFront(nil)
             NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: command)
         case "pair":
@@ -1271,7 +1289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             } else { library.pairSelection([], source: "Blank typeboard") }
         case "backup": LibraryBackupTools.export(library)
         case "restoreBackup": LibraryBackupTools.restore(library)
-        case "Tags", "Families", "Duplicates", "Font Health", "Google Fonts", "Activation", "Folders": library.openTools(command)
+        case "Tags", "Families", "Duplicates", "Font Health", "Google Fonts", "Activation": library.openTools(command)
         case "tagSelected": library.openTools("Tags")
         case "familySelected": library.openTools("Families")
         case "export": if let result = FontExporter.export(library.selectedFaces) { library.message = result }
@@ -1443,7 +1461,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

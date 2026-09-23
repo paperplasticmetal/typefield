@@ -17,6 +17,7 @@ private struct TypefieldShortcutGroup: Identifiable {
 /// the canvas and inspector controls.
 struct TypefieldShortcutReference: View {
     let dismiss: () -> Void
+    var embedded = false
     @State private var search = ""
 
     private let groups: [TypefieldShortcutGroup] = [
@@ -54,7 +55,8 @@ struct TypefieldShortcutReference: View {
         .init(title: "Common", symbol: "keyboard", shortcuts: [
             .init(action: "Undo or redo", keys: "⌘Z / ⇧⌘Z"),
             .init(action: "Cut / Copy / Paste text", keys: "⌘X / ⌘C / ⌘V"),
-            .init(action: "Close window", keys: "⌘W")
+            .init(action: "Close window", keys: "⌘W"),
+            .init(action: "Open Settings", keys: "⌘,")
         ])
     ]
 
@@ -119,14 +121,14 @@ struct TypefieldShortcutReference: View {
                 }
                 .padding(.trailing, 10)
             }
-            HStack {
+            if !embedded { HStack {
                 Text("Also available from Help at any time.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Done", action: dismiss).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-            }
+            } }
         }
-        .padding(26)
-        .frame(width: 650, height: 580)
+        .padding(embedded ? 0 : 26)
+        .frame(width: embedded ? nil : 650, height: embedded ? nil : 580)
         .accessibilityIdentifier("typefield-keyboard-shortcuts")
     }
 }

@@ -234,7 +234,7 @@ enum LibraryBackupTools {
 /// transferred between app identities and must be granted again by the user.
 enum StoreMigration {
     static let dataFiles = ["library.json", "pro-library.json", "spaces.json", "font-lab.json"]
-    static let stringPreferences = ["appearance", "previewText", "previewInkHex", "previewPaperHex"]
+    static let stringPreferences = ["appearance", "previewText", "previewInkHex", "previewPaperHex", "typefield.palette", "typefield.iconPalette", "typefield.iconAppearance"]
     static let boolPreferences = ["adaptiveGridView", "customPreviewColors", "workspaceSidebarCollapsed"]
     static let numberPreferences = ["previewSize", "studioInspectorWidth", "fontLabCharacterBrowserWidth"]
 
