@@ -387,7 +387,7 @@ struct FontHealthView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if !item.recommendedFixes.isEmpty {
-                        Divider(); Text("PROPOSED FIXES").font(.caption).foregroundStyle(.secondary)
+                        Divider(); Text("Proposed fixes").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         ForEach(FontRepairAction.allCases.filter { item.recommendedFixes.contains($0) }) { action in
                             Toggle(isOn: Binding(get: { selectedFixes.contains(action) }, set: { if $0 { selectedFixes.insert(action) } else { selectedFixes.remove(action) } })) {
                                 VStack(alignment: .leading, spacing: 3) { Text(action.title); Text(action.explanation).font(.caption).foregroundStyle(.secondary) }

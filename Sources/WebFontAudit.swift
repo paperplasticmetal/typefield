@@ -522,7 +522,7 @@ struct WebFontAuditView: View {
 
     var scope: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CANVASES TO TEST").font(.caption).foregroundStyle(.secondary)
+            Text("Canvases to test").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 14) { ForEach(board.directions) { canvas in
                 Toggle(board.canvasName(canvas), isOn: Binding(get: { canvasIDs.contains(canvas.id) }, set: { included in
                     if included { canvasIDs.insert(canvas.id) } else if canvasIDs.count > 1 { canvasIDs.remove(canvas.id) }
@@ -534,7 +534,7 @@ struct WebFontAuditView: View {
 
     var assetsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text("LICENSED WEB ASSETS").font(.caption).foregroundStyle(.secondary); if loadingAssets { ProgressView().controlSize(.small) }; Spacer(); Button("Refresh") { loadAssets() }.disabled(loadingAssets); Button("Add WOFF2 folder…") { addFolder() }.disabled(loadingAssets) }
+            HStack { Text("Licensed web assets").font(.caption.weight(.semibold)).foregroundStyle(.secondary); if loadingAssets { ProgressView().controlSize(.small) }; Spacer(); Button("Refresh") { loadAssets() }.disabled(loadingAssets); Button("Add WOFF2 folder…") { addFolder() }.disabled(loadingAssets) }
             let paths = library.saved.webAssetFolders ?? []
             if paths.isEmpty { Text("No web-asset folder added. Installed WOFF2 sources are detected automatically; other selected styles will be marked missing.").foregroundStyle(.secondary) }
             else { ForEach(paths, id: \.self) { path in HStack { let name = URL(fileURLWithPath: path).lastPathComponent; Label(name, systemImage: inaccessibleFolderNames.contains(name) ? "exclamationmark.triangle" : "folder"); Text(inaccessibleFolderNames.contains(name) ? "· access needs renewal" : "· \(assets.filter { $0.url.path.hasPrefix(path + "/") || $0.url.deletingLastPathComponent().path == path }.count) WOFF2").foregroundStyle(inaccessibleFolderNames.contains(name) ? Color.orange : Color.secondary); Spacer(); Button("Remove") { removeFolder(path) }.buttonStyle(.borderless) } } }
@@ -543,7 +543,7 @@ struct WebFontAuditView: View {
 
     var styleScope: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("STYLES TO LOAD").font(.caption).foregroundStyle(.secondary)
+            Text("Styles to load").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), alignment: .leading)], alignment: .leading, spacing: 7) {
                 ForEach(availableFontNames, id: \.self) { name in Toggle(name, isOn: Binding(get: { fontNames.contains(name) }, set: { included in if included { fontNames.insert(name) } else { fontNames.remove(name) }; analyze() })).toggleStyle(.checkbox) }
             }
@@ -553,26 +553,26 @@ struct WebFontAuditView: View {
     var summary: some View {
         HStack(spacing: 12) {
             let unresolved = report.missingAssetNames.count + report.ambiguousAssetNames.count + report.incompatibleAssetNames.count
-            card("KNOWN WOFF2", WebFontAuditFormat.bytes(report.knownBytes), unresolved == 0 ? "Complete selected payload" : "+ \(report.missingAssetNames.count) missing · \(report.ambiguousAssetNames.count) ambiguous · \(report.incompatibleAssetNames.count) incompatible")
-            card("STYLES", "\(report.rows.count)", "\(report.rows.filter { $0.variable }.count) variable")
-            card("EXCLUDABLE VS TYPEBOARD", WebFontAuditFormat.bytes(report.excludedBytes), report.excludedAssetCount == 0 ? "No unselected mapped assets" : "\(report.excludedAssetCount) mapped asset(s)")
+            card("Known WOFF2", WebFontAuditFormat.bytes(report.knownBytes), unresolved == 0 ? "Complete selected payload" : "+ \(report.missingAssetNames.count) missing · \(report.ambiguousAssetNames.count) ambiguous · \(report.incompatibleAssetNames.count) incompatible")
+            card("Styles", "\(report.rows.count)", "\(report.rows.filter { $0.variable }.count) variable")
+            card("Excludable vs typeboard", WebFontAuditFormat.bytes(report.excludedBytes), report.excludedAssetCount == 0 ? "No unselected mapped assets" : "\(report.excludedAssetCount) mapped asset(s)")
             let risks = report.rows.filter { $0.fallback.available }.map { max(abs($0.fallback.maxWidthDelta), abs($0.fallback.maxHeightDelta)) }
-            card("FALLBACK REFLOW", risks.max().map { WebFontAuditFormat.percent($0) } ?? "Unavailable", "largest local difference")
+            card("Fallback reflow", risks.max().map { WebFontAuditFormat.percent($0) } ?? "Unavailable", "largest local difference")
         }
     }
     func card(_ title: String, _ value: String, _ note: String) -> some View { VStack(alignment: .leading, spacing: 5) { Text(title).font(.caption2).foregroundStyle(.secondary); Text(value).font(.title3).monospacedDigit(); Text(note).font(.caption).foregroundStyle(.secondary) }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9)) }
 
     var styleRows: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("STYLE DETAILS").font(.caption).foregroundStyle(.secondary)
+            Text("Style details").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(report.rows) { row in
                 VStack(alignment: .leading, spacing: 9) {
                     HStack { VStack(alignment: .leading) { Text(row.family + " · " + row.styleName).font(.headline); Text(row.postScriptName).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); if let asset = row.asset { Text(WebFontAuditFormat.bytes(asset.byteCount) + " WOFF2").monospacedDigit(); Text("Exact").font(.caption).foregroundStyle(.green) } else if row.assetCandidateCount > 1 { Text("WOFF2 ambiguous · \(row.assetCandidateCount) matches").foregroundStyle(.orange) } else if row.assetIncompatible { Text("WOFF2 incompatible with selected axes/style").foregroundStyle(.orange) } else { Text("WOFF2 missing").foregroundStyle(.orange) } }
                     if row.asset == nil, let bytes = row.desktopBytes { Text("Desktop source: \(row.desktopFormat ?? "font") · \(WebFontAuditFormat.bytes(bytes)). This is not counted as web transfer.").font(.caption).foregroundStyle(.secondary) }
                     HStack(alignment: .top, spacing: 24) {
-                        detail("PAGE USE", "\(row.useCount) text element(s) · \(row.instanceCount) setting(s)\n\(row.usedCharacterCount) unique characters" + (row.glyphCount.map { " · \($0) WOFF2 glyphs" } ?? "") + "\nSubsetting opportunity: \(row.subsetOpportunity)")
-                        detail("COVERAGE · \(row.coverageSource.rawValue)", (row.coverageSource == .unavailable ? "Add one unambiguous WOFF2 asset or install the desktop face" : row.missingCharacters.isEmpty ? "All required characters present" : "Missing: " + row.missingCharacters.prefix(12).map { "\(String($0)) U+\(String(format: "%04X", $0.value))" }.joined(separator: " · ")) + "\nPage scripts: " + (row.scriptsUsed.isEmpty ? "none detected" : row.scriptsUsed.joined(separator: ", ")) + "\nBroad probes: " + (row.supportedSystems.isEmpty ? "none" : row.supportedSystems.joined(separator: ", ")))
-                        detail(row.fallback.available ? "FALLBACK · \(row.fallback.fallbackName)" : "FALLBACK REFLOW", row.fallback.available ? "x-height \(String(format: "%.2f", row.fallback.primaryXHeight)) → \(String(format: "%.2f", row.fallback.fallbackXHeight)) (\(WebFontAuditFormat.percent(row.fallback.xHeightDelta)))\nWidth \(WebFontAuditFormat.percent(row.fallback.maxWidthDelta)) · height \(WebFontAuditFormat.percent(row.fallback.maxHeightDelta)) · lines \(WebFontAuditFormat.signed(row.fallback.maxLineDelta))" + (row.fallback.buttonWidthDelta.map { "\nButton width \(String(format: "%+.1f px", $0))" } ?? "") + (row.fallback.missingScalars.isEmpty ? "" : "\nFallback misses \(row.fallback.missingScalars.count) character(s); Core Text may cascade") : row.fallback.note)
+                        detail("Page use", "\(row.useCount) text element(s) · \(row.instanceCount) setting(s)\n\(row.usedCharacterCount) unique characters" + (row.glyphCount.map { " · \($0) WOFF2 glyphs" } ?? "") + "\nSubsetting opportunity: \(row.subsetOpportunity)")
+                        detail("Coverage · \(row.coverageSource.rawValue)", (row.coverageSource == .unavailable ? "Add one unambiguous WOFF2 asset or install the desktop face" : row.missingCharacters.isEmpty ? "All required characters present" : "Missing: " + row.missingCharacters.prefix(12).map { "\(String($0)) U+\(String(format: "%04X", $0.value))" }.joined(separator: " · ")) + "\nPage scripts: " + (row.scriptsUsed.isEmpty ? "none detected" : row.scriptsUsed.joined(separator: ", ")) + "\nBroad probes: " + (row.supportedSystems.isEmpty ? "none" : row.supportedSystems.joined(separator: ", ")))
+                        detail(row.fallback.available ? "Fallback · \(row.fallback.fallbackName)" : "Fallback reflow", row.fallback.available ? "x-height \(String(format: "%.2f", row.fallback.primaryXHeight)) → \(String(format: "%.2f", row.fallback.fallbackXHeight)) (\(WebFontAuditFormat.percent(row.fallback.xHeightDelta)))\nWidth \(WebFontAuditFormat.percent(row.fallback.maxWidthDelta)) · height \(WebFontAuditFormat.percent(row.fallback.maxHeightDelta)) · lines \(WebFontAuditFormat.signed(row.fallback.maxLineDelta))" + (row.fallback.buttonWidthDelta.map { "\nButton width \(String(format: "%+.1f px", $0))" } ?? "") + (row.fallback.missingScalars.isEmpty ? "" : "\nFallback misses \(row.fallback.missingScalars.count) character(s); Core Text may cascade") : row.fallback.note)
                     }
                 }.padding(14).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
             }
@@ -583,7 +583,7 @@ struct WebFontAuditView: View {
 
     var comparisons: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("VARIABLE VS CHOSEN STATIC STYLES · EXACT COMPATIBLE ASSETS").font(.caption).foregroundStyle(.secondary)
+            Text("Variable vs chosen static styles · exact compatible assets").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(report.comparisons) { item in HStack { Text(item.family).font(.headline); Spacer(); Text("Variable \(WebFontAuditFormat.bytes(item.variableBytes))"); Image(systemName: "arrow.left.arrow.right"); Text("\(item.staticCount) static \(WebFontAuditFormat.bytes(item.staticBytes))"); Text(item.delta >= 0 ? "Variable saves \(WebFontAuditFormat.bytes(item.delta))" : "Static saves \(WebFontAuditFormat.bytes(-item.delta))").foregroundStyle(item.delta >= 0 ? Color.green : Color.secondary) }.padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8)) }
         }
     }

@@ -14,32 +14,23 @@ enum TypefieldSettingsChecks {
         for palette in TypefieldPalette.allCases {
             for dark in [false, true] {
                 let foreground = luminance(palette.accent(dark: dark))
-                let background = luminance(TypefieldPalette.color(dark ? palette.night : palette.paper))
-                try require((max(foreground, background) + 0.05) / (min(foreground, background) + 0.05) >= 4.5, "Palette text contrast: \(palette.title)")
+                let iconBackground = luminance(TypefieldPalette.color(dark ? palette.night : palette.paper))
+                let workspaceBackground = luminance(ShelfPalette.workspaceColor(dark: dark))
+                try require((max(foreground, iconBackground) + 0.05) / (min(foreground, iconBackground) + 0.05) >= 4.5, "Icon palette contrast: \(palette.title)")
+                try require((max(foreground, workspaceBackground) + 0.05) / (min(foreground, workspaceBackground) + 0.05) >= 4.5, "Accent contrast on neutral workspace: \(palette.title)")
             }
         }
-        // A fused crossbar becomes one component (H); an overly fine glyph can vanish.
+        try require(ShelfPalette.workspaceColor(dark: false).isEqual(TypefieldPalette.color(TypefieldPalette.neutral.paper)), "Light workspace uses Porcelain surface")
+        try require(ShelfPalette.workspaceColor(dark: true).isEqual(TypefieldPalette.color(TypefieldPalette.neutral.night)), "Dark workspace uses Porcelain surface")
+        // The high-contrast serif strokes must survive rasterization at small Dock sizes.
         for size in [16, 32, 64, 128] {
             guard let bitmap = TypefieldIcon.image(palette: .neutral, dark: false, size: size).representations.first as? NSBitmapImageRep else { throw CocoaError(.fileReadCorruptFile) }
             try require(bitmap.pixelsWide == size && bitmap.pixelsHigh == size, "Icon raster dimensions")
-            var ink: Set<Int> = []
+            var visibleInk = 0
             for y in 0..<size { for x in 0..<size {
-                if let pixel = bitmap.colorAt(x: x, y: y), pixel.alphaComponent > 0.7, luminance(pixel) < 0.25 { ink.insert(y * size + x) }
+                if let pixel = bitmap.colorAt(x: x, y: y), pixel.alphaComponent > 0.7, luminance(pixel) < 0.25 { visibleInk += 1 }
             } }
-            var components = 0
-            while let first = ink.first {
-                components += 1
-                ink.remove(first)
-                var queue = [first]
-                while let point = queue.popLast() {
-                    let x = point % size, y = point / size
-                    for (nx, ny) in [(x-1,y),(x+1,y),(x,y-1),(x,y+1)] where nx >= 0 && nx < size && ny >= 0 && ny < size {
-                        let next = ny * size + nx
-                        if ink.remove(next) != nil { queue.append(next) }
-                    }
-                }
-            }
-            try require(components == 2, "t and f must stay distinct at \(size) pixels (got \(components))")
+            try require(visibleInk > size * size / 20, "Serif icon remains visible at \(size) pixels")
         }
         try require(TypefieldPalette.resolve("unknown") == .neutral, "Unknown palette fallback")
         try require(TypefieldIcon.isDark(mode: "Dark", appearance: NSAppearance(named: .aqua)!), "Explicit dark icon")
@@ -56,6 +47,6 @@ enum TypefieldSettingsChecks {
         try require(library.saved.folders == [path] && library.saved.autoActivateFolders == [path], "Failed stop-watching must restore selected folders")
         try require(!library.setFolderActivation(path, enabled: false), "Unreadable library cannot change activation")
         try require(library.saved.autoActivateFolders == [path], "Failed activation edit must restore setting")
-        print("Settings checks passed: six palette contrasts, separate tf silhouettes at 16/32/64/128 pixels, appearance modes, folder-save rollback.")
+        print("Settings checks passed: six palette contrasts, serif icon at 16/32/64/128 pixels, appearance modes, folder-save rollback.")
     }
 }

@@ -85,7 +85,7 @@ struct FontPairingSuggestionsSheet: View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .center, spacing: 18) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("PAIRING DIRECTION").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Pairing direction").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Picker("Pairing direction", selection: $mode) {
                         ForEach(FontPairingMode.allCases) { option in Text(option.rawValue).tag(option) }
                     }
@@ -178,9 +178,9 @@ private struct FontPairingSuggestionCard: View {
             }
 
             VStack(spacing: 0) {
-                pairingRow(label: "CURRENT", face: reference, size: 22)
+                pairingRow(label: "Current", face: reference, size: 22)
                 Divider().padding(.leading, 86)
-                pairingRow(label: result.intendedRole.rawValue.uppercased(), face: result.face, size: min(38, max(26, result.intendedRole.size * 0.65)))
+                pairingRow(label: result.intendedRole.rawValue, face: result.face, size: min(38, max(26, result.intendedRole.size * 0.65)))
             }
             .background(colorScheme == .dark ? Color.white.opacity(0.025) : Color.black.opacity(0.018), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.07)))
@@ -232,7 +232,7 @@ private struct PairingScoreBadge: View {
     var body: some View {
         VStack(spacing: 1) {
             Text("\(score)").font(.headline.monospacedDigit())
-            Text("SCORE").font(.system(size: 8, weight: .semibold))
+            Text("Score").font(.system(size: 10, weight: .medium))
         }
         .frame(width: 52, height: 42)
         .background(ShelfPalette.indiaYellow.opacity(0.14), in: RoundedRectangle(cornerRadius: 9))

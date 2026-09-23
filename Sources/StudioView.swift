@@ -263,7 +263,7 @@ struct StudioView: View {
         VStack(alignment: .leading, spacing: 6) {
             WorkspaceSidebarHeader(library: library, collapsed: $sidebarCollapsed)
             VStack(alignment: .leading, spacing: 14) {
-                HStack { Text("SPACES").font(.caption).foregroundStyle(.secondary); Spacer(); Button { showNewSpace = true } label: { Image(systemName: "plus") }.help("New space").disabled(store.readBlocked) }
+                HStack { Text("Spaces").font(.caption.weight(.semibold)).foregroundStyle(.secondary); Spacer(); Button { showNewSpace = true } label: { Image(systemName: "plus") }.help("New space").disabled(store.readBlocked) }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
                     ForEach(store.state.spaces) { item in
@@ -689,7 +689,7 @@ struct TypeBoardEditor: View {
     var floatingInspectorContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("INSPECTOR").font(.caption2).fontWeight(.semibold).tracking(0.5).foregroundStyle(.secondary)
+                Text("Inspector").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 Button("Slim tools") { setInspectorMode(.slim) }.font(.caption).buttonStyle(.borderless)
                 Button { setInspectorMode(.expanded) } label: { Label("Dock", systemImage: "sidebar.left") }
@@ -884,7 +884,7 @@ struct TypeBoardEditor: View {
                 if inspectorTab == "Arrangement" { layoutSections }
                 else {
                 if direction.canvas == .imported {
-                    Text("IMPORTED TEXT LAYERS").font(.caption).foregroundStyle(.secondary)
+                    Text("Imported text layers").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     ShelfDropdown(title: "Layer", selection: Binding(get: { importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id } ?? "" }, set: { selectedSection = $0 }), options: (direction.importedLayout?.layers.filter { $0.style != nil } ?? []).map { ($0.name, $0.id) }, showsTitle: false)
                     Text("Edit each text layer independently. Drag layers on the canvas to position them.").font(.caption).foregroundStyle(.secondary)
                 } else {
@@ -1016,7 +1016,7 @@ struct TypeBoardEditor: View {
     }
     var layoutSections: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text("ARRANGEMENT").font(.caption).foregroundStyle(.secondary); Spacer(); Menu { ForEach(TypeRole.allCases) { item in Button(item.rawValue) {
+            HStack { Text("Arrangement").font(.caption.weight(.semibold)).foregroundStyle(.secondary); Spacer(); Menu { ForEach(TypeRole.allCases) { item in Button(item.rawValue) {
                 addRole(item, target: CanvasPlanCache.plan(for: direction).sections.last?.id, before: false)
             } }; if !(direction.hiddenSections ?? []).isEmpty { Button("Restore removed sections") { board.directions[directionIndex].hiddenSections = nil; save() } } } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add section").accessibilityLabel("Add section") }
             let plan = CanvasPlanCache.plan(for: direction)
@@ -1376,8 +1376,8 @@ struct CanvasPlan {
         case .website:
             section("navigation", "Website navigation")
             let navY = y
-            let logoH = text(.label, "STUDIO / 01", x: margin, at: navY, width: usable * 0.35)
-            let navH = text(.caption, "WORK   ABOUT   JOURNAL   CONTACT", x: margin + usable * 0.48, at: navY, width: usable * 0.52)
+            let logoH = text(.label, "Studio 01", x: margin, at: navY, width: usable * 0.35)
+            let navH = text(.caption, "Work · About · Journal · Contact", x: margin + usable * 0.48, at: navY, width: usable * 0.52)
             y = navY + max(logoH, navH) + 22; rule()
             section("hero", "Split hero")
             if w >= 700 {
@@ -1394,7 +1394,7 @@ struct CanvasPlan {
             }
             section("proof", "Trust strip")
             let proofY = y, proofWidth = usable / 3
-            for (i, value) in ["EST. 2018", "INDEPENDENT", "WORLDWIDE"].enumerated() { _ = text(.caption, value, x: margin + Double(i) * proofWidth, at: proofY, width: proofWidth) }
+            for (i, value) in ["Est. 2018", "Independent", "Worldwide"].enumerated() { _ = text(.caption, value, x: margin + Double(i) * proofWidth, at: proofY, width: proofWidth) }
             y = proofY + 38; rule()
             section("features", "Feature stories")
             let cards = w >= 768 ? 3 : 1, gap = 24.0, cw = (usable - Double(cards - 1) * gap) / Double(cards), top = y
@@ -1406,23 +1406,23 @@ struct CanvasPlan {
                 let b = text(.body, x: x, at: top + imageHeight + h + 26, width: cw)
                 bottom = max(bottom, top + imageHeight + h + b + 42)
             }
-            y = bottom; rule(); section("footer", "Website footer"); _ = text(.heading, "Stay curious."); _ = text(.caption, "NEWSLETTER     INSTAGRAM     TERMS     © 2026")
+            y = bottom; rule(); section("footer", "Website footer"); _ = text(.heading, "Stay curious."); _ = text(.caption, "Newsletter · Instagram · Terms · © 2026")
         case .product:
             section("app-bar", "Application chrome")
             let barY = y
             elements.append(CanvasElement(rect: CGRect(x: margin, y: barY, width: usable, height: 62), color: ink.withAlphaComponent(0.055), radius: 10))
-            _ = text(.label, "ACME WORKSPACE", x: margin + 18, at: barY + 19, width: usable * 0.35)
-            _ = text(.caption, "⌘ K  SEARCH        ARIAN ▾", x: margin + usable * 0.58, at: barY + 20, width: usable * 0.38)
+            _ = text(.label, "Acme Workspace", x: margin + 18, at: barY + 19, width: usable * 0.35)
+            _ = text(.caption, "⌘ K  Search   Arian ▾", x: margin + usable * 0.58, at: barY + 20, width: usable * 0.38)
             y = barY + 86
             section("dashboard", "Dashboard header")
-            _ = text(.caption, "OVERVIEW / THIS WEEK"); _ = text(.heading, "Good morning, Arian"); _ = text(.body, "Track active projects, decisions, and the work that needs your attention.")
+            _ = text(.caption, "Overview · This week"); _ = text(.heading, "Good morning, Arian"); _ = text(.body, "Track active projects, decisions, and the work that needs your attention.")
             section("metrics", "Metric cards")
             let columns = w >= 700 ? 3 : 1, gap = 14.0, cw = (usable - Double(columns - 1) * gap) / Double(columns)
             for start in stride(from: 0, to: 3, by: columns) {
                 let rowY = y; var bottom = y
                 for i in start..<min(start + columns, 3) {
                     let x = margin + Double(i - start) * (cw + gap), insertion = elements.count
-                    let captionH = text(.caption, ["ACTIVE PROJECTS", "AWAITING REVIEW", "ON-TIME RATE"][i], x: x + 18, at: rowY + 16, width: cw - 36)
+                    let captionH = text(.caption, ["Active projects", "Awaiting review", "On-time rate"][i], x: x + 18, at: rowY + 16, width: cw - 36)
                     let numberH = text(.heading, ["24", "08", "96%" ][i], x: x + 18, at: rowY + captionH + 26, width: cw - 36)
                     let height = captionH + numberH + 48
                     elements.insert(CanvasElement(rect: CGRect(x: x, y: rowY, width: cw, height: height), color: accent.withAlphaComponent(i == 1 ? 0.2 : 0.09), radius: 10), at: insertion)
@@ -1433,28 +1433,28 @@ struct CanvasPlan {
             section("table", "Project table")
             let tableY = y
             elements.append(CanvasElement(rect: CGRect(x: margin, y: tableY, width: usable, height: 42), color: ink.withAlphaComponent(0.06), radius: 6))
-            _ = text(.caption, "PROJECT", x: margin + 16, at: tableY + 13, width: usable * 0.44)
-            _ = text(.caption, "STATUS", x: margin + usable * 0.58, at: tableY + 13, width: usable * 0.2)
+            _ = text(.caption, "Project", x: margin + 16, at: tableY + 13, width: usable * 0.44)
+            _ = text(.caption, "Status", x: margin + usable * 0.58, at: tableY + 13, width: usable * 0.2)
             y = tableY + 42
             for (i, item) in ["Website exploration", "Mobile interface", "Brand guidelines", "Product launch"].enumerated() {
                 let row = y
                 _ = text(.label, item, x: margin + 16, at: row + 16, width: usable * 0.48)
-                _ = text(.caption, i == 1 ? "NEEDS REVIEW" : "IN PROGRESS", x: margin + usable * 0.58, at: row + 17, width: usable * 0.28)
+                _ = text(.caption, i == 1 ? "Needs review" : "In progress", x: margin + usable * 0.58, at: row + 17, width: usable * 0.28)
                 y = row + 56; elements.append(CanvasElement(rect: CGRect(x: margin, y: y - 1, width: usable, height: 1), color: ink.withAlphaComponent(0.1)))
             }
             y += 22; section("command", "Command input")
             let commandY = y; elements.append(CanvasElement(rect: CGRect(x: margin, y: commandY, width: usable, height: 58), color: accent.withAlphaComponent(0.13), radius: 9)); _ = text(.mono, "Ask your workspace…                         ⌘ ↵", x: margin + 18, at: commandY + 17, width: usable - 36); y = commandY + 82
         case .editorial:
             section("masthead", "Magazine masthead")
-            let mastY = y; _ = text(.caption, "VOL. 12   /   CULTURE & DESIGN", x: margin, at: mastY, width: usable * 0.5); _ = text(.label, "THE FIELD NOTES", x: margin + usable * 0.62, at: mastY, width: usable * 0.38); y = mastY + 38; rule()
+            let mastY = y; _ = text(.caption, "Vol. 12 · Culture & design", x: margin, at: mastY, width: usable * 0.5); _ = text(.label, "The Field Notes", x: margin + usable * 0.62, at: mastY, width: usable * 0.38); y = mastY + 38; rule()
             section("cover-story", "Cover story")
             _ = text(.display, "The quiet ideas reshaping everyday life"); _ = text(.subheading, "A conversation about objects, attention, and what it means to make things that last.")
-            let bylineY = y; _ = text(.caption, "WORDS  MAYA CHEN", x: margin, at: bylineY, width: usable * 0.45); _ = text(.caption, "PHOTOGRAPHY  LUIS ORTEGA", x: margin + usable * 0.52, at: bylineY, width: usable * 0.48); y = bylineY + 42
+            let bylineY = y; _ = text(.caption, "Words · Maya Chen", x: margin, at: bylineY, width: usable * 0.45); _ = text(.caption, "Photography · Luis Ortega", x: margin + usable * 0.52, at: bylineY, width: usable * 0.48); y = bylineY + 42
             section("image", "Lead image")
             let imageHeight = w >= 700 ? usable * 0.52 : 240
             elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: imageHeight), color: accent.withAlphaComponent(0.22), radius: 2))
             elements.append(CanvasElement(rect: CGRect(x: margin + usable * 0.64, y: y + imageHeight * 0.13, width: usable * 0.22, height: imageHeight * 0.7), color: ink.withAlphaComponent(0.12), radius: 2)); y += imageHeight + 18
-            _ = text(.caption, "FIG. 01 — Morning light in the workshop."); y += 18
+            _ = text(.caption, "Fig. 01 — Morning light in the workshop."); y += 18
             section("article", "Article and pull quote")
             if w >= 700 {
                 let articleY = y, columnGap = 28.0, bodyWidth = usable * 0.29
@@ -1463,23 +1463,23 @@ struct CanvasPlan {
                 let second = text(.body, Array(repeating: d.style(.body).text, count: 4).joined(separator: "\n\n"), x: margin + usable - bodyWidth, at: articleY, width: bodyWidth)
                 y = articleY + max(first, quote + 28, second) + 36
             } else { _ = text(.heading, "“The useful things are often the most poetic.”"); _ = text(.body, Array(repeating: d.style(.body).text, count: 5).joined(separator: "\n\n")) }
-            rule(); section("folio", "Editorial folio"); let folioY = y; _ = text(.caption, "THE FIELD NOTES", x: margin, at: folioY, width: usable * 0.5); _ = text(.mono, "024", x: margin + usable * 0.8, at: folioY, width: usable * 0.2); y = folioY + 38
+            rule(); section("folio", "Editorial folio"); let folioY = y; _ = text(.caption, "The Field Notes", x: margin, at: folioY, width: usable * 0.5); _ = text(.mono, "024", x: margin + usable * 0.8, at: folioY, width: usable * 0.2); y = folioY + 38
         case .poster:
             section("poster-code", "Poster index")
-            let indexY = y; _ = text(.mono, "POSTER / 07", x: margin, at: indexY, width: usable * 0.4); _ = text(.caption, "DESIGN / MUSIC / CONVERSATION", x: margin + usable * 0.48, at: indexY, width: usable * 0.52); y = indexY + 60
+            let indexY = y; _ = text(.mono, "Poster 07", x: margin, at: indexY, width: usable * 0.4); _ = text(.caption, "Design · Music · Conversation", x: margin + usable * 0.48, at: indexY, width: usable * 0.52); y = indexY + 60
             section("poster-field", "Graphic field")
             let fieldY = y, fieldHeight = max(300, usable * 0.62)
             elements.append(CanvasElement(rect: CGRect(x: margin, y: fieldY, width: usable, height: fieldHeight), color: accent, radius: 0))
             elements.append(CanvasElement(rect: CGRect(x: margin + usable * 0.54, y: fieldY + fieldHeight * 0.08, width: usable * 0.34, height: usable * 0.34), color: paper.withAlphaComponent(0.9), radius: usable * 0.17))
-            _ = text(.display, "FORM / SOUND", x: margin + 28, at: fieldY + 30, width: usable * 0.62, color: paper)
-            _ = text(.mono, "08—10\nOCT 2026", x: margin + 30, at: fieldY + fieldHeight * 0.68, width: usable * 0.34, color: paper)
-            _ = text(.label, "HALL 04 / LOS ANGELES", x: margin + usable * 0.54, at: fieldY + fieldHeight * 0.78, width: usable * 0.38, color: paper)
+            _ = text(.display, "Form / Sound", x: margin + 28, at: fieldY + 30, width: usable * 0.62, color: paper)
+            _ = text(.mono, "08—10\nOct 2026", x: margin + 30, at: fieldY + fieldHeight * 0.68, width: usable * 0.34, color: paper)
+            _ = text(.label, "Hall 04 / Los Angeles", x: margin + usable * 0.54, at: fieldY + fieldHeight * 0.78, width: usable * 0.38, color: paper)
             y = fieldY + fieldHeight + 42
             section("poster-details", "Event details")
             let detailY = y; _ = text(.heading, "Three nights of new work.", x: margin, at: detailY, width: usable * 0.55); _ = text(.body, "Exhibitions, live performance, workshops, and conversations with independent makers.", x: margin + usable * 0.62, at: detailY, width: usable * 0.38); y = detailY + 150
-            rule(); section("poster-footer", "Poster footer"); let footerY = y; _ = text(.caption, "TICKETS / PROGRAM / ACCESS", x: margin, at: footerY, width: usable * 0.58); _ = text(.mono, "F/S 2026", x: margin + usable * 0.72, at: footerY, width: usable * 0.28); y = footerY + 44
+            rule(); section("poster-footer", "Poster footer"); let footerY = y; _ = text(.caption, "Tickets · Program · Access", x: margin, at: footerY, width: usable * 0.58); _ = text(.mono, "F/S 2026", x: margin + usable * 0.72, at: footerY, width: usable * 0.28); y = footerY + 44
         case .specimen:
-            for role in TypeRole.allCases { section(role.rawValue, role.rawValue); _ = text(.caption, role.rawValue.uppercased() + " · " + d.style(role).fontName + " · \(Int(d.style(role).size)) PX"); _ = text(role); rule() }
+            for role in TypeRole.allCases { section(role.rawValue, role.rawValue); _ = text(.caption, role.rawValue + " · " + d.style(role).fontName + " · \(Int(d.style(role).size)) px"); _ = text(role); rule() }
         }
         for block in d.addedBlocks ?? [] { section(block.id, block.role.rawValue); _ = text(block.role) }
         finishSection()
@@ -1594,7 +1594,7 @@ final class CanvasNativeView: NSView {
         editor.isAutomaticTextReplacementEnabled = false
         editor.allowsUndo = true
         editor.drawsBackground = true
-        editor.backgroundColor = plan.paper.blended(withFraction: 0.06, of: .controlAccentColor) ?? plan.paper
+        editor.backgroundColor = plan.paper
         editor.textColor = Self.editorTextColor(attributed, fallback: plan.ink)
         editor.font = (element.style?.font as NSFont?).map { NSFont(descriptor: $0.fontDescriptor, size: max(11, $0.pointSize * zoom)) ?? $0 } ?? .systemFont(ofSize: max(11, 14 * zoom))
         editor.alignment = element.style?.alignment?.native ?? .left
@@ -1603,7 +1603,7 @@ final class CanvasNativeView: NSView {
         editor.isHorizontallyResizable = false
         editor.autoresizingMask = []
         editor.wantsLayer = true
-        editor.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        editor.layer?.borderColor = ShelfPalette.nativeAccent.cgColor
         editor.layer?.borderWidth = 2
         editor.layer?.cornerRadius = 4
         editingElement = element
@@ -1701,11 +1701,11 @@ final class CanvasNativeView: NSView {
             let requestedInset = 1 / max(0.1, zoom)
             let insetX = min(requestedInset, max(0, source.width / 2 - 0.5))
             let insetY = min(requestedInset, max(0, source.height / 2 - 0.5))
-            NSColor.controlAccentColor.withAlphaComponent(0.85).setStroke(); let border = NSBezierPath(roundedRect: source.insetBy(dx: insetX, dy: insetY), xRadius: 3 / zoom, yRadius: 3 / zoom); border.lineWidth = 2 / zoom; border.stroke()
+            ShelfPalette.nativeAccent.withAlphaComponent(0.85).setStroke(); let border = NSBezierPath(roundedRect: source.insetBy(dx: insetX, dy: insetY), xRadius: 3 / zoom, yRadius: 3 / zoom); border.lineWidth = 2 / zoom; border.stroke()
         } else if directionID != nil, let selected = plan.sections.first(where: { $0.id == selectedSection }) {
-            NSColor.controlAccentColor.withAlphaComponent(0.7).setStroke(); let border = NSBezierPath(rect: selected.rect.offsetBy(dx: translation.x, dy: translation.y).insetBy(dx: 1 / zoom, dy: 0)); border.lineWidth = 1 / zoom; border.stroke()
+            ShelfPalette.nativeAccent.withAlphaComponent(0.7).setStroke(); let border = NSBezierPath(rect: selected.rect.offsetBy(dx: translation.x, dy: translation.y).insetBy(dx: 1 / zoom, dy: 0)); border.lineWidth = 1 / zoom; border.stroke()
         }
-        if let insertionY { NSColor.controlAccentColor.setFill(); NSRect(x: 0, y: insertionY, width: plan.size.width, height: 3 / zoom).fill() }
+        if let insertionY { ShelfPalette.nativeAccent.setFill(); NSRect(x: 0, y: insertionY, width: plan.size.width, height: 3 / zoom).fill() }
     }
 }
 struct CanvasPreview: NSViewRepresentable {

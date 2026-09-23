@@ -51,7 +51,7 @@ struct FontLabArtworkImportSheet: View {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("SOURCE & LETTER REGIONS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text("Source & letter regions").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             Spacer()
                             Button("Clear regions") { scan?.regions = []; reviewed = false; selectedRegion = nil }.disabled(busy)
                                 .font(.caption)
@@ -79,7 +79,7 @@ struct FontLabArtworkImportSheet: View {
                         }.buttonStyle(.plain).font(.caption)
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("REVIEW \(scan?.regions.count ?? 0) REGIONS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Review \(scan?.regions.count ?? 0) regions").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         ScrollViewReader { proxy in
                             ScrollView {
                                 LazyVStack(spacing: 8) {

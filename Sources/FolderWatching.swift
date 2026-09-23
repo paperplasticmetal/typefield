@@ -257,7 +257,7 @@ struct LibrarySearchView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack { preset("User fonts", "user"); preset("Active", "active"); preset("Tagged", "tagged"); preset("Variable", "variable") }
-                    Text("TAGS").font(.caption).foregroundStyle(.secondary)
+                    Text("Tags").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     let fragment = library.search.split(separator: "#").last.map(String.init)?.trimmingCharacters(in: CharacterSet(charactersIn: "!\" ")) ?? ""
                     let tags = TagQuery.hierarchy(Set(library.pro.tags.values.flatMap { $0 }))
                     ForEach(tags.filter { !library.search.contains("#") || fragment.isEmpty || $0.localizedCaseInsensitiveContains(fragment) }, id: \.self) { tag in
@@ -265,14 +265,14 @@ struct LibrarySearchView: View {
                     }
                     if tags.isEmpty { Text("Add tags from Library → Tools → Tags.").font(.caption).foregroundStyle(.secondary) }
                     Divider()
-                    Text("WEIGHT").font(.caption).foregroundStyle(.secondary)
+                    Text("Weight").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     HStack { preset("Light", "light"); preset("Regular", "regular"); preset("Medium", "medium"); preset("Bold", "bold"); preset("Black", "black") }
                     HStack { preset("Condensed", "condensed"); preset("Normal", "normal-width"); preset("Expanded", "expanded"); preset("High contrast", "high-contrast") }
                     HStack { preset("Upright", "upright"); preset("Italic", "italic") }
                     HStack { preset("Monospace", "monospace"); preset("Color", "color"); preset("Bitmap", "bitmap") }
-                    Text("X-HEIGHT").font(.caption).foregroundStyle(.secondary)
+                    Text("x-height").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     HStack { preset("Small h", "small-xheight"); preset("Medium h", "medium-xheight"); preset("Large h", "large-xheight") }
-                    Text("OPENTYPE SUPPORT").font(.caption).foregroundStyle(.secondary)
+                    Text("OpenType support").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 125))], alignment: .leading) {
                         ForEach(["lnum", "onum", "tnum", "pnum", "liga", "dlig", "smcp", "frac", "sups", "kern"], id: \.self) { tag in preset(OpenType.label(tag), "feature/" + tag) }
                     }

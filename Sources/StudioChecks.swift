@@ -29,7 +29,7 @@ enum StudioChecks {
         try verify((value["axes"] as? [String: Double])?["wght"] == 520, "Variable axes preserved")
         let html = try read("index.html"), css = try read("typography.css")
         try verify(!html.contains("<script>") && html.contains("&lt;script&gt;") && html.contains("café 🖋"), "HTML must escape sample text and retain Unicode")
-        try verify(html.contains("TYPEFIELD / DEVELOPER HANDOFF") && !html.contains("FONTSHELF / DEVELOPER HANDOFF"), "Visible handoff branding must use Typefield")
+        try verify(html.contains("Typefield · Developer handoff") && !html.contains("FONTSHELF / DEVELOPER HANDOFF"), "Visible handoff branding must use Typefield")
         try verify(css.contains("clamp(") && css.contains("\"wght\" 520") && css.contains("font-display: swap") && css.contains("font-feature-settings: \"kern\" 0, \"liga\" 0") && css.contains("font-kerning: none"), "CSS carries axes, features, kerning and loading policy")
         try verify(DeveloperHandoff.fluid(16) == "1rem" && DeveloperHandoff.number(0) == "0" && DeveloperHandoff.number(100) == "100", "Fluid scale and numeric precision")
         let manifest = try read("fonts.json")

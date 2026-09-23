@@ -1135,7 +1135,7 @@ struct FontLabView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("LETTERFORM PROJECTS").font(.caption).foregroundStyle(.secondary)
+                        Text("Letterform projects").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Text("Draw and test letterforms").font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -1280,7 +1280,7 @@ struct FontLabView: View {
     private func characterBrowser(_ project: FontLabProject) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("CHARACTERS").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                Text("Characters").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 Button(selectingCharacters ? "Done" : selectedCharacters.isEmpty ? "Select" : "Selected \(selectedCharacters.count)") {
                     selectingCharacters.toggle()
@@ -1476,7 +1476,7 @@ struct FontLabView: View {
     private func metricsPanel(_ project: FontLabProject, glyph: FontLabGlyph) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("METRICS").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                Text("Metrics").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 Button { showMetricsGuide = true } label: { Label("Guide", systemImage: "questionmark.circle") }
                     .buttonStyle(.plain).font(.caption).help("Learn what each type metric controls")
@@ -1513,7 +1513,7 @@ struct FontLabView: View {
     private func preview(_ project: FontLabProject) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("PREVIEW").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                Text("Preview").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 Text("Click a preview letter to edit it. Outlined tiles mark missing characters.").font(.caption).foregroundStyle(.secondary)
             }
@@ -1872,8 +1872,8 @@ private final class FontLabMetricExampleNSView: NSView {
         cursor += drawLetter("x", font: xFont, at: NSPoint(x: cursor, y: baselineY)) + 6
         if cursor < rightX - 18 { _ = drawLetter("p", font: xFont, at: NSPoint(x: cursor, y: baselineY)) }
 
-        drawRotatedLabel("LEFT BEARING", at: NSPoint(x: leftX + 7, y: rect.midY))
-        drawRotatedLabel("RIGHT BEARING", at: NSPoint(x: rightX - 7, y: rect.midY))
+        drawRotatedLabel("Left bearing", at: NSPoint(x: leftX + 7, y: rect.midY))
+        drawRotatedLabel("Right bearing", at: NSPoint(x: rightX - 7, y: rect.midY))
     }
 
     private enum FontMetric { case capHeight, xHeight }
@@ -2059,11 +2059,11 @@ private final class FontLabDrawingNSView: NSView {
                 }
             }
         }
-        drawHorizontalLabel("BASELINE", at: metrics.baseline, color: .systemOrange)
-        drawHorizontalLabel("x-HEIGHT", at: metrics.xHeight, color: .secondaryLabelColor)
-        drawHorizontalLabel("CAP HEIGHT", at: metrics.capHeight, color: .secondaryLabelColor)
-        drawVerticalLabel("LEFT BEARING", at: glyph.leftSideBearing, inwardOffset: 9)
-        drawVerticalLabel("RIGHT BEARING", at: 1 - glyph.rightSideBearing, inwardOffset: -9)
+        drawHorizontalLabel("Baseline", at: metrics.baseline, color: .systemOrange)
+        drawHorizontalLabel("x-height", at: metrics.xHeight, color: .secondaryLabelColor)
+        drawHorizontalLabel("Cap height", at: metrics.capHeight, color: .secondaryLabelColor)
+        drawVerticalLabel("Left bearing", at: glyph.leftSideBearing, inwardOffset: 9)
+        drawVerticalLabel("Right bearing", at: 1 - glyph.rightSideBearing, inwardOffset: -9)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -2329,7 +2329,7 @@ final class FontLabPreviewNSView: NSView {
             let hit = CGRect(x: x, y: originY, width: left + inkWidth + right, height: em)
             hitRegions.append((character, hit))
             if character == selectedCharacter {
-                NSColor.controlAccentColor.withAlphaComponent(0.1).setFill()
+                ShelfPalette.nativeAccent.withAlphaComponent(0.1).setFill()
                 NSBezierPath(roundedRect: hit, xRadius: 4, yRadius: 4).fill()
             }
             if let glyph, glyph.hasArtwork {

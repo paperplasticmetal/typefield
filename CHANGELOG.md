@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.42.0 — 2026-09-23
+
+- Kept the workspace on neutral Porcelain light and dark surfaces. Palette choices now change accents on controls, selections, and subtle hover states without tinting default font-preview backgrounds or saved typeboards.
+- Redesigned the app icon with a more refined serif mark and simplified the icon chooser to compact previews.
+- Replaced spaced uppercase headings with ordinary sentence-case labels in the app, new typeboard examples, and generated handoff specimens.
+
 ## 0.41.0 — 2026-09-23
 
 - Added a persistent sidebar Settings window, available from the Typefield menu, ⌘ comma, and the Library gear button. Appearance, App Icon, Live Folders, Library, searchable Keyboard Shortcuts, Privacy & Permissions, and About share one home.

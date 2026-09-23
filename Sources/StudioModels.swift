@@ -21,7 +21,7 @@ enum TypeRole: String, Codable, CaseIterable, Identifiable {
     case display = "Display", heading = "Heading", subheading = "Subheading", body = "Body", label = "UI label", caption = "Caption", mono = "Monospace"
     var id: String { rawValue }
     var size: Double { switch self { case .display: return 64; case .heading: return 36; case .subheading: return 24; case .body: return 18; case .label: return 14; case .caption: return 12; case .mono: return 14 } }
-    var sample: String { switch self { case .display: return "A new perspective."; case .heading: return "Designed for everyday life"; case .subheading: return "Details make the difference"; case .body: return "Good design begins with a clear idea. Explore a collection of considered objects, useful tools, and stories about the way we live."; case .label: return "Explore collection"; case .caption: return "STUDIO JOURNAL · SEPTEMBER 2026"; case .mono: return "0123456789  /  Aa Bb Cc  /  { type: true }" } }
+    var sample: String { switch self { case .display: return "A new perspective."; case .heading: return "Designed for everyday life"; case .subheading: return "Details make the difference"; case .body: return "Good design begins with a clear idea. Explore a collection of considered objects, useful tools, and stories about the way we live."; case .label: return "Explore collection"; case .caption: return "Studio Journal · September 2026"; case .mono: return "0123456789  /  Aa Bb Cc  /  { type: true }" } }
 }
 struct TypeStyle: Codable, Equatable {
     var fontName: String

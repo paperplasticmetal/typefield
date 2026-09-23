@@ -66,7 +66,7 @@ struct FontLabRemixSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("PROJECT NAME").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Text("Project name").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Spacer()
                     Button("Use source names") { projectName = suggestedProjectName; autoName = suggestedProjectName }
                         .buttonStyle(.plain).font(.caption).disabled(projectName == suggestedProjectName)
@@ -78,7 +78,7 @@ struct FontLabRemixSheet: View {
             }
 
             HStack(alignment: .center, spacing: 12) {
-                FontLabFacePicker(title: "SOURCE A", faces: faces, selection: $primaryName)
+                FontLabFacePicker(title: "Source A", faces: faces, selection: $primaryName)
                 Button {
                     let previous = primaryName
                     primaryName = secondaryName
@@ -89,12 +89,12 @@ struct FontLabRemixSheet: View {
                 }
                 .buttonStyle(.plain).shelfGlass(radius: 10)
                 .help("Swap source fonts")
-                FontLabFacePicker(title: "SOURCE B", faces: faces, selection: $secondaryName)
+                FontLabFacePicker(title: "Source B", faces: faces, selection: $secondaryName)
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("METHOD").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Text("Method").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Spacer()
                     Text(mode.explanation).font(.caption).foregroundStyle(.secondary)
                 }
@@ -114,7 +114,7 @@ struct FontLabRemixSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("STARTING STYLE").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                Text("Starting style").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Picker("Starting style", selection: $preset) {
                     ForEach(FontLabStarterPreset.allCases) { option in Text(option.title).tag(option) }
                 }
@@ -131,7 +131,7 @@ struct FontLabRemixSheet: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
-                    Text("GENERATED PREVIEW").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Text("Generated preview").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Spacer()
                     if previewBusy { ProgressView().controlSize(.small); Text("Updating…").font(.caption) }
                 }
@@ -275,7 +275,7 @@ private struct FontLabFacePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             Button { presented = true } label: {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -345,7 +345,7 @@ private struct FontLabSourcePreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("SOURCE \(label) PREVIEW").font(.system(size: 9, weight: .semibold)).tracking(0.7).foregroundStyle(.secondary)
+            Text("Source \(label) preview").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             Text("Hamburgefontsiv 0123")
                 .font(.custom(face?.name ?? "Helvetica", size: 25))
                 .lineLimit(1).minimumScaleFactor(0.55)

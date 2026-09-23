@@ -44,7 +44,7 @@ struct TypefieldSettingsView: View {
     @ObservedObject var library: Library
     @ObservedObject var selection: TypefieldSettingsSelection
     @AppStorage("appearance") private var appearance = "Dark"
-    @AppStorage("typefield.palette") private var palette = "amber"
+    @AppStorage("typefield.palette") private var palette = "neutral"
     @AppStorage("typefield.iconPalette") private var iconPalette = "neutral"
     @AppStorage("typefield.iconAppearance") private var iconAppearance = "Automatic"
     @AppStorage("previewText") private var preview = "The quick brown fox jumps over the lazy dog."
@@ -56,7 +56,7 @@ struct TypefieldSettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 18) {
-                Text("SETTINGS").font(.system(size: 11, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 12)
+                Text("Settings").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 12)
                 ForEach(TypefieldSettingsPage.allCases) { page in
                     Button { selection.page = page } label: {
                         HStack(spacing: 10) {
@@ -107,11 +107,11 @@ struct TypefieldSettingsView: View {
     private var appearancePane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Choose the appearance of your workspace. Your typeboard and font preview colors stay as you set them.").foregroundStyle(.secondary)
+                Text("Choose a light or dark workspace. Font previews and saved typeboards keep their own colors.").foregroundStyle(.secondary)
                 Picker("Appearance", selection: $appearance) {
                     ForEach(["System", "Light", "Dark"], id: \.self) { Text($0).tag($0) }
                 }.pickerStyle(.segmented)
-                Text("Color palette").font(.headline)
+                Text("Accent color").font(.headline)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(TypefieldPalette.allCases) { item in
                         Button { palette = item.rawValue } label: {
@@ -121,10 +121,10 @@ struct TypefieldSettingsView: View {
                                 Spacer()
                                 Image(systemName: palette == item.rawValue ? "checkmark.circle.fill" : "circle").foregroundStyle(.secondary)
                             }.padding(16).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                        }.buttonStyle(.plain).accessibilityLabel(item.title + " workspace palette").accessibilityAddTraits(palette == item.rawValue ? .isSelected : [])
+                        }.buttonStyle(.plain).accessibilityLabel(item.title + " accent color").accessibilityAddTraits(palette == item.rawValue ? .isSelected : [])
                     }
                 }
-                Label("Selected controls, accents, and the workspace surface use this palette.", systemImage: "paintbrush.pointed").font(.callout).foregroundStyle(.secondary)
+                Label("Accent colors highlight selections and controls. The workspace stays neutral.", systemImage: "paintbrush.pointed").font(.callout).foregroundStyle(.secondary)
                 Text("Motion and transparency follow your macOS Accessibility settings.").font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -132,24 +132,23 @@ struct TypefieldSettingsView: View {
     private var iconPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("A simple typographic mark, with a separate t and f. Choose a palette independently of your workspace.").foregroundStyle(.secondary)
-                HStack(alignment: .center, spacing: 24) {
-                    Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon)).resizable().frame(width: 118, height: 118)
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("At Dock size").font(.caption).foregroundStyle(.secondary)
-                        HStack(alignment: .bottom, spacing: 18) {
-                            ForEach([16, 32, 64], id: \.self) { pixels in
-                                VStack(spacing: 6) {
-                                    Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon, size: pixels * 2)).resizable().frame(width: CGFloat(pixels), height: CGFloat(pixels))
-                                    Text("\(pixels)").font(.system(size: 10)).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
+                Text("Choose how Typefield appears in the Dock.").foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    ForEach([16, 32, 64], id: \.self) { pixels in
+                        Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon, size: pixels * 2))
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: CGFloat(pixels), height: CGFloat(pixels))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 80)
+                            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                            .accessibilityLabel("App icon preview")
                     }
                 }
                 Picker("Icon appearance", selection: $iconAppearance) {
                     ForEach(["Automatic", "Light", "Dark"], id: \.self) { Text($0).tag($0) }
                 }.pickerStyle(.segmented)
+                Text("Icon color").font(.headline)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(TypefieldPalette.allCases) { item in
                         Button { iconPalette = item.rawValue } label: {

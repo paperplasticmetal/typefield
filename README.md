@@ -50,7 +50,7 @@ The typography summary also includes a **Web font cost** audit for the selected 
 - Local-only **Find similar** recommendations based on font metadata and explainable visual signals, plus **Rediscover** suggestions that favor fonts you have not used recently. Screenshot matching is not part of this release.
 - Google variable fonts with real previews before download. Preview text stays local; public font files are fetched from Google's repository on GitHub.
 - Original-file export and temporary session activation. Adobe type-system and return-bridge JSX scripts create native documents or bounded interchange when run inside Adobe; Typefield does not remotely control Adobe applications.
-- Light/dark appearances, India yellow accents, and native Liquid Glass on supported macOS versions.
+- Neutral light/dark appearances, optional accent colors for controls and selections, and native Liquid Glass on supported macOS versions.
 - Spaces separate from collections, pairing typeboards, saved directions and checkpoints. Tune seven type roles with font, variable axes, OpenType, spacing, text and color settings, with explainable local pairing suggestions.
 - Letterform Editor projects with reviewed image/SVG/Procreate-preview artwork import, live previews, cubic Bézier drawing and node/handle editing, contour operations, transforms, zoom/pan, Undo/Redo, recoverable deletion, Round/Marker/Outline drawing, erasing, smoothing, native tablet pressure, labeled metrics, a resizable character rail, multi-glyph SVG export and validated installable TrueType generation.
 - Website, product UI, editorial, poster, type-system and ordered custom-layout canvases; responsive widths, side-by-side directions, PDF export and portable space files.
@@ -130,8 +130,8 @@ The workflow badge reflects GitHub CI. Local checks and manual testing have narr
 
 No open-source license has been granted at this time. All rights are reserved by the respective copyright holders, except as permitted by applicable law and GitHub's terms. Public visibility is not permission to redistribute the app or reuse its code. Font files retain their own licenses; no font binaries are bundled in this repository.
 
-### Settings and icon palettes
+### Settings and icon colors
 
-Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The sidebar includes Appearance, App Icon, Live Folders, Library, Keyboard Shortcuts, Privacy & Permissions, and About. Choose Porcelain, Amber, Ocean, Forest, Plum, or Rose independently for the workspace and Dock icon. Icon appearance can follow the app or stay Light/Dark. Selections persist; Finder uses the standard bundled Porcelain light icon. Workspace palettes do not recolor saved typeboards or custom font previews.
+Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The sidebar includes Appearance, App Icon, Live Folders, Library, Keyboard Shortcuts, Privacy & Permissions, and About. The workspace uses Porcelain's neutral light and dark surfaces. Choose Porcelain, Amber, Ocean, Forest, Plum, or Rose as an accent for controls and selections, independently of the Dock icon color. Icon appearance can follow the app or stay Light/Dark. Selections persist; Finder uses the standard bundled Porcelain light icon. Accent colors do not recolor font previews or saved typeboards.
 
 Icon artwork is generated from native type outlines by `scripts/make-icon.swift`; its header documents the compilation command. The same renderer powers Settings previews and the Dock.

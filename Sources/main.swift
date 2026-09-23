@@ -587,7 +587,7 @@ struct ContentView: View {
     @AppStorage("adaptiveGridView") var grid = true
     @State var metadataView = false
     @AppStorage("appearance") var appearance = "Dark"
-    @AppStorage("typefield.palette") private var palette = "amber"
+    @AppStorage("typefield.palette") private var palette = "neutral"
     @Environment(\.colorScheme) private var systemScheme
     @State var collectionName = ""
     @State var showCollection = false
@@ -783,7 +783,7 @@ struct ContentView: View {
         return VStack(alignment: .leading, spacing: 6) {
             WorkspaceSidebarHeader(library: library, collapsed: $sidebarCollapsed)
             ScrollView { VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("LIBRARY")
+            sectionLabel("Library")
             nav("All Fonts", icon: "square.stack.3d.up", key: "All Fonts", count: snapshot.count(section: "All Fonts"))
             nav("Last Import", icon: "clock.arrow.circlepath", key: "Last Import", count: snapshot.count(section: "Last Import"))
             nav("Favorites", icon: "star", key: "Favorites", count: snapshot.count(section: "Favorites"))
@@ -791,17 +791,17 @@ struct ContentView: View {
                 HStack { Image(systemName: "square.on.square").frame(width: 20); Text("Shortlist"); Spacer(); Text("\(library.comparison.count)").foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
             }.buttonStyle(.plain).padding(.horizontal, 8).help("Compare up to six families added with +")
             Button("Google Fonts…") { library.openTools("Google Fonts") }.buttonStyle(.plain).padding(.horizontal, 18).padding(.vertical, 8)
-            SidebarSection(title: "CATEGORIES", key: "sidebar.categories") {
+            SidebarSection(title: "Categories", key: "sidebar.categories") {
             ForEach(Category.allCases, id: \.self) { category in nav(category.rawValue, icon: category.icon, key: category.rawValue, count: snapshot.count(section: category.rawValue)) }
             }
-            SidebarSection(title: "LANGUAGES / SCRIPTS", key: "sidebar.languages") {
+            SidebarSection(title: "Languages / Scripts", key: "sidebar.languages") {
             ForEach(WritingSystem.allCases, id: \.self) { writing in
                 Button { library.writing = library.writing == writing ? nil : writing } label: {
                     HStack { Text(writing.mark).frame(width: 20); Text(writing.rawValue).lineLimit(1); Spacer(); Text("\(snapshot.count(writingSystem: writing))").font(.caption).foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
                 }.buttonStyle(.plain).background(library.writing == writing ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
             }
             }
-            SidebarSection(title: "TAGS", key: "sidebar.tags") {
+            SidebarSection(title: "Tags", key: "sidebar.tags") {
             ForEach(snapshot.tags, id: \.self) { tag in
                 nav(tag, icon: "tag", key: "tag:" + tag, count: snapshot.count(section: "tag:" + tag)).padding(.leading, CGFloat(tag.filter { $0 == "/" }.count) * 8).contextMenu {
                     Button("Include tag") { library.tagQuery.included.insert(tag); library.tagQuery.excluded.remove(tag); library.workspace = .library; library.selection = "All Fonts" }
@@ -809,7 +809,7 @@ struct ContentView: View {
                 }
             }
             }
-            SidebarSection(title: "SAVED SEARCHES", key: "sidebar.saved-searches", onAdd: { saveSearch() }) {
+            SidebarSection(title: "Saved searches", key: "sidebar.saved-searches", onAdd: { saveSearch() }) {
                 ForEach((library.saved.savedSearches ?? [:]).keys.sorted(), id: \.self) { name in
                     Button { library.applySavedSearch(name) } label: {
                         HStack { Image(systemName: "magnifyingglass").frame(width: 20); Text(name).lineLimit(1); Spacer() }
@@ -822,7 +822,7 @@ struct ContentView: View {
                     Text("Save filters to revisit live results").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14)
                 }
             }
-            SidebarSection(title: "COLLECTIONS", key: "sidebar.collections", onAdd: { showCollection = true }) {
+            SidebarSection(title: "Collections", key: "sidebar.collections", onAdd: { showCollection = true }) {
             Group {
                 VStack(spacing: 6) {
                     ForEach(library.saved.collections.keys.sorted(), id: \.self) { name in
@@ -838,12 +838,12 @@ struct ContentView: View {
             }
             } }
             Spacer(minLength: 4)
-            Button { library.addFolder() } label: { Label("Add font folder", systemImage: "folder.badge.plus").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(Color.black.opacity(0.85)).padding(10).background(ShelfPalette.indiaYellow, in: RoundedRectangle(cornerRadius: 12)).padding(12)
+            Button { library.addFolder() } label: { Label("Add font folder", systemImage: "folder.badge.plus").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(systemScheme == .dark ? Color.black : Color.white).padding(10).background(ShelfPalette.ink, in: RoundedRectangle(cornerRadius: 12)).padding(12)
             Button { library.openTools("Folders") } label: { Label("Live folders · \(library.saved.folders.count)", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.horizontal, 22).padding(.bottom, 8).help("Manage folders that update automatically, including subfolders")
             HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
         }
     }
-    func sectionLabel(_ title: String) -> some View { Text(title).font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 5) }
+    func sectionLabel(_ title: String) -> some View { Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 5) }
     @ViewBuilder func navIcon(_ icon: String, key: String) -> some View {
         if key == Category.serif.rawValue {
             Text("A")
@@ -989,10 +989,10 @@ private struct TourPage {
     let detail: String
     let action: String
     static let all: [TourPage] = [
-        .init(symbol: "square.grid.2x2", eyebrow: "WELCOME", title: "Meet Typefield", detail: "Your fonts, type ideas, and letterforms live together here. This quick tour takes about a minute. You can skip it and return from Help at any time.", action: "Your work stays on this Mac unless you choose to export it."),
-        .init(symbol: "textformat", eyebrow: "01 · LIBRARY", title: "Find the right font", detail: "Browse fonts already on your Mac, preview your own words, filter by style or language, and save favorites and collections. Add a folder when you want Typefield to watch your own font files.", action: "Start with a preview, then shortlist a few families."),
-        .init(symbol: "square.stack.3d.up", eyebrow: "02 · SPACES", title: "Try type in context", detail: "Turn a shortlist into a typeboard. Arrange live text and shapes, compare directions, and tune roles such as Heading and Body. Export a PDF, Figma layout, Adobe bridge, or developer handoff when you are ready.", action: "Choose Spaces in the sidebar to make a typeboard."),
-        .init(symbol: "pencil.and.outline", eyebrow: "03 · LETTERFORM EDITOR", title: "Draw your own letters", detail: "Sketch or edit vector letters, import artwork you have rights to use, refine spacing, and preview words. You can export SVG outlines or a font built from your own glyphs.", action: "Choose Letterform Editor in the sidebar to begin.")
+        .init(symbol: "square.grid.2x2", eyebrow: "Welcome", title: "Meet Typefield", detail: "Your fonts, type ideas, and letterforms live together here. This quick tour takes about a minute. You can skip it and return from Help at any time.", action: "Your work stays on this Mac unless you choose to export it."),
+        .init(symbol: "textformat", eyebrow: "01 · Library", title: "Find the right font", detail: "Browse fonts already on your Mac, preview your own words, filter by style or language, and save favorites and collections. Add a folder when you want Typefield to watch your own font files.", action: "Start with a preview, then shortlist a few families."),
+        .init(symbol: "square.stack.3d.up", eyebrow: "02 · Spaces", title: "Try type in context", detail: "Turn a shortlist into a typeboard. Arrange live text and shapes, compare directions, and tune roles such as Heading and Body. Export a PDF, Figma layout, Adobe bridge, or developer handoff when you are ready.", action: "Choose Spaces in the sidebar to make a typeboard."),
+        .init(symbol: "pencil.and.outline", eyebrow: "03 · Letterform Editor", title: "Draw your own letters", detail: "Sketch or edit vector letters, import artwork you have rights to use, refine spacing, and preview words. You can export SVG outlines or a font built from your own glyphs.", action: "Choose Letterform Editor in the sidebar to begin.")
     ]
 }
 
@@ -1003,7 +1003,7 @@ private struct TypefieldTour: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("TYPEFIELD").font(.system(size: 12, weight: .bold, design: .rounded)).tracking(2).foregroundStyle(.secondary)
+                Text("Typefield").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer()
                 Button("Skip tour", action: dismiss).buttonStyle(.plain).foregroundStyle(.secondary).keyboardShortcut(.cancelAction)
             }
@@ -1014,7 +1014,7 @@ private struct TypefieldTour: View {
                 .frame(width: 88, height: 88)
                 .background(ShelfPalette.indiaYellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 24))
                 .accessibilityHidden(true)
-            Text(page.eyebrow).font(.system(size: 12, weight: .semibold)).tracking(2).foregroundStyle(ShelfPalette.indiaYellow).padding(.top, 26)
+            Text(page.eyebrow).font(.system(size: 13, weight: .medium)).foregroundStyle(ShelfPalette.indiaYellow).padding(.top, 26)
             Text(page.title).font(.system(size: 36, weight: .semibold, design: .rounded)).padding(.top, 8)
             Text(page.detail).font(.system(size: 16)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 14)
             Label(page.action, systemImage: "sparkle")

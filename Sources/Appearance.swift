@@ -2,18 +2,23 @@ import SwiftUI
 import AppKit
 
 enum ShelfPalette {
-    static var selected: TypefieldPalette { .resolve(UserDefaults.standard.string(forKey: "typefield.palette") ?? "amber") }
-    static var indiaYellow: Color { Color(nsColor: selected.accent(dark: true)) }
+    static var selected: TypefieldPalette { .resolve(UserDefaults.standard.string(forKey: "typefield.palette") ?? "neutral") }
+    static var indiaYellow: Color { ink }
+    static var nativeAccent: NSColor {
+        selected.accent(dark: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+    }
     static var ink: Color {
         let palette = selected
         return Color(nsColor: NSColor(name: nil) { appearance in
             palette.accent(dark: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
         })
     }
+    static func workspaceColor(dark: Bool) -> NSColor {
+        TypefieldPalette.color(dark ? TypefieldPalette.neutral.night : TypefieldPalette.neutral.paper)
+    }
     static var canvas: Color {
-        let palette = selected
-        return Color(nsColor: NSColor(name: nil) { appearance in
-            TypefieldPalette.color(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? palette.night : palette.paper)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            workspaceColor(dark: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
         })
     }
 }
@@ -54,7 +59,7 @@ struct ShelfCardSurface: ViewModifier {
         content.padding(20)
             .background(scheme == .dark ? Color.white.opacity(hovered ? 0.055 : 0.025) : Color.white.opacity(0.8), in: shape)
             .clipShape(shape)
-            .overlay(shape.strokeBorder(selected ? ShelfPalette.indiaYellow : Color.primary.opacity(contrast == .increased ? 0.45 : hovered ? 0.17 : 0.07), lineWidth: selected ? 1.5 : 1))
+            .overlay(shape.strokeBorder(selected ? ShelfPalette.ink : hovered ? ShelfPalette.ink.opacity(contrast == .increased ? 0.5 : 0.25) : Color.primary.opacity(contrast == .increased ? 0.45 : 0.07), lineWidth: selected ? 1.5 : 1))
             .shadow(color: .black.opacity(scheme == .dark ? 0.07 : 0.025), radius: 5, y: 2)
             .onHover { hovered = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
@@ -155,7 +160,7 @@ struct SidebarSection<Content: View>: View {
             HStack(spacing: 8) {
             Button { expanded.toggle() } label: {
                 HStack {
-                    Text(title).font(.system(size: 10, weight: .semibold)).tracking(0.8)
+                    Text(title).font(.caption.weight(.semibold))
                     Spacer()
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold))
                 }.foregroundStyle(.secondary).contentShape(Rectangle())

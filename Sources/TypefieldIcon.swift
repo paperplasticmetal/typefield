@@ -26,8 +26,7 @@ enum TypefieldIcon {
         cache.countLimit = 96
         return cache
     }()
-    /// Conventional type outlines, with explicit separation instead of an H-like ligature.
-    /// Paths stay vector-backed at every Dock size; no raster generation artifacts.
+    /// Draw an editorial serif monogram directly from type outlines at each Dock size.
     static func image(palette: TypefieldPalette, dark: Bool, size: Int = 512) -> NSImage {
         let key = "\(palette.rawValue)-\(dark)-\(size)" as NSString
         if let cached = cache.object(forKey: key) { return cached }
@@ -43,9 +42,9 @@ enum TypefieldIcon {
         context.addPath(tile)
         context.setFillColor(TypefieldPalette.color(dark ? palette.night : palette.paper).cgColor)
         context.fillPath()
-        // This is native outline rendering, not a font binary bundled or redistributed.
-        let font = CTFontCreateWithName("HelveticaNeue-Bold" as CFString, 700, nil)
-        var chars: [UniChar] = [116, 102]
+        // Bodoni 72 is supplied by macOS; no font binary is bundled with Typefield.
+        let font = CTFontCreateWithName("BodoniSvtyTwoITCTT-Bold" as CFString, 700, nil)
+        var chars: [UniChar] = [84, 102]
         var glyphs: [CGGlyph] = [0, 0]
         CTFontGetGlyphsForCharacters(font, &chars, &glyphs, 2)
         let outlines = glyphs.compactMap { CTFontCreatePathForGlyph(font, $0, nil) }
@@ -55,10 +54,10 @@ enum TypefieldIcon {
             let bounds = path.boundingBoxOfPath
             let transform = CGAffineTransform(translationX: x - bounds.minX, y: 0)
             combined.addPath(path, transform: transform)
-            x += bounds.width + (size <= 32 ? 96 : 64)
+            x += bounds.width + (size <= 32 ? 100 : 72)
         }
         let bounds = combined.boundingBoxOfPath
-        let scale = min((size <= 32 ? 630 : 590) / bounds.width, 560 / bounds.height)
+        let scale = min((size <= 32 ? 740 : 700) / bounds.width, 600 / bounds.height)
         context.translateBy(x: 512 - bounds.midX * scale, y: 510 - bounds.midY * scale)
         context.scaleBy(x: scale, y: scale)
         context.addPath(combined)

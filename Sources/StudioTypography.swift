@@ -152,7 +152,7 @@ extension TypeBoardEditor {
                 Button { showFontPicker = true } label: {
                     HStack(spacing: 6) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("FONT FAMILY").font(.system(size: 10, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
+                            Text("Font family").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             Text(selectedFace?.originalFamily ?? style.fontName).font(.system(size: 13, weight: .medium)).lineLimit(1)
                         }
                         Spacer(minLength: 0)
