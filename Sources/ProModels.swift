@@ -253,6 +253,8 @@ extension NSColor {
     }
     var rgbHex: String {
         let c = usingColorSpace(.sRGB) ?? self
-        return String(format: "%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+        let channels = [c.redComponent, c.greenComponent, c.blueComponent]
+            .map { min(255, max(0, Int(($0 * 255).rounded()))) }
+        return String(format: "%02X%02X%02X", channels[0], channels[1], channels[2])
     }
 }

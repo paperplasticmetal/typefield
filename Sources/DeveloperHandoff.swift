@@ -18,16 +18,17 @@ enum DeveloperHandoff {
         for (b, board) in boards.enumerated() {
             for (c, canvas) in board.directions.enumerated() {
                 let prefix = "b\(b + 1)-c\(c + 1)"
+                let plan = CanvasPlan(direction: canvas)
                 func append(_ label: String, _ key: String, _ style: TypeStyle) {
                     result.append(Entry(key: prefix + "-" + key, board: board.name, canvas: board.canvasName(canvas), label: label, style: style))
                 }
                 if canvas.canvas != .imported {
-                    for role in TypeRole.allCases { append(role.rawValue, String(describing: role), canvas.style(role)) }
+                    for role in TypeRole.allCases { append(role.rawValue, String(describing: role), canvas.style(role).scaledForCanvas(plan.contentScale)) }
                 }
                 // Include visible, individually edited text and template overrides, not just shared roles.
-                for (i, element) in CanvasPlan(direction: canvas).elements.enumerated() {
+                for (i, element) in plan.elements.enumerated() {
                     guard let style = element.style, element.text != nil else { continue }
-                    if let role = element.role, style == canvas.style(role), canvas.canvas != .imported { continue }
+                    if let role = element.role, style == canvas.style(role).scaledForCanvas(plan.contentScale), canvas.canvas != .imported { continue }
                     append(element.role?.rawValue ?? "Text layer \(i + 1)", "text-\(i + 1)", style)
                 }
             }
@@ -133,17 +134,17 @@ enum DeveloperHandoff {
         var specimenCSS = css
         for asset in assets { specimenCSS = specimenCSS.replacingOccurrences(of: "src: url('\(asset.file)')", with: "src: local(\(cssString(asset.name))), url('\(asset.file)')") }
         let missing = assets.filter { $0.face == nil }.map(\.name)
-        let tokenDocument: [String: Any] = ["format": "FontShelf typography handoff", "version": 1, "title": title, "units": "Saved values: CSS px / SwiftUI pt / Compose sp. Validate on target devices.", "fluidDefaults": ["minimumViewportPx": 320, "maximumViewportPx": 1200, "rootFontSizePx": 16, "minimumSizeFactor": 0.75, "minimumFluidSizePx": 20], "typography": tokens, "sourceBoards": try JSONSerialization.jsonObject(with: JSONEncoder().encode(boards))]
+        let tokenDocument: [String: Any] = ["format": "FontShelf typography handoff", "version": 1, "title": title, "units": "Rendered typography values: CSS px / SwiftUI pt / Compose sp. Validate on target devices.", "fluidDefaults": ["minimumViewportPx": 320, "maximumViewportPx": 1200, "rootFontSizePx": 16, "minimumSizeFactor": 0.75, "minimumFluidSizePx": 20], "typography": tokens, "sourceBoards": try JSONSerialization.jsonObject(with: JSONEncoder().encode(boards))]
         let preloads = assets.prefix(2).map { "<link rel=\"preload\" href=\"\($0.file)\" as=\"font\" type=\"font/woff2\" crossorigin>" }.joined(separator: "\n")
         let specimen = """
         <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>\(html(title)) — Typefield handoff</title>
         <style>\(specimenCSS)
         *{box-sizing:border-box}body{margin:0;background:#f5f3ed;color:#242421;font:16px/1.55 system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:48px 24px}h1{font-size:36px;line-height:1.2;overflow-wrap:anywhere}.intro{max-width:760px}.notice{padding:18px 22px;background:#eee3b8;border-radius:12px}article{background:#fffefa;padding:28px;margin:24px 0;border:1px solid #dedbd3;border-radius:12px;overflow-wrap:anywhere}.meta{font:13px/1.6 system-ui,sans-serif;color:#66645f}.sample{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:22px;margin-bottom:22px}code{font:12px/1.6 ui-monospace,monospace}a{color:inherit}@media print{body{background:white}main{padding:0}article{break-inside:avoid;border-radius:0}.notice{background:white;border:1px solid #aaa}}
-        </style></head><body><main><p class="meta">Typefield · Developer handoff</p><h1>\(html(title))</h1><div class="intro"><p>\(boards.count) typeboard(s) · \(boards.reduce(0) { $0 + $1.directions.count }) canvases · \(items.count) text styles.</p><p class="notice">Font files are not bundled. This preview uses locally installed fonts when available, then licensed WOFF2 assets at the paths in fonts.json, then fallback fonts. It is a typography specimen, not a pixel-perfect canvas export.</p><p>Sizes above 20 px use a suggested fluid scale between 320 and 1200 px viewports. Saved maximum sizes and exact source data are in tokens.json. Print this page to save a PDF.</p><p>\(missing.isEmpty ? "All requested fonts were available on the exporting Mac." : "Unavailable on exporting Mac: " + html(missing.joined(separator: ", ")))</p></div>\(cards)</main></body></html>
+        </style></head><body><main><p class="meta">Typefield · Developer handoff</p><h1>\(html(title))</h1><div class="intro"><p>\(boards.count) typeboard(s) · \(boards.reduce(0) { $0 + $1.directions.count }) canvases · \(items.count) text styles.</p><p class="notice">Font files are not bundled. This preview uses locally installed fonts when available, then licensed WOFF2 assets at the paths in fonts.json, then fallback fonts. It is a typography specimen, not a pixel-perfect canvas export.</p><p>Sizes above 20 px use a suggested fluid scale between 320 and 1200 px viewports. Rendered maximum sizes and exact source data are in tokens.json. Print this page to save a PDF.</p><p>\(missing.isEmpty ? "All requested fonts were available on the exporting Mac." : "Unavailable on exporting Mac: " + html(missing.joined(separator: ", ")))</p></div>\(cards)</main></body></html>
         """
         let swift = """
         // Generated by Typefield. Register licensed fonts in your app before use.
-        // Fixed saved sizes; Dynamic Type and paragraph layout need app-specific integration.
+        // Fixed rendered sizes; Dynamic Type and paragraph layout need app-specific integration.
         import SwiftUI
         import CoreText
 
@@ -201,7 +202,7 @@ enum DeveloperHandoff {
         4. Use tokens.json as the source of truth. It has a versioned Typefield schema using $type/$value conventions, NOT a promise of DTCG or token-plugin compatibility. sourceBoards preserves all saved canvas text, colors, settings and layout data.
 
         ## Fluid scale and web behavior
-        Above 20 px, generated sizes interpolate from max(20 px, 75% of saved size) at 320 px to the saved size at 1200 px. Smaller roles remain fixed rem values. These are suggested defaults, not designer-authored breakpoints. Calculations assume a 16 px root; browser font-size preferences remain respected through rem. Line height and tracking scale proportionally. Native definitions use the saved fixed sizes, not the fluid formula.
+        Above 20 px, generated sizes interpolate from max(20 px, 75% of rendered size) at 320 px to the rendered size at 1200 px. Smaller roles remain fixed rem values. These are suggested defaults, not designer-authored breakpoints. Calculations assume a 16 px root; browser font-size preferences remain respected through rem. Line height and tracking scale proportionally. Native definitions use the rendered fixed sizes, not the fluid formula.
 
         font-display: swap is the default recommendation for immediately readable text. Consider optional for nonessential typography when layout stability matters more than showing the custom face; review fallback metrics and layout shifts in a real browser. preload.html contains at most two example candidates, not a loading prescription: keep ONLY fonts used above the fold on the actual page, after adding licensed files. Cross-origin preloads need matching CORS headers. No preloads are embedded in the specimen.
 
@@ -210,7 +211,7 @@ enum DeveloperHandoff {
         v4: use tailwind.theme.css (imports Tailwind and typography.css) through your normal Tailwind build. @theme inline exports matching font-* and text-* utilities. Do not load unprocessed @theme CSS directly in the browser.
 
         ## SwiftUI
-        Add Typography.swift and register licensed fonts in the app bundle (UIAppFonts on iOS, app-specific registration on macOS). `TypefieldTypography.styles["\(items[0].key)"]` supplies a Core Text-backed SwiftUI Font, axis/feature settings, saved lineHeight and tracking. Apply .font(style.font).tracking(style.tracking). Dynamic Type scaling, alignment, case/decorations and exact paragraph layout must be wired by your app using tokens.json. SwiftUI .lineSpacing is additional spacing, NOT an exact line-height substitute. Core Text may substitute an unavailable font; validate registration.
+        Add Typography.swift and register licensed fonts in the app bundle (UIAppFonts on iOS, app-specific registration on macOS). `TypefieldTypography.styles["\(items[0].key)"]` supplies a Core Text-backed SwiftUI Font, axis/feature settings, rendered lineHeight and tracking. Apply .font(style.font).tracking(style.tracking). Dynamic Type scaling, alignment, case/decorations and exact paragraph layout must be wired by your app using tokens.json. SwiftUI .lineSpacing is additional spacing, NOT an exact line-height substitute. Core Text may substitute an unavailable font; validate registration.
 
         ## Android Compose
         Add your package declaration to Typography.kt. Call TypefieldTypography.styles with a resolver mapping each PostScript name AND axis map to a licensed FontFamily. For variable fonts on API 26+, construct Font(resId = yourFontResource, variationSettings = FontVariation.Settings(*axes.map { FontVariation.Setting(it.key, it.value) }.toTypedArray())) inside a FontFamily, with @OptIn(ExperimentalTextApi::class) where required by your Compose version. Provide static alternatives below API 26. Weight, italic, line height, tracking, alignment and OpenType features are in TextStyle; text case, decoration, indent, word and paragraph spacing are retained in tokens.json for application-specific rendering. px → sp/pt uses the same numeric value as a starting point, not guaranteed physical or shaping equivalence. Android output must be integrated and compiled against your project's Compose version.

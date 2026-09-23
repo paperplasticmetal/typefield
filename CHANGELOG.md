@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.46.0 — 2026-09-23
+
+- Let Spaces canvases be arranged freely by dragging their borders, with selection outlines aligned to the actual canvas edge.
+- Added proportional corner resizing for the complete canvas, preserving text layout while scaling type and artwork together in previews and exports.
+- Added direct hex entry beside the color wells for typography, canvas and imported shape colors, with validation before saving.
+
 ## 0.45.3 — 2026-09-23
 
 - Audited current app copy, README, migration instructions, and integration notes for the Typefield name. Historical release records and versioned compatibility identifiers retain the former name where needed to describe or open existing data.

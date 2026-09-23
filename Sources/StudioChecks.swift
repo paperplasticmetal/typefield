@@ -13,6 +13,9 @@ enum StudioChecks {
         canvas.styles[TypeRole.body.rawValue]!.lineHeight = 29
         board.directions = [canvas, canvas.copy(name: "Canvas 2")]
         board.directions[1].styles[TypeRole.caption.rawValue]!.fontName = "Missing Font </style><script>bad</script>"
+        let unscaledEntryCount = DeveloperHandoff.entries([board]).count
+        board.directions[1].canvasScale = 2
+        try verify(DeveloperHandoff.entries([board]).count == unscaledEntryCount, "Canvas scaling must not duplicate baseline and rendered handoff styles")
         let folder = try DeveloperHandoff.write(title: board.name, boards: [board], catalog: catalog, parent: parent)
         func read(_ name: String) throws -> String { try String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8) }
         let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
@@ -27,10 +30,14 @@ enum StudioChecks {
         try verify(styles.count >= 14 && Set(styles.keys).count == styles.count, "All canvases, unique styles")
         let value = styles["b1-c1-display"]!["$value"] as! [String: Any]
         try verify((value["axes"] as? [String: Double])?["wght"] == 520, "Variable axes preserved")
+        let scaledDisplay = styles["b1-c2-display"]!["$value"] as! [String: Any]
+        let scaledBody = styles["b1-c2-body"]!["$value"] as! [String: Any]
+        try verify((scaledDisplay["fontSize"] as? Double) == 128 && abs((scaledDisplay["lineHeight"] as? Double ?? 0) - 172.8) < 0.001 && (scaledBody["fontSize"] as? Double) == 36 && (scaledBody["lineHeight"] as? Double) == 58, "Scaled canvas typography must use rendered font sizes and line heights")
         let html = try read("index.html"), css = try read("typography.css")
         try verify(!html.contains("<script>") && html.contains("&lt;script&gt;") && html.contains("café 🖋"), "HTML must escape sample text and retain Unicode")
         try verify(html.contains("Typefield · Developer handoff") && !html.contains("FONTSHELF / DEVELOPER HANDOFF"), "Visible handoff branding must use Typefield")
         try verify(css.contains("clamp(") && css.contains("\"wght\" 520") && css.contains("font-display: swap") && css.contains("font-feature-settings: \"kern\" 0, \"liga\" 0") && css.contains("font-kerning: none"), "CSS carries axes, features, kerning and loading policy")
+        try verify(css.contains("--b1-c2-display-size: \(DeveloperHandoff.fluid(128))") && html.contains("128 px") && swiftStarter.contains("\"b1-c2-display\": Style(postScriptName:") && swiftStarter.contains("size: 128") && composeStarter.contains("fontSize = 128.sp"), "CSS, specimen and native starters must agree with scaled canvas typography")
         try verify(DeveloperHandoff.fluid(16) == "1rem" && DeveloperHandoff.number(0) == "0" && DeveloperHandoff.number(100) == "100", "Fluid scale and numeric precision")
         let manifest = try read("fonts.json")
         try verify(!manifest.contains("/Users/") && manifest.contains("\"availableOnExportingMac\" : false"), "Missing fonts marked without leaking local paths")
@@ -83,6 +90,13 @@ enum StudioChecks {
         print("PASS: live recursive watcher, original-file preview, temporary activation visible to a separate process, deactivation and removal reconciliation.")
     }
     static func run(catalog: [Family]) throws {
+        try verify(StudioHexColor.parse(" #4f6b91 \n") == "4F6B91", "Pasted hex colors must normalize before saving")
+        try verify(StudioHexColor.parse("#aBc") == "AABBCC", "Short CSS hex colors must expand to saved RGB values")
+        try verify(StudioHexColor.parse("4F6B91") == "4F6B91", "Hex colors without # must be accepted")
+        try verify(NSColor(hex: "4F6B91").rgbHex == "4F6B91", "Color picker channels must round-trip to the same hex value")
+        for invalid in ["", "#", "#12", "#1234", "#11223344", "#12FG56", "##123456"] {
+            try verify(StudioHexColor.parse(invalid) == nil, "Invalid hex drafts must not be saved: " + invalid)
+        }
         try verify(abs((SpacesProofing.contrastRatio(ink: "000000", paper: "FFFFFF") ?? 0) - 21) < 0.001)
         try verify(abs((SpacesProofing.contrastRatio(ink: "777777", paper: "FFFFFF") ?? 0) - 4.478) < 0.01)
         try verify(SpacesProofing.contrastRatio(ink: "bad", paper: "FFFFFF") == nil)
@@ -415,6 +429,62 @@ enum StudioChecks {
         for (alignment, expected) in zip(StudioCanvasAlignment.allCases, expectedOrigins) {
             try verify(alignment.origin(for: alignRect, in: alignSize) == expected, "Canvas alignment moved the wrong axis")
         }
+        let scaledAlignment = StudioCanvasAlignment.right.savedOrigin(
+            for: CGRect(x: 40, y: 60, width: 200, height: 80),
+            in: CGSize(width: 800, height: 600), scale: 2)
+        try verify(scaledAlignment == CGPoint(x: 300, y: 30), "Alignment must save unscaled coordinates after proportional canvas resize")
+        var arrangementA = TypeDirection(name: "Canvas 1")
+        var arrangementB = TypeDirection(name: "Canvas 2")
+        let automaticPositions = CanvasBoardLayout.positions(for: [arrangementA, arrangementB])
+        let soloOffset = CanvasBoardLayout.visibleOffset(for: [arrangementB], positions: automaticPositions)
+        try verify((automaticPositions[arrangementB.id]?.x ?? 0) > (automaticPositions[arrangementA.id]?.x ?? 0)
+                   && abs((automaticPositions[arrangementB.id]?.x ?? 0) + soloOffset.width - 24) < 0.001,
+                   "Solo Canvas 2 must begin at the board margin and fit without Canvas 1's hidden gap")
+        let movedBoardPosition = CanvasBoardLayout.moved(from: automaticPositions[arrangementB.id]!, by: CGSize(width: 80, height: 50), zoom: 0.5)
+        arrangementB.boardPosition = movedBoardPosition
+        try verify(movedBoardPosition.x == automaticPositions[arrangementB.id]!.x + 160 && movedBoardPosition.y == automaticPositions[arrangementB.id]!.y + 100,
+                   "Canvas movement must convert screen drag distance into board coordinates")
+        let persistedArrangement = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(arrangementB))
+        try verify(persistedArrangement.boardPosition == movedBoardPosition && persistedArrangement.isValid, "Free canvas placement must persist")
+        let legacyArrangementJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(arrangementA)) as! [String: Any]
+        let legacyArrangement = try JSONDecoder().decode(TypeDirection.self, from: JSONSerialization.data(withJSONObject: legacyArrangementJSON))
+        try verify(legacyArrangement.boardPosition == nil && legacyArrangement.canvasScale == nil && legacyArrangement.isValid,
+                   "Older canvases without placement or scale must retain their original layout")
+        let startPosition = CanvasBoardPosition(x: 1000, y: 1000)
+        let baseArtboard = CanvasPlan(direction: arrangementA).artboardSize
+        let topLeftResize = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
+                                                       corner: .topLeft, by: CGSize(width: -baseArtboard.width / 2, height: -baseArtboard.height / 2), zoom: 1)
+        try verify(abs(topLeftResize.scale - 1.5) < 0.001
+                   && abs(topLeftResize.position.x - (1000 - baseArtboard.width / 2)) < 0.001
+                   && abs(topLeftResize.position.y - (1000 - baseArtboard.height / 2)) < 0.001,
+                   "Corner resize must keep the opposite corner anchored while scaling proportionally")
+        let bottomRightResize = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
+                                                           corner: .bottomRight, by: CGSize(width: 100_000, height: 100_000), zoom: 1)
+        try verify(bottomRightResize.scale == arrangementA.maximumCanvasScale && bottomRightResize.position == startPosition,
+                   "Corner resize must respect export-safe scale bounds")
+        arrangementA.canvasScale = 2
+        let scaledPlan = CanvasPlan(direction: arrangementA), basePlan = CanvasPlan(direction: TypeDirection(name: "Canvas 1"))
+        let scaledText = scaledPlan.elements.first { $0.role == .display && $0.text != nil }!
+        let baseText = basePlan.elements.first { $0.role == .display && $0.text != nil }!
+        let scaledShape = scaledPlan.elements.first { $0.color != nil && $0.radius > 0 }!, baseShape = basePlan.elements.first { $0.color != nil && $0.radius > 0 }!
+        try verify(scaledPlan.artboardSize.width == basePlan.artboardSize.width * 2
+                   && scaledPlan.artboardSize.height == basePlan.artboardSize.height * 2
+                   && scaledText.rect.width == baseText.rect.width * 2
+                   && scaledText.style!.size == baseText.style!.size * 2
+                   && scaledShape.rect.width == baseShape.rect.width * 2
+                   && scaledShape.radius == baseShape.radius * 2,
+                   "Canvas resize must scale the artboard, text, and artwork together")
+        try verify(CanvasProofing.renderedLines(for: scaledText)?.count == CanvasProofing.renderedLines(for: baseText)?.count,
+                   "Proportional resize must preserve text wrapping")
+        var scaledExportBoard = TypeBoard(); scaledExportBoard.directions = [arrangementA]
+        let scaledFigmaFrame = (FigmaLayoutExporter.payload(board: scaledExportBoard)["frames"] as! [[String: Any]])[0]
+        let scaledFigmaText = (scaledFigmaFrame["elements"] as! [[String: Any]]).first { $0["role"] as? String == TypeRole.display.rawValue }!
+        try verify((scaledFigmaFrame["width"] as? CGFloat) == scaledPlan.artboardSize.width
+                   && (scaledFigmaText["fontSize"] as? Double) == scaledText.style!.size,
+                   "Figma export must use the rendered artboard and typography dimensions")
+        let scaledAdobeScript = try AdobeTypeSystemExporter.script(directions: [arrangementA], title: "Scaled", target: .illustrator)
+        try verify(scaledAdobeScript.contains("\"fontSize\":128") && scaledAdobeScript.contains("\"width\":1920"),
+                   "Adobe export must use proportionally scaled text and canvas dimensions")
         var positioned = TypeDirection()
         let normalPlan = CanvasPlan(direction: positioned)
         let selectedFrame = normalPlan.elements.first { $0.role == .display && $0.textID != nil }!

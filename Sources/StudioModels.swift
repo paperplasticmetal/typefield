@@ -78,6 +78,17 @@ struct TypeStyle: Codable, Equatable {
         }
         return result
     }
+    func scaledForCanvas(_ factor: Double) -> TypeStyle {
+        guard factor != 1 else { return self }
+        var scaled = self
+        scaled.size *= factor
+        scaled.tracking *= factor
+        scaled.lineHeight = lineHeight.map { $0 * factor }
+        scaled.paragraphSpacing = paragraphSpacing.map { $0 * factor }
+        scaled.wordSpacing = wordSpacing.map { $0 * factor }
+        scaled.indent = indent.map { $0 * factor }
+        return scaled
+    }
 }
 
 enum SpacesProofing {
@@ -103,12 +114,22 @@ enum TextAlignmentOption: String, Codable, CaseIterable { case left = "Left", ce
 }
 enum TextCaseOption: String, Codable, CaseIterable { case original = "Original", upper = "UPPERCASE", lower = "lowercase" }
 struct LayoutBlock: Codable, Identifiable, Equatable { var id = UUID().uuidString; var role: TypeRole }
+struct CanvasBoardPosition: Codable, Equatable {
+    var x: Double
+    var y: Double
+    var isValid: Bool { x.isFinite && y.isFinite && (0...100_000).contains(x) && (0...100_000).contains(y) }
+}
 struct TypeDirection: Codable, Identifiable, Equatable {
     static let maximumTextBytes = 200_000
     var id = UUID()
     var name = "Direction A"
     var canvas: CanvasKind = .website
     var width: Double = 960
+    /// Optional to preserve layouts saved before canvases could be arranged freely.
+    var boardPosition: CanvasBoardPosition?
+    /// Uniformly scales the finished canvas, including its typography and artwork.
+    /// The format width above remains the editable, unscaled template width.
+    var canvasScale: Double?
     var ink = "222222"
     var paper = "F5F2EA"
     var accent = "C59937"
@@ -127,6 +148,16 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var textPositions: [String: CanvasTextPosition]?
     var canvasDisplayName: String { canvas == .imported ? (importedSource ?? .figma).displayName : canvas.rawValue }
     var canvasUnitLabel: String { canvas == .imported ? (importedSource ?? .figma).unitLabel : "px" }
+    var maximumCanvasScale: Double {
+        let widest = max(width, importedLayout?.layers.map { $0.x + $0.width }.max() ?? width)
+        let tallest = max(importedLayout?.height ?? 1, importedLayout?.layers.map { $0.y + $0.height }.max() ?? 1)
+        let fontSize = (canvas == .imported ? importedLayout?.layers.compactMap { $0.style?.size }.max() : styles.values.map(\.size).max()) ?? 1
+        let exportSafe = min(4, 10_000 / max(1, widest), 10_000 / max(1, tallest), 1_000 / max(1, fontSize))
+        // A legacy imported artboard may already exceed an exporter's bounds.
+        // Keep its existing 1× size reachable and allow gradual reduction.
+        return canvas == .imported ? max(1, exportSafe) : exportSafe
+    }
+    var minimumCanvasScale: Double { min(0.2, max(0.02, maximumCanvasScale / 4)) }
     static func seededFontIndex(for role: TypeRole, count: Int) -> Int {
         guard count > 1 else { return 0 }
         switch role {
@@ -159,7 +190,7 @@ struct TypeDirection: Codable, Identifiable, Equatable {
         importedLayout?.layers[index].style = style
         return true
     }
-    func copy(name: String? = nil) -> TypeDirection { var value = self; value.id = UUID(); value.name = name ?? self.name + " copy"; return value }
+    func copy(name: String? = nil) -> TypeDirection { var value = self; value.id = UUID(); value.name = name ?? self.name + " copy"; value.boardPosition = nil; return value }
     mutating func reorder(_ source: String, target: String, before: Bool, visible: [String]) {
         guard source != target, visible.contains(source), visible.contains(target) else { return }
         var order = visible.filter { $0 != source }

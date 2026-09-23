@@ -1,6 +1,67 @@
 import SwiftUI
 import AppKit
 
+/// Color values remain six-digit RGB in saved typeboards and imported layers.
+/// Accept the common short form when someone pastes a CSS color into the inspector.
+enum StudioHexColor {
+    static func parse(_ input: String) -> String? {
+        var value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("#") { value.removeFirst() }
+        guard value.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (65...70).contains($0.value) || (97...102).contains($0.value) }) else { return nil }
+        if value.count == 3 { value = value.map { String(repeating: String($0), count: 2) }.joined() }
+        guard value.count == 6 else { return nil }
+        return value.uppercased()
+    }
+}
+
+/// The swatch and direct hex entry edit the same saved RGB value. A partial or
+/// invalid draft stays local until it can be committed as a complete color.
+struct StudioHexColorPicker: View {
+    let title: String
+    @Binding var hex: String
+    @State private var draft = ""
+    @State private var invalid = false
+    @FocusState private var focused: Bool
+
+    private func refreshDraft() {
+        draft = "#" + hex.uppercased()
+        invalid = false
+    }
+    private func commit() {
+        guard let normalized = StudioHexColor.parse(draft) else { invalid = true; return }
+        invalid = false
+        draft = "#" + normalized
+        if hex != normalized { hex = normalized }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 7) {
+                Text(title).font(.caption)
+                Spacer(minLength: 4)
+                ColorPicker(title, selection: Binding(
+                    get: { Color(nsColor: NSColor(hex: hex)) },
+                    set: { hex = NSColor($0).rgbHex }
+                ), supportsOpacity: false)
+                    .labelsHidden().fixedSize()
+                TextField("#RRGGBB", text: $draft)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 90)
+                    .focused($focused)
+                    .onSubmit { commit() }
+                    .onExitCommand { refreshDraft(); focused = false }
+                    .onChange(of: draft) { _ in invalid = false }
+                    .accessibilityLabel(title + " hex color")
+                    .help("Enter a hex color such as #4F6B91")
+            }
+            if invalid { Text("Enter #RRGGBB or #RGB").font(.caption2).foregroundStyle(.red) }
+        }
+        .onAppear { refreshDraft() }
+        .onChange(of: hex) { _ in refreshDraft() }
+        .onChange(of: focused) { if !$0 { commit() } }
+    }
+}
+
 struct CanvasTextPosition: Codable, Equatable {
     var x: Double
     var y: Double
@@ -32,6 +93,10 @@ enum StudioCanvasAlignment: String, CaseIterable, Identifiable {
         case .bottom: result.y = canvas.height - rect.height
         }
         return result
+    }
+    func savedOrigin(for renderedRect: CGRect, in renderedCanvas: CGSize, scale: Double) -> CGPoint {
+        let point = origin(for: renderedRect, in: renderedCanvas)
+        return CGPoint(x: point.x / scale, y: point.y / scale)
     }
 }
 
@@ -282,10 +347,13 @@ extension TypeBoardEditor {
     func alignElement(_ alignment: StudioCanvasAlignment) {
         guard let element = alignmentElement else { return }
         let plan = CanvasPlanCache.plan(for: direction)
-        // Imported canvases may expand their preview around off-canvas objects;
-        // alignment always targets the saved artboard, not that expanded preview.
-        let size = direction.canvas == .imported ? CGSize(width: direction.width, height: direction.importedLayout?.height ?? plan.size.height) : plan.size
-        let origin = alignment.origin(for: element.rect, in: size)
+        // The plan is uniformly scaled for presentation and export. Saved layer
+        // positions remain in the original canvas coordinate system.
+        let scale = direction.canvasScale ?? 1
+        let size = direction.canvas == .imported
+            ? CGSize(width: direction.width * scale, height: (direction.importedLayout?.height ?? plan.size.height / scale) * scale)
+            : plan.size
+        let origin = alignment.savedOrigin(for: element.rect, in: size, scale: scale)
         if direction.canvas == .imported {
             guard let index = direction.importedLayout?.layers.firstIndex(where: { $0.id == element.sectionID }) else { return }
             board.directions[directionIndex].importedLayout?.layers[index].x = origin.x
