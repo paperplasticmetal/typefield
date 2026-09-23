@@ -246,7 +246,7 @@ struct FontLabRemixSheet: View {
                 switch generated {
                 case let .success(result):
                     if onCreate(result) { dismiss() }
-                    else { failure = "FontShelf could not add the generated project. The existing Font Lab data was not replaced." }
+                    else { failure = "Typefield could not add the generated project. The existing Font Lab data was not replaced." }
                 case let .failure(error):
                     failure = error.localizedDescription
                 }

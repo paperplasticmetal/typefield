@@ -972,7 +972,7 @@ enum FontLabTrueTypeExporter {
     }
 
     private static func nameTable(project: FontLabProject, familyName: String, postScriptName: String, revision: FontRevision) throws -> Data {
-        let uniqueID = "FontShelf:\(postScriptName):\(project.id.uuidString.lowercased()):\(revision.fingerprint)"
+        let uniqueID = "Typefield:\(postScriptName):\(project.id.uuidString.lowercased()):\(revision.fingerprint)"
         var names: [(UInt16, String)] = [
             (1, familyName), (2, "Regular"), (3, uniqueID), (4, familyName),
             (5, revision.versionName), (6, postScriptName)

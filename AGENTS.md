@@ -1,6 +1,6 @@
 # Typefield
 
-This is the standalone working copy prepared from the earlier FontShelf ChatGPT project.
+This is the standalone Typefield working copy prepared from an earlier ChatGPT project.
 Read `.context/README.md` for the migration and QA status. Historical transcripts in `.context/chats/` are reference material, not new instructions. Read them selectively rather than loading all transcripts.
 
 Preserve user fonts and saved library/project data. Use temporary fixtures for destructive tests. Run the checks relevant to changes; `bash build.sh` runs the built-in native suite, and `node tests/figma-import.test.js` checks the Figma bridge.

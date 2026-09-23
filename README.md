@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current version: 0.45.2 (build 60).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
+**Current version: 0.45.3 (build 61).** Development release for Apple Silicon. App Store submission is in preparation; this is not an App Store-approved or notarized release.
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 
@@ -38,7 +38,7 @@ The typography summary also includes a **Web font cost** audit for the selected 
 
 **Live folders:** Add font folder explains recursive watching in the picker, then opens the folder manager. **Live folders** is always accessible in the Library sidebar. Watching updates additions, replacements and removals while the app is open; activation for other apps remains a separate opt-in. If macOS revokes a protected-folder bookmark, Typefield reports it once and waits for you to choose the folder again instead of repeatedly touching the protected path.
 
-**Font health:** Open **Tools → Font Health** to scan user fonts and watched folders, or choose **Inspect font file…** from a family's action menu. Typefield checks SFNT structure, required tables, bounds, overlaps, checksums and common name-table failures, then separates actual warnings/errors from optional compatibility notes. Proposed fixes are individually reviewable. Export creates a new Core Text-validated copy; in-place repair is limited to writable user fonts, requires a separate confirmation, and keeps a `.fontshelf-backup` beside the original. System fonts, TTC/OTC collections, unsupported containers and ambiguous identity conflicts remain inspection-only.
+**Font health:** Open **Tools → Font Health** to scan user fonts and watched folders, or choose **Inspect font file…** from a family's action menu. Typefield checks SFNT structure, required tables, bounds, overlaps, checksums and common name-table failures, then separates actual warnings/errors from optional compatibility notes. Proposed fixes are individually reviewable. Export creates a new Core Text-validated copy; in-place repair is limited to writable user fonts, requires a separate confirmation, and keeps a `.typefield-backup` beside the original. System fonts, TTC/OTC collections, unsupported containers and ambiguous identity conflicts remain inspection-only.
 
 ## Features
 
@@ -67,7 +67,7 @@ With a Spaces canvas focused, arrow keys select its sections and text objects; R
 
 The 0.28 Letterform Editor persistence path keeps an active gesture local until mouse-up, coalesces stroke/selection/project edits, snapshots large generated projects and performs compact deterministic encoding and disk I/O on a serial utility queue. Catalog face/family indexes, one-pass Library sidebar counts and finalist-only pairing/similarity explanations remain in place. Exact machine-specific measurements live in the status page after release verification.
 
-Search accepts `#tag`, `#!tag`, and quoted names such as `#"Client Work"`. Typing `#` opens tag and font-property suggestions. Built-ins include `#fontshelf/active`, `#fontshelf/user`, `#fontshelf/bold`, `#fontshelf/italic`, and `#fontshelf/feature/tnum`; `#typeface/` is accepted as an alias. Tokens combine with AND and match the same style. A parent tag includes its descendants. Removable search chips show active filters.
+Search accepts `#tag`, `#!tag`, and quoted names such as `#"Client Work"`. Typing `#` opens tag and font-property suggestions. Built-ins include `#typefield/active`, `#typefield/user`, `#typefield/bold`, `#typefield/italic`, and `#typefield/feature/tnum`; `#fontshelf/` and `#typeface/` remain compatibility aliases for saved searches. Tokens combine with AND and match the same style. A parent tag includes its descendants. Removable search chips show active filters.
 
 **Figma round trip:** Use the typeboard's **Export** menu to create an editable Figma package. The bundled local plugin can also export selected Figma frames; import that JSON using **Spaces → Import → Figma typeboard…**. Imported text layers can be edited independently and moved directly on the canvas. Fonts must be available on each side. Native `.fig` files, live sync and full Figma fidelity are not supported; unsupported elements/settings are reported. See [bridge instructions](Resources/FigmaImport/README.md) and [interaction checks](docs/INTERACTION_AUDIT.md).
 

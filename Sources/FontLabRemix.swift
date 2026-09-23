@@ -89,7 +89,7 @@ struct FontLabRemixRecipe: Codable, Equatable, Hashable {
 /// Saved with a remixed project so the source faces and derivative-font warning do
 /// not disappear after the transient creation sheet closes.
 struct FontLabRemixProvenance: Codable, Equatable {
-    static let generator = "FontShelf local outline remix"
+    static let generator = "Typefield local outline remix"
     static let licenseNotice = "Source font binaries were not copied or bundled. Review both source font licenses before exporting, installing, or distributing this derivative font."
 
     var sourcePostScriptNames: [String]

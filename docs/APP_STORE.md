@@ -21,8 +21,8 @@ The production bundle identifier must replace `local.typefield.app`. Never commi
 
 ## Migration from a local build
 
-1. Quit the earlier FontShelf app. Keep its Application Support folder and font files in place.
-2. On a fresh Store build, open **Library → Tools → Migrate earlier FontShelf data…**. In the file picker, use Command–Shift–G to choose `~/Library/Application Support/FontShelf` if the Library folder is hidden. Review the confirmation and choose **Copy and Quit**.
+1. Quit the local Typefield app or an earlier FontShelf build. Keep its Application Support folder and font files in place.
+2. On a fresh Store build, open **Library → Tools → Migrate FontShelf data to Typefield…**. In the file picker, use Command–Shift–G to choose `~/Library/Application Support/FontShelf` if the Library folder is hidden. Review the confirmation and choose **Copy and Quit**.
 3. Reopen the Store app. Library collections, tags, Spaces, Letterform Editor projects and downloaded Google Fonts should be present. The old support folder remains untouched. In **Live folders**, choose each external font folder again to grant the Store app its own security scope. Rechoose external WOFF2 folders in the web-font audit. Saved paths remain listed until access is renewed.
 4. Optionally choose **Tools → Import earlier preferences…** and select `~/Library/Preferences/local.fontshelf.app.plist`. This imports only known preferences that are not already set in the Store app. Reopen to refresh all screens.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.45.3 — 2026-09-23
+
+- Audited current app copy, README, migration instructions, and integration notes for the Typefield name. Historical release records and versioned compatibility identifiers retain the former name where needed to describe or open existing data.
+- New Library search suggestions use `#typefield/` while saved `#fontshelf/` and `#typeface/` searches still work. New Spaces exports, font-repair backups, remixed-project provenance, and generated font identifiers use Typefield names.
+- Clarified migration prompts so Typefield is identified as the destination and the earlier FontShelf folder and preferences file remain identifiable as sources.
+
 ## 0.45.2 — 2026-09-23
 
 - Replaced Ink Sketch's pooled shapes with Bodoni-family italic lettering and restrained ink-pressure detail, keeping the serif monogram recognizable.

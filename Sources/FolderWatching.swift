@@ -184,9 +184,10 @@ struct FontSearchQuery {
     }
     func matches(_ face: Face, tags: Set<String>) -> Bool { tokens.allSatisfy { $0.excluded != Self.match($0.name, face: face, tags: tags) } }
     static func match(_ name: String, face: Face, tags: Set<String>) -> Bool {
-        let name = name.replacingOccurrences(of: "typeface/", with: "fontshelf/", options: [.anchored, .caseInsensitive])
-        guard name.lowercased().hasPrefix("fontshelf/") else { return tags.contains { $0.caseInsensitiveCompare(name) == .orderedSame || $0.lowercased().hasPrefix(name.lowercased() + "/") } }
-        let key = String(name.dropFirst(10)).lowercased(), facts = face.facts
+        guard let prefix = ["typefield/", "fontshelf/", "typeface/"].first(where: { name.lowercased().hasPrefix($0) }) else {
+            return tags.contains { $0.caseInsensitiveCompare(name) == .orderedSame || $0.lowercased().hasPrefix(name.lowercased() + "/") }
+        }
+        let key = String(name.dropFirst(prefix.count)).lowercased(), facts = face.facts
         switch key {
         case "user": return face.url.map { !$0.path.hasPrefix("/System/") && !$0.path.hasPrefix("/Library/Apple/") } ?? false
         case "active": return face.url.map { let scope = CTFontManagerGetScopeForURL($0 as CFURL); return scope == .session || scope == .persistent || $0.path.hasPrefix("/System/") || $0.path.hasPrefix("/Library/Fonts/") } ?? true
@@ -266,7 +267,7 @@ struct LibrarySearchView: View {
         if !FontSearchQuery(text).tokens.contains(where: { $0.raw == token }) { text += (text.isEmpty ? "" : " ") + token }
         library.search = text + " "; suggestions = false
     }
-    func preset(_ label: String, _ key: String) -> some View { Button(label) { add("fontshelf/" + key) }.buttonStyle(.bordered).foregroundStyle(.primary).help(FontSearchQuery.token("fontshelf/" + key, excluded: exclude)) }
+    func preset(_ label: String, _ key: String) -> some View { Button(label) { add("typefield/" + key) }.buttonStyle(.bordered).foregroundStyle(.primary).help(FontSearchQuery.token("typefield/" + key, excluded: exclude)) }
     var panel: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("Search filters").font(.headline); Spacer(); Button("Done") { suggestions = false } }
@@ -294,7 +295,7 @@ struct LibrarySearchView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 125))], alignment: .leading) {
                         ForEach(["lnum", "onum", "tnum", "pnum", "liga", "dlig", "smcp", "frac", "sups", "kern"], id: \.self) { tag in preset(OpenType.label(tag), "feature/" + tag) }
                     }
-                    Menu("Language / script") { ForEach(WritingSystem.allCases, id: \.self) { script in Button(script.rawValue) { add("fontshelf/script/" + script.rawValue) } } }
+                    Menu("Language / script") { ForEach(WritingSystem.allCases, id: \.self) { script in Button(script.rawValue) { add("typefield/script/" + script.rawValue) } } }
                     Text("Filters combine with AND. #! excludes a tag or property. Parent tags include their children.").font(.caption).foregroundStyle(.secondary)
                 }
             }

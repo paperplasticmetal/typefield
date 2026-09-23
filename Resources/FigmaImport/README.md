@@ -8,7 +8,7 @@ This package contains an editable layout JSON file and a local Figma development
 
 Keep the original fonts available to Figma. Missing fonts fall back to Inter with an explicit warning. Typefield does not redistribute font files or licenses.
 
-Original typography settings are kept as shared layer metadata under the `fontshelf` namespace, readable by other plugins in that Figma document. No private notes, font files or local paths are stored in this metadata.
+Original typography settings are kept as shared layer metadata under the historical `fontshelf` namespace so existing Figma handoffs remain compatible. Other plugins in that Figma document can read this metadata. No private notes, font files or local paths are stored in it.
 
 Positions, sizes, colors, alignment, line height, tracking, paragraph spacing, indents and basic decorations are transferred. Variable axes are applied when supported by your Figma version. Word spacing, custom kerning and OpenType overrides are retained as layer metadata but require manual review. Figma's text shaping and wrapping may differ from macOS. This is a local handoff, not live sync or a published Figma integration.
 

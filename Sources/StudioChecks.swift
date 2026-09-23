@@ -429,16 +429,18 @@ enum StudioChecks {
         try verify(CanvasPlanCache.plan(for: positioned).elements.first { $0.textID == frameID }!.rect == selectedFrame.rect, "Reset text position did not restore template layout")
         positioned.textPositions = [frameID: CanvasTextPosition(x: .infinity, y: 0)]
         try verify(!positioned.isValid, "Nonfinite canvas coordinates were accepted")
-        let parsedSearch = FontSearchQuery("Helvetica #\"Client Work/Approved\" #!fontshelf/italic")
+        let parsedSearch = FontSearchQuery("Helvetica #\"Client Work/Approved\" #!typefield/italic")
         try verify(parsedSearch.text == "Helvetica" && parsedSearch.tokens.count == 2)
         let regular = catalog.flatMap(\.faces).first { $0.name == "Helvetica" }!
         try verify(parsedSearch.matches(regular, tags: ["Client Work/Approved"]))
         try verify(!FontSearchQuery("#!\"Client Work\"").matches(regular, tags: ["Client Work/Approved"]))
-        try verify(FontSearchQuery("#fontshelf/regular #typeface/upright").matches(regular, tags: []))
-        try verify(!FontSearchQuery("#fontshelf/italic #fontshelf/upright").matches(regular, tags: []))
+        try verify(FontSearchQuery("#typefield/regular #typefield/upright").matches(regular, tags: []), "Current Typefield property filters must match")
+        try verify(!FontSearchQuery("#typefield/italic #!typefield/regular").matches(regular, tags: []), "Current Typefield includes and exclusions must be applied")
+        try verify(FontSearchQuery("#fontshelf/regular #typeface/upright").matches(regular, tags: []), "Saved FontShelf and typeface aliases must still match")
+        try verify(!FontSearchQuery("#fontshelf/italic #typeface/upright").matches(regular, tags: []), "Saved aliases must still exclude unmatched faces")
         try verify(FontSearchQuery.token("Client Work", excluded: true) == "#!\"Client Work\"")
         try verify(FontSearchQuery.removing("#tag", from: "#tag #tagged") == "#tagged", "Removing a token changed a different token")
-        if let emoji = catalog.flatMap(\.faces).first(where: { $0.name == "AppleColorEmoji" }) { try verify(emoji.facts.color && FontSearchQuery("#fontshelf/color").matches(emoji, tags: [])) }
+        if let emoji = catalog.flatMap(\.faces).first(where: { $0.name == "AppleColorEmoji" }) { try verify(emoji.facts.color && FontSearchQuery("#typefield/color").matches(emoji, tags: []) && FontSearchQuery("#fontshelf/color").matches(emoji, tags: [])) }
         var query = TagQuery(included: ["Client", "Editorial"], excluded: ["Client/Archived"], matchAll: true)
         try verify(query.matches(["Client/Current", "Editorial"]))
         try verify(!query.matches(["Client/Archived", "Editorial"]))

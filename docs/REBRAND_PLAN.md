@@ -6,6 +6,8 @@ The app name is **Typefield**. The former FontShelf name overlaps with an existi
 
 Version 0.37.0 updates the visible name, icon, local development bundle ID, Xcode target, first-run tour, About/privacy sheet, Figma plugin presentation, export names, developer handoff names, documentation, and both GitHub repository names. Existing Library, Spaces and Letterform Editor files remain under `~/Library/Application Support/FontShelf` for a safe in-place local upgrade. Versioned Figma/Adobe JSON markers and Figma metadata namespace remain `fontshelf` so older handoffs still round-trip. The new local bundle reads known, unset preferences from `local.fontshelf.app.plist` on first launch when available. Store builds continue to offer explicit migration into their sandbox container.
 
+Version 0.45.3 completes a follow-up naming pass: new search suggestions, Spaces export filenames, repair backups, remix provenance, and generated font identifiers use Typefield. Existing search tokens with `#fontshelf/` and `#typeface/` still match. Historical release notes and the persistence and interchange identifiers above retain their original spelling so saved data remains usable.
+
 ## Before public distribution
 
 1. Search Typefield in the target countries' trademark registers, App Store listings, domains, and design products, then have a qualified reviewer assess it. The name choice and initial web search do not establish clearance.

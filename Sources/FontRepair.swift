@@ -446,7 +446,7 @@ struct FontHealthView: View {
     }
     func repairOriginal(_ item: FontInspection) {
         let alert = NSAlert(); alert.messageText = "Repair the original font file?"
-        alert.informativeText = "Typefield will first create a .fontshelf-backup beside the original, then atomically replace the original with the reviewed repair. This can affect every app using this font."
+        alert.informativeText = "Typefield will first create a .typefield-backup beside the original, then atomically replace the original with the reviewed repair. This can affect every app using this font."
         alert.alertStyle = .warning; alert.addButton(withTitle: "Repair & Keep Backup"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
@@ -461,7 +461,7 @@ struct FontHealthView: View {
         } catch { status = "Original was not repaired: " + error.localizedDescription }
     }
     func uniqueBackupURL(_ url: URL) -> URL {
-        let folder = url.deletingLastPathComponent(), base = url.lastPathComponent + ".fontshelf-backup"
+        let folder = url.deletingLastPathComponent(), base = url.lastPathComponent + ".typefield-backup"
         var candidate = folder.appendingPathComponent(base), number = 2
         while FileManager.default.fileExists(atPath: candidate.path) { candidate = folder.appendingPathComponent(base + "-\(number)"); number += 1 }
         return candidate

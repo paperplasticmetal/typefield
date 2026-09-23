@@ -317,7 +317,7 @@ struct StudioView: View {
         }
     }
     func exportSpace(_ space: DesignSpace) {
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "\(space.name).fontshelf.json"
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "\(space.name).typefield.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try JSONEncoder().encode(space).write(to: url, options: .atomic) } catch { store.error = error.localizedDescription }
     }

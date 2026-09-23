@@ -320,11 +320,11 @@ enum StoreMigration {
     static func chooseSource(for library: Library) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.message = "Quit the earlier FontShelf app, then choose its FontShelf folder in Library/Application Support. Its files will be copied into this empty Store container."
+        panel.message = "To set up Typefield with earlier data, quit FontShelf and choose its FontShelf folder in Library/Application Support. The files will be copied into this empty Store container."
         guard panel.runModal() == .OK, let source = panel.url else { return }
         let alert = NSAlert()
-        alert.messageText = "Copy your FontShelf data?"
-        alert.informativeText = "Library, Spaces, Letterform Editor and downloaded Google fonts will be copied. The originals stay in place. External font and WOFF2 folders need access granted again. Files outside this folder are not moved."
+        alert.messageText = "Copy earlier data into Typefield?"
+        alert.informativeText = "FontShelf Library, Spaces, Letterform Editor and downloaded Google fonts will be copied. The originals stay in place. External font and WOFF2 folders need access granted again. Files outside this folder are not moved."
         alert.addButton(withTitle: "Copy and Quit")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -361,7 +361,7 @@ enum StoreMigration {
     static func choosePreferences(for library: Library) {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.canChooseFiles = true
         panel.allowedContentTypes = [.propertyList]
-        panel.message = "Choose local.fontshelf.app.plist in Library/Preferences. Existing Store preferences are kept."
+        panel.message = "To import earlier preferences into Typefield, choose local.fontshelf.app.plist in Library/Preferences. Existing Store preferences are kept."
         guard panel.runModal() == .OK, let file = panel.url else { return }
         do { library.message = "Imported \(try importPreferences(from: file)) earlier preferences. Reopen Typefield to see them everywhere." }
         catch { library.message = "Preferences were not imported: " + error.localizedDescription }

@@ -945,7 +945,7 @@ struct ContentView: View {
                 Button("Export library backup…") { LibraryBackupTools.export(library) }
                 Button("Import library backup…") { LibraryBackupTools.restore(library) }
                 Button("Save current search…") { saveSearch() }
-                Button("Migrate earlier FontShelf data…") { StoreMigration.chooseSource(for: library) }
+                Button("Migrate FontShelf data to Typefield…") { StoreMigration.chooseSource(for: library) }
                 Button("Import earlier preferences…") { StoreMigration.choosePreferences(for: library) }
                 Button("Show automatic backups") { NSWorkspace.shared.open(library.saveURL.deletingLastPathComponent().appendingPathComponent("Backups")) }
                 Button("Select visible families") { library.selectedFamilies.formUnion(library.filtered.map(\.name)) }
