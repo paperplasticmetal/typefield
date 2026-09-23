@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.46.1 — 2026-09-23
+
+- Fixed the Appearance pane remaining light after choosing System while macOS is dark. Settings and the main window now inherit the same live AppKit appearance.
+
 ## 0.46.0 — 2026-09-23
 
 - Let Spaces canvases be arranged freely by dragging their borders, with selection outlines aligned to the actual canvas edge.

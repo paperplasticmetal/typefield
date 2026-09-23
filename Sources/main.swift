@@ -630,7 +630,6 @@ struct ContentView: View {
         .accentColor(ShelfPalette.ink)
         .onChange(of: systemScheme) { _ in TypefieldIcon.apply() }
         .frame(minWidth: 980, minHeight: 620)
-        .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
             switch event.object as? String {
             case "collection": library.workspace = .library; showCollection = true

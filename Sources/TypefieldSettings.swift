@@ -91,7 +91,8 @@ struct TypefieldSettingsView: View {
         }
         .background(ShelfPalette.canvas)
         .tint(ShelfPalette.ink).accentColor(ShelfPalette.ink)
-        .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
+        // The hosting window inherits AppKit's appearance. A separate SwiftUI
+        // preference can linger after switching from Light back to System.
         .onChange(of: appearance) { value in
             NSApp.appearance = value == "System" ? nil : NSAppearance(named: value == "Dark" ? .darkAqua : .aqua)
             TypefieldIcon.apply()
