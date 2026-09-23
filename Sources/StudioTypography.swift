@@ -87,7 +87,7 @@ struct StudioTypeNumber: View {
         draft = formatted(value)
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer(minLength: 0)
@@ -106,7 +106,7 @@ struct StudioTypeNumber: View {
                 }
             }
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 13)).frame(width: 19).foregroundStyle(.secondary).accessibilityHidden(true)
+                Image(systemName: icon).font(.system(size: 12)).frame(width: 16).foregroundStyle(.secondary).accessibilityHidden(true)
                 TextField(title, text: $draft).textFieldStyle(.plain).focused($focused)
                     .monospacedDigit().onSubmit { commit() }
                     .onExitCommand { draft = formatted(value); focused = false }
@@ -116,8 +116,9 @@ struct StudioTypeNumber: View {
                     }
                     .accessibilityLabel(title + " in " + unit)
                 Text(unit).font(.caption2).foregroundStyle(.secondary)
-                Stepper(title, onIncrement: { increment(step) }, onDecrement: { increment(-step) }).labelsHidden().fixedSize()
-            }.padding(.horizontal, 7).frame(height: 32)
+                Stepper(title, onIncrement: { increment(step) }, onDecrement: { increment(-step) })
+                    .labelsHidden().controlSize(.small).fixedSize()
+            }.padding(.horizontal, 7).frame(height: 28)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Color.accentColor : Color.primary.opacity(0.16), lineWidth: 1))
         }
@@ -134,7 +135,7 @@ struct StudioInspectorIcon: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 16)).frame(maxWidth: .infinity).frame(height: 32)
+            Image(systemName: icon).font(.system(size: 14)).frame(maxWidth: .infinity).frame(height: 30)
                 .foregroundStyle(selected ? Color.accentColor : Color.primary)
                 .background(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
@@ -146,8 +147,8 @@ extension TypeBoardEditor {
     var selectedFace: Face? { library.allFaces.first { $0.name == style.fontName } }
     var familyFaces: [Face] { guard let family = selectedFace?.originalFamily else { return [] }; return library.allFaces.filter { $0.originalFamily == family } }
     var characterPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 Button { showFontPicker = true } label: {
                     HStack(spacing: 6) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -157,7 +158,7 @@ extension TypeBoardEditor {
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.down").font(.caption2).foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 10).frame(height: 44)
+                    .padding(.horizontal, 9).frame(height: 36)
                     .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
                     .contentShape(Rectangle())
                 }
@@ -165,21 +166,21 @@ extension TypeBoardEditor {
                 .frame(maxWidth: .infinity)
                 .help("Choose font family")
                 .accessibilityLabel("Font family: " + (selectedFace?.originalFamily ?? style.fontName))
-                .popover(isPresented: $showFontPicker) { fontPicker }
+                .popover(isPresented: $editorSession.showFontPicker) { fontPicker }
                 ShelfPopup(
                     title: "Font style",
                     selection: Binding(get: { style.fontName }, set: { chooseFont($0) }),
                     options: familyFaces.isEmpty ? [("Unavailable", style.fontName)] : familyFaces.map { ($0.style, $0.name) }
                 )
-                .frame(width: 96, height: 26)
-                .padding(.horizontal, 8).frame(height: 44)
+                .frame(width: 96, height: 24)
+                .padding(.horizontal, 7).frame(height: 36)
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.08)))
                 .disabled(familyFaces.count < 2)
                 .help("Choose a style from the current font family")
                 .accessibilityLabel("Font style: " + (selectedFace?.style ?? style.fontName))
             }
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
                 StudioTypeNumber(title: "Size", icon: "textformat.size", value: styleBinding(\.size), range: direction.canvas == .imported ? 1...1000 : 8...160, unit: direction.canvasUnitLabel, presets: [8,10,12,14,16,18,24,30,36,48,60,72,96,120,144])
                 StudioTypeNumber(
                     title: style.lineHeight == nil ? "Leading · auto" : "Leading",
@@ -192,16 +193,16 @@ extension TypeBoardEditor {
                 )
             }
             DisclosureGroup("Character details") {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Text(style.lineHeight == nil ? "Auto leading · \(Int(style.leading * 100))%" : "Custom leading")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    HStack(alignment: .top, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .top, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Kerning").font(.caption).foregroundStyle(.secondary)
                             Picker("Kerning", selection: kerningBinding) { Text("Metrics").tag(true); Text("Off").tag(false) }
-                                .labelsHidden().frame(maxWidth: .infinity, alignment: .leading).frame(height: 32)
+                                .labelsHidden().frame(maxWidth: .infinity, alignment: .leading).frame(height: 28)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                         StudioTypeNumber(title: "Tracking", icon: "arrow.left.and.right.text.vertical", value: styleBinding(\.tracking), range: direction.canvas == .imported ? -100...100 : -3...12, unit: direction.canvasUnitLabel, step: 0.1, presets: [-3,-2,-1,0,0.5,1,2,3,4,6,8,12])
                     }
@@ -213,14 +214,14 @@ extension TypeBoardEditor {
                         StudioInspectorIcon(title: "Underline", icon: "underline", selected: style.underline == true) { var s = style; s.underline = !(s.underline ?? false); setStyle(s); save("Toggle Underline") }
                         StudioInspectorIcon(title: "Strikethrough", icon: "strikethrough", selected: style.strikethrough == true) { var s = style; s.strikethrough = !(s.strikethrough ?? false); setStyle(s); save("Toggle Strikethrough") }
                     }
-                }.padding(.top, 8)
+                }.padding(.top, 6)
             }
             .font(.system(size: 12, weight: .medium))
         }
     }
     var paragraphPanel: some View {
         DisclosureGroup("Paragraph") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Text alignment").font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 5) {
                     ForEach(TextAlignmentOption.allCases, id: \.self) { alignment in
@@ -229,7 +230,7 @@ extension TypeBoardEditor {
                         }
                     }
                 }
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
                     StudioTypeNumber(title: "Space after", icon: "paragraphsign", value: optionalStyleBinding(\.paragraphSpacing, default: 0), range: 0...200, unit: direction.canvasUnitLabel, presets: [0,4,8,12,16,24,32])
                     StudioTypeNumber(title: "First indent", icon: "increase.indent", value: optionalStyleBinding(\.indent, default: 0), range: 0...200, unit: direction.canvasUnitLabel, presets: [0,8,16,24,32,48])
                 }
@@ -237,11 +238,11 @@ extension TypeBoardEditor {
                 Divider()
                 Text("Lists").font(.caption).foregroundStyle(.secondary)
                 listPanel
-            }.padding(.top, 8)
+            }.padding(.top, 6)
         }.font(.system(size: 12, weight: .medium))
     }
     var listPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 ForEach(StudioListFormat.allCases) { format in
                     StudioInspectorIcon(title: format.rawValue, icon: format.icon) {
@@ -264,7 +265,7 @@ extension TypeBoardEditor {
         return selectedText
     }
     var canvasAlignmentPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Align to canvas").font(.system(size: 12, weight: .semibold))
             HStack(spacing: 4) {
                 ForEach(StudioCanvasAlignment.allCases) { alignment in

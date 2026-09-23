@@ -1,9 +1,10 @@
 # Build and verification status
 
-Current source: **0.37.1, build 49**. Updated 2026-09-22.
+Current source: **0.38.0, build 50**. Updated 2026-09-22.
 
 | Check | Status |
 | --- | --- |
+| Spaces inspector layouts, 0.38.0 | Compact typography fields and header spacing; docked full inspector, 52-point slim rail with on-demand controls, fully hidden inspector, movable resizable native floating panel, and canvas focus that hides workspace chrome. Disposable native UI verified switching layouts, editing canvas name/type role/size from the floating panel with immediate panel and saved-data updates, slim popover access, canvas focus, and sidebar-shortcut recovery. Existing user projects were not used for testing. The optimized native suite passed (21,260 layouts across 4,252 styles), the Figma bridge passed, and the canonical 0.38.0 (50) install passed strict ad-hoc signature and installed/tested executable hash checks. |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
 | Layout checks | 21,260 cases across 778 families and 4,252 styles in the final installed build |

@@ -8,6 +8,41 @@ enum WorkspaceSidebarPreference {
     static func collapsed(in defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: key) }
     static func setCollapsed(_ value: Bool, in defaults: UserDefaults = .standard) { defaults.set(value, forKey: key) }
 }
+enum StudioInspectorMode: String, CaseIterable {
+    case expanded, slim, hidden, floating
+
+    var title: String {
+        switch self {
+        case .expanded: return "Full inspector"
+        case .slim: return "Slim tools"
+        case .hidden: return "Hide inspector"
+        case .floating: return "Float inspector"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .expanded: return "sidebar.left"
+        case .slim: return "rectangle.righthalf.inset.filled"
+        case .hidden: return "rectangle"
+        case .floating: return "macwindow.on.rectangle"
+        }
+    }
+}
+enum StudioInspectorPreference {
+    static let key = "spacesInspectorMode"
+    static func mode(in defaults: UserDefaults = .standard) -> StudioInspectorMode {
+        let saved = StudioInspectorMode(rawValue: defaults.string(forKey: key) ?? "") ?? .expanded
+        return saved == .floating ? .expanded : saved
+    }
+    static func setMode(_ mode: StudioInspectorMode, in defaults: UserDefaults = .standard) {
+        if mode != .floating { defaults.set(mode.rawValue, forKey: key) }
+    }
+}
+enum StudioInspectorLayout {
+    static let slimWidth = 52.0
+    static let fullIdealWidth = 310.0
+    static let fullMinimumWidth = 280.0
+}
 enum WorkspaceSidebarLayout {
     static let width = 232.0
     static let outerPadding = 12.0
@@ -132,6 +167,7 @@ struct StudioView: View {
     @ObservedObject var library: Library
     @ObservedObject var store: StudioStore
     @Binding var sidebarCollapsed: Bool
+    @Binding var focusCanvas: Bool
     @State private var spaceID: UUID?
     @State private var boardID: UUID?
     @State private var newName = ""
@@ -142,11 +178,11 @@ struct StudioView: View {
     var board: TypeBoard? { space?.boards.first { $0.id == boardID } ?? space?.boards.first }
     var body: some View {
         HStack(spacing: 0) {
-        if !sidebarCollapsed { WorkspaceSidebarShell { navigation }.transition(.move(edge: .leading).combined(with: .opacity)) }
+        if !sidebarCollapsed && !focusCanvas { WorkspaceSidebarShell { navigation }.transition(.move(edge: .leading).combined(with: .opacity)) }
         VStack(spacing: 0) {
             if !store.error.isEmpty { Text(store.error).foregroundStyle(.orange).textSelection(.enabled).padding(.horizontal, 20) }
             if let space {
-                HStack(spacing: 12) {
+                if !focusCanvas { HStack(spacing: 12) {
                     ShelfEditableName(name: space.displayName, onRename: { setSpaceName(space.id, $0) })
                         .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
                         .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
@@ -176,10 +212,10 @@ struct StudioView: View {
                 .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
                 .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
                 .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
-                .fixedSize(horizontal: false, vertical: true)
-                Divider()
+                .fixedSize(horizontal: false, vertical: true) }
+                if !focusCanvas { Divider() }
                 if let board {
-                    TypeBoardEditor(library: library, savedBoard: board, projectName: space.displayName, projectBoards: space.boards, onSave: { store.update(space: space.id, board: $0, action: $1) }, onDelete: {
+                    TypeBoardEditor(library: library, savedBoard: board, projectName: space.displayName, projectBoards: space.boards, focusCanvas: $focusCanvas, sidebarCollapsed: $sidebarCollapsed, onSave: { store.update(space: space.id, board: $0, action: $1) }, onDelete: {
                         store.removeBoard(space: space.id, id: board.id); boardID = store.focusedBoard
                     }).id(board.id)
                 } else {
@@ -393,29 +429,26 @@ extension TypeDirection {
 
 struct TypeBoardEditor: View {
     @ObservedObject var library: Library
-    @State var board: TypeBoard
+    @StateObject var editorSession: StudioEditorSession
     let savedBoard: TypeBoard
     let projectName: String
     let projectBoards: [TypeBoard]
+    @Binding var focusCanvas: Bool
+    @Binding var sidebarCollapsed: Bool
     let onSave: (TypeBoard, String) -> Void
     let onDelete: () -> Void
-    init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], onSave: @escaping (TypeBoard, String) -> Void, onDelete: @escaping () -> Void) {
-        self.library = library; self.savedBoard = savedBoard; self.projectName = projectName; self.projectBoards = projectBoards; self.onSave = onSave; self.onDelete = onDelete
-        _board = State(initialValue: savedBoard)
+    init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], focusCanvas: Binding<Bool>, sidebarCollapsed: Binding<Bool>, onSave: @escaping (TypeBoard, String) -> Void, onDelete: @escaping () -> Void) {
+        self.library = library; self.savedBoard = savedBoard; self.projectName = projectName; self.projectBoards = projectBoards; self._focusCanvas = focusCanvas; self._sidebarCollapsed = sidebarCollapsed; self.onSave = onSave; self.onDelete = onDelete
+        _editorSession = StateObject(wrappedValue: StudioEditorSession(board: savedBoard))
+        _inspectorMode = State(initialValue: StudioInspectorPreference.mode())
         let initialCanvasIDs = Set([savedBoard.selectedDirection ?? savedBoard.directions.first?.id].compactMap { $0 })
         _shownCanvasIDs = State(initialValue: initialCanvasIDs)
         _summaryCanvasIDs = State(initialValue: Set(savedBoard.directions.map(\.id)))
     }
-    @State var role = TypeRole.display
-    @State private var fontSearch = ""
-    @State private var fontCollection = "All fonts"
-    @State private var fontCategory = "All categories"
     @State private var shownCanvasIDs: Set<UUID>
-    @State var selectedTextID: String?
     @State private var zoom = 0.0
     @State private var showDelete = false
     @State private var status = ""
-    @State var showFontPicker = false
     @State private var showPairingSuggestions = false
     @State private var pairingTargetRole = TypeRole.body
     @State private var showFontSummary = false
@@ -423,11 +456,24 @@ struct TypeBoardEditor: View {
     @State private var fontSummaryDetail = TypographySummaryDetail.roles
     @State private var summaryCanvasIDs: Set<UUID>
     @State private var draggedSection: String?
-    @State var selectedSection: String?
     @State private var abID: UUID?
-    @State private var inspectorTab = "Typography"
+    @State private var inspectorMode: StudioInspectorMode
+    @State private var showRailInspector = false
+    @State private var floatingInspector = StudioFloatingInspector()
+    @State private var sidebarBeforeFocus = false
+    @State private var inspectorBeforeFocus = StudioInspectorMode.expanded
+    @State private var inspectorBeforeFloating = StudioInspectorMode.expanded
     @State private var discoveryNonce: UInt64 = 0
     @FocusState private var fontSearchFocused: Bool
+    var board: TypeBoard { get { editorSession.board } nonmutating set { editorSession.board = newValue } }
+    var role: TypeRole { get { editorSession.role } nonmutating set { editorSession.role = newValue } }
+    var fontSearch: String { get { editorSession.fontSearch } nonmutating set { editorSession.fontSearch = newValue } }
+    var fontCollection: String { get { editorSession.fontCollection } nonmutating set { editorSession.fontCollection = newValue } }
+    var fontCategory: String { get { editorSession.fontCategory } nonmutating set { editorSession.fontCategory = newValue } }
+    var selectedTextID: String? { get { editorSession.selectedTextID } nonmutating set { editorSession.selectedTextID = newValue } }
+    var selectedSection: String? { get { editorSession.selectedSection } nonmutating set { editorSession.selectedSection = newValue } }
+    var inspectorTab: String { get { editorSession.inspectorTab } nonmutating set { editorSession.inspectorTab = newValue } }
+    var showFontPicker: Bool { get { editorSession.showFontPicker } nonmutating set { editorSession.showFontPicker = newValue } }
     var directionIndex: Int { board.directions.firstIndex { $0.id == board.selectedDirection } ?? 0 }
     var direction: TypeDirection { board.directions[directionIndex] }
     var visibleDirections: [TypeDirection] { board.directions.filter { shownCanvasIDs.contains($0.id) || $0.id == direction.id } }
@@ -456,14 +502,15 @@ struct TypeBoardEditor: View {
     func styleBinding<T>(_ key: WritableKeyPath<TypeStyle, T>) -> Binding<T> { Binding(get: { style[keyPath: key] }, set: { var updated = style; updated[keyPath: key] = $0; setStyle(updated); save(key == \TypeStyle.size ? "Change Size" : key == \TypeStyle.tracking ? "Change Letter Spacing" : key == \TypeStyle.text ? "Change Sample Text" : "Edit Typography") }) }
     var body: some View {
         VStack(spacing: 0) {
+            if !focusCanvas {
             HStack(spacing: 12) {
                 ShelfEditableName(name: board.name, onRename: { name in board.name = name; save("Rename Typeboard"); return true }).font(.headline).frame(minWidth: 110)
                 Spacer(minLength: 12)
-                Menu("Add canvas") {
+                Menu {
                     Button("Blank canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; summaryCanvasIDs.insert(canvas.id); save("Add Canvas") }
                     Button("Duplicate current canvas") { let copy = direction.copy(name: board.nextCanvasName); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save("Duplicate Canvas") }
-                }.fixedSize()
-                Button { openFontSummary() } label: { Label("\(visibleFontCount) fonts used", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
+                } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add a canvas").accessibilityLabel("Add a canvas")
+                Button { openFontSummary() } label: { Label("\(visibleFontCount) fonts", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
                 Menu("Export") {
                     Button("Typography summary…") { openFontSummary() }
                     Button("Web-font performance…") { showWebFontAudit = true }
@@ -475,6 +522,7 @@ struct TypeBoardEditor: View {
                     Button("Preview PDF…") { exportPDF() }
                     Button("Editable Figma layout…") { exportFigma() }
                 }.fixedSize()
+                inspectorLayoutMenu
                 Menu {
                     Button("Save checkpoint") { var values = board.checkpoints ?? []; values.append(DirectionCheckpoint(direction: direction)); board.checkpoints = Array(values.suffix(50)); save(); status = "Checkpoint saved" }
                     Menu("Restore checkpoint as canvas") {
@@ -490,7 +538,7 @@ struct TypeBoardEditor: View {
                     Button("Delete canvas", role: .destructive) { let id = direction.id; board.directions.removeAll { $0.id == id }; shownCanvasIDs.remove(id); summaryCanvasIDs.remove(id); board.selectedDirection = board.directions.first?.id; if let selected = board.selectedDirection { shownCanvasIDs.insert(selected); if summaryCanvasIDs.isEmpty { summaryCanvasIDs.insert(selected) } }; abID = nil; save("Delete Canvas") }.disabled(board.directions.count < 2)
                     Button("Delete typeboard…", role: .destructive) { showDelete = true }
                 } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Typeboard actions").accessibilityLabel("Typeboard actions")
-            }.padding(14).fixedSize(horizontal: false, vertical: true)
+            }.padding(.horizontal, 12).padding(.vertical, 8).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) { ForEach(board.directions) { canvas in
@@ -500,7 +548,7 @@ struct TypeBoardEditor: View {
                                 Text(board.canvasName(canvas)).lineLimit(1)
                             }
                             .font(.subheadline)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .padding(.horizontal, 9).padding(.vertical, 5)
                             .background(canvas.id == direction.id ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
                         }.buttonStyle(.plain).help("Edit and show " + board.canvasName(canvas))
                     } }
@@ -544,24 +592,18 @@ struct TypeBoardEditor: View {
                 } label: { Label(abID != nil ? "A/B" : "\(visibleDirections.count) shown", systemImage: "eye") }.fixedSize().help("Choose exactly which canvases are visible")
                 if abID != nil { Button { swapAB() } label: { Image(systemName: "arrow.left.arrow.right") }.keyboardShortcut("\\", modifiers: [.command]).help("Swap A/B (⌘\\)").accessibilityLabel("Swap A/B") }
                 Menu(zoom == 0 ? "Fit" : "\(Int(zoom * 100))%") { Button("Fit all visible canvases") { zoom = 0 }; ForEach([0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0], id: \.self) { value in Button("\(Int(value * 100))%") { zoom = value } } }.fixedSize().help("Pinch to zoom, or hold ⌘ while scrolling with a mouse. Scroll normally to pan.")
-            }.padding(.horizontal, 14).padding(.bottom, 10).fixedSize(horizontal: false, vertical: true)
+            }.padding(.horizontal, 12).padding(.bottom, 7).fixedSize(horizontal: false, vertical: true)
             Divider()
-            HSplitView {
-                inspector.frame(minWidth: 300, idealWidth: 330, maxWidth: 500).background(StudioSplitPosition())
-                VStack(alignment: .leading, spacing: 0) {
-                    if library.loading { ProgressView(library.families.isEmpty ? "Loading font library…" : "Checking watched font folders…").controlSize(.small).padding(10) }
-                    else if !missingFonts.isEmpty { Label("Unavailable fonts: " + missingFonts.joined(separator: ", ") + ". Preview uses fallback.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(12) }
-                    GeometryReader { geometry in
-                    let visible = visibleDirections
-                    let scale = zoom == 0 ? min(1, max(0.1, (geometry.size.width - 48 - Double(visible.count - 1) * 24) / visible.reduce(0) { $0 + $1.width })) : zoom
-                    ScrollView([.horizontal, .vertical]) {
-                        HStack(alignment: .top, spacing: 24) {
-                            ForEach(visible) { item in canvas(item, scale: scale) }
-                        }.padding(24).frame(minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
-                    }.background(Color.black.opacity(0.09)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
-                    }
-                    HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(direction.width)) \(direction.canvasUnitLabel) · " + (zoom == 0 ? "Fit" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(10)
-                }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            if inspectorMode == .expanded && !focusCanvas {
+                HSplitView {
+                    inspector.frame(minWidth: StudioInspectorLayout.fullMinimumWidth, idealWidth: StudioInspectorLayout.fullIdealWidth, maxWidth: 500).background(StudioSplitPosition())
+                    canvasWorkspace
+                }
+            } else if inspectorMode == .slim && !focusCanvas {
+                HStack(spacing: 0) { slimInspector; Divider(); canvasWorkspace }
+            } else {
+                canvasWorkspace
             }
         }.alert("Delete this typeboard?", isPresented: $showDelete) { Button("Delete", role: .destructive, action: onDelete); Button("Cancel", role: .cancel) {} }
         .sheet(isPresented: $showWebFontAudit) { WebFontAuditView(board: board, library: library, initialCanvasIDs: summaryCanvasIDs) }
@@ -576,10 +618,140 @@ struct TypeBoardEditor: View {
         .onChange(of: role) { _ in library.studio.endUndoCoalescing() }
         .onChange(of: selectedSection) { _ in library.studio.endUndoCoalescing() }
         .onChange(of: selectedTextID) { _ in library.studio.endUndoCoalescing() }
+        .onChange(of: inspectorMode) { mode in
+            if mode == .floating {
+                let host = StudioFloatingInspectorHost(session: editorSession, library: library) { AnyView(floatingInspectorContent) }
+                floatingInspector.show(content: AnyView(host), title: "Typefield · Inspector", relativeTo: NSApp.mainWindow) {
+                    inspectorMode = inspectorBeforeFloating
+                }
+            } else { floatingInspector.close() }
+        }
         .onChange(of: direction.id) { id in shownCanvasIDs.insert(id); selectedSection = nil; selectedTextID = nil; draggedSection = nil; if let other = board.directions.first(where: { $0.id == abID }), other.canvas != direction.canvas || other.width != direction.width { abID = nil } }
         .onChange(of: direction.canvas) { _ in abID = nil; selectedSection = nil; selectedTextID = nil }
         .onChange(of: direction.width) { _ in abID = nil }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in if event.object as? String == "find" { inspectorTab = "Typography"; DispatchQueue.main.async { showFontPicker = true } } }
+        .onDisappear { floatingInspector.close(); if focusCanvas { sidebarCollapsed = sidebarBeforeFocus; focusCanvas = false } }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldCanvasFocus"))) { _ in
+            if focusCanvas { leaveCanvasFocus(); sidebarCollapsed = false }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in if event.object as? String == "find" { inspectorTab = "Typography"; if inspectorMode == .hidden { setInspectorMode(.expanded) }; DispatchQueue.main.async { showFontPicker = true } } }
+    }
+    var canvasWorkspace: some View {
+        VStack(alignment: .leading, spacing: 0) {
+                    if library.loading { ProgressView(library.families.isEmpty ? "Loading font library…" : "Checking watched font folders…").controlSize(.small).padding(10) }
+                    else if !missingFonts.isEmpty { Label("Unavailable fonts: " + missingFonts.joined(separator: ", ") + ". Preview uses fallback.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(12) }
+                    GeometryReader { geometry in
+                    let visible = visibleDirections
+                    let scale = zoom == 0 ? min(1, max(0.1, (geometry.size.width - 48 - Double(visible.count - 1) * 24) / visible.reduce(0) { $0 + $1.width })) : zoom
+                    ScrollView([.horizontal, .vertical]) {
+                        HStack(alignment: .top, spacing: 24) {
+                            ForEach(visible) { item in canvas(item, scale: scale) }
+                        }.padding(24).frame(minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
+                    }.background(Color.black.opacity(0.09)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
+                    }
+                    if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(direction.width)) \(direction.canvasUnitLabel) · " + (zoom == 0 ? "Fit" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
+        }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) { if focusCanvas { focusControls.padding(12) } }
+    }
+    var floatingInspectorContent: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("INSPECTOR").font(.caption2).fontWeight(.semibold).tracking(0.5).foregroundStyle(.secondary)
+                Spacer()
+                Button("Slim tools") { setInspectorMode(.slim) }.font(.caption).buttonStyle(.borderless)
+                Button { setInspectorMode(.expanded) } label: { Label("Dock", systemImage: "sidebar.left") }
+                    .font(.caption).buttonStyle(.borderless).help("Dock the full inspector beside the canvas")
+            }.padding(.horizontal, 12).padding(.vertical, 7)
+            Divider()
+            inspector
+        }
+    }
+    var inspectorLayoutMenu: some View {
+        Menu {
+            ForEach(StudioInspectorMode.allCases, id: \.self) { mode in
+                Button { setInspectorMode(mode) } label: {
+                    Label((inspectorMode == mode ? "✓ " : "") + mode.title, systemImage: mode.symbol)
+                }
+            }
+            Divider()
+            Button { enterCanvasFocus() } label: { Label("Focus canvas", systemImage: "arrow.up.left.and.arrow.down.right") }
+            Divider()
+            Button("Toggle inspector") { setInspectorMode(inspectorMode == .hidden ? .expanded : .hidden) }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+        } label: { Image(systemName: inspectorMode.symbol) }
+        .shelfIconMenu()
+        .help("Inspector layout: " + inspectorMode.title + ". Choose full, slim, hidden, floating, or canvas focus.")
+        .accessibilityLabel("Inspector layout: " + inspectorMode.title)
+        .accessibilityIdentifier("spaces-inspector-layout")
+    }
+    var slimInspector: some View {
+        VStack(spacing: 5) {
+            railButton("Typography", symbol: "textformat", selected: inspectorTab == "Typography") {
+                inspectorTab = "Typography"; showRailInspector = true
+            }
+            railButton("Arrangement", symbol: "square.3.layers.3d", selected: inspectorTab == "Arrangement") {
+                inspectorTab = "Arrangement"; showRailInspector = true
+            }
+            Spacer(minLength: 8)
+            railButton("Float inspector", symbol: StudioInspectorMode.floating.symbol) { setInspectorMode(.floating) }
+            railButton("Full inspector", symbol: StudioInspectorMode.expanded.symbol) { setInspectorMode(.expanded) }
+            railButton("Hide inspector", symbol: "chevron.left") { setInspectorMode(.hidden) }
+        }
+        .padding(.vertical, 8)
+        .frame(width: StudioInspectorLayout.slimWidth)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+        .popover(isPresented: $showRailInspector, arrowEdge: .trailing) {
+            inspector.frame(width: 320, height: 560)
+        }
+        .accessibilityIdentifier("spaces-inspector-rail")
+    }
+    func railButton(_ title: String, symbol: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 16, weight: .medium))
+                .frame(width: 44, height: 44)
+                .foregroundStyle(selected ? Color.accentColor : Color.primary)
+                .background(selected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+    }
+    var focusControls: some View {
+        HStack(spacing: 6) {
+            Menu {
+                ForEach(board.directions) { item in
+                    Button(board.canvasName(item)) { selectCanvas(item.id) }
+                }
+            } label: { Label(board.canvasName(direction), systemImage: "rectangle.on.rectangle") }
+                .fixedSize().help("Choose canvas")
+            Button { leaveCanvasFocus() } label: { Label("Exit focus", systemImage: "arrow.down.right.and.arrow.up.left") }
+                .help("Restore the Spaces toolbar and sidebar")
+                .accessibilityIdentifier("spaces-exit-focus")
+        }
+        .font(.caption)
+        .padding(7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+        .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
+    }
+    func setInspectorMode(_ mode: StudioInspectorMode) {
+        if focusCanvas { leaveCanvasFocus(restoreInspector: false) }
+        showRailInspector = false
+        if mode == .floating && inspectorMode != .floating { inspectorBeforeFloating = inspectorMode }
+        inspectorMode = mode
+        StudioInspectorPreference.setMode(mode)
+    }
+    func enterCanvasFocus() {
+        guard !focusCanvas else { return }
+        sidebarBeforeFocus = sidebarCollapsed
+        inspectorBeforeFocus = inspectorMode == .floating ? inspectorBeforeFloating : inspectorMode
+        showRailInspector = false
+        inspectorMode = .hidden
+        sidebarCollapsed = true
+        focusCanvas = true
+    }
+    func leaveCanvasFocus(restoreInspector: Bool = true) {
+        guard focusCanvas else { return }
+        focusCanvas = false
+        sidebarCollapsed = sidebarBeforeFocus
+        if restoreInspector { inspectorMode = inspectorBeforeFocus }
     }
     func selectCanvas(_ id: UUID) { shownCanvasIDs = CanvasVisibility.selecting(id, from: direction.id, shown: shownCanvasIDs); board.selectedDirection = id; abID = nil; save() }
     func showOnlyCurrent() { shownCanvasIDs = CanvasVisibility.solo(direction.id); abID = nil }
@@ -653,7 +825,7 @@ struct TypeBoardEditor: View {
                     TextField("Canvas name", text: Binding(get: { board.canvasName(direction) }, set: { board.directions[directionIndex].name = $0; save() }))
                         .textFieldStyle(.roundedBorder)
                 }
-                Picker("Inspector", selection: $inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
+                Picker("Inspector", selection: $editorSession.inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
                 if inspectorTab == "Arrangement" { layoutSections }
                 else {
                 if direction.canvas == .imported {
@@ -759,10 +931,10 @@ struct TypeBoardEditor: View {
     var fontPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Text("Choose font · " + editingTitle).font(.headline); Spacer(); Button("Done") { showFontPicker = false } }
-            TextField("Search fonts, styles or #tags", text: $fontSearch).textFieldStyle(.roundedBorder).focused($fontSearchFocused)
+            TextField("Search fonts, styles or #tags", text: $editorSession.fontSearch).textFieldStyle(.roundedBorder).focused($fontSearchFocused)
             HStack(spacing: 12) {
-                ShelfDropdown(title: "Collection", selection: $fontCollection, options: [("All fonts", "All fonts"), ("Favorites", "Favorites")] + library.saved.collections.keys.sorted().map { ($0, "collection:" + $0) })
-                ShelfDropdown(title: "Category", selection: $fontCategory, options: ["All categories"] .map { ($0, $0) } + Category.allCases.map { ($0.rawValue, $0.rawValue) })
+                ShelfDropdown(title: "Collection", selection: $editorSession.fontCollection, options: [("All fonts", "All fonts"), ("Favorites", "Favorites")] + library.saved.collections.keys.sorted().map { ($0, "collection:" + $0) })
+                ShelfDropdown(title: "Category", selection: $editorSession.fontCategory, options: ["All categories"] .map { ($0, $0) } + Category.allCases.map { ($0.rawValue, $0.rawValue) })
             }
             HStack { Text("\(faces.count) styles").font(.caption).foregroundStyle(.secondary); Spacer(); if fontCollection != "All fonts" || fontCategory != "All categories" || !fontSearch.isEmpty { Button("Clear filters") { fontCollection = "All fonts"; fontCategory = "All categories"; fontSearch = "" }.font(.caption) } }
             Button { chooseDiscoveryFont() } label: { Label("Try a local font I haven’t used recently", systemImage: "shuffle") }.buttonStyle(.borderless).disabled(faces.isEmpty)
@@ -964,9 +1136,9 @@ struct StudioSplitPosition: NSViewRepresentable {
                 while let view = ancestor {
                     if let split = view as? NSSplitView {
                         let saved = UserDefaults.standard.double(forKey: "studioInspectorWidth")
-                        split.setPosition(min(500, max(240, saved == 0 ? 310 : saved)), ofDividerAt: 0)
+                        split.setPosition(min(500, max(StudioInspectorLayout.fullMinimumWidth, saved == 0 ? StudioInspectorLayout.fullIdealWidth : saved)), ofDividerAt: 0)
                         self.observation = NotificationCenter.default.addObserver(forName: NSSplitView.didResizeSubviewsNotification, object: split, queue: .main) { [weak split] _ in
-                            if let width = split?.subviews.first?.frame.width, width >= 240 { UserDefaults.standard.set(min(500, width), forKey: "studioInspectorWidth") }
+                            if let width = split?.subviews.first?.frame.width, width >= StudioInspectorLayout.fullMinimumWidth { UserDefaults.standard.set(min(500, width), forKey: "studioInspectorWidth") }
                         }
                         return
                     }

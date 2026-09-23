@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.38.0 — 2026-09-22
+
+- Tightened Spaces font, number, and paragraph controls and reduced the typeboard header spacing.
+- Added full, slim, hidden, and detachable inspector layouts. The slim rail opens the full controls on demand; the floating panel can be moved and resized while the canvas keeps its width.
+- Added a canvas focus view that hides the Spaces chrome and sidebar, then restores the prior layout on exit. Docked inspector choices persist between launches.
+
 ## 0.37.1 — 2026-09-22
 
 - Reorganized the Spaces typography inspector so font, size and leading remain easy to reach while detailed controls are grouped into compact sections. Simplified the canvas and role header and reduced the visual weight of secondary settings without removing their functions.

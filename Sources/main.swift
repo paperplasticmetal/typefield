@@ -521,6 +521,7 @@ struct ContentView: View {
     @State private var guide: TypefieldGuide?
     @AppStorage("typefield.onboardingComplete") private var onboardingComplete = false
     @AppStorage(WorkspaceSidebarPreference.key) var sidebarCollapsed = false
+    @State private var spacesCanvasFocused = false
     @FocusState private var searchFocused: Bool
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -528,7 +529,7 @@ struct ContentView: View {
             if library.workspace == .library && !sidebarCollapsed { WorkspaceSidebarShell { sidebar }.transition(.move(edge: .leading).combined(with: .opacity)) }
             switch library.workspace {
             case .spaces:
-                StudioView(library: library, store: library.studio, sidebarCollapsed: $sidebarCollapsed)
+                StudioView(library: library, store: library.studio, sidebarCollapsed: $sidebarCollapsed, focusCanvas: $spacesCanvasFocused)
             case .fontLab:
                 FontLabView(library: library, sidebarCollapsed: $sidebarCollapsed)
             case .library:
@@ -541,7 +542,7 @@ struct ContentView: View {
                 }.accessibilityIdentifier("library-workspace")
             }
         }
-        if sidebarCollapsed {
+        if sidebarCollapsed && !(library.workspace == .spaces && spacesCanvasFocused) {
             WorkspaceSidebarRevealButton(collapsed: $sidebarCollapsed)
                 .padding(.top, 8)
                 .zIndex(2)
@@ -561,7 +562,10 @@ struct ContentView: View {
             case "resetSize": size = 64
             case "list": grid = false
             case "grid": grid = true
-            case "toggleSidebar": sidebarCollapsed.toggle()
+            case "toggleSidebar":
+                if library.workspace == .spaces && spacesCanvasFocused {
+                    NotificationCenter.default.post(name: Notification.Name("TypefieldCanvasFocus"), object: nil)
+                } else { sidebarCollapsed.toggle() }
             case "tour": guide = .tour
             case "about": guide = .about
             default: break

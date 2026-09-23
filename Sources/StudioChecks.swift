@@ -156,6 +156,17 @@ enum StudioChecks {
         try verify(!WorkspaceSidebarPreference.collapsed(in: sidebarDefaults), "Expanded workspace sidebar state must persist")
         try verify(WorkspaceSidebarLayout.reservedWidth(collapsed: false) == 256 && WorkspaceSidebarLayout.reservedWidth(collapsed: true) == 0, "Collapsing the workspace sidebar must return its complete width to Library and Spaces")
         try verify(WorkspaceSidebarLayout.revealWidth >= 44 && WorkspaceSidebarLayout.revealHeight >= 44, "The collapsed sidebar reveal control must keep a full-size accessible hit target")
+        let inspectorSuite = "Typefield-inspector-check-" + UUID().uuidString
+        let inspectorDefaults = UserDefaults(suiteName: inspectorSuite)!
+        defer { inspectorDefaults.removePersistentDomain(forName: inspectorSuite) }
+        try verify(StudioInspectorPreference.mode(in: inspectorDefaults) == .expanded, "The Spaces inspector must start expanded")
+        StudioInspectorPreference.setMode(.slim, in: inspectorDefaults)
+        try verify(StudioInspectorPreference.mode(in: UserDefaults(suiteName: inspectorSuite)!) == .slim, "The slim inspector choice must persist")
+        StudioInspectorPreference.setMode(.floating, in: inspectorDefaults)
+        try verify(StudioInspectorPreference.mode(in: inspectorDefaults) == .slim, "A transient floating panel must not replace the saved docked layout")
+        StudioInspectorPreference.setMode(.hidden, in: inspectorDefaults)
+        try verify(StudioInspectorPreference.mode(in: inspectorDefaults) == .hidden, "The canvas-width inspector choice must persist")
+        try verify(StudioInspectorLayout.slimWidth >= 44 && StudioInspectorLayout.fullMinimumWidth > StudioInspectorLayout.slimWidth, "The slim tool rail must keep usable targets and return inspector width to the canvas")
         try verify(WorkspaceHeaderLayout.horizontalPadding == 20 && WorkspaceHeaderLayout.verticalPadding == 14 && WorkspaceHeaderLayout.titleSize == 22 && WorkspaceHeaderLayout.titleHeight == 30, "Library, Spaces, and Letterform Editor must share one header geometry")
         try verify(FontLabCharacterPanelLayout.clamped(0) == FontLabCharacterPanelLayout.minimumWidth && FontLabCharacterPanelLayout.clamped(9_999) == FontLabCharacterPanelLayout.maximumWidth && FontLabCharacterPanelLayout.clamped(300) == 300, "Letterform Editor character panel resizing must remain usable and bounded")
         var inserted = TypeDirection(); let beforeInsert = CanvasPlan(direction: inserted)
