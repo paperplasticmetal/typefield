@@ -1,6 +1,6 @@
 # Build and verification status
 
-Current source: **0.34.1, build 45**. Updated 2026-09-21.
+Current source: **0.35.0, build 46**. Updated 2026-09-22.
 
 | Check | Status |
 | --- | --- |
@@ -43,7 +43,8 @@ Current source: **0.34.1, build 45**. Updated 2026-09-21.
 | Sandbox/hardened-runtime clean launch and installed-font export, 0.12.3 | Passed |
 | Google preview UI, 0.13.1 | Installed and remotely loaded samples verified |
 | GitHub-hosted checks | See the live workflow badge; results are not inferred from local tests |
-| Distribution signing / App Store Connect validation | Pending |
+| Store distribution preparation | Migration flow and isolated corruption/collision tests added; signed-archive verifier added. Apple Distribution signing and App Store Connect validation pending. |
+| 0.35.0 local verification | Optimized native suite passed (21,260 layout cases), Figma bridge passed, warnings-as-errors unsigned Xcode Release archive succeeded, and the canonical local app was installed with matching executable hashes and a valid ad-hoc signature. Store distribution signing is pending. |
 | macOS 13 and second-machine testing | Pending |
 | Intel support | Not shipped |
 

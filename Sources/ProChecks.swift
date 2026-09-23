@@ -7,6 +7,7 @@ enum ProChecks {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-pro-checks-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        try checkStoreMigration(in: root)
         let library = Library(storageURL: root.appendingPathComponent("library.json"))
         library.acceptCatalog(catalog)
         library.acceptCatalog([])
@@ -184,4 +185,58 @@ enum ProChecks {
         }
     }
     static func tryEqualHashes(_ a: URL, _ b: URL) -> Bool { (try? DuplicateFinder.hash(a)) == (try? DuplicateFinder.hash(b)) }
+    private static func checkStoreMigration(in root: URL) throws {
+        let fm = FileManager.default
+        let source = root.appendingPathComponent("old/FontShelf")
+        let destination = root.appendingPathComponent("store/FontShelf")
+        try fm.createDirectory(at: source.appendingPathComponent("Google Fonts/example"), withIntermediateDirectories: true)
+        var saved = SavedLibrary()
+        saved.favorites = ["Example"]
+        saved.folders = [source.appendingPathComponent("Google Fonts/example").path, "/external/fonts"]
+        saved.autoActivateFolders = [source.appendingPathComponent("Google Fonts/example").path]
+        try JSONEncoder().encode(saved).write(to: source.appendingPathComponent("library.json"))
+        try JSONEncoder().encode(ProState()).write(to: source.appendingPathComponent("pro-library.json"))
+        var studio = StudioState()
+        var space = DesignSpace(); space.name = "Existing Space"; space.boards = [TypeBoard()]
+        studio.spaces = [space]; studio.selectedSpace = space.id; studio.selectedBoard = space.boards[0].id
+        try JSONEncoder().encode(studio).write(to: source.appendingPathComponent("spaces.json"))
+        var fontLab = FontLabState()
+        let project = FontLabProject(name: "Existing font", characters: ["A"])
+        fontLab.projects = [project]; fontLab.selectedProject = project.id
+        try JSONEncoder().encode(fontLab).write(to: source.appendingPathComponent("font-lab.json"))
+        try Data("font fixture".utf8).write(to: source.appendingPathComponent("Google Fonts/example/example.ttf"))
+        let original = try Data(contentsOf: source.appendingPathComponent("library.json"))
+        let migratedCount = try StoreMigration.migrate(from: source, to: destination)
+        precondition(migratedCount == 5)
+        let migrated = try JSONDecoder().decode(SavedLibrary.self, from: Data(contentsOf: destination.appendingPathComponent("library.json")))
+        precondition(migrated.favorites == saved.favorites)
+        let migratedSpaces = try JSONDecoder().decode(StudioState.self, from: Data(contentsOf: destination.appendingPathComponent("spaces.json")))
+        let migratedFontLab = try JSONDecoder().decode(FontLabState.self, from: Data(contentsOf: destination.appendingPathComponent("font-lab.json")))
+        precondition(migratedSpaces.spaces.first?.id == space.id && migratedSpaces.spaces.first?.boards.first?.id == space.boards[0].id)
+        precondition(migratedFontLab.projects.first?.id == project.id && migratedFontLab.selectedProject == project.id)
+        precondition(migrated.folders == [destination.appendingPathComponent("Google Fonts/example").path, "/external/fonts"])
+        precondition(migrated.autoActivateFolders == [destination.appendingPathComponent("Google Fonts/example").path])
+        let fontCopy = try Data(contentsOf: destination.appendingPathComponent("Google Fonts/example/example.ttf"))
+        precondition(fontCopy == Data("font fixture".utf8))
+        let sourceAfter = try Data(contentsOf: source.appendingPathComponent("library.json"))
+        precondition(sourceAfter == original)
+        do { _ = try StoreMigration.migrate(from: source, to: destination); preconditionFailure("Migration overwrote an existing container") } catch {}
+        let broken = root.appendingPathComponent("broken/FontShelf")
+        try fm.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("bad json".utf8).write(to: broken.appendingPathComponent("spaces.json"))
+        let emptyDestination = root.appendingPathComponent("empty/FontShelf")
+        do { _ = try StoreMigration.migrate(from: broken, to: emptyDestination); preconditionFailure("Invalid projects migrated") } catch {}
+        precondition(!fm.fileExists(atPath: emptyDestination.appendingPathComponent("spaces.json").path))
+        let preferences = root.appendingPathComponent("local.fontshelf.app.plist")
+        let preferencesData = try PropertyListSerialization.data(fromPropertyList: ["appearance": "Light", "previewSize": 72.0, "adaptiveGridView": false, "unrelated": "ignore"], format: .binary, options: 0)
+        try preferencesData.write(to: preferences)
+        let suite = "FontShelf.migration-check." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("Existing", forKey: "appearance")
+        let preferenceCount = try StoreMigration.importPreferences(from: preferences, into: defaults)
+        precondition(preferenceCount == 2)
+        precondition(defaults.string(forKey: "appearance") == "Existing" && defaults.double(forKey: "previewSize") == 72 && !defaults.bool(forKey: "adaptiveGridView") && defaults.object(forKey: "unrelated") == nil)
+        print("PASS: clean Store migration, source preservation, managed-font remap, collision and corrupt-data guards.")
+    }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.35.0 — 2026-09-22
+
+- Added a guided Store-container migration for Library, Spaces, Font Lab and app-managed Google Fonts, with validation, source preservation, collision protection and reauthorization guidance for external folders.
+- Added optional import of local-build preferences into unset Store preferences.
+- Added Store archive configuration checks and verification of its signature, bundle identity, entitlements, privacy manifest and version. Organizer distribution signing and App Store Connect validation are still required.
+
 ## 0.34.1 — 2026-09-21
 
 - Added whole-object selection, visible corner resize handles and Shift-constrained scaling in Font Lab. Objects keeps nested counters together; Nodes retains precise point editing. Added a visible Select all action.

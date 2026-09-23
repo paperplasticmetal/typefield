@@ -742,6 +742,8 @@ struct ContentView: View {
                 Toggle("Metadata table", isOn: $metadataView)
                 Button("Export library backup…") { LibraryBackupTools.export(library) }
                 Button("Import library backup…") { LibraryBackupTools.restore(library) }
+                Button("Migrate earlier FontShelf data…") { StoreMigration.chooseSource(for: library) }
+                Button("Import earlier preferences…") { StoreMigration.choosePreferences(for: library) }
                 Button("Show automatic backups") { NSWorkspace.shared.open(library.saveURL.deletingLastPathComponent().appendingPathComponent("Backups")) }
                 Button("Select visible families") { library.selectedFamilies.formUnion(library.filtered.map(\.name)) }
             }.menuStyle(.borderlessButton).foregroundStyle(Color.primary).padding(8).shelfGlass(radius: 16).frame(width: 85)

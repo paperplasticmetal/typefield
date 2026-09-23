@@ -75,6 +75,145 @@ enum LibraryBackupTools {
         } catch { library.message = "Backup could not be imported: " + error.localizedDescription }
     }
 }
+
+/// Moves a pre-sandbox FontShelf support folder into a fresh Store container.
+/// The source is chosen in an open panel; saved security scopes cannot be
+/// transferred between app identities and must be granted again by the user.
+enum StoreMigration {
+    static let dataFiles = ["library.json", "pro-library.json", "spaces.json", "font-lab.json"]
+    static let stringPreferences = ["appearance", "previewText", "previewInkHex", "previewPaperHex"]
+    static let boolPreferences = ["adaptiveGridView", "customPreviewColors", "workspaceSidebarCollapsed"]
+    static let numberPreferences = ["previewSize", "studioInspectorWidth", "fontLabCharacterBrowserWidth"]
+
+    static func migrate(from source: URL, to destination: URL) throws -> Int {
+        let source = source.standardizedFileURL
+        let destination = destination.standardizedFileURL
+        func invalid(_ detail: String) -> NSError {
+            NSError(domain: "FontShelf.Migration", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
+        }
+        guard source != destination, source.lastPathComponent == "FontShelf" else {
+            throw invalid("Choose the earlier FontShelf Application Support folder.")
+        }
+        let fm = FileManager.default
+        let present = dataFiles.filter { fm.fileExists(atPath: source.appendingPathComponent($0).path) }
+        guard !present.isEmpty else { throw invalid("No FontShelf library or project files were found in that folder.") }
+        let googleSource = source.appendingPathComponent("Google Fonts")
+        let hasGoogle = fm.fileExists(atPath: googleSource.path)
+        guard !dataFiles.contains(where: { fm.fileExists(atPath: destination.appendingPathComponent($0).path) }),
+              !fm.fileExists(atPath: destination.appendingPathComponent("Google Fonts").path) else {
+            throw invalid("This FontShelf container already has saved data. Export a backup before using the separate merge command; migration will not overwrite or duplicate it.")
+        }
+
+        var files: [String: Data] = [:]
+        for name in present {
+            let file = source.appendingPathComponent(name)
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { throw invalid("\(name) is not a regular file.") }
+            let data = try Data(contentsOf: file)
+            switch name {
+            case "library.json":
+                var saved = try JSONDecoder().decode(SavedLibrary.self, from: data)
+                func remap(_ path: String) -> String {
+                    let old = source.path + "/"
+                    return path.hasPrefix(old) ? destination.path + "/" + path.dropFirst(old.count) : path
+                }
+                saved.folders = saved.folders.map(remap)
+                saved.autoActivateFolders = saved.autoActivateFolders.map { Set($0.map(remap)) }
+                saved.webAssetFolders = saved.webAssetFolders.map { $0.map(remap) }
+                files[name] = try JSONEncoder().encode(saved)
+            case "pro-library.json": _ = try JSONDecoder().decode(ProState.self, from: data); files[name] = data
+            case "spaces.json":
+                let state = try JSONDecoder().decode(StudioState.self, from: data)
+                guard state.version == 1, state.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw invalid("Spaces data is invalid or needs a newer FontShelf version.") }
+                files[name] = data
+            case "font-lab.json":
+                let state = try JSONDecoder().decode(FontLabState.self, from: data)
+                guard state.isValid else { throw invalid("Font Lab data is invalid or needs a newer FontShelf version.") }
+                files[name] = data
+            default: break
+            }
+        }
+        if hasGoogle {
+            let values = try googleSource.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true else { throw invalid("Google Fonts is not a regular folder.") }
+            let enumerator = fm.enumerator(at: googleSource, includingPropertiesForKeys: [.isSymbolicLinkKey], options: [])
+            while let entry = enumerator?.nextObject() as? URL {
+                if try entry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true {
+                    throw invalid("Google Fonts contains a symbolic link. Remove it from the copy before migration.")
+                }
+            }
+        }
+        try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+        let stage = destination.appendingPathComponent(".migration-" + UUID().uuidString)
+        try fm.createDirectory(at: stage, withIntermediateDirectories: false)
+        defer { try? fm.removeItem(at: stage) }
+        for (name, data) in files { try data.write(to: stage.appendingPathComponent(name), options: .atomic) }
+        if hasGoogle { try fm.copyItem(at: googleSource, to: stage.appendingPathComponent("Google Fonts")) }
+        var installed: [URL] = []
+        do {
+            for name in present + (hasGoogle ? ["Google Fonts"] : []) {
+                let target = destination.appendingPathComponent(name)
+                guard !fm.fileExists(atPath: target.path) else { throw invalid("The destination changed during migration. No existing data was replaced.") }
+                try fm.moveItem(at: stage.appendingPathComponent(name), to: target)
+                installed.append(target)
+            }
+        } catch {
+            for target in installed { try? fm.removeItem(at: target) }
+            throw error
+        }
+        return present.count + (hasGoogle ? 1 : 0)
+    }
+
+    static func chooseSource(for library: Library) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.message = "Quit the earlier FontShelf app, then choose its FontShelf folder in Library/Application Support. Its files will be copied into this empty Store container."
+        guard panel.runModal() == .OK, let source = panel.url else { return }
+        let alert = NSAlert()
+        alert.messageText = "Copy your FontShelf data?"
+        alert.informativeText = "Library, Spaces, Font Lab and downloaded Google fonts will be copied. The originals stay in place. External font and WOFF2 folders need access granted again. Files outside this folder are not moved."
+        alert.addButton(withTitle: "Copy and Quit")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            _ = try migrate(from: source, to: library.saveURL.deletingLastPathComponent())
+            NSApp.terminate(nil)
+        } catch { library.message = "Migration did not finish: " + error.localizedDescription }
+    }
+
+    static func importPreferences(from file: URL, into defaults: UserDefaults = .standard) throws -> Int {
+        guard file.lastPathComponent == "local.fontshelf.app.plist",
+              let values = try PropertyListSerialization.propertyList(from: Data(contentsOf: file), format: nil) as? [String: Any] else {
+            throw NSError(domain: "FontShelf.Migration", code: 2, userInfo: [NSLocalizedDescriptionKey: "Choose the earlier local.fontshelf.app.plist preferences file."])
+        }
+        var imported = 0
+        for key in stringPreferences {
+            if defaults.object(forKey: key) == nil, let value = values[key] as? String {
+                defaults.set(value, forKey: key); imported += 1
+            }
+        }
+        for key in boolPreferences {
+            if defaults.object(forKey: key) == nil, let value = values[key] as? NSNumber {
+                defaults.set(value.boolValue, forKey: key); imported += 1
+            }
+        }
+        for key in numberPreferences {
+            if defaults.object(forKey: key) == nil, let value = values[key] as? NSNumber, value.doubleValue.isFinite {
+                defaults.set(value.doubleValue, forKey: key); imported += 1
+            }
+        }
+        return imported
+    }
+
+    static func choosePreferences(for library: Library) {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.canChooseFiles = true
+        panel.allowedContentTypes = [.propertyList]
+        panel.message = "Choose local.fontshelf.app.plist in Library/Preferences. Existing Store preferences are kept."
+        guard panel.runModal() == .OK, let file = panel.url else { return }
+        do { library.message = "Imported \(try importPreferences(from: file)) earlier preferences. Reopen FontShelf to see them everywhere." }
+        catch { library.message = "Preferences were not imported: " + error.localizedDescription }
+    }
+}
 struct MetadataTable: View {
     @ObservedObject var library: Library
     var body: some View {
