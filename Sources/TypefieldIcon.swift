@@ -204,40 +204,43 @@ enum TypefieldIcon {
 
     private static func inkSketch(_ ctx: CGContext, _ m: Mark, _ dark: Bool, _ size: Int) {
         gradient(ctx, top: c(dark ? "28372D" : "F3EAD4"), bottom: c(dark ? "18261F" : "E8D8B7"))
-        grain(ctx, size: size, seed: 0x1C0A23, count: 520,
-            color: c(dark ? "E1D6B6" : "6A5438", dark ? 0.075 : 0.10), radius: 0.8...2.5)
         let ink = c(dark ? "DDE9CA" : "213A2B")
-        let t = rotated(m.t, 0.018)
-        let f = moved(rotated(m.f, -0.025), -5, -7)
-        let sketch = CGMutablePath(); sketch.addPath(t); sketch.addPath(f)
-        if size >= 64 {
-            stroke(ctx, moved(sketch, -8, 7), c(dark ? "C4D9AF" : "385D40", 0.36), 15)
-            stroke(ctx, moved(sketch, 7, -5), c(dark ? "A9C99F" : "416E4B", 0.42), 9)
+        // The other icon directions share Bodoni. This one changes the actual
+        // lettering to a flowing pen hand, with thick downstrokes and fine joins.
+        let handName = size <= 32 ? "Baskerville-BoldItalic" : "SnellRoundhand-Black"
+        let font = CTFontCreateWithName(handName as CFString, 700, nil)
+        var chars: [UniChar] = [84, 102]
+        var glyphs: [CGGlyph] = [0, 0]
+        guard CTFontGetGlyphsForCharacters(font, &chars, &glyphs, 2),
+              let t = CTFontCreatePathForGlyph(font, glyphs[0], nil),
+              let f = CTFontCreatePathForGlyph(font, glyphs[1], nil) else {
+            fill(ctx, m.both, ink)
+            return
         }
-        fill(ctx, sketch, ink)
-        if size <= 32 { stroke(ctx, sketch, ink, 26) }
-        if size >= 64 {
-            ctx.saveGState(); ctx.addPath(sketch); ctx.clip()
-            grain(ctx, size: size, seed: 0xA1170F, count: 520,
-                color: c(dark ? "263D2E" : "D8C9A7", 0.75), radius: 3.0...10.0)
-            ctx.restoreGState()
-            let trace = c(dark ? "C4D9AF" : "31543B", 0.65)
-            let capTrace = CGMutablePath()
-            capTrace.move(to: CGPoint(x: 170, y: 751))
-            capTrace.addCurve(to: CGPoint(x: 567, y: 744),
-                control1: CGPoint(x: 279, y: 764), control2: CGPoint(x: 448, y: 737))
-            stroke(ctx, capTrace, trace, 9)
-            let shoulderTrace = CGMutablePath()
-            shoulderTrace.move(to: CGPoint(x: 644, y: 689))
-            shoulderTrace.addCurve(to: CGPoint(x: 835, y: 739),
-                control1: CGPoint(x: 679, y: 766), control2: CGPoint(x: 791, y: 773))
-            stroke(ctx, shoulderTrace, trace, 8)
+        let tb = t.boundingBoxOfPath
+        let fb = f.boundingBoxOfPath
+        let raw = CGMutablePath()
+        raw.addPath(t, transform: CGAffineTransform(translationX: -tb.minX, y: 0))
+        raw.addPath(f, transform: CGAffineTransform(translationX: tb.width + (size <= 32 ? 18 : -7) - fb.minX, y: 0))
+        let bounds = raw.boundingBoxOfPath
+        let scale = min((size <= 32 ? 765 : 730) / bounds.width, 650 / bounds.height)
+        let transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
+            tx: 512 - bounds.midX * scale, ty: 508 - bounds.midY * scale)
+        let hand = CGMutablePath(); hand.addPath(raw, transform: transform)
+        fill(ctx, hand, ink)
+        stroke(ctx, hand, ink, size <= 32 ? 28 : size <= 64 ? 12 : 6)
+        if size >= 128 {
+            // A tapered exit made with the same pen completes the lower f stroke.
+            let exit = CGMutablePath()
+            exit.move(to: CGPoint(x: 604, y: 354))
+            exit.addCurve(to: CGPoint(x: 841, y: 409),
+                control1: CGPoint(x: 680, y: 342), control2: CGPoint(x: 788, y: 365))
+            exit.addQuadCurve(to: CGPoint(x: 755, y: 377), control: CGPoint(x: 819, y: 401))
+            exit.addCurve(to: CGPoint(x: 604, y: 354),
+                control1: CGPoint(x: 708, y: 361), control2: CGPoint(x: 647, y: 351))
+            exit.closeSubpath()
+            fill(ctx, exit, ink)
         }
-        let flourish = CGMutablePath()
-        flourish.move(to: CGPoint(x: 278, y: 224))
-        flourish.addCurve(to: CGPoint(x: 759, y: 242),
-            control1: CGPoint(x: 391, y: 201), control2: CGPoint(x: 633, y: 208))
-        stroke(ctx, flourish, c(dark ? "A8C09A" : "38573E", 0.80), size <= 32 ? 9 : 6)
     }
 
     private static func chalkboard(_ ctx: CGContext, _ m: Mark, _ dark: Bool, _ size: Int) {

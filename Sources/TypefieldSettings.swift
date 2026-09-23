@@ -133,21 +133,13 @@ struct TypefieldSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Choose a Typefield icon for the Dock.").foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    ForEach([16, 32, 64], id: \.self) { pixels in
-                        Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon, size: pixels * 2))
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: CGFloat(pixels), height: CGFloat(pixels))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 80)
-                            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-                            .accessibilityLabel("App icon preview")
-                    }
-                }
                 Picker("Icon appearance", selection: $iconAppearance) {
-                    ForEach(["Automatic", "Light", "Dark"], id: \.self) { Text($0).tag($0) }
+                    Text("Follow app").tag("Automatic")
+                    Text("Light").tag("Light")
+                    Text("Dark").tag("Dark")
                 }.pickerStyle(.segmented)
+                Text("Follow app matches Typefield’s appearance. Light and Dark stay fixed when the app or macOS changes.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("Icon design").font(.headline)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(TypefieldPalette.allCases) { item in
@@ -167,7 +159,7 @@ struct TypefieldSettingsView: View {
                         }.buttonStyle(.plain).accessibilityLabel(item.iconDesignTitle + " app icon, " + item.iconDesignDetail).accessibilityAddTraits(iconPalette == item.rawValue ? .isSelected : [])
                     }
                 }
-                Text("Changes apply to the Dock while Typefield is running and are restored on launch. Finder and the app’s closed-state icon use the standard Porcelain artwork. Automatic follows the app appearance.").font(.caption).foregroundStyle(.secondary)
+                Text("Changes apply to the Dock while Typefield is running and are restored on launch. Finder and the app’s closed-state icon use the standard Porcelain artwork.").font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -235,7 +227,7 @@ private extension TypefieldPalette {
         case .neutral: return "Clean serif"
         case .amber: return "Layered cutouts"
         case .ocean: return "Guides and metrics"
-        case .forest: return "Hand drawn"
+        case .forest: return "Calligraphic ink"
         case .plum: return "Chalk and grain"
         case .rose: return "Dimensional relief"
         }

@@ -45,6 +45,7 @@ enum TypefieldSettingsChecks {
         try require(TypefieldPalette.resolve("unknown") == .neutral, "Unknown palette fallback")
         try require(TypefieldIcon.isDark(mode: "Dark", appearance: NSAppearance(named: .aqua)!), "Explicit dark icon")
         try require(!TypefieldIcon.isDark(mode: "Light", appearance: NSAppearance(named: .darkAqua)!), "Explicit light icon")
+        try require(!TypefieldIcon.isDark(mode: "Automatic", appearance: NSAppearance(named: .aqua)!), "Automatic light icon appearance")
         try require(TypefieldIcon.isDark(mode: "Automatic", appearance: NSAppearance(named: .darkAqua)!), "Automatic icon appearance")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-settings-checks-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

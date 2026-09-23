@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.44.0 — 2026-09-23
+
+- Refined Ink Sketch into a calligraphic treatment with deliberate pen strokes instead of scattered specks.
+- Simplified the icon chooser to one preview per design. Clarified that the Dock icon can follow the app or stay Light or Dark independently of app and macOS appearance.
+
 ## 0.43.0 — 2026-09-23
 
 - Tightened the standard Porcelain “Tf” icon and strengthened the f crossbar for small Dock sizes.
