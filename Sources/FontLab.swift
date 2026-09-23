@@ -1040,6 +1040,17 @@ struct FontLabView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background {
+            FontLabShortcutBridge(
+                characters: project?.characters ?? [],
+                selectedCharacter: selectedCharacter,
+                canSketch: project?.glyphs[selectedCharacter]?.components?.isEmpty != false,
+                onSelectCharacter: { selectedCharacter = $0 },
+                onSelectMode: { vectorEditing = $0 }
+            )
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+        }
         .onAppear {
             characterBrowserWidth = FontLabCharacterPanelLayout.clamped(characterBrowserWidth)
             if let project = store.selectedProject, !project.characters.contains(selectedCharacter) {
@@ -1336,6 +1347,20 @@ struct FontLabView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Edit \(selectedCharacter)").font(.title3.weight(.semibold))
+                    Button { selectAdjacentCharacter(in: project, offset: -1) } label: {
+                        Image(systemName: "chevron.left").frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!hasAdjacentCharacter(in: project, offset: -1))
+                    .help("Previous glyph (⌘[)")
+                    .accessibilityLabel("Previous glyph")
+                    Button { selectAdjacentCharacter(in: project, offset: 1) } label: {
+                        Image(systemName: "chevron.right").frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!hasAdjacentCharacter(in: project, offset: 1))
+                    .help("Next glyph (⌘])")
+                    .accessibilityLabel("Next glyph")
                     Spacer()
                     Picker("Editor", selection: $vectorEditing) {
                         Text("Vector").tag(true)
@@ -1369,7 +1394,9 @@ struct FontLabView: View {
                     smoothing: smoothing,
                     usesTabletPressure: usesTabletPressure,
                     onTabletInput: { tabletInputDetected = true },
-                    onUndo: { undoStroke(glyph, projectID: project.id) }
+                    onUndo: { undoStroke(glyph, projectID: project.id) },
+                    onRedo: { redoGlyph(projectID: project.id) },
+                    onSelectTool: { drawingTool = $0 }
                 ) { editedGlyph in
                     recordGlyphEdit(editedGlyph, projectID: project.id)
                 }
@@ -1432,6 +1459,17 @@ struct FontLabView: View {
             metricsPanel(project, glyph: glyph)
         }
         .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func hasAdjacentCharacter(in project: FontLabProject, offset: Int) -> Bool {
+        guard let index = project.characters.firstIndex(of: selectedCharacter) else { return false }
+        return project.characters.indices.contains(index + offset)
+    }
+
+    private func selectAdjacentCharacter(in project: FontLabProject, offset: Int) {
+        guard let index = project.characters.firstIndex(of: selectedCharacter),
+              project.characters.indices.contains(index + offset) else { return }
+        selectedCharacter = project.characters[index + offset]
     }
 
     private func metricsPanel(_ project: FontLabProject, glyph: FontLabGlyph) -> some View {
@@ -1899,6 +1937,8 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
     let usesTabletPressure: Bool
     let onTabletInput: () -> Void
     let onUndo: () -> Void
+    let onRedo: () -> Void
+    let onSelectTool: (FontLabDrawingTool) -> Void
     let onCommit: (FontLabGlyph) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onTabletInput: onTabletInput, onCommit: onCommit) }
@@ -1917,6 +1957,8 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
         view.usesTabletPressure = usesTabletPressure
         view.onTabletInput = { context.coordinator.onTabletInput() }
         view.onUndo = onUndo
+        view.onRedo = onRedo
+        view.onSelectTool = onSelectTool
         view.onCommit = { context.coordinator.onCommit($0) }
         return view
     }
@@ -1924,6 +1966,8 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
     func updateNSView(_ view: FontLabDrawingNSView, context: Context) {
         context.coordinator.onTabletInput = onTabletInput
         view.onUndo = onUndo
+        view.onRedo = onRedo
+        view.onSelectTool = onSelectTool
         context.coordinator.onCommit = onCommit
         if !view.isDrawing, view.glyph != glyph { view.replaceGlyph(glyph) }
         view.metrics = metrics
@@ -1955,6 +1999,8 @@ private final class FontLabDrawingNSView: NSView {
     var usesTabletPressure = true
     var onTabletInput: (() -> Void)?
     var onUndo: (() -> Void)?
+    var onRedo: (() -> Void)?
+    var onSelectTool: ((FontLabDrawingTool) -> Void)?
     var onCommit: ((FontLabGlyph) -> Void)?
     private(set) var isDrawing = false
     private var gestureChangedGlyph = false
@@ -2082,6 +2128,7 @@ private final class FontLabDrawingNSView: NSView {
 
     override func keyDown(with event: NSEvent) {
         if handleUndoShortcut(event) { return }
+        if handleToolShortcut(event) { return }
         super.keyDown(with: event)
     }
 
@@ -2092,9 +2139,28 @@ private final class FontLabDrawingNSView: NSView {
 
     private func handleUndoShortcut(_ event: NSEvent) -> Bool {
         let editingModifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        guard editingModifiers == .command,
-              event.charactersIgnoringModifiers?.lowercased() == "z", onUndo != nil else { return false }
-        onUndo?()
+        guard event.charactersIgnoringModifiers?.lowercased() == "z" else { return false }
+        if editingModifiers == [.command, .shift], let onRedo {
+            onRedo()
+            return true
+        }
+        guard editingModifiers == .command, let onUndo else { return false }
+        onUndo()
+        return true
+    }
+
+    private func handleToolShortcut(_ event: NSEvent) -> Bool {
+        guard !isDrawing,
+              event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+              let onSelectTool else { return false }
+        let tool: FontLabDrawingTool
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "p": tool = .pen
+        case "e": tool = .eraser
+        case "v": tool = .reshape
+        default: return false
+        }
+        onSelectTool(tool)
         return true
     }
 

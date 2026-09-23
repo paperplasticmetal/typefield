@@ -21,6 +21,10 @@ enum FontLabDesignChecks {
     }
     static func run() throws {
         func check(_ value:@autoclosure()->Bool,_ message:String)throws {if !value() {throw FontLabStore.SelfTestError.failed(message)}}
+        try check(FontLabShortcutAction.resolve(key:"[",modifiers:.command) == .previousGlyph && FontLabShortcutAction.resolve(key:"]",modifiers:.command) == .nextGlyph,"Letterform glyph navigation shortcuts changed")
+        try check(FontLabShortcutAction.resolve(key:"1",modifiers:[.command,.shift]) == .vectorEditor && FontLabShortcutAction.resolve(key:"2",modifiers:[.command,.shift]) == .sketchEditor,"Letterform editor mode shortcuts changed")
+        try check(FontLabShortcutAction.resolve(key:"!",keyCode:18,modifiers:[.command,.shift]) == .vectorEditor && FontLabShortcutAction.resolve(key:"@",keyCode:19,modifiers:[.command,.shift]) == .sketchEditor,"Shifted physical number keys must switch Letterform editor modes")
+        try check(FontLabShortcutAction.resolve(key:"[",modifiers:[.command,.option]) == nil && FontLabShortcutAction.resolve(key:"z",modifiers:.command) == nil,"Letterform shortcuts must leave unrelated commands alone")
         var p=fixture()
         try check(p.isValid,"Linked component fixture invalid")
         let before=p.resolvedGlyph("B")!

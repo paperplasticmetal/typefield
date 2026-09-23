@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.39.0 — 2026-09-22
+
+- Moved the labeled Spaces inspector layout control beside the canvas selector so it remains visible in every docked layout.
+- Added keyboard navigation for workspaces, canvases, inspector layouts and tabs, canvas focus, and Letterform Editor glyphs, modes, and drawing tools. Added a searchable shortcut reference in Help.
+- Made the onboarding tour available from Help and About. Grouped context-specific menu actions, replaced the inert checked Window item with a Dock Inspector action, and corrected menu availability and full-screen labels.
+
 ## 0.38.0 — 2026-09-22
 
 - Tightened Spaces font, number, and paragraph controls and reduced the typeboard header spacing.

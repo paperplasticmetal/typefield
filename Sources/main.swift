@@ -554,9 +554,9 @@ struct ContentView: View {
         .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
             switch event.object as? String {
-            case "collection": showCollection = true
+            case "collection": library.workspace = .library; showCollection = true
             case "colors": showColors = true
-            case "find": searchFocused = true
+            case "find": if library.workspace == .library { searchFocused = true }
             case "larger": size = min(160, size + 4)
             case "smaller": size = max(16, size - 4)
             case "resetSize": size = 64
@@ -568,6 +568,7 @@ struct ContentView: View {
                 } else { sidebarCollapsed.toggle() }
             case "tour": guide = .tour
             case "about": guide = .about
+            case "shortcuts": guide = .shortcuts
             default: break
             }
         }
@@ -585,7 +586,8 @@ struct ContentView: View {
         .sheet(item: $guide) { destination in
             switch destination {
             case .tour: TypefieldTour { onboardingComplete = true; guide = nil }
-            case .about: TypefieldAbout { guide = nil }
+            case .about: TypefieldAbout(dismiss: { guide = nil }, showTour: { guide = .tour }, showShortcuts: { guide = .shortcuts })
+            case .shortcuts: TypefieldShortcutReference { guide = nil }
             }
         }
         .alert("New collection", isPresented: $showCollection) {
@@ -897,7 +899,7 @@ struct Axis: Identifiable {
 }
 
 private enum TypefieldGuide: String, Identifiable {
-    case tour, about
+    case tour, about, shortcuts
     var id: String { rawValue }
 }
 
@@ -963,6 +965,8 @@ private struct TypefieldTour: View {
 
 private struct TypefieldAbout: View {
     let dismiss: () -> Void
+    let showTour: () -> Void
+    let showShortcuts: () -> Void
     private var version: String {
         "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))"
     }
@@ -987,7 +991,12 @@ private struct TypefieldAbout: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack { Spacer(); Button("Done", action: dismiss).buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction) }
+            HStack {
+                Button("Take the Tour", action: showTour).buttonStyle(.bordered)
+                Button("Keyboard Shortcuts", action: showShortcuts).buttonStyle(.bordered)
+                Spacer()
+                Button("Done", action: dismiss).buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
+            }
         }
         .font(.system(size: 13))
         .padding(30)
@@ -1016,26 +1025,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         window.contentView = NSHostingView(rootView: root)
         window.center(); window.setFrameAutosaveName("TypefieldWindow"); window.makeKeyAndOrderFront(nil)
         let menu = NSMenu()
-        let appItem = NSMenuItem(); menu.addItem(appItem)
+        let appItem = NSMenuItem(title: "Typefield", action: nil, keyEquivalent: ""); menu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         addCommand("About Typefield", "about", to: appMenu)
-        appMenu.addItem(withTitle: "Privacy…", action: #selector(showPrivacy), keyEquivalent: "")
-        appMenu.addItem(.separator()); appMenu.addItem(withTitle: "Quit Typefield", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        addCommand("Privacy & Permissions…", "about", to: appMenu)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide Typefield", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit Typefield", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let fileMenu = addMenu("File", to: menu)
         addCommand("Add Font Folder…", "folder", to: fileMenu, key: "o")
-        addCommand("Browse Google Fonts…", "Google Fonts", to: fileMenu)
         addCommand("New Collection…", "collection", to: fileMenu, key: "n")
-        addCommand("Spaces", "spaces", to: fileMenu)
-        addCommand("Letterform Editor", "fontLab", to: fileMenu)
         addCommand("New Typeboard", "pair", to: fileMenu, key: "k")
-        addCommand("Watched Folders…", "Folders", to: fileMenu)
-        addCommand("Inspect Font Files…", "Font Health", to: fileMenu)
+        fileMenu.addItem(.separator())
         addCommand("Export Library Backup…", "backup", to: fileMenu)
         addCommand("Import Library Backup…", "restoreBackup", to: fileMenu)
-        fileMenu.addItem(.separator())
-        addCommand("Find Duplicates…", "Duplicates", to: fileMenu)
-        addCommand("Manage Families…", "Families", to: fileMenu)
-        addCommand("Tag Backups…", "Tags", to: fileMenu)
         addCommand("Export Selected Fonts…", "export", to: fileMenu)
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
@@ -1056,36 +1063,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Compare Selected Families…", "compareSelected", to: fontMenu)
         addCommand("Copy Family Names", "copyNames", to: fontMenu)
         fontMenu.addItem(.separator())
+        addCommand("Browse Google Fonts…", "Google Fonts", to: fontMenu)
+        addCommand("Watched Folders…", "Folders", to: fontMenu)
+        addCommand("Inspect Font Files…", "Font Health", to: fontMenu)
+        addCommand("Find Duplicates…", "Duplicates", to: fontMenu)
+        addCommand("Manage Families…", "Families", to: fontMenu)
+        addCommand("Tag Backups…", "Tags", to: fontMenu)
         addCommand("Temporary Activations…", "Activation", to: fontMenu)
         let viewMenu = addMenu("View", to: menu)
-        addCommand("List", "list", to: viewMenu, key: "1")
-        addCommand("Grid", "grid", to: viewMenu, key: "2")
+        let workspacesMenu = addMenu("Workspaces", to: viewMenu)
+        addCommand("Library", "library", to: workspacesMenu, key: "1")
+        addCommand("Spaces", "spaces", to: workspacesMenu, key: "2")
+        addCommand("Letterform Editor", "fontLab", to: workspacesMenu, key: "3")
         viewMenu.addItem(.separator())
         let sidebarItem = addCommand("Hide Sidebar", "toggleSidebar", to: viewMenu, key: "s")
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(.separator())
-        addCommand("Larger Preview", "larger", to: viewMenu, key: "+")
-        addCommand("Smaller Preview", "smaller", to: viewMenu, key: "-")
-        addCommand("Reset Preview Size", "resetSize", to: viewMenu, key: "0")
-        addCommand("Preview Colors…", "colors", to: viewMenu)
+        let inspectorMenu = addMenu("Inspector", to: viewMenu)
+        addCommand("Toggle Inspector", "studio.inspector.toggle", to: inspectorMenu, key: "i", modifiers: [.command, .option])
+        addCommand("Typography", "studio.inspector.typography", to: inspectorMenu, key: "t", modifiers: [.command, .option])
+        addCommand("Arrangement", "studio.inspector.arrangement", to: inspectorMenu, key: "a", modifiers: [.command, .option])
+        inspectorMenu.addItem(.separator())
+        addCommand("Full", "studio.inspector.full", to: inspectorMenu, key: "1", modifiers: [.command, .option])
+        addCommand("Slim", "studio.inspector.slim", to: inspectorMenu, key: "2", modifiers: [.command, .option])
+        addCommand("Hidden", "studio.inspector.hidden", to: inspectorMenu, key: "3", modifiers: [.command, .option])
+        addCommand("Floating", "studio.inspector.floating", to: inspectorMenu, key: "4", modifiers: [.command, .option])
+        let canvasMenu = addMenu("Canvas", to: viewMenu)
+        addCommand("Focus Canvas", "studio.canvasFocus", to: canvasMenu, key: ".")
+        addCommand("Fit Canvases", "studio.canvas.fit", to: canvasMenu, key: "0")
+        canvasMenu.addItem(.separator())
+        addCommand("Previous Canvas", "studio.previousCanvas", to: canvasMenu, key: "\u{F702}", modifiers: [.command, .option])
+        addCommand("Next Canvas", "studio.nextCanvas", to: canvasMenu, key: "\u{F703}", modifiers: [.command, .option])
         viewMenu.addItem(.separator())
-        addCommand("Advanced Filters…", "filters", to: viewMenu)
-        addCommand("Clear Filters", "clearFilters", to: viewMenu)
-        addCommand("Show Shortlist…", "comparison", to: viewMenu)
-        addCommand("Refresh Fonts", "refresh", to: viewMenu, key: "r")
+        let libraryViewMenu = addMenu("Library View", to: viewMenu)
+        addCommand("List", "list", to: libraryViewMenu, key: "l", modifiers: [.command, .shift])
+        addCommand("Grid", "grid", to: libraryViewMenu, key: "g", modifiers: [.command, .shift])
+        libraryViewMenu.addItem(.separator())
+        addCommand("Larger Preview", "larger", to: libraryViewMenu, key: "+")
+        addCommand("Smaller Preview", "smaller", to: libraryViewMenu, key: "-")
+        addCommand("Reset Preview Size", "resetSize", to: libraryViewMenu, key: "0")
+        addCommand("Preview Colors…", "colors", to: libraryViewMenu)
+        libraryViewMenu.addItem(.separator())
+        addCommand("Advanced Filters…", "filters", to: libraryViewMenu)
+        addCommand("Clear Filters", "clearFilters", to: libraryViewMenu)
+        addCommand("Show Shortlist…", "comparison", to: libraryViewMenu)
+        addCommand("Refresh Fonts", "refresh", to: libraryViewMenu, key: "r")
         let windowItem = NSMenuItem()
         menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
         windowItem.submenu = windowMenu
-        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
-        let fullScreenItem = windowMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        let fullScreenItem = windowMenu.addItem(withTitle: "Enter Full Screen", action: #selector(toggleMainFullScreen(_:)), keyEquivalent: "f")
+        fullScreenItem.target = self
         fullScreenItem.keyEquivalentModifierMask = [.command, .control]
-        NSApp.windowsMenu = windowMenu
+        windowMenu.addItem(.separator())
+        addCommand("Dock Inspector to Main Window", "dockInspector", to: windowMenu)
         let helpMenu = addMenu("Help", to: menu)
-        addCommand("Take the Typefield Tour…", "tour", to: helpMenu)
-        addCommand("Privacy & permissions…", "about", to: helpMenu)
+        addCommand("Getting Started Tour…", "tour", to: helpMenu)
+        addCommand("Keyboard Shortcuts…", "shortcuts", to: helpMenu, key: "/")
         NSApp.helpMenu = helpMenu
         NSApp.mainMenu = menu
         NSApp.activate(ignoringOtherApps: true)
@@ -1097,25 +1133,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let item = NSMenuItem(); parent.addItem(item)
         let submenu = NSMenu(title: title); item.submenu = submenu; return submenu
     }
-    @discardableResult func addCommand(_ title: String, _ command: String, to menu: NSMenu, key: String = "") -> NSMenuItem {
+    @discardableResult func addCommand(_ title: String, _ command: String, to menu: NSMenu, key: String = "", modifiers: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
         let item = menu.addItem(withTitle: title, action: #selector(runMenuCommand(_:)), keyEquivalent: key)
-        item.target = self; item.representedObject = command
+        item.target = self; item.representedObject = command; item.keyEquivalentModifierMask = modifiers
         return item
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(undo(_:)) { item.title = activeUndoManager?.undoMenuItemTitle ?? "Undo"; return activeUndoManager?.canUndo == true }
         if item.action == #selector(redo(_:)) { item.title = activeUndoManager?.redoMenuItemTitle ?? "Redo"; return activeUndoManager?.canRedo == true }
+        if item.action == #selector(toggleMainFullScreen(_:)) {
+            item.title = window.styleMask.contains(.fullScreen) ? "Exit Full Screen" : "Enter Full Screen"
+            return NSApp.isActive && window.attachedSheet == nil
+        }
         guard let command = item.representedObject as? String else { return true }
-        guard window.isKeyWindow, window.attachedSheet == nil else { return false }
+        let inspectorIsKey = NSApp.keyWindow?.title == "Typefield · Inspector" && library.workspace == .spaces
+        if command == "dockInspector" { return NSApp.isActive && inspectorIsKey && window.attachedSheet == nil }
+        guard NSApp.isActive, window.attachedSheet == nil, window.isKeyWindow || inspectorIsKey else { return false }
+        let inLibrary = library.workspace == .library
         let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
         switch command {
-        case "inspect": return selected.count == 1
-        case "export", "tagSelected", "familySelected", "favorite", "copyNames", "deselect": return !selected.isEmpty
-        case "compareSelected": return (2...6).contains(selected.count)
-        case "comparison": return true
-        case "refresh": return !library.loading
+        case "library", "spaces", "fontLab":
+            item.state = (command == "library" && inLibrary) || (command == "spaces" && library.workspace == .spaces) || (command == "fontLab" && library.workspace == .fontLab) ? .on : .off
+        case "inspect": return inLibrary && selected.count == 1
+        case "export", "tagSelected", "familySelected", "favorite", "copyNames", "deselect": return inLibrary && !selected.isEmpty
+        case "compareSelected": return inLibrary && (2...6).contains(selected.count)
+        case "select": return inLibrary && !library.filtered.isEmpty
+        case "find": item.title = library.workspace == .spaces ? "Choose Font…" : "Find Fonts…"; return inLibrary || library.workspace == .spaces
+        case "list", "grid":
+            item.state = (UserDefaults.standard.object(forKey: "adaptiveGridView") as? Bool ?? true) == (command == "grid") ? .on : .off
+            return inLibrary
+        case "larger", "smaller", "resetSize", "colors", "filters", "clearFilters": return inLibrary
+        case "comparison": return inLibrary
+        case "studio.previousCanvas", "studio.nextCanvas", "studio.canvas.fit", "studio.inspector.full", "studio.inspector.slim", "studio.inspector.hidden", "studio.inspector.floating", "studio.inspector.toggle", "studio.inspector.typography", "studio.inspector.arrangement", "studio.canvasFocus":
+            return library.workspace == .spaces && !(NSApp.keyWindow?.firstResponder is NSTextView)
+        case "refresh": return inLibrary && !library.loading
         case "toggleSidebar": item.title = WorkspaceSidebarPreference.collapsed() ? "Show Sidebar" : "Hide Sidebar"
-        case "list", "grid": item.state = (UserDefaults.standard.object(forKey: "adaptiveGridView") as? Bool ?? true) == (command == "grid") ? .on : .off
         default: break
         }
         return true
@@ -1126,14 +1178,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
     @objc func undo(_ sender: Any?) { let manager = activeUndoManager; if manager === library.studio.undoManager { window.makeFirstResponder(window) }; manager?.undo() }
     @objc func redo(_ sender: Any?) { let manager = activeUndoManager; if manager === library.studio.undoManager { window.makeFirstResponder(window) }; manager?.redo() }
+    @objc func toggleMainFullScreen(_ sender: Any?) { window.toggleFullScreen(sender) }
     @objc func runMenuCommand(_ sender: NSMenuItem) {
         guard validateMenuItem(sender), let command = sender.representedObject as? String else { return }
         let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
         switch command {
         case "folder": library.addFolder()
+        case "library": library.workspace = .library
         case "spaces": library.workspace = .spaces
         case "fontLab": library.workspace = .fontLab
-        case "pair": let seed = library.contextualTypeboardSeed(); library.pairSelection(selected.isEmpty ? seed.fonts : selected.map { library.chosenFace($0).name }, source: selected.isEmpty ? seed.source : "Selected Library fonts")
+        case "dockInspector":
+            NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.full")
+            window.makeKeyAndOrderFront(nil)
+        case "about", "tour", "shortcuts":
+            window.makeKeyAndOrderFront(nil)
+            NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: command)
+        case "pair":
+            if library.workspace == .library {
+                let seed = library.contextualTypeboardSeed()
+                library.pairSelection(selected.isEmpty ? seed.fonts : selected.map { library.chosenFace($0).name }, source: selected.isEmpty ? seed.source : "Selected Library fonts")
+            } else { library.pairSelection([], source: "Blank typeboard") }
         case "backup": LibraryBackupTools.export(library)
         case "restoreBackup": LibraryBackupTools.restore(library)
         case "Tags", "Families", "Duplicates", "Font Health", "Google Fonts", "Activation", "Folders": library.openTools(command)
@@ -1152,9 +1216,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "refresh": library.reload(register: true)
         default: NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: command)
         }
-    }
-    @objc func showPrivacy() {
-        NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "about")
     }
     func applicationWillTerminate(_ notification: Notification) { ActivationManager.shared.clear(restore: false) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

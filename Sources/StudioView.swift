@@ -522,7 +522,6 @@ struct TypeBoardEditor: View {
                     Button("Preview PDF…") { exportPDF() }
                     Button("Editable Figma layout…") { exportFigma() }
                 }.fixedSize()
-                inspectorLayoutMenu
                 Menu {
                     Button("Save checkpoint") { var values = board.checkpoints ?? []; values.append(DirectionCheckpoint(direction: direction)); board.checkpoints = Array(values.suffix(50)); save(); status = "Checkpoint saved" }
                     Menu("Restore checkpoint as canvas") {
@@ -540,6 +539,8 @@ struct TypeBoardEditor: View {
                 } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Typeboard actions").accessibilityLabel("Typeboard actions")
             }.padding(.horizontal, 12).padding(.vertical, 8).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
+                inspectorLayoutMenu
+                Divider().frame(height: 20)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) { ForEach(board.directions) { canvas in
                         Button { selectCanvas(canvas.id) } label: {
@@ -633,7 +634,28 @@ struct TypeBoardEditor: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldCanvasFocus"))) { _ in
             if focusCanvas { leaveCanvasFocus(); sidebarCollapsed = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in if event.object as? String == "find" { inspectorTab = "Typography"; if inspectorMode == .hidden { setInspectorMode(.expanded) }; DispatchQueue.main.async { showFontPicker = true } } }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
+            guard let command = event.object as? String else { return }
+            switch command {
+            case "find":
+                inspectorTab = "Typography"
+                if inspectorMode == .hidden { setInspectorMode(.expanded) }
+                DispatchQueue.main.async { showFontPicker = true }
+            case "studio.previousCanvas": selectAdjacentCanvas(-1)
+            case "studio.nextCanvas": selectAdjacentCanvas(1)
+            case "studio.canvas.fit": zoom = 0
+            case "studio.inspector.full": setInspectorMode(.expanded)
+            case "studio.inspector.slim": setInspectorMode(.slim)
+            case "studio.inspector.hidden": setInspectorMode(.hidden)
+            case "studio.inspector.floating": setInspectorMode(.floating)
+            case "studio.inspector.toggle": setInspectorMode(inspectorMode == .hidden ? .expanded : .hidden)
+            case "studio.inspector.typography": showInspectorTab("Typography")
+            case "studio.inspector.arrangement": showInspectorTab("Arrangement")
+            case "studio.canvasFocus":
+                if focusCanvas { leaveCanvasFocus() } else { enterCanvasFocus() }
+            default: break
+            }
+        }
     }
     var canvasWorkspace: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -676,9 +698,17 @@ struct TypeBoardEditor: View {
             Button { enterCanvasFocus() } label: { Label("Focus canvas", systemImage: "arrow.up.left.and.arrow.down.right") }
             Divider()
             Button("Toggle inspector") { setInspectorMode(inspectorMode == .hidden ? .expanded : .hidden) }
-                .keyboardShortcut("i", modifiers: [.command, .option])
-        } label: { Image(systemName: inspectorMode.symbol) }
-        .shelfIconMenu()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: inspectorMode.symbol).font(.system(size: 13))
+                Text("Inspector")
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            }
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 8).frame(height: 28)
+            .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         .help("Inspector layout: " + inspectorMode.title + ". Choose full, slim, hidden, floating, or canvas focus.")
         .accessibilityLabel("Inspector layout: " + inspectorMode.title)
         .accessibilityIdentifier("spaces-inspector-layout")
@@ -754,6 +784,18 @@ struct TypeBoardEditor: View {
         if restoreInspector { inspectorMode = inspectorBeforeFocus }
     }
     func selectCanvas(_ id: UUID) { shownCanvasIDs = CanvasVisibility.selecting(id, from: direction.id, shown: shownCanvasIDs); board.selectedDirection = id; abID = nil; save() }
+    func selectAdjacentCanvas(_ offset: Int) {
+        guard board.directions.count > 1 else { return }
+        let count = board.directions.count
+        let next = (directionIndex + offset + count) % count
+        selectCanvas(board.directions[next].id)
+    }
+    func showInspectorTab(_ tab: String) {
+        if focusCanvas { leaveCanvasFocus() }
+        inspectorTab = tab
+        if inspectorMode == .hidden { setInspectorMode(.expanded) }
+        else if inspectorMode == .slim { showRailInspector = true }
+    }
     func showOnlyCurrent() { shownCanvasIDs = CanvasVisibility.solo(direction.id); abID = nil }
     func hideCanvas(_ id: UUID) { guard id != direction.id else { return }; shownCanvasIDs.remove(id) }
     func swapAB() { guard let id = abID, board.directions.contains(where: { $0.id == id && $0.canvas == direction.canvas && $0.width == direction.width }) else { return }; abID = direction.id; board.selectedDirection = id; shownCanvasIDs = [id]; save() }

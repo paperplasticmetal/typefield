@@ -1,9 +1,10 @@
 # Build and verification status
 
-Current source: **0.38.0, build 50**. Updated 2026-09-22.
+Current source: **0.39.0, build 51**. Updated 2026-09-22.
 
 | Check | Status |
 | --- | --- |
+| 0.39 inspector, shortcuts and menus | The labeled Spaces inspector control sits beside the canvas tabs. Workspace, canvas, inspector and Letterform Editor shortcuts have a searchable Help reference; Help and About reopen onboarding. Menu commands are grouped by workspace, the checked Window entry is gone, and a floating inspector can be docked from Window. Disposable native UI verified workspace switching, both Letterform mode keys and glyph navigation, canvas navigation/focus/fit, shortcut search, and Window docking. The optimized native suite passed (21,260 layouts across 4,252 styles), the Figma bridge passed, and canonical 0.39.0 (51) installed. Apple distribution signing and App Store Connect validation remain pending. |
 | Spaces inspector layouts, 0.38.0 | Compact typography fields and header spacing; docked full inspector, 52-point slim rail with on-demand controls, fully hidden inspector, movable resizable native floating panel, and canvas focus that hides workspace chrome. Disposable native UI verified switching layouts, editing canvas name/type role/size from the floating panel with immediate panel and saved-data updates, slim popover access, canvas focus, and sidebar-shortcut recovery. Existing user projects were not used for testing. The optimized native suite passed (21,260 layouts across 4,252 styles), the Figma bridge passed, and the canonical 0.38.0 (50) install passed strict ad-hoc signature and installed/tested executable hash checks. |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |

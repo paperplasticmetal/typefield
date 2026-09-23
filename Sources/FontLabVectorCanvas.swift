@@ -253,21 +253,11 @@ final class FontLabVectorNSView: NSView {
         previousGlyph=nil;marquee=nil;drag = .none;needsDisplay=true
     }
     override func keyDown(with event:NSEvent) {
+        if handleCommandShortcut(event) { return }
+        let modifiers=event.modifierFlags.intersection([.command,.shift,.option,.control])
+        guard modifiers.isEmpty || modifiers == .shift else {super.keyDown(with:event);return}
         let key=event.charactersIgnoringModifiers?.lowercased() ?? ""
-        let command=event.modifierFlags.contains(.command),shift=event.modifierFlags.contains(.shift)
-        if command {
-            switch key {
-            case "z":if shift {editor.onRedo()} else {editor.onUndo()};return
-            case "a":editor.selectAll();return
-            case "c":editor.copyPaths();return
-            case "v":editor.pastePaths();return
-            case "d":editor.duplicate();return
-            case "0":editor.fit();return
-            case "+","=":editor.zoom=min(8,editor.zoom*1.25);return
-            case "-":editor.zoom=max(0.5,editor.zoom/1.25);return
-            default:super.keyDown(with:event);return
-            }
-        }
+        let shift=modifiers.contains(.shift)
         if event.keyCode==53 {editor.activePath=nil;editor.tool = .select;editor.selection=[];return}
         if event.keyCode==51 || event.keyCode==117 {editor.deleteSelection();return}
         if event.keyCode==36 {editor.smooth(!editor.selectedNodes.allSatisfy(\.smooth));return}
@@ -292,8 +282,25 @@ final class FontLabVectorNSView: NSView {
     override func keyUp(with event:NSEvent) {if event.keyCode==49 {spaceDown=false} else {super.keyUp(with:event)}}
     override func resignFirstResponder()->Bool {spaceDown=false;return super.resignFirstResponder()}
     override func performKeyEquivalent(with event:NSEvent)->Bool {
-        if window?.firstResponder === self,event.modifierFlags.contains(.command),["z","a","c","v","d","0","+","=","-"].contains(event.charactersIgnoringModifiers?.lowercased() ?? "") {keyDown(with:event);return true}
+        if window?.firstResponder === self,handleCommandShortcut(event) {return true}
         return super.performKeyEquivalent(with:event)
+    }
+    private func handleCommandShortcut(_ event:NSEvent)->Bool {
+        let modifiers=event.modifierFlags.intersection([.command,.shift,.option,.control])
+        guard modifiers == .command || modifiers == [.command,.shift] else {return false}
+        let shift=modifiers.contains(.shift)
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "z":if shift {editor.onRedo()} else {editor.onUndo()}
+        case "a" where !shift:editor.selectAll()
+        case "c" where !shift:editor.copyPaths()
+        case "v" where !shift:editor.pastePaths()
+        case "d" where !shift:editor.duplicate()
+        case "0" where !shift:editor.fit()
+        case "+","=":editor.zoom=min(8,editor.zoom*1.25)
+        case "-" where !shift:editor.zoom=max(0.5,editor.zoom/1.25)
+        default:return false
+        }
+        return true
     }
     override func scrollWheel(with event:NSEvent) {
         if event.modifierFlags.contains(.option) {zoom(by:exp(-event.scrollingDeltaY*0.015),at:convert(event.locationInWindow,from:nil))}
