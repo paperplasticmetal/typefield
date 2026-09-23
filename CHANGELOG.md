@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.44.1 — 2026-09-23
+
+- Brought Ink Sketch back into the shared Tf icon family, retaining the same serif letterforms and proportions with restrained calligraphic ink detail.
+
 ## 0.44.0 — 2026-09-23
 
 - Refined Ink Sketch into a calligraphic treatment with deliberate pen strokes instead of scattered specks.

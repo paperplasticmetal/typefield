@@ -205,41 +205,48 @@ enum TypefieldIcon {
     private static func inkSketch(_ ctx: CGContext, _ m: Mark, _ dark: Bool, _ size: Int) {
         gradient(ctx, top: c(dark ? "28372D" : "F3EAD4"), bottom: c(dark ? "18261F" : "E8D8B7"))
         let ink = c(dark ? "DDE9CA" : "213A2B")
-        // The other icon directions share Bodoni. This one changes the actual
-        // lettering to a flowing pen hand, with thick downstrokes and fine joins.
-        let handName = size <= 32 ? "Baskerville-BoldItalic" : "SnellRoundhand-Black"
-        let font = CTFontCreateWithName(handName as CFString, 700, nil)
-        var chars: [UniChar] = [84, 102]
-        var glyphs: [CGGlyph] = [0, 0]
-        guard CTFontGetGlyphsForCharacters(font, &chars, &glyphs, 2),
-              let t = CTFontCreatePathForGlyph(font, glyphs[0], nil),
-              let f = CTFontCreatePathForGlyph(font, glyphs[1], nil) else {
-            fill(ctx, m.both, ink)
-            return
-        }
-        let tb = t.boundingBoxOfPath
-        let fb = f.boundingBoxOfPath
-        let raw = CGMutablePath()
-        raw.addPath(t, transform: CGAffineTransform(translationX: -tb.minX, y: 0))
-        raw.addPath(f, transform: CGAffineTransform(translationX: tb.width + (size <= 32 ? 18 : -7) - fb.minX, y: 0))
-        let bounds = raw.boundingBoxOfPath
-        let scale = min((size <= 32 ? 765 : 730) / bounds.width, 650 / bounds.height)
-        let transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
-            tx: 512 - bounds.midX * scale, ty: 508 - bounds.midY * scale)
-        let hand = CGMutablePath(); hand.addPath(raw, transform: transform)
-        fill(ctx, hand, ink)
-        stroke(ctx, hand, ink, size <= 32 ? 28 : size <= 64 ? 12 : 6)
-        if size >= 128 {
-            // A tapered exit made with the same pen completes the lower f stroke.
+        // Keep the shared Bodoni outlines intact. A broad pen gently enters the
+        // T cap, and its exit grows directly out of the f's lower serif.
+        let tb = m.t.boundingBoxOfPath
+        let fb = m.f.boundingBoxOfPath
+        if size >= 64 {
+            let entry = CGMutablePath()
+            let left = tb.minX
+            let top = tb.maxY
+            entry.move(to: CGPoint(x: left - 25, y: top + 8))
+            entry.addCurve(to: CGPoint(x: left + 86, y: top - 1),
+                control1: CGPoint(x: left + 8, y: top + 14), control2: CGPoint(x: left + 46, y: top + 5))
+            entry.addQuadCurve(to: CGPoint(x: left + 12, y: top - 8),
+                control: CGPoint(x: left + 42, y: top - 9))
+            entry.closeSubpath()
+            fill(ctx, entry, ink)
+
+            let foot = CGPoint(x: fb.minX + fb.width * 0.69, y: fb.minY + 11)
             let exit = CGMutablePath()
-            exit.move(to: CGPoint(x: 604, y: 354))
-            exit.addCurve(to: CGPoint(x: 841, y: 409),
-                control1: CGPoint(x: 680, y: 342), control2: CGPoint(x: 788, y: 365))
-            exit.addQuadCurve(to: CGPoint(x: 755, y: 377), control: CGPoint(x: 819, y: 401))
-            exit.addCurve(to: CGPoint(x: 604, y: 354),
-                control1: CGPoint(x: 708, y: 361), control2: CGPoint(x: 647, y: 351))
+            exit.move(to: CGPoint(x: foot.x - 28, y: foot.y + 8))
+            exit.addCurve(to: CGPoint(x: foot.x + 114, y: foot.y - 31),
+                control1: CGPoint(x: foot.x + 25, y: foot.y + 1),
+                control2: CGPoint(x: foot.x + 83, y: foot.y - 32))
+            exit.addQuadCurve(to: CGPoint(x: foot.x + 45, y: foot.y - 24),
+                control: CGPoint(x: foot.x + 89, y: foot.y - 27))
+            exit.addCurve(to: CGPoint(x: foot.x - 28, y: foot.y - 6),
+                control1: CGPoint(x: foot.x + 10, y: foot.y - 11),
+                control2: CGPoint(x: foot.x - 12, y: foot.y - 5))
             exit.closeSubpath()
             fill(ctx, exit, ink)
+        }
+        fill(ctx, m.both, ink)
+        if size <= 32 { stroke(ctx, m.both, ink, 22) }
+        if size >= 128 {
+            // Two continuous nib highlights suggest varying pressure inside the
+            // thick strokes, without introducing speckle or changing the glyphs.
+            ctx.saveGState(); ctx.addPath(m.both); ctx.clip()
+            let nib = c(dark ? "F5F4DA" : "91A98C", dark ? 0.26 : 0.30)
+            line(ctx, tb.midX - 27, tb.minY + 59,
+                tb.midX - 34, tb.maxY - 51, nib, 16)
+            line(ctx, fb.minX + fb.width * 0.36, fb.minY + 54,
+                fb.minX + fb.width * 0.32, fb.maxY - 100, nib, 13)
+            ctx.restoreGState()
         }
     }
 
