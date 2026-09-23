@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.43.0 — 2026-09-23
+
+- Tightened the standard Porcelain “Tf” icon and strengthened the f crossbar for small Dock sizes.
+- Replaced five color-only icon alternatives with distinct paper-cut, type-study, ink-sketch, chalkboard, and pressed-type designs. Existing icon selections still resolve to their corresponding new styles.
+- Updated the icon chooser to name and preview each design direction.
+
 ## 0.42.0 — 2026-09-23
 
 - Kept the workspace on neutral Porcelain light and dark surfaces. Palette choices now change accents on controls, selections, and subtle hover states without tinting default font-preview backgrounds or saved typeboards.

@@ -14,7 +14,7 @@ enum ShelfPalette {
         })
     }
     static func workspaceColor(dark: Bool) -> NSColor {
-        TypefieldPalette.color(dark ? TypefieldPalette.neutral.night : TypefieldPalette.neutral.paper)
+        TypefieldPalette.color(dark ? "171A20" : "F6F7F9")
     }
     static var canvas: Color {
         Color(nsColor: NSColor(name: nil) { appearance in

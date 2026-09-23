@@ -132,7 +132,7 @@ struct TypefieldSettingsView: View {
     private var iconPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Choose how Typefield appears in the Dock.").foregroundStyle(.secondary)
+                Text("Choose a Typefield icon for the Dock.").foregroundStyle(.secondary)
                 HStack(spacing: 12) {
                     ForEach([16, 32, 64], id: \.self) { pixels in
                         Image(nsImage: TypefieldIcon.image(palette: .resolve(iconPalette), dark: darkIcon, size: pixels * 2))
@@ -148,19 +148,23 @@ struct TypefieldSettingsView: View {
                 Picker("Icon appearance", selection: $iconAppearance) {
                     ForEach(["Automatic", "Light", "Dark"], id: \.self) { Text($0).tag($0) }
                 }.pickerStyle(.segmented)
-                Text("Icon color").font(.headline)
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                Text("Icon design").font(.headline)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(TypefieldPalette.allCases) { item in
                         Button { iconPalette = item.rawValue } label: {
-                            VStack(spacing: 7) {
-                                Image(nsImage: TypefieldIcon.image(palette: item, dark: darkIcon, size: 128)).resizable().frame(width: 74, height: 74)
-                                HStack(spacing: 5) {
-                                    Text(item.title)
-                                    if iconPalette == item.rawValue { Image(systemName: "checkmark.circle.fill") }
-                                }.font(.caption).foregroundStyle(.primary)
-                            }.frame(maxWidth: .infinity).padding(10)
-                                .background(iconPalette == item.rawValue ? ShelfPalette.indiaYellow.opacity(0.12) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-                        }.buttonStyle(.plain).accessibilityLabel(item.title + " Dock icon").accessibilityAddTraits(iconPalette == item.rawValue ? .isSelected : [])
+                            HStack(spacing: 12) {
+                                Image(nsImage: TypefieldIcon.image(palette: item, dark: darkIcon, size: 128))
+                                    .resizable().interpolation(.high).frame(width: 64, height: 64)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.iconDesignTitle).font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
+                                    Text(item.iconDesignDetail).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                if iconPalette == item.rawValue { Image(systemName: "checkmark.circle.fill").foregroundStyle(ShelfPalette.ink) }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                            .background(iconPalette == item.rawValue ? ShelfPalette.ink.opacity(0.09) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(.plain).accessibilityLabel(item.iconDesignTitle + " app icon, " + item.iconDesignDetail).accessibilityAddTraits(iconPalette == item.rawValue ? .isSelected : [])
                     }
                 }
                 Text("Changes apply to the Dock while Typefield is running and are restored on launch. Finder and the app’s closed-state icon use the standard Porcelain artwork. Automatic follows the app appearance.").font(.caption).foregroundStyle(.secondary)
@@ -211,6 +215,29 @@ struct TypefieldSettingsView: View {
             Button("Keyboard Shortcuts") { selection.page = .shortcuts }
             Button("Privacy & Permissions") { selection.page = .privacy }
             Spacer()
+        }
+    }
+}
+
+private extension TypefieldPalette {
+    var iconDesignTitle: String {
+        switch self {
+        case .neutral: return "Porcelain"
+        case .amber: return "Paper Play"
+        case .ocean: return "Type Study"
+        case .forest: return "Ink Sketch"
+        case .plum: return "Chalkboard"
+        case .rose: return "Pressed Type"
+        }
+    }
+    var iconDesignDetail: String {
+        switch self {
+        case .neutral: return "Clean serif"
+        case .amber: return "Layered cutouts"
+        case .ocean: return "Guides and metrics"
+        case .forest: return "Hand drawn"
+        case .plum: return "Chalk and grain"
+        case .rose: return "Dimensional relief"
         }
     }
 }

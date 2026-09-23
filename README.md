@@ -130,8 +130,8 @@ The workflow badge reflects GitHub CI. Local checks and manual testing have narr
 
 No open-source license has been granted at this time. All rights are reserved by the respective copyright holders, except as permitted by applicable law and GitHub's terms. Public visibility is not permission to redistribute the app or reuse its code. Font files retain their own licenses; no font binaries are bundled in this repository.
 
-### Settings and icon colors
+### Settings and icon designs
 
-Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The sidebar includes Appearance, App Icon, Live Folders, Library, Keyboard Shortcuts, Privacy & Permissions, and About. The workspace uses Porcelain's neutral light and dark surfaces. Choose Porcelain, Amber, Ocean, Forest, Plum, or Rose as an accent for controls and selections, independently of the Dock icon color. Icon appearance can follow the app or stay Light/Dark. Selections persist; Finder uses the standard bundled Porcelain light icon. Accent colors do not recolor font previews or saved typeboards.
+Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The workspace uses Porcelain's neutral light and dark surfaces. Choose Porcelain, Amber, Ocean, Forest, Plum, or Rose as an accent for controls and selections. The independent App Icon pane offers six designs: clean Porcelain, layered Paper Play, typographic Type Study, hand-drawn Ink Sketch, textured Chalkboard, and dimensional Pressed Type. Icon appearance can follow the app or stay Light/Dark. Selections persist; Finder uses the bundled Porcelain light icon. Accent colors do not recolor font previews or saved typeboards.
 
 Icon artwork is generated from native type outlines by `scripts/make-icon.swift`; its header documents the compilation command. The same renderer powers Settings previews and the Dock.
