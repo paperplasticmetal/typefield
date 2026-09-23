@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.37.1 — 2026-09-22
+
+- Reorganized the Spaces typography inspector so font, size and leading remain easy to reach while detailed controls are grouped into compact sections. Simplified the canvas and role header and reduced the visual weight of secondary settings without removing their functions.
+
 ## 0.37.0 — 2026-09-22
 
 - Rebranded the app, icon, project, bundle, menus and three-workspace header as Typefield. Kept existing library/project storage and versioned Figma/Adobe interchange identifiers compatible.

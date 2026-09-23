@@ -491,19 +491,39 @@ struct TypeBoardEditor: View {
                     Button("Delete typeboard…", role: .destructive) { showDelete = true }
                 } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Typeboard actions").accessibilityLabel("Typeboard actions")
             }.padding(14).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) { ForEach(board.directions) { canvas in
-                        Button { selectCanvas(canvas.id) } label: { HStack(spacing: 5) { if shownCanvasIDs.contains(canvas.id) || canvas.id == direction.id { Image(systemName: "eye.fill").font(.caption2) }; Text(board.canvasName(canvas)).lineLimit(1) }.padding(.horizontal, 12).padding(.vertical, 7).background(canvas.id == direction.id ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7)) }.buttonStyle(.plain).help("Edit and show " + board.canvasName(canvas))
+                        Button { selectCanvas(canvas.id) } label: {
+                            HStack(spacing: 6) {
+                                if shownCanvasIDs.contains(canvas.id) || canvas.id == direction.id { Circle().fill(Color.accentColor).frame(width: 5, height: 5) }
+                                Text(board.canvasName(canvas)).lineLimit(1)
+                            }
+                            .font(.subheadline)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(canvas.id == direction.id ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
+                        }.buttonStyle(.plain).help("Edit and show " + board.canvasName(canvas))
                     } }
                 }
-                Button(showingAllCanvases ? "Only current" : "Show all") { if showingAllCanvases { showOnlyCurrent() } else { shownCanvasIDs = Set(board.directions.map(\.id)); abID = nil } }.disabled(board.directions.count < 2).fixedSize()
-            }.frame(height: 36).padding(.horizontal, 14).padding(.bottom, 10)
-            HStack {
-                ShelfDropdown(title: "Format", selection: directionBinding(\.canvas), options: CanvasKind.allCases.filter { $0 != .imported || direction.importedLayout != nil }.map { ($0 == .imported ? direction.canvasDisplayName : $0.rawValue, $0) }).frame(minWidth: 115, idealWidth: 180, maxWidth: 210)
-                if direction.canvas == .imported { Text("\(Int(direction.width)) \(direction.canvasUnitLabel)").font(.caption).foregroundStyle(.secondary) }
-                else { ShelfDropdown(title: "Width", selection: directionBinding(\.width), options: [("Mobile · 390", 390.0), ("Tablet · 768", 768.0), ("Desktop · 1200", 1200.0), ("Canvas · 960", 960.0)], showsTitle: false).frame(width: 132) }
-                Spacer()
+                Divider().frame(height: 20)
+                Menu {
+                    Menu("Format") {
+                        ForEach(CanvasKind.allCases.filter { $0 != .imported || direction.importedLayout != nil }, id: \.self) { kind in
+                            Button(kind == .imported ? direction.canvasDisplayName : kind.rawValue) { directionBinding(\.canvas).wrappedValue = kind }
+                        }
+                    }
+                    if direction.canvas != .imported {
+                        Menu("Width") {
+                            Button("Mobile · 390") { directionBinding(\.width).wrappedValue = 390 }
+                            Button("Tablet · 768") { directionBinding(\.width).wrappedValue = 768 }
+                            Button("Desktop · 1200") { directionBinding(\.width).wrappedValue = 1200 }
+                            Button("Canvas · 960") { directionBinding(\.width).wrappedValue = 960 }
+                        }
+                    }
+                } label: {
+                    Label(direction.canvasDisplayName + " · \(Int(direction.width)) \(direction.canvasUnitLabel)", systemImage: "rectangle.dashed")
+                        .lineLimit(1)
+                }.fixedSize().help("Change canvas format or width")
                 Menu {
                     Button("Only " + board.canvasName(direction)) { showOnlyCurrent() }.disabled(visibleDirections.count == 1 && abID == nil)
                     Button("Show every canvas") { shownCanvasIDs = Set(board.directions.map(\.id)); abID = nil }.disabled(showingAllCanvases)
@@ -521,10 +541,10 @@ struct TypeBoardEditor: View {
                         if candidates.isEmpty { Text("Duplicate a canvas to start"); Text("Use the same format and width") }
                         ForEach(candidates) { candidate in Button(board.canvasName(candidate)) { abID = candidate.id; shownCanvasIDs = [direction.id] } }
                     }.disabled(board.directions.count < 2)
-                } label: { Label(abID != nil ? "A/B" : "Shown · \(visibleDirections.count)", systemImage: "rectangle.split.2x1") }.fixedSize().help("Choose exactly which canvases are visible")
+                } label: { Label(abID != nil ? "A/B" : "\(visibleDirections.count) shown", systemImage: "eye") }.fixedSize().help("Choose exactly which canvases are visible")
                 if abID != nil { Button { swapAB() } label: { Image(systemName: "arrow.left.arrow.right") }.keyboardShortcut("\\", modifiers: [.command]).help("Swap A/B (⌘\\)").accessibilityLabel("Swap A/B") }
                 Menu(zoom == 0 ? "Fit" : "\(Int(zoom * 100))%") { Button("Fit all visible canvases") { zoom = 0 }; ForEach([0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0], id: \.self) { value in Button("\(Int(value * 100))%") { zoom = value } } }.fixedSize().help("Pinch to zoom, or hold ⌘ while scrolling with a mouse. Scroll normally to pan.")
-            }.padding(.horizontal, 14).padding(.bottom, 12).fixedSize(horizontal: false, vertical: true)
+            }.padding(.horizontal, 14).padding(.bottom, 10).fixedSize(horizontal: false, vertical: true)
             Divider()
             HSplitView {
                 inspector.frame(minWidth: 300, idealWidth: 330, maxWidth: 500).background(StudioSplitPosition())
@@ -627,8 +647,12 @@ struct TypeBoardEditor: View {
     var inspector: some View {
         let plan = CanvasPlanCache.plan(for: direction)
         return ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                TextField("Canvas name", text: Binding(get: { board.canvasName(direction) }, set: { board.directions[directionIndex].name = $0; save() })).textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Text("Canvas").font(.caption).foregroundStyle(.secondary)
+                    TextField("Canvas name", text: Binding(get: { board.canvasName(direction) }, set: { board.directions[directionIndex].name = $0; save() }))
+                        .textFieldStyle(.roundedBorder)
+                }
                 Picker("Inspector", selection: $inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
                 if inspectorTab == "Arrangement" { layoutSections }
                 else {
@@ -637,7 +661,16 @@ struct TypeBoardEditor: View {
                     ShelfDropdown(title: "Layer", selection: Binding(get: { importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id } ?? "" }, set: { selectedSection = $0 }), options: (direction.importedLayout?.layers.filter { $0.style != nil } ?? []).map { ($0.name, $0.id) }, showsTitle: false)
                     Text("Edit each text layer independently. Drag layers on the canvas to position them.").font(.caption).foregroundStyle(.secondary)
                 } else {
-                DisclosureGroup("Type roles · " + role.rawValue) {
+                HStack(spacing: 8) {
+                    Text("Type role").font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Menu {
+                        ForEach(TypeRole.allCases) { item in Button(item.rawValue) { selectRole(item) } }
+                    } label: {
+                        HStack(spacing: 5) { Text(role.rawValue).fontWeight(.medium); Image(systemName: "chevron.up.chevron.down").font(.caption2) }
+                    }.fixedSize().accessibilityLabel("Type role: " + role.rawValue)
+                }
+                DisclosureGroup("Browse and add roles") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
                 ForEach(TypeRole.allCases) { item in
                     let count = plan.elements.filter { $0.role == item && $0.text != nil }.count
@@ -647,63 +680,77 @@ struct TypeBoardEditor: View {
                 }
                 Text("Double-click text on the canvas to edit it in place. Press ⌘Return to finish or Escape to cancel.").font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Click a role to select its first use on the canvas. Drag any role onto the canvas to add its saved sample text.").font(.caption2).foregroundStyle(.secondary)
+                Text("Click a role to select its first use. Drag it onto the canvas to add another.").font(.caption2).foregroundStyle(.secondary)
                 }
                 }
                 Divider()
                 if importedNonTextSelected {
                     Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary)
                 } else {
-                Text(editingTitle).font(.headline)
+                if direction.canvas == .imported { Text(editingTitle).font(.headline) }
                 if selectedTextID != nil && direction.canvas != .imported { Text("Editing the selected text. Font and spacing changes apply to its shared type role.").font(.caption).foregroundStyle(.secondary) }
                 characterPanel
-                if direction.canvas != .imported {
-                    Menu {
-                        ForEach(TypeRole.allCases.filter { $0 != role }) { target in
-                            Button("Suggest for " + target.rawValue) {
-                                pairingTargetRole = target
-                                showPairingSuggestions = true
+                paragraphPanel
+                DisclosureGroup("Advanced type") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if direction.canvas != .imported {
+                            Menu {
+                                ForEach(TypeRole.allCases.filter { $0 != role }) { target in
+                                    Button("Suggest for " + target.rawValue) {
+                                        pairingTargetRole = target
+                                        showPairingSuggestions = true
+                                    }
+                                }
+                            } label: { Label("Find a font pairing…", systemImage: "sparkles") }
+                                .disabled(selectedFace == nil)
+                                .help("Rank compatible fonts from your local library and explain each suggestion")
+                        }
+                        if selectedFace?.facts.variable == true {
+                            Text("Variable font axes").font(.caption).fontWeight(.semibold)
+                            axesEditor
+                        }
+                        if let face = selectedFace {
+                            let features = face.facts.features.filter { $0 != "kern" }
+                            if !features.isEmpty {
+                                Text("OpenType features").font(.caption).fontWeight(.semibold)
+                                ForEach(features, id: \.self) { tag in
+                                    ShelfDropdown(title: tag, selection: Binding(get: { style.features[tag] ?? -1 }, set: { var s = style; if $0 < 0 { s.features.removeValue(forKey: tag) } else { s.features[tag] = $0 }; setStyle(s); save() }), options: [("Default", -1), ("Off", 0), ("On", 1)] + (2...9).map { ("Alternate \($0)", $0) })
+                                }
                             }
                         }
-                    } label: { Label("Pair this font with another role…", systemImage: "sparkles") }
-                        .disabled(library.allFaces.first(where: { $0.name == style.fontName }) == nil)
-                        .help("Rank compatible fonts from your local library and explain each suggestion")
-                }
-                paragraphPanel
-                listPanel
-                Divider()
-                canvasAlignmentPanel
-                DisclosureGroup("Variable font axes") { axesEditor }
-                if let face = library.allFaces.first(where: { $0.name == style.fontName }) {
-                    let features = face.facts.features.filter { $0 != "kern" }
-                    if !features.isEmpty {
-                    DisclosureGroup("OpenType features") {
-                        ForEach(features, id: \.self) { tag in
-                            ShelfDropdown(title: tag, selection: Binding(get: { style.features[tag] ?? -1 }, set: { var s = style; if $0 < 0 { s.features.removeValue(forKey: tag) } else { s.features[tag] = $0 }; setStyle(s); save() }), options: [("Default", -1), ("Off", 0), ("On", 1)] + (2...9).map { ("Alternate \($0)", $0) })
+                        Text(selectedTextID == nil ? "Sample text" : "Selected text").font(.caption).fontWeight(.semibold)
+                        TextEditor(text: styleBinding(\.text)).frame(height: 100)
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
+                        Divider()
+                        Text("Proofing").font(.caption).fontWeight(.semibold)
+                        let ink = importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink
+                        if let ratio = SpacesProofing.contrastRatio(ink: ink, paper: direction.paper) {
+                            Text(String(format: "Ink/canvas contrast: %.2f:1", ratio)).font(.caption).foregroundStyle(.secondary)
+                            if ratio < 4.5 { Label("Below the 4.5:1 small-text reference", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
                         }
+                        Text("Longest entered line: \(SpacesProofing.longestLine(style.text)) characters").font(.caption).foregroundStyle(.secondary)
+                        if direction.canvas == .imported { Text("Contrast uses saved layer ink and canvas color; overlapping artwork may change the result.").font(.caption).foregroundStyle(.secondary) }
+                        else { Text("Wrapping and rendered line length depend on the frame and font.").font(.caption).foregroundStyle(.secondary) }
                     }
-                    }
+                    .padding(.top, 8)
                 }
-                Text(selectedTextID == nil ? "Sample text" : "Selected text").font(.caption).foregroundStyle(.secondary)
-                TextEditor(text: styleBinding(\.text)).frame(height: 100).overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
-                DisclosureGroup("Proofing") {
-                    let ink = importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink
-                    if let ratio = SpacesProofing.contrastRatio(ink: ink, paper: direction.paper) {
-                        Text(String(format: "Ink/canvas contrast: %.2f:1", ratio))
-                        if ratio < 4.5 { Label("Below the 4.5:1 small-text reference", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                    }
-                    Text("Longest entered line: \(SpacesProofing.longestLine(style.text)) characters")
-                    if direction.canvas == .imported { Text("Contrast uses saved layer ink and canvas color; overlapping artwork may change the result.") }
-                    else { Text("Wrapping and rendered line length depend on the frame and font.") }
-                }.font(.caption).foregroundStyle(.secondary)
                 }
                 }
                 Divider()
-                if inspectorTab == "Arrangement" || importedNonTextSelected { canvasAlignmentPanel; Divider() }
+                if inspectorTab == "Arrangement" { canvasAlignmentPanel; Divider() }
                 if let warnings = direction.importWarnings, !warnings.isEmpty { DisclosureGroup("Import notes (\(warnings.count))") { Text(warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) } }
-                if !importedNonTextSelected { colorPicker("Text", key: \.ink) }; colorPicker("Background", key: \.paper); if direction.canvas != .imported { colorPicker("Accent", key: \.accent) }
-                Text("Canvas notes").font(.caption).foregroundStyle(.secondary)
-                TextEditor(text: directionBinding(\.notes)).frame(height: 75)
+                DisclosureGroup("Canvas settings") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if inspectorTab != "Arrangement" { canvasAlignmentPanel; Divider() }
+                        Text("Colors").font(.caption).fontWeight(.semibold)
+                        if !importedNonTextSelected { colorPicker("Text", key: \.ink) }
+                        colorPicker("Background", key: \.paper)
+                        if direction.canvas != .imported { colorPicker("Accent", key: \.accent) }
+                        Divider()
+                        Text("Canvas notes").font(.caption).fontWeight(.semibold)
+                        TextEditor(text: directionBinding(\.notes)).frame(height: 75)
+                    }.padding(.top, 8)
+                }
             }.padding(14)
         }
     }

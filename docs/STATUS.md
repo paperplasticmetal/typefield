@@ -1,12 +1,13 @@
 # Build and verification status
 
-Current source: **0.37.0, build 48**. Updated 2026-09-22.
+Current source: **0.37.1, build 49**. Updated 2026-09-22.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
 | Layout checks | 21,260 cases across 778 families and 4,252 styles in the final installed build |
+| Spaces inspector, 0.37.1 | Default and expanded inspector reviewed in the installed app at the same window size as the reported screenshot. Canvas controls share one row; font, size and leading are visible; Character details, Paragraph, Advanced type and Canvas settings contain the remaining controls. Paragraph/list, role browser, format/width menu, advanced tools, canvas settings and Arrangement access were verified without editing saved projects. Full native suite (21,260 layouts), unsigned Xcode Release build, canonical install, strict ad-hoc signature and installed/tested executable hash passed. |
 | Typefield 0.37 identity and onboarding | Native 0.37.0 (48) build and Figma mock bridge pass; screenshot review found and corrected a clipped tour heading, About privacy paragraph, sidebar workspace labels and inherited window placement. The new icon, About sheet and all tour steps were inspected in the running app. The installed Letterform Editor shows the renamed section heading. |
 | Canonical local install, 0.37.0 | `/Applications/Typefield.app` installed; strict ad-hoc signature verification passed and the installed executable hash matches the tested build. The superseded `/Applications/FontShelf.app` bundle was removed after verification. Existing Application Support files remain at their compatible path; the user's saved external folder needs access renewed under the new bundle identity. |
 | Xcode Release archive, 0.37.0 | Passed unsigned with Typefield product name, `local.typefield.app` and build 48; distribution signing and App Store Connect validation remain pending. |
