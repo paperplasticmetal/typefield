@@ -21,7 +21,7 @@ Direct Procreate import reads an available embedded flattened preview or thumbna
 `tests/fixtures/font-lab-artwork/` contains original SVG artwork for a 26-letter sheet, a single O and detached i/j/! marks. Generate PNG versions and a clearly labeled synthetic Procreate preview container with:
 
 ```sh
-dist/FontShelf.app/Contents/MacOS/FontShelf --font-lab-artwork-fixtures /tmp/font-lab-fixtures
+dist/Typefield.app/Contents/MacOS/Typefield --font-lab-artwork-fixtures /tmp/font-lab-fixtures
 ```
 
 The synthetic container is an importer test, not an editable Procreate document. No installed font outlines or user projects are used to create these fixtures.

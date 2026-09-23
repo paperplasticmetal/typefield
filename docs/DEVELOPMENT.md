@@ -21,11 +21,11 @@
 - UI copy must be concise and functional; no taglines or decorative filler.
 - Preview downloads must not activate fonts or modify the library. Keep preview text on-device.
 - Maintain sandbox compatibility and explicit user-selected file access. Adobe support is script export only.
-- Update both version plists. App bundle display name remains FontShelf; release ZIPs carry versions.
+- Update both version plists. App bundle display name is Typefield; preserve legacy data paths and versioned interchange formats.
 
 ## Local release workflow
 
-- Use `/Applications/FontShelf.app` as the single canonical local app. Do not create numbered FontShelf app copies or ZIPs unless they are explicitly requested.
+- Use `/Applications/Typefield.app` as the single canonical local app. Do not create numbered Typefield app copies or ZIPs unless they are explicitly requested.
 - For each completed fix or feature, run the relevant checks, commit the source and documentation, and push the commit to `origin` so GitHub remains the durable reference.
 - For each user-visible build, update both version plists, the changelog and status notes, then run `./install-local.sh`. The script builds, runs the native regression suite and updates the canonical Applications copy.
 - Never replace an unreadable library or workspace while installing a build. App data remains in Application Support and is separate from the app bundle.
@@ -34,4 +34,4 @@ Keep source-only changes separate from generated artifacts. The `.gitignore` exc
 
 ## Letterform Editor specimens
 
-Run `dist/FontShelf.app/Contents/MacOS/FontShelf --font-lab-specimen /tmp/fontshelf-specimens` to render disposable comparison sheets and export validation fonts. This command does not open the user library or save projects. Fonts unavailable to the current process are skipped. Use normal macOS execution for the complete installed font catalog. Generated files are QA fixtures, not distribution artifacts.
+Run `dist/Typefield.app/Contents/MacOS/Typefield --font-lab-specimen /tmp/typefield-specimens` to render disposable comparison sheets and export validation fonts. This command does not open the user library or save projects. Fonts unavailable to the current process are skipped. Use normal macOS execution for the complete installed font catalog. Generated files are QA fixtures, not distribution artifacts.

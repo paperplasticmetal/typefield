@@ -7,4 +7,4 @@ synthetic-preview.procreate — A synthetic ZIP container with Document.archive 
 
 The SVG and PNG artwork here is original test geometry. No installed font outlines or user projects were used.
 The repository contains the SVG originals. Generate PNG and synthetic Procreate fixtures with:
-dist/FontShelf.app/Contents/MacOS/FontShelf --font-lab-artwork-fixtures /tmp/font-lab-fixtures
+dist/Typefield.app/Contents/MacOS/Typefield --font-lab-artwork-fixtures /tmp/font-lab-fixtures

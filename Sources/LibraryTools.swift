@@ -133,7 +133,7 @@ struct AdvancedFiltersView: View {
             HStack { Text("Weight"); TextField("Min", value: $library.advanced.minimumWeight, format: .number).frame(width: 65); Text("to"); TextField("Max", value: $library.advanced.maximumWeight, format: .number).frame(width: 65) }
             TextField("Minimum glyph count", value: $library.advanced.minimumGlyphs, format: .number)
             ShelfDropdown(title: "Tag", selection: $library.advanced.tag, options: [("Any", "")] + Set(library.pro.tags.values.flatMap { $0 }).sorted().map { ($0, $0) })
-            ShelfDropdown(title: "Activation", selection: $library.advanced.activation, options: ["Any", "Temporary", "FontShelf only"].map { ($0, $0) })
+            ShelfDropdown(title: "Activation", selection: $library.advanced.activation, options: ["Any", "Temporary", "Typefield only"].map { ($0, $0) })
             Text("Filters must match the same font style. They combine with language, category, and preview-character filters.").font(.caption).foregroundStyle(.secondary)
         }.textFieldStyle(.roundedBorder).padding(22).frame(width: 330)
     }
@@ -195,7 +195,7 @@ struct TagEditorView: View {
         library.savePro(); status = "Updated \(library.selectedFaces.count) styles."
     }
     func backup() {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "FontShelf-tags.json"
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "Typefield-tags.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try JSONEncoder().encode(library.pro.tags).write(to: url, options: .atomic); status = "Tag backup saved." } catch { status = error.localizedDescription }
     }
@@ -305,7 +305,7 @@ struct ActivationView: View {
                 }.disabled(library.selectedFaces.isEmpty)
                 Button("Clear temporary activations") { let errors = manager.clear(); status = errors.isEmpty ? "Temporary activations cleared." : errors.joined(separator: "\n") }.disabled(manager.records.isEmpty)
             }
-            Text("Fonts are available across apps for this login session. FontShelf clears its own activations on normal quit. If it crashes, they are cleared at the next launch or logout. Installed fonts are not deactivated.").font(.caption).foregroundStyle(.secondary)
+            Text("Fonts are available across apps for this login session. Typefield clears its own activations on normal quit. If it crashes, they are cleared at the next launch or logout. Installed fonts are not deactivated.").font(.caption).foregroundStyle(.secondary)
             ScrollView { VStack(alignment: .leading, spacing: 12) {
                 ForEach(manager.records, id: \.path) { record in HStack { Text(record.path).font(.caption).textSelection(.enabled); Spacer(); Button("Deactivate") { do { try manager.deactivate(URL(fileURLWithPath: record.path)) } catch { status = error.localizedDescription } } } }
                 Text(status).font(.caption).textSelection(.enabled)
@@ -331,10 +331,10 @@ final class GoogleFontStore: ObservableObject {
         if catalog.isEmpty { status = "The bundled Google Fonts catalog is unavailable." }
     }
     static func fetch(_ url: URL, session: URLSession = .shared) async throws -> Data {
-        var request = URLRequest(url: url); request.timeoutInterval = 45; request.setValue("FontShelf", forHTTPHeaderField: "User-Agent")
+        var request = URLRequest(url: url); request.timeoutInterval = 45; request.setValue("Typefield", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else { throw NSError(domain: "FontShelf", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: "Download failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)). Check connectivity or try again later."]) }
-        guard data.count <= 50_000_000 else { throw NSError(domain: "FontShelf", code: 3, userInfo: [NSLocalizedDescriptionKey: "Font download exceeded 50 MB."]) }
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else { throw NSError(domain: "Typefield", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: "Download failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)). Check connectivity or try again later."]) }
+        guard data.count <= 50_000_000 else { throw NSError(domain: "Typefield", code: 3, userInfo: [NSLocalizedDescriptionKey: "Font download exceeded 50 MB."]) }
         return data
     }
     func download(_ font: GoogleVariableFont, library: Library) {
@@ -350,9 +350,9 @@ final class GoogleFontStore: ObservableObject {
                     catch let error as NSError { if error.code != 404 { throw error } }
                 }
                 let files = listing.filter { ($0.name.hasSuffix(".ttf") && $0.name.contains("[")) || ["OFL.txt", "LICENSE.txt", "LICENSE"].contains($0.name) }
-                guard files.contains(where: { $0.name.hasSuffix(".ttf") }) else { throw NSError(domain: "FontShelf", code: 4, userInfo: [NSLocalizedDescriptionKey: "No variable TTF files found in Google’s repository for this family."]) }
+                guard files.contains(where: { $0.name.hasSuffix(".ttf") }) else { throw NSError(domain: "Typefield", code: 4, userInfo: [NSLocalizedDescriptionKey: "No variable TTF files found in Google’s repository for this family."]) }
                 guard files.contains(where: { ["OFL.txt", "LICENSE.txt", "LICENSE"].contains($0.name) }) else {
-                    throw NSError(domain: "FontShelf", code: 7, userInfo: [NSLocalizedDescriptionKey: "No license found for this download."])
+                    throw NSError(domain: "Typefield", code: 7, userInfo: [NSLocalizedDescriptionKey: "No license found for this download."])
                 }
                 let folder = library.saveURL.deletingLastPathComponent().appendingPathComponent("Google Fonts/" + slug)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -362,14 +362,14 @@ final class GoogleFontStore: ObservableObject {
                     guard file.name == (file.name as NSString).lastPathComponent, let address = file.download_url, let url = URL(string: address), url.scheme == "https", url.host == "raw.githubusercontent.com", url.path.hasPrefix("/google/fonts/"), file.size <= 50_000_000 else { continue }
                     let data = try await Self.fetch(url)
                     if file.name.hasSuffix(".ttf") {
-                        guard licenseCount > 0 else { throw NSError(domain: "FontShelf", code: 7, userInfo: [NSLocalizedDescriptionKey: "The license could not be saved. No font files were installed."]) }
-                        guard let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData) as? [CTFontDescriptor], !descriptors.isEmpty else { throw NSError(domain: "FontShelf", code: 5, userInfo: [NSLocalizedDescriptionKey: "Downloaded file is not a readable font."]) }
+                        guard licenseCount > 0 else { throw NSError(domain: "Typefield", code: 7, userInfo: [NSLocalizedDescriptionKey: "The license could not be saved. No font files were installed."]) }
+                        guard let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData) as? [CTFontDescriptor], !descriptors.isEmpty else { throw NSError(domain: "Typefield", code: 5, userInfo: [NSLocalizedDescriptionKey: "Downloaded file is not a readable font."]) }
                         fontCount += 1
                     }
                     try data.write(to: folder.appendingPathComponent(file.name), options: .atomic)
                     if !file.name.hasSuffix(".ttf") { licenseCount += 1 }
                 }
-                guard fontCount > 0 && licenseCount > 0 else { throw NSError(domain: "FontShelf", code: 6, userInfo: [NSLocalizedDescriptionKey: "No font files were downloaded."]) }
+                guard fontCount > 0 && licenseCount > 0 else { throw NSError(domain: "Typefield", code: 6, userInfo: [NSLocalizedDescriptionKey: "No font files were downloaded."]) }
                 let downloadedCount = fontCount
                 await MainActor.run {
                     if !library.saved.folders.contains(folder.path) { library.saved.folders.append(folder.path); library.save() }
@@ -466,12 +466,12 @@ private actor GooglePreviewLoader {
             let data = try await GoogleFontStore.fetch(folder.appendingPathComponent(filename), session: session)
             try Task.checkCancellation()
             guard let provider = CGDataProvider(data: data as CFData), let font = CGFont(provider) else {
-                throw NSError(domain: "FontShelf", code: 5, userInfo: [NSLocalizedDescriptionKey: "The preview font could not be read."])
+                throw NSError(domain: "Typefield", code: 5, userInfo: [NSLocalizedDescriptionKey: "The preview font could not be read."])
             }
             cache.setObject(PreviewFontBox(font), forKey: family as NSString, cost: data.count)
             return font
         }
-        throw NSError(domain: "FontShelf", code: 4, userInfo: [NSLocalizedDescriptionKey: "No preview file found for this family."])
+        throw NSError(domain: "Typefield", code: 4, userInfo: [NSLocalizedDescriptionKey: "No preview file found for this family."])
     }
 }
 

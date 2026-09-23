@@ -12,7 +12,7 @@ This repository currently has no open-source license. Discuss contribution and l
 2. Run `./build.sh`; the build treats Swift warnings as errors and runs regression checks.
 3. For UI changes, check light/dark mode, keyboard access, narrow windows, and previews at small and large sizes. Ensure long text remains visible.
 4. For file/network changes, exercise the sandbox build and failure paths. Use temporary fixtures, not a user's library.
-5. Update the changelog and relevant documentation. Keep the displayed app name **FontShelf**; use versions in release filenames and bundle metadata.
+5. Update the changelog and relevant documentation. Keep the displayed app name **Typefield** and preserve legacy saved-data and interchange identifiers. Use versions in bundle metadata.
 
 ## Pull requests
 

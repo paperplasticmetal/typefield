@@ -222,7 +222,7 @@ enum FontLabTrueTypeExporter {
             warnings.append("Dense pen input was reduced by \(simplificationCount) sample\(simplificationCount == 1 ? "" : "s") while preserving the stroke path for a portable TrueType outline.")
         }
         if project.remixProvenance != nil {
-            warnings.append("Font embedding is marked restricted because FontShelf does not know the source fonts’ license permissions. Review both licenses before sharing or embedding this derivative font.")
+            warnings.append("Font embedding is marked restricted because Typefield does not know the source fonts’ license permissions. Review both licenses before sharing or embedding this derivative font.")
         }
 
         let artifact = FontLabTrueTypeArtifact(
@@ -978,7 +978,7 @@ enum FontLabTrueTypeExporter {
             (5, revision.versionName), (6, postScriptName)
         ]
         if let provenance = project.remixProvenance {
-            names.append((10, "FontShelf derivative remix of " + provenance.sourcePostScriptNames.joined(separator: " + ") + "."))
+            names.append((10, "Typefield derivative remix of " + provenance.sourcePostScriptNames.joined(separator: " + ") + "."))
             names.append((13, provenance.distributionNotice))
         }
 
@@ -1348,7 +1348,7 @@ enum FontLabTrueTypeExporter {
     private static func sanitizedFamilyName(_ input: String) -> String {
         let filtered = input.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
         let cleaned = String(String.UnicodeScalarView(filtered)).trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "FontShelf Lab" : String(cleaned.prefix(63))
+        return cleaned.isEmpty ? "Typefield Lab" : String(cleaned.prefix(63))
     }
 
     private static func uniqueFamilyName(_ input: String, projectID: UUID, fingerprint: String) -> String {
@@ -1361,7 +1361,7 @@ enum FontLabTrueTypeExporter {
         let permitted = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-")
         let transformed = familyName.replacingOccurrences(of: " ", with: "-").unicodeScalars.filter { permitted.contains($0) }
         let result = String(String.UnicodeScalarView(transformed))
-        return String((result.isEmpty ? "FontShelf-Lab" : result).prefix(63))
+        return String((result.isEmpty ? "Typefield-Lab" : result).prefix(63))
     }
 
     private static func fontRevision(for project: FontLabProject) throws -> FontRevision {
@@ -1418,7 +1418,7 @@ enum FontLabTrueTypeExporter {
     private static func safeFilename(_ value: String) -> String {
         let forbidden = CharacterSet(charactersIn: "/:\\?%*|\"<>").union(.newlines).union(.controlCharacters)
         let cleaned = value.components(separatedBy: forbidden).filter { !$0.isEmpty }.joined(separator: "-")
-        return cleaned.isEmpty ? "FontShelf-Lab" : String(cleaned.prefix(80))
+        return cleaned.isEmpty ? "Typefield-Lab" : String(cleaned.prefix(80))
     }
 
     private static func utf16BE(_ string: String) -> Data {

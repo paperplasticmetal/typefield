@@ -410,7 +410,7 @@ final class Library: ObservableObject {
     func addFolder() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
         panel.prompt = "Add & Watch"
-        panel.message = "Add this folder and watch it live. Fonts in its subfolders are included, and additions, replacements and removals update automatically every three seconds while FontShelf is open. Nothing is installed or moved."
+        panel.message = "Add this folder and watch it live. Fonts in its subfolders are included, and additions, replacements and removals update automatically every three seconds while Typefield is open. Nothing is installed or moved."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try folderAccess.remember(url) } catch { message = "Could not retain folder access: " + error.localizedDescription; return }
         reportedFolderAccessFailures.remove(url.path)
@@ -426,7 +426,7 @@ final class Library: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let count = FontCatalog.registerFolder(url.path)
             let result = FontCatalog.scan()
-            DispatchQueue.main.async { self.acceptCatalog(result); if count > 0 { self.recordImport(folder: url.path) }; self.configureWatcher(); self.applyFolderActivation(); self.finishLoading(); self.message = "Watching \(url.lastPathComponent) and its subfolders. Loaded \(count) new font files; changes update automatically while FontShelf is open." }
+            DispatchQueue.main.async { self.acceptCatalog(result); if count > 0 { self.recordImport(folder: url.path) }; self.configureWatcher(); self.applyFolderActivation(); self.finishLoading(); self.message = "Watching \(url.lastPathComponent) and its subfolders. Loaded \(count) new font files; changes update automatically while Typefield is open." }
         }
     }
 }
@@ -518,6 +518,8 @@ struct ContentView: View {
     @State var showColors = false
     @State var showTagFilters = false
     @State var showDiscovery = false
+    @State private var guide: TypefieldGuide?
+    @AppStorage("typefield.onboardingComplete") private var onboardingComplete = false
     @AppStorage(WorkspaceSidebarPreference.key) var sidebarCollapsed = false
     @FocusState private var searchFocused: Bool
     var body: some View {
@@ -549,7 +551,7 @@ struct ContentView: View {
         .background(ShelfPalette.canvas)
         .frame(minWidth: 980, minHeight: 620)
         .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("FontShelfMenu"))) { event in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
             switch event.object as? String {
             case "collection": showCollection = true
             case "colors": showColors = true
@@ -560,23 +562,34 @@ struct ContentView: View {
             case "list": grid = false
             case "grid": grid = true
             case "toggleSidebar": sidebarCollapsed.toggle()
+            case "tour": guide = .tour
+            case "about": guide = .about
             default: break
             }
         }
         .onChange(of: appearance) { value in NSApp.appearance = value == "System" ? nil : NSAppearance(named: value == "Dark" ? .darkAqua : .aqua) }
-        .onAppear { library.requiredText = preview == "{family}" ? "" : preview }
+        .onAppear {
+            library.requiredText = preview == "{family}" ? "" : preview
+            if !onboardingComplete { DispatchQueue.main.async { guide = .tour } }
+        }
         .onChange(of: preview) { value in library.requiredText = value == "{family}" ? "" : value; if value == "{family}" { library.requireCoverage = false } }
         .sheet(isPresented: $library.showTools) { LibraryToolsView(library: library) }
         .sheet(isPresented: $library.showCompare) { CompareView(library: library, preview: preview, size: size) }
         .sheet(item: $library.typeboardDraft) { draft in TypeboardRoleMapper(library: library, draft: draft) }
         .sheet(isPresented: $showDiscovery) { FontDiscoveryView(library: library, eligibleFamilies: library.filtered, preview: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
         .sheet(item: $library.detail) { family in DetailView(library: library, family: family, preview: preview == "{family}" ? family.name : preview, size: size) }
+        .sheet(item: $guide) { destination in
+            switch destination {
+            case .tour: TypefieldTour { onboardingComplete = true; guide = nil }
+            case .about: TypefieldAbout { guide = nil }
+            }
+        }
         .alert("New collection", isPresented: $showCollection) {
             TextField("Collection name", text: $collectionName)
             Button("Create") { let name = collectionName.trimmingCharacters(in: .whitespacesAndNewlines); if !name.isEmpty { if library.saved.collections[name] == nil { library.saved.collections[name] = [] }; library.save(); library.selection = "collection:" + name }; collectionName = "" }
             Button("Cancel", role: .cancel) { collectionName = "" }
         } message: { Text("Add families through their ••• menu or by right-clicking a preview.") }
-        .alert("FontShelf", isPresented: Binding(get: { !library.message.isEmpty }, set: { if !$0 { library.message = "" } })) { Button("OK") { library.message = "" } } message: { Text(library.message) }
+        .alert("Typefield", isPresented: Binding(get: { !library.message.isEmpty }, set: { if !$0 { library.message = "" } })) { Button("OK") { library.message = "" } } message: { Text(library.message) }
     }
     var topControls: some View {
         VStack(spacing: 0) {
@@ -878,10 +891,116 @@ struct Axis: Identifiable {
     let max: Double
     let defaultValue: Double
 }
+
+private enum TypefieldGuide: String, Identifiable {
+    case tour, about
+    var id: String { rawValue }
+}
+
+private struct TourPage {
+    let symbol: String
+    let eyebrow: String
+    let title: String
+    let detail: String
+    let action: String
+    static let all: [TourPage] = [
+        .init(symbol: "square.grid.2x2", eyebrow: "WELCOME", title: "Meet Typefield", detail: "Your fonts, type ideas, and letterforms live together here. This quick tour takes about a minute. You can skip it and return from Help at any time.", action: "Your work stays on this Mac unless you choose to export it."),
+        .init(symbol: "textformat", eyebrow: "01 · LIBRARY", title: "Find the right font", detail: "Browse fonts already on your Mac, preview your own words, filter by style or language, and save favorites and collections. Add a folder when you want Typefield to watch your own font files.", action: "Start with a preview, then shortlist a few families."),
+        .init(symbol: "square.stack.3d.up", eyebrow: "02 · SPACES", title: "Try type in context", detail: "Turn a shortlist into a typeboard. Arrange live text and shapes, compare directions, and tune roles such as Heading and Body. Export a PDF, Figma layout, Adobe bridge, or developer handoff when you are ready.", action: "Choose Spaces in the sidebar to make a typeboard."),
+        .init(symbol: "pencil.and.outline", eyebrow: "03 · LETTERFORM EDITOR", title: "Draw your own letters", detail: "Sketch or edit vector letters, import artwork you have rights to use, refine spacing, and preview words. You can export SVG outlines or a font built from your own glyphs.", action: "Choose Letterform Editor in the sidebar to begin.")
+    ]
+}
+
+private struct TypefieldTour: View {
+    let dismiss: () -> Void
+    @State private var index = 0
+    private var page: TourPage { TourPage.all[index] }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("TYPEFIELD").font(.system(size: 12, weight: .bold, design: .rounded)).tracking(2).foregroundStyle(.secondary)
+                Spacer()
+                Button("Skip tour", action: dismiss).buttonStyle(.plain).foregroundStyle(.secondary).keyboardShortcut(.cancelAction)
+            }
+            Spacer(minLength: 18)
+            Image(systemName: page.symbol)
+                .font(.system(size: 42, weight: .light))
+                .foregroundStyle(ShelfPalette.indiaYellow)
+                .frame(width: 88, height: 88)
+                .background(ShelfPalette.indiaYellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 24))
+                .accessibilityHidden(true)
+            Text(page.eyebrow).font(.system(size: 12, weight: .semibold)).tracking(2).foregroundStyle(ShelfPalette.indiaYellow).padding(.top, 26)
+            Text(page.title).font(.system(size: 36, weight: .semibold, design: .rounded)).padding(.top, 8)
+            Text(page.detail).font(.system(size: 16)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 14)
+            Label(page.action, systemImage: "sparkle")
+                .font(.system(size: 13)).foregroundStyle(.primary)
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(ShelfPalette.indiaYellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.top, 24)
+            Spacer(minLength: 24)
+            HStack(spacing: 7) {
+                ForEach(TourPage.all.indices, id: \.self) { position in
+                    Capsule().fill(position == index ? ShelfPalette.indiaYellow : Color.secondary.opacity(0.3))
+                        .frame(width: position == index ? 24 : 7, height: 7)
+                        .accessibilityLabel("Step \(position + 1) of \(TourPage.all.count)")
+                }
+                Spacer()
+                if index > 0 { Button("Back") { index -= 1 }.buttonStyle(.bordered) }
+                Button(index == TourPage.all.count - 1 ? "Open Typefield" : "Next") {
+                    if index == TourPage.all.count - 1 { dismiss() } else { index += 1 }
+                }.buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(32)
+        .frame(width: 610, height: 490)
+        .accessibilityIdentifier("typefield-onboarding")
+    }
+}
+
+private struct TypefieldAbout: View {
+    let dismiss: () -> Void
+    private var version: String {
+        "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))"
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 18) {
+                        Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 74, height: 74)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Typefield").font(.system(size: 30, weight: .semibold, design: .rounded))
+                            Text(version).foregroundStyle(.secondary)
+                            Text("A place for fonts, typeboards, and your own letterforms.").font(.caption)
+                        }
+                    }
+                    Divider()
+                    Text("Privacy & permissions").font(.headline)
+                    Text("Your library, collections, projects, and previews are stored on this Mac. Typefield has no account, analytics, ads, or tracking, and does not upload your fonts or projects.")
+                    Text("Folder access is granted through the macOS picker. Browsing or downloading Google Fonts contacts GitHub for public previews, font files, and licenses; GitHub receives normal connection data. Exports go only where you choose.")
+                    Text("Use or export only fonts and artwork you have the rights to use. Typefield cannot verify redistribution, web embedding, or commercial licensing. Review each font’s license before sharing a font, typeboard, or developer handoff.")
+                    Text("Figma and Adobe handoffs are local files that you import or run yourself. They do not include font binaries.").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack { Spacer(); Button("Done", action: dismiss).buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction) }
+        }
+        .font(.system(size: 13))
+        .padding(30)
+        .frame(width: 610, height: 480)
+        .accessibilityIdentifier("typefield-about")
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var window: NSWindow!
     let library = Library()
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if Bundle.main.bundleIdentifier == "local.typefield.app", !UserDefaults.standard.bool(forKey: "typefield.legacyPreferencesChecked") {
+            let old = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences/local.fontshelf.app.plist")
+            if FileManager.default.fileExists(atPath: old.path) { _ = try? StoreMigration.importPreferences(from: old) }
+            UserDefaults.standard.set(true, forKey: "typefield.legacyPreferencesChecked")
+        }
         NSApp.setActivationPolicy(.regular)
         let theme = UserDefaults.standard.string(forKey: "appearance") ?? "Dark"
         NSApp.appearance = theme == "System" ? nil : NSAppearance(named: theme == "Dark" ? .darkAqua : .aqua)
@@ -889,15 +1008,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.titlebarAppearsTransparent = false
         window.collectionBehavior.insert(.fullScreenPrimary)
-        window.title = "FontShelf"; window.minSize = NSSize(width: 980, height: 660)
+        window.title = "Typefield"; window.minSize = NSSize(width: 980, height: 660)
         window.contentView = NSHostingView(rootView: root)
-        window.center(); window.setFrameAutosaveName("FontShelfWindow"); window.makeKeyAndOrderFront(nil)
+        window.center(); window.setFrameAutosaveName("TypefieldWindow"); window.makeKeyAndOrderFront(nil)
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "About FontShelf", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        addCommand("About Typefield", "about", to: appMenu)
         appMenu.addItem(withTitle: "Privacy…", action: #selector(showPrivacy), keyEquivalent: "")
-        appMenu.addItem(.separator()); appMenu.addItem(withTitle: "Quit FontShelf", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(.separator()); appMenu.addItem(withTitle: "Quit Typefield", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let fileMenu = addMenu("File", to: menu)
         addCommand("Add Font Folder…", "folder", to: fileMenu, key: "o")
         addCommand("Browse Google Fonts…", "Google Fonts", to: fileMenu)
@@ -960,6 +1079,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let fullScreenItem = windowMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
         fullScreenItem.keyEquivalentModifierMask = [.command, .control]
         NSApp.windowsMenu = windowMenu
+        let helpMenu = addMenu("Help", to: menu)
+        addCommand("Take the Typefield Tour…", "tour", to: helpMenu)
+        addCommand("Privacy & permissions…", "about", to: helpMenu)
+        NSApp.helpMenu = helpMenu
         NSApp.mainMenu = menu
         NSApp.activate(ignoringOtherApps: true)
         let activationErrors = ActivationManager.shared.clear(restore: false)
@@ -1023,13 +1146,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "filters": library.showAdvanced.toggle()
         case "clearFilters": library.search = ""; library.source = "All sources"; library.variableOnly = false; library.advanced = AdvancedFilter(); library.tagQuery = TagQuery(); library.writing = nil; library.requireCoverage = false; library.selection = "All Fonts"
         case "refresh": library.reload(register: true)
-        default: NotificationCenter.default.post(name: Notification.Name("FontShelfMenu"), object: command)
+        default: NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: command)
         }
     }
     @objc func showPrivacy() {
-        let alert = NSAlert(); alert.messageText = "FontShelf privacy"
-        alert.informativeText = "FontShelf stores your collections, tags, notes, and preferences on this Mac. It has no account, analytics, advertising, or tracking. Your fonts and library are not uploaded.\n\nWhen you browse Google font previews or request a download, FontShelf connects to GitHub to retrieve that public font and its license. GitHub receives ordinary connection information, including your IP address and the requested file.\n\nFolder access is granted through the system picker. Exports are written only to the destination you choose. Adobe scripts are saved for you to run yourself; FontShelf does not control Adobe apps."
-        alert.addButton(withTitle: "OK"); alert.runModal()
+        NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "about")
     }
     func applicationWillTerminate(_ notification: Notification) { ActivationManager.shared.clear(restore: false) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

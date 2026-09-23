@@ -1,12 +1,15 @@
 # Build and verification status
 
-Current source: **0.36.0, build 47**. Updated 2026-09-22.
+Current source: **0.37.0, build 48**. Updated 2026-09-22.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
-| Layout checks | 21,260 cases across 4,252 available styles on the release machine |
+| Layout checks | 21,260 cases across 778 families and 4,252 styles in the final installed build |
+| Typefield 0.37 identity and onboarding | Native 0.37.0 (48) build and Figma mock bridge pass; screenshot review found and corrected a clipped tour heading, About privacy paragraph, sidebar workspace labels and inherited window placement. The new icon, About sheet and all tour steps were inspected in the running app. The installed Letterform Editor shows the renamed section heading. |
+| Canonical local install, 0.37.0 | `/Applications/Typefield.app` installed; strict ad-hoc signature verification passed and the installed executable hash matches the tested build. The superseded `/Applications/FontShelf.app` bundle was removed after verification. Existing Application Support files remain at their compatible path; the user's saved external folder needs access renewed under the new bundle identity. |
+| Xcode Release archive, 0.37.0 | Passed unsigned with Typefield product name, `local.typefield.app` and build 48; distribution signing and App Store Connect validation remain pending. |
 | Xcode Release archive, 0.36.0 | Passed unsigned with Swift warnings treated as errors; Apple Distribution signing remains pending |
 | Spaces and canvas regression checks | Passed: independent directions, checkpoints, imported layers, persistence and 28 canvas/viewport combinations |
 | Live folder watcher and session activation | Passed with a temporary copy of an existing Google font; visibility checked in a separate process, then deactivated and removed |
@@ -68,4 +71,4 @@ Added Objects/Nodes selection, counter-preserving whole-object selection, corner
 
 ## 0.36.0 priority refinement
 
-Library saved searches, Spaces contrast/entered-line proofing, and per-project Letterform Editor preview ink have native regression coverage. The third-workspace label changed without renaming saved-data files or keys. Optimized native checks passed with 21,260 layout cases across 4,252 styles; the Figma bridge suite passed; a warnings-as-errors unsigned Xcode Release archive succeeded. Canonical 0.36.0 (47) installation passed ad-hoc signature verification and matches the tested executable hash. App-wide FontShelf branding remains pending name selection and clearance; see REBRAND_PLAN.md. External device, Adobe, second-machine, signed TestFlight, App Store Connect and final-brand validation remain open.
+Library saved searches, Spaces contrast/entered-line proofing, and per-project Letterform Editor preview ink have native regression coverage. The third-workspace label changed without renaming saved-data files or keys. Optimized native checks passed with 21,260 layout cases across 4,252 styles; the Figma bridge suite passed; a warnings-as-errors unsigned Xcode Release archive succeeded. Canonical 0.36.0 (47) installation passed ad-hoc signature verification and matches the tested executable hash. The selected Typefield brand is implemented in 0.37.0; see REBRAND_PLAN.md for remaining public-name clearance and distribution checks. External device, Adobe, second-machine, signed TestFlight, App Store Connect and final-brand validation remain open.

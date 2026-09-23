@@ -1,6 +1,6 @@
 # Security
 
-FontShelf is pre-release software. Security fixes target the latest development version.
+Typefield is pre-release software. Security fixes target the latest development version.
 
 Report vulnerabilities through GitHub private vulnerability reporting when available. Do not post credentials, private file contents, proprietary fonts, or exploitable details in public issues. If private reporting is unavailable, open a minimal issue asking the maintainer for a private channel without including the vulnerability details.
 

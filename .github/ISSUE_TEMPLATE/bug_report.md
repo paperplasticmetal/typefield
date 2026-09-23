@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible FontShelf problem
+about: Report a reproducible Typefield problem
 title: ""
 labels: bug
 ---

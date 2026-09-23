@@ -20,6 +20,9 @@ enum StudioChecks {
         let fontFiles = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("fonts").path)
         try verify(fontFiles.isEmpty, "Never redistribute font binaries")
         let tokens = try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("tokens.json"))) as! [String: Any]
+        try verify(tokens["format"] as? String == "FontShelf typography handoff", "Version-1 handoff format stays compatible")
+        let swiftStarter = try read("Typography.swift"), composeStarter = try read("Typography.kt")
+        try verify(swiftStarter.contains("TypefieldTypography") && composeStarter.contains("TypefieldTypography"), "Generated native types use the new product name")
         let styles = tokens["typography"] as! [String: [String: Any]]
         try verify(styles.count >= 14 && Set(styles.keys).count == styles.count, "All canvases, unique styles")
         let value = styles["b1-c1-display"]!["$value"] as! [String: Any]

@@ -5,22 +5,22 @@ h2 { font-size: 18px; margin-top: 0; } p { line-height: 1.5; color: #555; }
 button { margin-top: 16px; border: 0; border-radius: 6px; padding: 10px 16px; background: #222; color: white; } button:disabled { opacity: .4; }
 #status { white-space: pre-wrap; max-height: 150px; overflow: auto; } hr { border: 0; border-top: 1px solid #ddd; margin: 24px 0; } a { color: #2356b6; } button { cursor: pointer; }
 </style></head><body>
-<h2>Import FontShelf typeboard</h2>
-<p>Choose the layout.fontshelf.json file. Each direction becomes a separate frame with editable text and shapes. Fonts must be available in Figma.</p>
+<h2>Import Typefield typeboard</h2>
+<p>Choose the layout.typefield.json file. Each direction becomes a separate frame with editable text and shapes. Fonts must be available in Figma.</p>
 <input id="file" type="file" accept=".json"><br>
 <button id="import" disabled>Import layouts</button>
 <hr>
-<h2>Bring Figma into FontShelf</h2>
+<h2>Bring Figma into Typefield</h2>
 <p>Select frames on the canvas. Text, solid rectangles and fixed layer positions become an editable typeboard. Unsupported elements are listed for review.</p>
 <button id="export">Export selected frames</button>
-<p><a id="download" hidden>Save FontShelf typeboard JSON</a></p>
+<p><a id="download" hidden>Save Typefield typeboard JSON</a></p>
 <p id="status" role="status"></p>
 <script>
 let payload = null;
 const file = document.getElementById('file'), button = document.getElementById('import'), status = document.getElementById('status');
 file.onchange = async () => {
   payload = null; button.disabled = true;
-  try { if (!file.files[0] || file.files[0].size > 20000000) throw Error('Choose a layout file smaller than 20 MB.'); payload = JSON.parse(await file.files[0].text()); if (payload.format !== 'fontshelf-figma' || payload.version !== 1) throw Error('Not a supported FontShelf layout.'); status.textContent = payload.name + ' · ' + payload.frames.length + ' directions'; button.disabled = false; }
+  try { if (!file.files[0] || file.files[0].size > 20000000) throw Error('Choose a layout file smaller than 20 MB.'); payload = JSON.parse(await file.files[0].text()); if (payload.format !== 'fontshelf-figma' || payload.version !== 1) throw Error('Not a supported Typefield layout.'); status.textContent = payload.name + ' · ' + payload.frames.length + ' directions'; button.disabled = false; }
   catch (error) { status.textContent = error.message; }
 };
 button.onclick = () => { button.disabled = true; status.textContent = 'Importing…'; parent.postMessage({ pluginMessage: { type: 'import', payload } }, '*'); };
@@ -32,8 +32,8 @@ onmessage = event => {
   if (msg.type === 'export') {
     if (downloadURL) URL.revokeObjectURL(downloadURL);
     downloadURL = URL.createObjectURL(new Blob([JSON.stringify(msg.payload, null, 2)], { type: 'application/json' }));
-    const link = document.getElementById('download'); link.href = downloadURL; link.download = 'Figma-typeboard.fontshelf.json'; link.hidden = false;
-    status.textContent = msg.payload.frames.length + ' frames ready. Save the JSON, then use Spaces → Import → Figma typeboard in FontShelf.\n\n' + (msg.payload.warnings || []).join('\n');
+    const link = document.getElementById('download'); link.href = downloadURL; link.download = 'Figma-typeboard.typefield.json'; link.hidden = false;
+    status.textContent = msg.payload.frames.length + ' frames ready. Save the JSON, then use Spaces → Import → Figma typeboard in Typefield.\n\n' + (msg.payload.warnings || []).join('\n');
   }
 };
 </script></body></html>

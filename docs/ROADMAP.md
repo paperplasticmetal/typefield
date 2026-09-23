@@ -1,4 +1,4 @@
-# FontShelf outstanding work and competitor reference
+# Typefield outstanding work and competitor reference
 
 Snapshot: **0.36.0 (47), 2026-09-22**. This is a continuation checklist, not a promise to implement everything. See the changelog for this pass.
 
@@ -7,7 +7,7 @@ Snapshot: **0.36.0 (47), 2026-09-22**. This is a continuation checklist, not a p
 - **P0 — next:** directly requested friction, reliability, or a prerequisite for the main workflow.
 - **P1 — soon:** substantial usefulness or a major competitive gap once the basics feel reliable.
 - **P2 — later:** professional depth, broader interoperability, or additional polish.
-- **P3 — strategic:** large engineering/product investment; decide whether it belongs in FontShelf.
+- **P3 — strategic:** large engineering/product investment; decide whether it belongs in Typefield.
 - **HOLD:** deliberately shelved; do not restart without a new product decision.
 - **Partial** means a foundation ships, but the work described remains. **Missing** means the audited model/workflow does not provide it. **QA** means implementation exists but validation is incomplete. **Research** means validate feasibility or current coverage before implementing. Effort S/M/L/XL is relative, not a delivery estimate.
 
@@ -119,7 +119,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 | LB-16 | P2 · Research · M–L | **Store/provider integration.** Deeper catalog discovery, purchase/download handoff and source updates beyond the existing Google workflow; third-party provider access and licensing may limit automation. |
 | LB-17 | P3 · Missing · L–XL | **Screenshot font identification.** Image segmentation/OCR, shape matching, confidence and alternatives. Requires its own dataset/evaluation and possibly external services; not a small extension to metadata similarity. |
 | LB-18 | P3 · Missing · XL | **Shared team libraries and administration.** Roles, approved families, deployment, audit logs and license-assignment workflows. Extensis is a useful enterprise benchmark; this is a separate scale of product. |
-| LB-19 | P3 · Research · XL | **Cross-platform clients / persistent background service.** Windows or other platforms, organization sync, and watching/activation when FontShelf is closed. Current watcher operates while the Mac app is open. |
+| LB-19 | P3 · Research · XL | **Cross-platform clients / persistent background service.** Windows or other platforms, organization sync, and watching/activation when Typefield is closed. Current watcher operates while the Mac app is open. |
 
 ## Cross-product and release work
 
@@ -130,21 +130,21 @@ Start each implementation task by reproducing the current behavior in a disposab
 | X-03 | **P0 before Store migration · Partial + QA · M** | User-selected migration copies Library/Spaces/Letterform Editor data and managed Google Fonts into a fresh container, with source preservation and collision/corruption checks. External folder permissions must be granted again through Live folders; a signed Store-build migration test remains. |
 | X-04 | P1 · QA · M | macOS 13 and second-machine testing, sleep/wake, offline behavior, inaccessible files, crash recovery, accessibility/VoiceOver and keyboard-only workflows. Intel is not shipped; decide support intentionally. |
 | X-05 | P1 · Partial · S–M | Keep in-app help and docs aligned with releases; avoid calling shipped foundations missing or calling prototypes complete. Add a concise feature/status page and useful changelog. |
-| X-06 | P1 before branding/release · Partial · S | The workspace is labeled **Letterform Editor**; internal project keys remain compatible. The whole-app FontShelf overlap with Fontshelf™ needs a selected replacement and clearance before public distribution. See [rebrand plan](REBRAND_PLAN.md). |
+| X-06 | P1 before public release · Partial · S | Typefield branding, icon and first-run tour are implemented; internal project keys remain compatible. Trademark and App Store clearance remain before public distribution. See [rebrand plan](REBRAND_PLAN.md). |
 | X-07 | P1 · Partial + QA · M | Backup/restore/migration stress tests across versions, corrupt files and large projects; accessible restore UI and export portability. Backups and preservation safeguards already exist. |
-| X-08 | P2 · Research · M | Localization, documentation/examples, onboarding and support diagnostics that avoid collecting private fonts or project content by default. |
+| X-08 | P2 · Research · M | Extend the new onboarding with localized copy, documentation examples and support diagnostics that avoid collecting private fonts or project content by default. |
 | X-09 | P3 · Research · XL | Cloud architecture, accounts, billing, team permissions and optional AI services only if those strategic directions are approved. Do not let these block local editing quality. |
 
 ## Competitor reference and scope
 
-These are category benchmarks, not a claim that every competitor supports every proposed row. Priorities above are FontShelf product judgments based on the user's requests. Vendor pages establish feature categories; they do not prove implementation quality or exact round-trip fidelity.
+These are category benchmarks, not a claim that every competitor supports every proposed row. Priorities above are Typefield product judgments based on the user's requests. Vendor pages establish feature categories; they do not prove implementation quality or exact round-trip fidelity.
 
 - **Professional font creation:** Glyphs documents [multiple-master setup](https://glyphsapp.com/learn/multiple-masters-part-1-setting-up-masters), while its [Glyphs 3 introduction](https://glyphsapp.com/news/glyphs-3-make-things-you-love) describes variable/color workflows and feature editing. These are the reference for moving beyond independent static masters.
-- **Advanced font-editor depth:** [FontLab 8](https://www.fontlab.com/font-editor/fontlab/) describes thickness editing, component/anchor workflows, interpolation, automatic spacing/kerning, color-font formats, broader file interchange and scripting. FontShelf should approach those as separate projects, not one parity checkbox.
+- **Advanced font-editor depth:** [FontLab 8](https://www.fontlab.com/font-editor/fontlab/) describes thickness editing, component/anchor workflows, interpolation, automatic spacing/kerning, color-font formats, broader file interchange and scripting. Typefield should approach those as separate projects, not one parity checkbox.
 - **Object/stroke editing:** Illustrator's [Width tool](https://helpx.adobe.com/illustrator/using/tool-techniques/width-tool.html) supports variable-width strokes. Its [Paragraph panel](https://helpx.adobe.com/illustrator/desktop/design-with-text/edit-format-text/paragraph-panel-overview.html) and [character spacing](https://helpx.adobe.com/illustrator/using/line-character-spacing.html) documentation provide text-inspector references. A mature illustration app is a workflow benchmark, not an appropriate short-term scope target.
 - **Layout/text tooling:** [Figma text properties](https://help.figma.com/hc/en-us/articles/360039956634-Explore-text-properties) covers richer text formatting and frame behavior. Figma is an adjacent benchmark for Spaces, not a font-creation competitor.
-- **Mac library workflow:** [Typeface](https://typefaceapp.com/) documents organization, comparison, coverage and color-palette tools. Its [auto-activation documentation](https://typefaceapp.com/help/articles/auto-activation) describes responding to fonts requested by other apps. FontShelf already overlaps much of the browsing/organization baseline; activation and workflow finish are more useful gaps than recreating those basics.
-- **Another library baseline:** [FontBase](https://fontba.se/) and its [variable-font tutorial](https://fontba.se/learn/variable-fonts) are useful browsing/variable-preview references. FontShelf already has variable-font preview; that is not outstanding merely because a competitor advertises it.
+- **Mac library workflow:** [Typeface](https://typefaceapp.com/) documents organization, comparison, coverage and color-palette tools. Its [auto-activation documentation](https://typefaceapp.com/help/articles/auto-activation) describes responding to fonts requested by other apps. Typefield already overlaps much of the browsing/organization baseline; activation and workflow finish are more useful gaps than recreating those basics.
+- **Another library baseline:** [FontBase](https://fontba.se/) and its [variable-font tutorial](https://fontba.se/learn/variable-fonts) are useful browsing/variable-preview references. Typefield already has variable-font preview; that is not outstanding merely because a competitor advertises it.
 - **Enterprise font management:** [Extensis font management](https://www.extensis.com/font-management-software) and [current Connect release notes](https://www.extensis.com/support/connect/release-notes) describe activation, team sharing and license/risk-management workflows. Those inform strategic Library rows, not commitments to build enterprise infrastructure.
 
 ## Definition of the next sensible milestone

@@ -68,7 +68,7 @@ struct FontPairingSuggestionsSheet: View {
                         .foregroundStyle(ShelfPalette.ink)
                 }
                 Text("Starting from \(reference.originalFamily) · \(reference.style)").font(.headline)
-                Text("Suggestions use only fonts in your local FontShelf catalog. Scores order this list; they are not match percentages or a substitute for trying the pair in context.")
+                Text("Suggestions use only fonts in your local Typefield catalog. Scores order this list; they are not match percentages or a substitute for trying the pair in context.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 24)
@@ -119,7 +119,7 @@ struct FontPairingSuggestionsSheet: View {
                 Image(systemName: intendedRole == .mono ? "chevron.left.forwardslash.chevron.right" : "textformat")
                     .font(.system(size: 34)).foregroundStyle(.secondary)
                 Text("No local pairing candidates").font(.title3)
-                Text(intendedRole == .mono ? "FontShelf could not find another monospaced family in the current catalog." : "FontShelf could not find another eligible family in the current catalog.")
+                Text(intendedRole == .mono ? "Typefield could not find another monospaced family in the current catalog." : "Typefield could not find another eligible family in the current catalog.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Button("Done") { dismiss() }
             }

@@ -72,21 +72,21 @@ enum DeveloperHandoff {
         return try write(title: title, boards: boards, catalog: catalog, parent: url)
     }
     static func write(title: String, boards: [TypeBoard], catalog: [Family], parent: URL) throws -> URL {
-        guard !boards.isEmpty, boards.allSatisfy(\.isValid) else { throw NSError(domain: "FontShelfHandoff", code: 1, userInfo: [NSLocalizedDescriptionKey: "Add a valid typeboard before exporting a handoff."]) }
+        guard !boards.isEmpty, boards.allSatisfy(\.isValid) else { throw NSError(domain: "TypefieldHandoff", code: 1, userInfo: [NSLocalizedDescriptionKey: "Add a valid typeboard before exporting a handoff."]) }
         let items = entries(boards)
-        guard !items.isEmpty else { throw NSError(domain: "FontShelfHandoff", code: 2, userInfo: [NSLocalizedDescriptionKey: "There are no visible text styles to export."]) }
+        guard !items.isEmpty else { throw NSError(domain: "TypefieldHandoff", code: 2, userInfo: [NSLocalizedDescriptionKey: "There are no visible text styles to export."]) }
         guard items.allSatisfy({ item in
             let s = item.style
             return [s.size, s.leading, s.tracking, s.lineHeight ?? s.size * s.leading, s.paragraphSpacing ?? 0, s.indent ?? 0, s.wordSpacing ?? 0].allSatisfy { $0.isFinite && abs($0) <= 1_000_000 } && s.size > 0 && (s.lineHeight ?? s.size * s.leading) > 0 && s.axes.values.allSatisfy { $0.isFinite && abs($0) <= 1_000_000 }
-        }) else { throw NSError(domain: "FontShelfHandoff", code: 3, userInfo: [NSLocalizedDescriptionKey: "A text style contains invalid or out-of-range values. Check its size, spacing and variable axes before exporting."]) }
+        }) else { throw NSError(domain: "TypefieldHandoff", code: 3, userInfo: [NSLocalizedDescriptionKey: "A text style contains invalid or out-of-range values. Check its size, spacing and variable axes before exporting."]) }
         let assets = Set(items.map { $0.style.fontName }).sorted().enumerated().map { i, name -> FontAsset in
             let family = catalog.first { $0.faces.contains { $0.name == name } }
             let face = family?.faces.first { $0.name == name }
             let fallback = face?.facts.monospace == true ? "ui-monospace, Menlo, Consolas, monospace" : family?.automaticCategory == .serif ? "Georgia, 'Times New Roman', serif" : "system-ui, -apple-system, 'Segoe UI', sans-serif"
-            return FontAsset(name: name, alias: "FontShelf \(i + 1)", file: "fonts/font_\(i + 1).woff2", fallback: fallback, face: face)
+            return FontAsset(name: name, alias: "Typefield \(i + 1)", file: "fonts/font_\(i + 1).woff2", fallback: fallback, face: face)
         }
         let byName = Dictionary(uniqueKeysWithValues: assets.map { ($0.name, $0) })
-        var css = "/* FontShelf: supply licensed WOFF2 assets before deployment. See README.md. */\n"
+        var css = "/* Typefield: supply licensed WOFF2 assets before deployment. See README.md. */\n"
         var manifest: [[String: Any]] = []
         for asset in assets {
             let font = CTFontCreateWithName(asset.name as CFString, 1000, nil)
@@ -114,13 +114,13 @@ enum DeveloperHandoff {
             let decoration = [s.underline == true ? "underline" : nil, s.strikethrough == true ? "line-through" : nil].compactMap { $0 }.joined(separator: " ")
             let stack = "'\(a.alias)', \(a.fallback)"
             css += "  --\(key)-font: \(stack);\n  --\(key)-size: \(fluid(s.size));\n  --\(key)-line-height: \(number(line / s.size));\n  --\(key)-tracking: \(number(s.tracking / s.size))em;\n"
-            classes += ".fs-\(key) { font-family: var(--\(key)-font); font-size: var(--\(key)-size); line-height: var(--\(key)-line-height); letter-spacing: var(--\(key)-tracking); font-weight: \(number(weight)); font-style: \(a.italic ? "italic" : "normal"); font-synthesis: none; font-variation-settings: \(settings(axis)); font-feature-settings: \(settings(feature)); font-kerning: \(s.effectiveKerning ? "normal" : "none"); text-align: \(alignment); text-transform: \(casing); text-decoration: \(decoration.isEmpty ? "none" : decoration); word-spacing: \(number(s.wordSpacing ?? 0))px; text-indent: \(number(s.indent ?? 0))px; margin-block: 0 \(number(s.paragraphSpacing ?? 0))px; }\n"
+            classes += ".tf-\(key) { font-family: var(--\(key)-font); font-size: var(--\(key)-size); line-height: var(--\(key)-line-height); letter-spacing: var(--\(key)-tracking); font-weight: \(number(weight)); font-style: \(a.italic ? "italic" : "normal"); font-synthesis: none; font-variation-settings: \(settings(axis)); font-feature-settings: \(settings(feature)); font-kerning: \(s.effectiveKerning ? "normal" : "none"); text-align: \(alignment); text-transform: \(casing); text-decoration: \(decoration.isEmpty ? "none" : decoration); word-spacing: \(number(s.wordSpacing ?? 0))px; text-indent: \(number(s.indent ?? 0))px; margin-block: 0 \(number(s.paragraphSpacing ?? 0))px; }\n"
             let value: [String: Any] = ["fontFamily": s.fontName, "fontSize": s.size, "fontSizeUnit": "px", "fontWeight": weight, "fontStyle": a.italic ? "italic" : "normal", "lineHeight": line, "letterSpacing": s.tracking, "wordSpacing": s.wordSpacing ?? 0, "paragraphSpacing": s.paragraphSpacing ?? 0, "firstLineIndent": s.indent ?? 0, "alignment": alignment, "textTransform": casing, "decoration": decoration, "axes": axis, "features": feature, "fallbackStack": a.fallback, "fluidCSS": fluid(s.size)]
             tokens[key] = ["$type": "typography", "$value": value, "board": entry.board, "canvas": entry.canvas, "role": entry.label, "sampleText": s.text]
             sizes[key] = ["var(--\(key)-size)", ["lineHeight": "var(--\(key)-line-height)", "letterSpacing": "var(--\(key)-tracking)", "fontWeight": number(weight)]]
             families[key] = ["var(--\(key)-font)"]
             theme += "  --font-\(key): var(--\(key)-font);\n  --text-\(key): var(--\(key)-size);\n  --text-\(key)--line-height: var(--\(key)-line-height);\n  --text-\(key)--letter-spacing: var(--\(key)-tracking);\n  --text-\(key)--font-weight: \(number(weight));\n"
-            cards += "<article><p class='meta'>\(html(entry.board)) / \(html(entry.canvas)) · \(html(entry.label))</p><p class='sample fs-\(key)'>\(html(s.text))</p><p class='meta'>\(html(s.fontName)) · \(number(s.size)) px · line \(number(line)) px · tracking \(number(s.tracking)) px</p><code>.fs-\(key)</code></article>\n"
+            cards += "<article><p class='meta'>\(html(entry.board)) / \(html(entry.canvas)) · \(html(entry.label))</p><p class='sample fs-\(key)'>\(html(s.text))</p><p class='meta'>\(html(s.fontName)) · \(number(s.size)) px · line \(number(line)) px · tracking \(number(s.tracking)) px</p><code>.tf-\(key)</code></article>\n"
             let swiftAxes = s.axes.keys.sorted().map { "\($0): \(number(s.axes[$0]!))" }.joined(separator: ", ")
             let swiftFeatures = feature.keys.sorted().map { "\(quoted($0)): \(feature[$0]!)" }.joined(separator: ", ")
             swiftEntries.append("        \(quoted(key)): Style(postScriptName: \(quoted(s.fontName)), size: \(number(s.size)), lineHeight: \(number(line)), tracking: \(number(s.tracking)), axes: [\(swiftAxes.isEmpty ? ":" : swiftAxes)], features: [\(swiftFeatures.isEmpty ? ":" : swiftFeatures)], sample: \(quoted(s.text)))")
@@ -136,18 +136,18 @@ enum DeveloperHandoff {
         let tokenDocument: [String: Any] = ["format": "FontShelf typography handoff", "version": 1, "title": title, "units": "Saved values: CSS px / SwiftUI pt / Compose sp. Validate on target devices.", "fluidDefaults": ["minimumViewportPx": 320, "maximumViewportPx": 1200, "rootFontSizePx": 16, "minimumSizeFactor": 0.75, "minimumFluidSizePx": 20], "typography": tokens, "sourceBoards": try JSONSerialization.jsonObject(with: JSONEncoder().encode(boards))]
         let preloads = assets.prefix(2).map { "<link rel=\"preload\" href=\"\($0.file)\" as=\"font\" type=\"font/woff2\" crossorigin>" }.joined(separator: "\n")
         let specimen = """
-        <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>\(html(title)) — FontShelf handoff</title>
+        <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>\(html(title)) — Typefield handoff</title>
         <style>\(specimenCSS)
         *{box-sizing:border-box}body{margin:0;background:#f5f3ed;color:#242421;font:16px/1.55 system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:48px 24px}h1{font-size:36px;line-height:1.2;overflow-wrap:anywhere}.intro{max-width:760px}.notice{padding:18px 22px;background:#eee3b8;border-radius:12px}article{background:#fffefa;padding:28px;margin:24px 0;border:1px solid #dedbd3;border-radius:12px;overflow-wrap:anywhere}.meta{font:13px/1.6 system-ui,sans-serif;color:#66645f}.sample{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:22px;margin-bottom:22px}code{font:12px/1.6 ui-monospace,monospace}a{color:inherit}@media print{body{background:white}main{padding:0}article{break-inside:avoid;border-radius:0}.notice{background:white;border:1px solid #aaa}}
         </style></head><body><main><p class="meta">FONTSHELF / DEVELOPER HANDOFF</p><h1>\(html(title))</h1><div class="intro"><p>\(boards.count) typeboard(s) · \(boards.reduce(0) { $0 + $1.directions.count }) canvases · \(items.count) text styles.</p><p class="notice">Font files are not bundled. This preview uses locally installed fonts when available, then licensed WOFF2 assets at the paths in fonts.json, then fallback fonts. It is a typography specimen, not a pixel-perfect canvas export.</p><p>Sizes above 20 px use a suggested fluid scale between 320 and 1200 px viewports. Saved maximum sizes and exact source data are in tokens.json. Print this page to save a PDF.</p><p>\(missing.isEmpty ? "All requested fonts were available on the exporting Mac." : "Unavailable on exporting Mac: " + html(missing.joined(separator: ", ")))</p></div>\(cards)</main></body></html>
         """
         let swift = """
-        // Generated by FontShelf. Register licensed fonts in your app before use.
+        // Generated by Typefield. Register licensed fonts in your app before use.
         // Fixed saved sizes; Dynamic Type and paragraph layout need app-specific integration.
         import SwiftUI
         import CoreText
 
-        enum FontShelfTypography {
+        enum TypefieldTypography {
             struct Style {
                 let postScriptName: String
                 let size: CGFloat
@@ -171,7 +171,7 @@ enum DeveloperHandoff {
         }
         """
         let compose = """
-        // Generated by FontShelf. Add your package declaration and licensed res/font assets.
+        // Generated by Typefield. Add your package declaration and licensed res/font assets.
         import androidx.compose.ui.text.TextStyle
         import androidx.compose.ui.text.font.FontFamily
         import androidx.compose.ui.text.font.FontStyle
@@ -179,7 +179,7 @@ enum DeveloperHandoff {
         import androidx.compose.ui.text.style.TextAlign
         import androidx.compose.ui.unit.sp
 
-        object FontShelfTypography {
+        object TypefieldTypography {
             data class Spec(val postScriptName: String, val axes: Map<String, Float>, val sample: String, val style: TextStyle)
             // Resolve each PostScript name + axis map to your own bundled FontFamily.
             // Variable fonts require Android API 26+; supply static alternatives on older devices.
@@ -190,15 +190,15 @@ enum DeveloperHandoff {
         }
         """
         let readme = """
-        # FontShelf developer handoff
+        # Typefield developer handoff
 
         Open index.html for the standalone, printable specimen. No scripts, CDN, analytics or network services are required. This is a type-system handoff, not a full website or exact canvas-layout export.
 
         ## Start here
-        1. Review fonts.json. Obtain the correct **web and app embedding licenses**; FontShelf does not verify redistribution rights. No font binaries or local file paths are included.
+        1. Review fonts.json. Obtain the correct **web and app embedding licenses**; Typefield does not verify redistribution rights. No font binaries or local file paths are included.
         2. Supply licensed WOFF2 assets at the numbered fonts/ paths in the manifest. These are placeholders, NOT converted files. Do not rename TTF/OTF/TTC to WOFF2. Collections may need separately licensed individual web faces. Retain the exact style/axis support; check metadata after conversion.
-        3. Import typography.css and use a class such as `.fs-\(items[0].key)`. Font families use unique aliases to avoid static-style collisions. Missing fonts fall back visibly; metadata for unavailable fonts is unknown/defaulted, not a measurement of a substitute.
-        4. Use tokens.json as the source of truth. It has a versioned FontShelf schema using $type/$value conventions, NOT a promise of DTCG or token-plugin compatibility. sourceBoards preserves all saved canvas text, colors, settings and layout data.
+        3. Import typography.css and use a class such as `.tf-\(items[0].key)`. Font families use unique aliases to avoid static-style collisions. Missing fonts fall back visibly; metadata for unavailable fonts is unknown/defaulted, not a measurement of a substitute.
+        4. Use tokens.json as the source of truth. It has a versioned Typefield schema using $type/$value conventions, NOT a promise of DTCG or token-plugin compatibility. sourceBoards preserves all saved canvas text, colors, settings and layout data.
 
         ## Fluid scale and web behavior
         Above 20 px, generated sizes interpolate from max(20 px, 75% of saved size) at 320 px to the saved size at 1200 px. Smaller roles remain fixed rem values. These are suggested defaults, not designer-authored breakpoints. Calculations assume a 16 px root; browser font-size preferences remain respected through rem. Line height and tracking scale proportionally. Native definitions use the saved fixed sizes, not the fluid formula.
@@ -206,14 +206,14 @@ enum DeveloperHandoff {
         font-display: swap is the default recommendation for immediately readable text. Consider optional for nonessential typography when layout stability matters more than showing the custom face; review fallback metrics and layout shifts in a real browser. preload.html contains at most two example candidates, not a loading prescription: keep ONLY fonts used above the fold on the actual page, after adding licensed files. Cross-origin preloads need matching CORS headers. No preloads are embedded in the specimen.
 
         ## Tailwind
-        v3: merge theme.extend from tailwind.config.cjs into your config, keep your own content globs, and import typography.css. Combine `font-\(items[0].key) text-\(items[0].key)` for family/size/line height/tracking. Use the `.fs-` class for full axes, feature and paragraph settings.
+        v3: merge theme.extend from tailwind.config.cjs into your config, keep your own content globs, and import typography.css. Combine `font-\(items[0].key) text-\(items[0].key)` for family/size/line height/tracking. Use the `.tf-` class for full axes, feature and paragraph settings.
         v4: use tailwind.theme.css (imports Tailwind and typography.css) through your normal Tailwind build. @theme inline exports matching font-* and text-* utilities. Do not load unprocessed @theme CSS directly in the browser.
 
         ## SwiftUI
-        Add Typography.swift and register licensed fonts in the app bundle (UIAppFonts on iOS, app-specific registration on macOS). `FontShelfTypography.styles["\(items[0].key)"]` supplies a Core Text-backed SwiftUI Font, axis/feature settings, saved lineHeight and tracking. Apply .font(style.font).tracking(style.tracking). Dynamic Type scaling, alignment, case/decorations and exact paragraph layout must be wired by your app using tokens.json. SwiftUI .lineSpacing is additional spacing, NOT an exact line-height substitute. Core Text may substitute an unavailable font; validate registration.
+        Add Typography.swift and register licensed fonts in the app bundle (UIAppFonts on iOS, app-specific registration on macOS). `TypefieldTypography.styles["\(items[0].key)"]` supplies a Core Text-backed SwiftUI Font, axis/feature settings, saved lineHeight and tracking. Apply .font(style.font).tracking(style.tracking). Dynamic Type scaling, alignment, case/decorations and exact paragraph layout must be wired by your app using tokens.json. SwiftUI .lineSpacing is additional spacing, NOT an exact line-height substitute. Core Text may substitute an unavailable font; validate registration.
 
         ## Android Compose
-        Add your package declaration to Typography.kt. Call FontShelfTypography.styles with a resolver mapping each PostScript name AND axis map to a licensed FontFamily. For variable fonts on API 26+, construct Font(resId = yourFontResource, variationSettings = FontVariation.Settings(*axes.map { FontVariation.Setting(it.key, it.value) }.toTypedArray())) inside a FontFamily, with @OptIn(ExperimentalTextApi::class) where required by your Compose version. Provide static alternatives below API 26. Weight, italic, line height, tracking, alignment and OpenType features are in TextStyle; text case, decoration, indent, word and paragraph spacing are retained in tokens.json for application-specific rendering. px → sp/pt uses the same numeric value as a starting point, not guaranteed physical or shaping equivalence. Android output must be integrated and compiled against your project's Compose version.
+        Add your package declaration to Typography.kt. Call TypefieldTypography.styles with a resolver mapping each PostScript name AND axis map to a licensed FontFamily. For variable fonts on API 26+, construct Font(resId = yourFontResource, variationSettings = FontVariation.Settings(*axes.map { FontVariation.Setting(it.key, it.value) }.toTypedArray())) inside a FontFamily, with @OptIn(ExperimentalTextApi::class) where required by your Compose version. Provide static alternatives below API 26. Weight, italic, line height, tracking, alignment and OpenType features are in TextStyle; text case, decoration, indent, word and paragraph spacing are retained in tokens.json for application-specific rendering. px → sp/pt uses the same numeric value as a starting point, not guaranteed physical or shaping equivalence. Android output must be integrated and compiled against your project's Compose version.
 
         ## References
         - https://tailwindcss.com/docs/theme
@@ -224,7 +224,7 @@ enum DeveloperHandoff {
         """
         let files: [String: String] = ["typography.css": css, "tokens.json": try json(tokenDocument), "fonts.json": try json(manifest), "tailwind.config.cjs": "// Tailwind v3: merge into your app config; keep your content globs.\nmodule.exports = " + (try json(["theme": ["extend": ["fontFamily": families, "fontSize": sizes]]])) + ";\n", "tailwind.theme.css": theme, "preload.html": "<!-- Examples only: supply assets, choose critical above-the-fold fonts, and remove unused tags. -->\n" + preloads + "\n", "Typography.swift": swift, "Typography.kt": compose, "index.html": specimen, "README.md": readme]
         let fm = FileManager.default, id = UUID().uuidString
-        let staging = parent.appendingPathComponent(".FontShelf-Handoff-" + id), destination = parent.appendingPathComponent("FontShelf-Handoff-" + id.prefix(8))
+        let staging = parent.appendingPathComponent(".Typefield-Handoff-" + id), destination = parent.appendingPathComponent("Typefield-Handoff-" + id.prefix(8))
         try fm.createDirectory(at: staging, withIntermediateDirectories: false)
         do {
             try fm.createDirectory(at: staging.appendingPathComponent("fonts"), withIntermediateDirectories: false)

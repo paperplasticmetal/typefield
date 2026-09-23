@@ -625,7 +625,7 @@ struct WebFontAuditView: View {
         }
     }
     func addFolder() {
-        let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = false; panel.allowsMultipleSelection = false; panel.title = "Add licensed WOFF2 folder"; panel.prompt = "Use folder"; panel.message = "FontShelf reads exact WOFF2 sizes and metadata. It does not copy, register, convert, or upload these assets."
+        let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = false; panel.allowsMultipleSelection = false; panel.title = "Add licensed WOFF2 folder"; panel.prompt = "Use folder"; panel.message = "Typefield reads exact WOFF2 sizes and metadata. It does not copy, register, convert, or upload these assets."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try library.folderAccess.remember(url)

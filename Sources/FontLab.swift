@@ -281,7 +281,7 @@ enum FontLabSVGExporter {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \(number(glyph.contourDesignWidth == nil ? 1000 : glyph.resolvedDesignWidth * 1000)) 1000" role="img" aria-label="\(escaped(projectName)) glyph \(escaped(glyph.character))">
-          <metadata>FontShelf Letterform Editor; character=\(escaped(glyph.character)); baseline=\(number(metrics.baseline)); x-height=\(number(metrics.xHeight)); cap-height=\(number(metrics.capHeight)); left-side-bearing=\(number(glyph.leftSideBearing)); right-side-bearing=\(number(glyph.rightSideBearing))</metadata>
+          <metadata>Typefield Letterform Editor; character=\(escaped(glyph.character)); baseline=\(number(metrics.baseline)); x-height=\(number(metrics.xHeight)); cap-height=\(number(metrics.capHeight)); left-side-bearing=\(number(glyph.leftSideBearing)); right-side-bearing=\(number(glyph.rightSideBearing))</metadata>
         \(elements)
         </svg>
         """
@@ -441,7 +441,7 @@ final class FontLabStore: ObservableObject {
     private(set) var readBlocked = false
     private var pendingSave: DispatchWorkItem?
     private var terminationObserver: NSObjectProtocol?
-    private let persistenceQueue = DispatchQueue(label: "FontShelf.FontLab.persistence", qos: .utility)
+    private let persistenceQueue = DispatchQueue(label: "Typefield.FontLab.persistence", qos: .utility)
     /// Protects the revision read performed by the background persistence
     /// queue. UI mutations stay on the main thread, but queued save blocks
     /// need a synchronized way to tell whether their captured snapshot has
@@ -468,7 +468,7 @@ final class FontLabStore: ObservableObject {
         do {
             let loaded = try JSONDecoder().decode(FontLabState.self, from: Data(contentsOf: url))
             guard loaded.isValid else {
-                throw NSError(domain: "FontShelf.FontLab", code: 1, userInfo: [NSLocalizedDescriptionKey: "The file contains invalid or unsupported Letterform Editor data."])
+                throw NSError(domain: "Typefield.FontLab", code: 1, userInfo: [NSLocalizedDescriptionKey: "The file contains invalid or unsupported Letterform Editor data."])
             }
             state = loaded
         } catch {
@@ -758,7 +758,7 @@ final class FontLabStore: ObservableObject {
     /// Deterministic model, round-trip, atomic-save, and corrupt-file-preservation checks.
     /// The fixture is isolated in the temporary directory and never reads user fonts.
     static func selfTest() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-FontLabSelfTest-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-FontLabSelfTest-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
         try? FileManager.default.removeItem(at: root)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1123,7 +1123,7 @@ struct FontLabView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("FONT LAB").font(.caption).foregroundStyle(.secondary)
+                        Text("LETTERFORM PROJECTS").font(.caption).foregroundStyle(.secondary)
                         Text("Draw and test letterforms").font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -1621,7 +1621,7 @@ struct FontLabView: View {
         let panel = NSOpenPanel()
         panel.title = "Choose a folder for exported SVG glyphs"
         panel.prompt = "Export SVGs"
-        panel.message = "FontShelf creates a new folder here, so existing files are never replaced."
+        panel.message = "Typefield creates a new folder here, so existing files are never replaced."
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
@@ -1654,7 +1654,7 @@ struct FontLabView: View {
         let panel = NSSavePanel()
         panel.title = "Export installable TrueType font"
         panel.prompt = "Export Font"
-        panel.message = "FontShelf builds a standard OpenType font with TrueType outlines and validates it with macOS before saving."
+        panel.message = "Typefield builds a standard OpenType font with TrueType outlines and validates it with macOS before saving."
         panel.nameFieldStringValue = safeFilename(project.name) + ".ttf"
         panel.allowedContentTypes = [UTType(filenameExtension: "ttf") ?? .data]
         panel.canCreateDirectories = true
@@ -1710,15 +1710,15 @@ private struct FontLabInputHelp: View {
             inputSection(
                 "Apple Pencil + iPad",
                 icon: "ipad",
-                text: "Set up Sidecar in macOS Displays, wirelessly or over USB, then put the FontShelf window on the iPad. Sidecar sends Apple Pencil input to the Mac app."
+                text: "Set up Sidecar in macOS Displays, wirelessly or over USB, then put the Typefield window on the iPad. Sidecar sends Apple Pencil input to the Mac app."
             )
             inputSection(
                 "Pen tablet",
                 icon: "rectangle.and.pencil.and.ellipsis",
-                text: "Connect the tablet as its maker recommends and install its macOS driver when required. FontShelf uses the standard tablet events macOS provides."
+                text: "Connect the tablet as its maker recommends and install its macOS driver when required. Typefield uses the standard tablet events macOS provides."
             )
             Divider()
-            Text("FontShelf does not pair Bluetooth or USB hardware itself. With Pressure enabled, reported pressure changes the round pen's thickness. Reported tilt is retained with the stroke, although the current round nib does not rotate with tilt.")
+            Text("Typefield does not pair Bluetooth or USB hardware itself. With Pressure enabled, reported pressure changes the round pen's thickness. Reported tilt is retained with the stroke, although the current round nib does not rotate with tilt.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(18).frame(width: 390)

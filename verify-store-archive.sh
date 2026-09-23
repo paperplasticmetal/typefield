@@ -5,8 +5,8 @@ team="${2:?Set the expected team identifier}"
 bundle="${3:?Set the expected bundle identifier}"
 archive="$(cd "$archive" && pwd)"
 cd "$(dirname "$0")"
-app="$archive/Products/Applications/FontShelf.app"
-[[ -d "$app" ]] || { echo "FontShelf.app is missing from $archive" >&2; exit 1; }
+app="$archive/Products/Applications/Typefield.app"
+[[ -d "$app" ]] || { echo "Typefield.app is missing from $archive" >&2; exit 1; }
 info="$app/Contents/Info.plist"
 actual_bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")
 [[ "$actual_bundle" == "$bundle" ]] || { echo "Bundle ID mismatch: $actual_bundle" >&2; exit 1; }

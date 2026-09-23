@@ -3,21 +3,21 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>FontShelf</string>
+	<string>Typefield</string>
 	<key>CFBundleExecutable</key>
-	<string>FontShelf</string>
+	<string>Typefield</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.fontshelf.app</string>
+	<string>local.typefield.app</string>
 	<key>CFBundleName</key>
-	<string>FontShelf</string>
+	<string>Typefield</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.36.0</string>
+	<string>0.37.0</string>
 	<key>CFBundleVersion</key>
-	<string>47</string>
+	<string>48</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.graphics-design</string>
 	<key>LSMinimumSystemVersion</key>
@@ -25,6 +25,6 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>FontShelf</string>
+	<string>Typefield</string>
 </dict>
 </plist>

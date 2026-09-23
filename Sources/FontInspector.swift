@@ -151,7 +151,7 @@ struct FontContextView: View {
             guard let value = CTFontCopyName(font, key) as String?, !value.isEmpty else { return nil }; return (label, value)
         }
     }
-    func scopeLabel(_ url: URL) -> String { switch CTFontManagerGetScopeForURL(url as CFURL) { case .process: return "FontShelf only"; case .session: return "Current login session"; case .persistent: return "Installed"; default: return "System or unregistered" } }
+    func scopeLabel(_ url: URL) -> String { switch CTFontManagerGetScopeForURL(url as CFURL) { case .process: return "Typefield only"; case .session: return "Current login session"; case .persistent: return "Installed"; default: return "System or unregistered" } }
 }
 struct FontSwitchView: View {
     let face: Face
@@ -169,7 +169,7 @@ struct FontSwitchView: View {
             if let url = face.url {
                 Divider()
                 Text("Temporary activation").font(.headline)
-                Text(activation.owns(url) ? "Temporarily activated by FontShelf" : "Not temporarily activated by FontShelf")
+                Text(activation.owns(url) ? "Temporarily activated by Typefield" : "Not temporarily activated by Typefield")
                 Button(activation.owns(url) ? "Deactivate temporary font" : "Activate temporarily") {
                     do { if activation.owns(url) { try activation.deactivate(url); status = "Temporary activation cleared." } else { status = try activation.activate(url) } } catch { status = error.localizedDescription }
                 }

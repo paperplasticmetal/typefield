@@ -99,7 +99,7 @@ struct WatchedFoldersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("Watched folders").font(.headline); Spacer(); Button("Add folder…") { library.addFolder() }; Button("Refresh now") { library.reload(register: true) }.disabled(library.loading) }
-            Text("Folders and subfolders are checked every three seconds while FontShelf is open.").font(.caption).foregroundStyle(.secondary)
+            Text("Folders and subfolders are checked every three seconds while Typefield is open.").font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(library.saved.folders, id: \.self) { path in
@@ -112,7 +112,7 @@ struct WatchedFoldersView: View {
                     if library.saved.folders.isEmpty { Text("No watched folders").foregroundStyle(.secondary).padding(25) }
                 }
             }
-            Text("Activation uses the original files. Activated fonts are cleared when FontShelf quits normally or you log out. Stopping a watch keeps your font files.").font(.caption).foregroundStyle(.secondary)
+            Text("Activation uses the original files. Activated fonts are cleared when Typefield quits normally or you log out. Stopping a watch keeps your font files.").font(.caption).foregroundStyle(.secondary)
             Text(library.folderStatus).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }.padding(12)
     }

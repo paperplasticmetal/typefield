@@ -12,7 +12,7 @@ enum AdobeTypeSystemTarget: String, CaseIterable, Identifiable {
     var documentExtension: String { self == .illustrator ? "ai" : "indd" }
 }
 
-/// Builds scripts which run inside Adobe applications. FontShelf never drives the
+/// Builds scripts which run inside Adobe applications. Typefield never drives the
 /// applications, writes proprietary document formats, or bundles font binaries.
 enum AdobeTypeSystemExporter {
     enum ExportError: LocalizedError {
@@ -33,7 +33,7 @@ enum AdobeTypeSystemExporter {
             case .tooMuchContent:
                 return "The selected canvases contain too much text or too many layers for one Adobe export."
             case .encodingFailed:
-                return "FontShelf could not encode the Adobe builder script."
+                return "Typefield could not encode the Adobe builder script."
             }
         }
     }
@@ -117,7 +117,7 @@ enum AdobeTypeSystemExporter {
         while result.contains("--") { result = result.replacingOccurrences(of: "--", with: "-") }
         if result.count > 80 { result = String(result.prefix(80)).trimmingCharacters(in: CharacterSet(charactersIn: " .-_")) }
         let reserved = ["con", "prn", "aux", "nul"] + (1...9).flatMap { ["com\($0)", "lpt\($0)"] }
-        if result.isEmpty || result == "." || result == ".." || reserved.contains(result.lowercased()) { return "FontShelf-Type-System" }
+        if result.isEmpty || result == "." || result == ".." || reserved.contains(result.lowercased()) { return "Typefield-Type-System" }
         return result
     }
 
@@ -179,7 +179,7 @@ enum AdobeTypeSystemExporter {
                         warnings.append("OpenType features \(features.keys.sorted().joined(separator: ", ")) are retained in metadata but are not applied automatically by the Adobe builder.")
                     }
                     if let spacing = style.wordSpacing, spacing != 0 {
-                        warnings.append("Word spacing is retained in metadata because Adobe exposes it as percentages rather than FontShelf points.")
+                        warnings.append("Word spacing is retained in metadata because Adobe exposes it as percentages rather than Typefield points.")
                     }
                     if style.kerningOverride != nil {
                         warnings.append("The explicit kerning preference is retained in metadata; Adobe's kerning engines vary by application and version.")
@@ -218,8 +218,8 @@ enum AdobeTypeSystemExporter {
                         strikethrough: style.strikethrough ?? false,
                         kerning: style.effectiveKerning,
                         axes: axes, features: features,
-                        paragraphStyle: "FontShelf P\(prefix) · \(styleLabel)",
-                        characterStyle: "FontShelf C\(prefix) · \(styleLabel)",
+                        paragraphStyle: "Typefield P\(prefix) · \(styleLabel)",
+                        characterStyle: "Typefield C\(prefix) · \(styleLabel)",
                         warnings: warnings
                     ))
                 } else {
@@ -246,15 +246,15 @@ enum AdobeTypeSystemExporter {
         guard totalItems <= 50_000, totalTextBytes <= 5_000_000 else { throw ExportError.tooMuchContent }
         let limitations = [
             "Font files are not included. Every referenced font must be installed and licensed on the Adobe workstation.",
-            "One FontShelf canvas unit is mapped to one Adobe point; line wrapping can change between Core Text and Adobe text engines.",
-            "Variable-axis coordinates and arbitrary OpenType feature tags are preserved in FontShelf metadata but are not applied automatically.",
+            "One Typefield canvas unit is mapped to one Adobe point; line wrapping can change between Core Text and Adobe text engines.",
+            "Variable-axis coordinates and arbitrary OpenType feature tags are preserved in legacy export metadata but are not applied automatically.",
             "Word spacing and explicit kerning preferences remain metadata because the Illustrator and InDesign DOMs use different controls.",
             "The builder creates a new native document and never modifies an already-open Adobe document."
         ]
         limitations.forEach { collectedWarnings.insert($0) }
-        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "FontShelf Type System" : title
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Typefield Type System" : title
         return Manifest(
-            format: "FontShelf Adobe type system", version: 1, generator: "FontShelf", target: target.displayName,
+            format: "FontShelf Adobe type system", version: 1, generator: "Typefield", target: target.displayName,
             title: cleanTitle, suggestedDocumentName: suggestedDocumentFilename(title: cleanTitle, target: target), units: "points",
             limitations: limitations, warnings: collectedWarnings.sorted(), canvases: canvases
         )
@@ -322,7 +322,7 @@ enum AdobeTypeSystemExporter {
 
     private static func commonScriptPrelude(manifestJSON: String, metadataLiteral: String, extensionName: String) -> String {
         """
-        // Generated by FontShelf. Run this file inside Adobe; it does not use Apple events.
+        // Generated by Typefield. Run this file inside Adobe; it does not use Apple events.
         // No font binaries are included. Install and license the referenced fonts separately.
         (function () {
             var manifest = \(manifestJSON);
@@ -352,7 +352,7 @@ enum AdobeTypeSystemExporter {
             function changedNewlines(value) { return value.replace(/\\r\\n|\\r|\\n/g, "\\r"); }
             function warningSummary(savedFile) {
                 var lines = ["Saved an editable " + manifest.target + " document:", savedFile.fsName, "", "Fonts are referenced, not bundled."];
-                if (manifest.warnings.length || runtimeWarnings.length) lines.push("Review the hidden ‘FontShelf Export Metadata’ layer for retained settings and limitations.");
+                if (manifest.warnings.length || runtimeWarnings.length) lines.push("Review the hidden ‘Typefield Export Metadata’ layer for retained settings and limitations.");
                 if (runtimeWarnings.length) {
                     lines.push("", "Runtime warnings:");
                     var count = Math.min(runtimeWarnings.length, 8);
@@ -437,18 +437,18 @@ enum AdobeTypeSystemExporter {
                 var paragraphs = frame.textRange.paragraphAttributes;
                 paragraphs.justification = justification(item.alignment);
                 try { paragraphs.spaceAfter = item.paragraphSpacing; paragraphs.firstLineIndent = item.firstLineIndent; } catch (ignoredSpacing) {}
-                try { frame.note = "FontShelf: " + item.section + (item.warnings.length ? " | " + item.warnings.join(" | ") : ""); } catch (ignoredNote) {}
+                try { frame.note = "Typefield: " + item.section + (item.warnings.length ? " | " + item.warnings.join(" | ") : ""); } catch (ignoredNote) {}
                 return frame;
             }
             function addMetadata(doc, firstRect) {
                 var layer = doc.layers.add();
-                layer.name = "FontShelf Export Metadata";
+                layer.name = "Typefield Export Metadata";
                 var width = Math.max(20, Math.min(500, firstRect[2] - firstRect[0] - 8));
                 var height = Math.max(20, Math.min(500, firstRect[1] - firstRect[3] - 8));
                 var box = layer.pathItems.rectangle(firstRect[1] - 4, firstRect[0] + 4, width, height);
                 box.stroked = false; box.filled = false;
                 var frame = layer.textFrames.areaText(box);
-                frame.name = "FontShelf Manifest v1";
+                frame.name = "Typefield Manifest v1";
                 frame.contents = metadataJSON;
                 try { frame.textRange.characterAttributes.size = 4; } catch (ignoredSize) {}
                 layer.visible = false;
@@ -494,7 +494,7 @@ enum AdobeTypeSystemExporter {
                 doc.saveAs(outputFile, options);
                 alert(warningSummary(outputFile));
             } catch (error) {
-                alert("FontShelf could not build the Illustrator document.\\n\\n" + error.message + "\\n\\nNo existing document was modified.");
+                alert("Typefield could not build the Illustrator document.\\n\\n" + error.message + "\\n\\nNo existing document was modified.");
             }
         })();
         """
@@ -519,7 +519,7 @@ enum AdobeTypeSystemExporter {
                 return Justification.LEFT_ALIGN;
             }
             function getColor(doc, value) {
-                var name = "FontShelf RGB " + Math.round(value.r * 255) + " " + Math.round(value.g * 255) + " " + Math.round(value.b * 255);
+                var name = "Typefield RGB " + Math.round(value.r * 255) + " " + Math.round(value.g * 255) + " " + Math.round(value.b * 255);
                 var color = doc.colors.itemByName(name);
                 if (!color.isValid) color = doc.colors.add({ name: name, model: ColorModel.PROCESS, space: ColorSpace.RGB, colorValue: [Math.round(value.r * 255), Math.round(value.g * 255), Math.round(value.b * 255)] });
                 return color;
@@ -597,12 +597,12 @@ enum AdobeTypeSystemExporter {
                 catch (resizeError) { throw new Error("Could not size page “" + page.name + "” to " + width + " × " + height + " pt: " + resizeError.message); }
             }
             function addMetadata(doc) {
-                try { doc.insertLabel("FontShelfManifestV1", metadataJSON); } catch (labelError) { warn("The complete FontShelf manifest could not be added as a document label."); }
-                var layer = doc.layers.add({ name: "FontShelf Export Metadata" });
+                try { doc.insertLabel("FontShelfManifestV1", metadataJSON); } catch (labelError) { warn("The complete Typefield manifest could not be added as a document label."); }
+                var layer = doc.layers.add({ name: "Typefield Export Metadata" });
                 var page = doc.pages[0], bounds = page.bounds;
                 var frame = page.textFrames.add();
                 frame.itemLayer = layer;
-                frame.name = "FontShelf Manifest v1";
+                frame.name = "Typefield Manifest v1";
                 frame.geometricBounds = [bounds[0] + 4, bounds[1] + 4, Math.min(bounds[2] - 4, bounds[0] + 504), Math.min(bounds[3] - 4, bounds[1] + 504)];
                 frame.contents = metadataJSON;
                 layer.visible = false;
@@ -641,7 +641,7 @@ enum AdobeTypeSystemExporter {
                 doc.save(outputFile);
                 alert(warningSummary(outputFile));
             } catch (error) {
-                alert("FontShelf could not build the InDesign document.\\n\\n" + error.message + "\\n\\nNo existing document was modified.");
+                alert("Typefield could not build the InDesign document.\\n\\n" + error.message + "\\n\\nNo existing document was modified.");
             }
         })();
         """
@@ -666,7 +666,7 @@ enum AdobeTypeSystemExporter {
                 let second = try script(directions: [direction], title: "Type/System:*?", target: target)
                 precondition(first == second, "Adobe builder output must be deterministic")
                 precondition(first.hasPrefix("#target \(target.rawValue)"))
-                precondition(first.contains("FontShelf Export Metadata"))
+                precondition(first.contains("Typefield Export Metadata"))
                 precondition(first.contains("characterStyle") && first.contains("paragraphStyle"))
                 precondition(first.contains("Variable axes") && first.contains("OpenType features"))
                 precondition(first.contains(target == .illustrator ? "doc.saveAs(outputFile" : "doc.save(outputFile"))
@@ -683,8 +683,8 @@ enum AdobeTypeSystemExporter {
                 precondition(context.exception == nil, "Generated Adobe script must parse as JavaScript: \(String(describing: context.exception))")
                 precondition(context.evaluateScript("alerts.length")!.toInt32() == 0, "Cancelled export must stay quiet")
             }
-            precondition(safeBaseName("../CON") == "CON" || safeBaseName("../CON") == "FontShelf-Type-System")
-            precondition(safeBaseName("///") == "FontShelf-Type-System")
+            precondition(safeBaseName("../CON") == "CON" || safeBaseName("../CON") == "Typefield-Type-System")
+            precondition(safeBaseName("///") == "Typefield-Type-System")
             AdobeTypeSystemReturnBridge.selfTest()
         } catch {
             preconditionFailure("Adobe type-system exporter self-test failed: \(error)")
@@ -767,9 +767,9 @@ enum AdobeTypeSystemReturnBridge {
         var errorDescription: String? {
             switch self {
             case .tooLarge:
-                return "The Adobe return file is larger than FontShelf's 20 MB safety limit."
+                return "The Adobe return file is larger than Typefield’s 20 MB safety limit."
             case .unsupportedFormat:
-                return "Choose a version 1 FontShelf Adobe return JSON file. Native .ai and .indd files are not imported directly."
+                return "Choose a version 1 Typefield Adobe return JSON file. Native .ai and .indd files are not imported directly."
             case .emptyDocument:
                 return "The Adobe return file does not contain any canvases or pages."
             case .invalidCanvas(let name):
@@ -781,7 +781,7 @@ enum AdobeTypeSystemReturnBridge {
     }
 
     static func suggestedScriptFilename(target: AdobeTypeSystemTarget) -> String {
-        "FontShelf-Return-from-" + target.displayName + ".jsx"
+        "Typefield-Return-from-" + target.displayName + ".jsx"
     }
 
     static func script(target: AdobeTypeSystemTarget, scope: AdobeReturnScope = .prompt) -> String {
@@ -851,7 +851,7 @@ enum AdobeTypeSystemReturnBridge {
                     for (tag, value) in layer.axes ?? [:] where validTag(tag) && value.isFinite { style.axes[tagID(tag)] = value }
                     style.features = (layer.features ?? [:]).filter { validTag($0.key) }
                     imported.style = style
-                    if let installedFontNames, !installedFontNames.contains(fontName) { warnings.insert("Font “\(fontName)” is unavailable in FontShelf; verify the fallback for \(imported.name).") }
+                    if let installedFontNames, !installedFontNames.contains(fontName) { warnings.insert("Font “\(fontName)” is unavailable in Typefield; verify the fallback for \(imported.name).") }
                 }
                 importedLayers.append(imported)
             }
@@ -886,7 +886,7 @@ enum AdobeTypeSystemReturnBridge {
 
     private static func returnPrelude(target: AdobeTypeSystemTarget, scope: AdobeReturnScope) -> String {
         """
-        // FontShelf Adobe return bridge v1. Exports editable text-frame and simple-shape data only.
+        // Typefield Adobe return bridge v1. Exports editable text-frame and simple-shape data only.
         // It never reads or copies font binaries.
         (function () {
             var requestedScope = "\(scope.rawValue)";
@@ -944,8 +944,8 @@ enum AdobeTypeSystemReturnBridge {
             }
             function chooseOutput(documentName) {
                 var safeName = String(documentName || "Adobe").replace(/[\\\\\\/:*?\"<>|]/g, "-");
-                var candidate = new File(Folder.desktop.fsName + "/FontShelf-" + safeName + ".json");
-                var chosen = candidate.saveDlg ? candidate.saveDlg("Save FontShelf Adobe return JSON", "*.json") : File.saveDialog("Save FontShelf Adobe return JSON", "*.json");
+                var candidate = new File(Folder.desktop.fsName + "/Typefield-" + safeName + ".json");
+                var chosen = candidate.saveDlg ? candidate.saveDlg("Save Typefield Adobe return JSON", "*.json") : File.saveDialog("Save Typefield Adobe return JSON", "*.json");
                 if (!chosen) return null;
                 return /\\.json$/i.test(chosen.name) ? chosen : new File(chosen.fsName + ".json");
             }
@@ -954,7 +954,7 @@ enum AdobeTypeSystemReturnBridge {
                 if (!file.open("w")) throw new Error("Could not open the return file for writing.");
                 try { file.write(stringify(result)); } finally { file.close(); }
             }
-            if (!app.documents.length) { alert("FontShelf: Open a \(target.displayName) document first."); return; }
+            if (!app.documents.length) { alert("Typefield: Open a \(target.displayName) document first."); return; }
         """
     }
 
@@ -1016,12 +1016,12 @@ enum AdobeTypeSystemReturnBridge {
             try {
                 var doc = app.activeDocument, selectedOnly = chooseSelection(doc.selection), source = [];
                 if (selectedOnly) {
-                    if (!doc.selection || !doc.selection.length) { alert("FontShelf: Select text frames or simple shapes first."); return; }
+                    if (!doc.selection || !doc.selection.length) { alert("Typefield: Select text frames or simple shapes first."); return; }
                     for (var selectedIndex = 0; selectedIndex < doc.selection.length; selectedIndex++) flatten(doc.selection[selectedIndex], source);
                 } else {
                     for (var pageIndex = 0; pageIndex < doc.pageItems.length; pageIndex++) {
                         var pageItem = doc.pageItems[pageIndex];
-                        try { if (pageItem.layer && pageItem.layer.name === "FontShelf Export Metadata") continue; } catch (ignoredLayer) {}
+                        try { if (pageItem.layer && (pageItem.layer.name === "Typefield Export Metadata" || pageItem.layer.name === "FontShelf Export Metadata")) continue; } catch (ignoredLayer) {}
                         try { if (!pageItem.parent || pageItem.parent.typename !== "Layer") continue; } catch (ignoredParent) { continue; }
                         flatten(pageItem, source);
                     }
@@ -1037,12 +1037,12 @@ enum AdobeTypeSystemReturnBridge {
                     }
                     if (!selectedOnly || layers.length) canvases.push({ name: artboardObject.name || ("Artboard " + (artboardIndex + 1)), width: artboard[2] - artboard[0], height: artboard[1] - artboard[3], paper: paper, layers: layers, warnings: [] });
                 }
-                if (!canvases.length) { alert("FontShelf: No supported items were found in the selection."); return; }
+                if (!canvases.length) { alert("Typefield: No supported items were found in the selection."); return; }
                 var result = { format: "fontshelf-adobe-return", version: 1, sourceApplication: "Illustrator", name: doc.name.replace(/\\.[^.]+$/, ""), warnings: bridgeWarnings, canvases: canvases };
                 var output = chooseOutput(result.name); if (!output) return;
                 writeResult(output, result);
-                alert("FontShelf return JSON saved.\\n\\n" + output.fsName + "\\n\\nFonts are referenced by name; no font files were copied.");
-            } catch (error) { alert("FontShelf could not export this Illustrator document.\\n\\n" + error.message); }
+                alert("Typefield return JSON saved.\\n\\n" + output.fsName + "\\n\\nFonts are referenced by name; no font files were copied.");
+            } catch (error) { alert("Typefield could not export this Illustrator document.\\n\\n" + error.message); }
         })();
         """
     }
@@ -1094,7 +1094,7 @@ enum AdobeTypeSystemReturnBridge {
             try {
                 var doc = app.activeDocument, selectedOnly = chooseSelection(app.selection), selected = [];
                 if (selectedOnly) {
-                    if (!app.selection || !app.selection.length) { alert("FontShelf: Select text frames or simple shapes first."); return; }
+                    if (!app.selection || !app.selection.length) { alert("Typefield: Select text frames or simple shapes first."); return; }
                     for (var selectionIndex = 0; selectionIndex < app.selection.length; selectionIndex++) {
                         if (supported(app.selection[selectionIndex])) selected.push(app.selection[selectionIndex]);
                         else warn("Unsupported InDesign selection “" + app.selection[selectionIndex].typename + "” was skipped.");
@@ -1105,7 +1105,7 @@ enum AdobeTypeSystemReturnBridge {
                     var page = doc.pages[pageIndex], pageBounds = page.bounds, source = selectedOnly ? selected : page.allPageItems, layers = [], paper = { r: 1, g: 1, b: 1, a: 1 };
                     for (var itemIndex = 0; itemIndex < source.length; itemIndex++) {
                         var item = source[itemIndex];
-                        try { if (item.itemLayer && item.itemLayer.name === "FontShelf Export Metadata") continue; } catch (ignoredLayer) {}
+                        try { if (item.itemLayer && (item.itemLayer.name === "Typefield Export Metadata" || item.itemLayer.name === "FontShelf Export Metadata")) continue; } catch (ignoredLayer) {}
                         try { if (!item.parentPage || !item.parentPage.isValid || item.parentPage.id !== page.id) continue; } catch (ignoredPage) { continue; }
                         if (!supported(item)) { if (!selectedOnly) warn("Unsupported InDesign item “" + item.typename + "” was skipped."); continue; }
                         if (item.typename === "Rectangle" && item.name === "Canvas background") { paper = colorValue(item.fillColor, opacityValue(item)); continue; }
@@ -1113,12 +1113,12 @@ enum AdobeTypeSystemReturnBridge {
                     }
                     if (!selectedOnly || layers.length) canvases.push({ name: page.extractLabel("FontShelfCanvas") || ("Page " + (pageIndex + 1)), width: pageBounds[3] - pageBounds[1], height: pageBounds[2] - pageBounds[0], paper: paper, layers: layers, warnings: [] });
                 }
-                if (!canvases.length) { alert("FontShelf: No supported items were found in the selection."); return; }
+                if (!canvases.length) { alert("Typefield: No supported items were found in the selection."); return; }
                 var result = { format: "fontshelf-adobe-return", version: 1, sourceApplication: "InDesign", name: doc.name.replace(/\\.[^.]+$/, ""), warnings: bridgeWarnings, canvases: canvases };
                 var output = chooseOutput(result.name); if (!output) return;
                 writeResult(output, result);
-                alert("FontShelf return JSON saved.\\n\\n" + output.fsName + "\\n\\nFonts are referenced by name; no font files were copied.");
-            } catch (error) { alert("FontShelf could not export this InDesign document.\\n\\n" + error.message); }
+                alert("Typefield return JSON saved.\\n\\n" + output.fsName + "\\n\\nFonts are referenced by name; no font files were copied.");
+            } catch (error) { alert("Typefield could not export this InDesign document.\\n\\n" + error.message); }
         })();
         """
     }

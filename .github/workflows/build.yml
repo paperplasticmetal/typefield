@@ -20,12 +20,12 @@ jobs:
       - name: Build and regression checks
         run: ./build.sh
       - name: Verify local signature
-        run: codesign --verify --deep --strict dist/FontShelf.app
+        run: codesign --verify --deep --strict dist/Typefield.app
       - name: Figma importer contract tests
         run: node tests/figma-import.test.js
       - name: Archive Store target without distribution signing
         run: >-
-          xcodebuild -project FontShelf.xcodeproj -scheme FontShelf
+          xcodebuild -project Typefield.xcodeproj -scheme Typefield
           -configuration Release -derivedDataPath .build/xcode
-          -destination 'generic/platform=macOS' -archivePath dist/FontShelf.xcarchive
+          -destination 'generic/platform=macOS' -archivePath dist/Typefield.xcarchive
           CODE_SIGNING_ALLOWED=NO archive

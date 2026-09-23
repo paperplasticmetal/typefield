@@ -1,5 +1,10 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { validate, importLayout, exportSelection } = require('../Resources/FigmaImport/code.js');
+assert.equal(require('../Resources/FigmaImport/manifest.json').name, 'Typefield Layout Importer');
+const pluginUI = fs.readFileSync(require.resolve('../Resources/FigmaImport/ui.html'), 'utf8');
+assert.match(pluginUI, /layout\.typefield\.json/);
+assert.match(pluginUI, /Figma-typeboard\.typefield\.json/);
 const black = { r: 0, g: 0, b: 0, a: 1 };
 function fixture() { return { format: 'fontshelf-figma', version: 1, name: 'Client', frames: [{ name: 'A', width: 390, height: 800, paper: black, elements: [{ kind: 'text', section: 'Hero', role: 'Display', x: 24, y: 24, width: 342, height: 140, text: 'Editable text', fontFamily: 'Georgia', fontStyle: 'Regular', fontSize: 64, lineHeight: 80, letterSpacing: 1, paragraphSpacing: 12, paragraphIndent: 0, alignment: 'CENTER', color: black, axes: {}, features: {}, kerning: true }] }] }; }
 function mock(failFont = false, failText = false) {

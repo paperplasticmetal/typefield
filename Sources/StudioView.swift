@@ -27,9 +27,20 @@ enum WorkspaceHeaderLayout {
 struct WorkspaceSwitcher: View {
     @ObservedObject var library: Library
     var body: some View {
-        Picker("Workspace", selection: $library.workspace) {
-            ForEach(WorkspaceMode.allCases) { workspace in Text(workspace.rawValue).tag(workspace) }
-        }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("workspace-switcher")
+        VStack(spacing: 3) {
+            ForEach(WorkspaceMode.allCases) { workspace in
+                Button { library.workspace = workspace } label: {
+                    Label(workspace.rawValue, systemImage: workspace == .library ? "textformat" : workspace == .spaces ? "square.stack.3d.up" : "pencil.and.outline")
+                        .font(.system(size: 12, weight: library.workspace == workspace ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(library.workspace == workspace ? ShelfPalette.indiaYellow.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityValue(library.workspace == workspace ? "Selected" : "")
+                .help(workspace == .library ? "Browse and organize fonts" : workspace == .spaces ? "Explore typeboards and layouts" : "Draw and refine your own letters")
+            }
+        }.accessibilityIdentifier("workspace-switcher")
     }
 }
 struct WorkspaceSidebarHeader: View {
@@ -39,8 +50,8 @@ struct WorkspaceSidebarHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text("Ff").font(.custom("Georgia", size: 30)).foregroundStyle(ShelfPalette.ink).accessibilityHidden(true).accessibilityIdentifier("workspace-brand-mark")
-                Text("FontShelf").font(.headline).accessibilityIdentifier("workspace-brand-name")
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 30, height: 30).accessibilityHidden(true).accessibilityIdentifier("workspace-brand-mark")
+                Text("Typefield").font(.headline).accessibilityIdentifier("workspace-brand-name")
                 Spacer()
                 Button {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { collapsed = true }
@@ -286,7 +297,7 @@ struct StudioView: View {
     func importFigma() {
         guard !store.readBlocked else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
-        panel.message = "In the FontShelf Figma bridge, export selected frames to FontShelf, then choose that JSON file. Native .fig files are not supported."
+        panel.message = "In the Typefield Figma bridge, export selected frames to Typefield, then choose that JSON file. Native .fig files are not supported."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 20_000_000 else { throw CocoaError(.fileReadTooLarge) }
@@ -299,7 +310,7 @@ struct StudioView: View {
     func importAdobe() {
         guard !store.readBlocked else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
-        panel.message = "Run FontShelf's return bridge inside Illustrator or InDesign, save its JSON, then choose that file here. Native .ai and .indd files are not decoded directly."
+        panel.message = "Run Typefield's return bridge inside Illustrator or InDesign, save its JSON, then choose that file here. Native .ai and .indd files are not decoded directly."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 20_000_000 else { throw AdobeTypeSystemReturnBridge.ImportError.tooLarge }
@@ -316,7 +327,7 @@ struct StudioView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: target.scriptExtension) ?? .plainText]
         panel.nameFieldStringValue = AdobeTypeSystemReturnBridge.suggestedScriptFilename(target: target)
-        panel.message = "Run this bridge inside Adobe " + target.displayName + ". It exports the selection or document as JSON that FontShelf can import."
+        panel.message = "Run this bridge inside Adobe " + target.displayName + ". It exports the selection or document as JSON that Typefield can import."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try AdobeTypeSystemReturnBridge.data(target: target, scope: .prompt).write(to: url, options: .atomic)
@@ -326,8 +337,8 @@ struct StudioView: View {
         }
     }
     func figFileHelp() {
-        let alert = NSAlert(); alert.messageText = "Bring a .fig file into FontShelf"
-        alert.informativeText = "Direct .fig decoding is not available yet. Import your .fig file in Figma's file browser, run the FontShelf Layout Importer plugin, select the frames you want and choose Export selected frames. Then import the saved JSON here.\n\nThis keeps supported text and shapes editable; review the bridge's notes for unsupported content."
+        let alert = NSAlert(); alert.messageText = "Bring a .fig file into Typefield"
+        alert.informativeText = "Direct .fig decoding is not available yet. Import your .fig file in Figma's file browser, run the Typefield Layout Importer plugin, select the frames you want and choose Export selected frames. Then import the saved JSON here.\n\nThis keeps supported text and shapes editable; review the bridge's notes for unsupported content."
         alert.addButton(withTitle: "OK"); alert.runModal()
     }
 }
@@ -548,7 +559,7 @@ struct TypeBoardEditor: View {
         .onChange(of: direction.id) { id in shownCanvasIDs.insert(id); selectedSection = nil; selectedTextID = nil; draggedSection = nil; if let other = board.directions.first(where: { $0.id == abID }), other.canvas != direction.canvas || other.width != direction.width { abID = nil } }
         .onChange(of: direction.canvas) { _ in abID = nil; selectedSection = nil; selectedTextID = nil }
         .onChange(of: direction.width) { _ in abID = nil }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("FontShelfMenu"))) { event in if event.object as? String == "find" { inspectorTab = "Typography"; DispatchQueue.main.async { showFontPicker = true } } }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in if event.object as? String == "find" { inspectorTab = "Typography"; DispatchQueue.main.async { showFontPicker = true } } }
     }
     func selectCanvas(_ id: UUID) { shownCanvasIDs = CanvasVisibility.selecting(id, from: direction.id, shown: shownCanvasIDs); board.selectedDirection = id; abID = nil; save() }
     func showOnlyCurrent() { shownCanvasIDs = CanvasVisibility.solo(direction.id); abID = nil }
@@ -1445,18 +1456,18 @@ enum TypeSystemPDFExporter {
         return direction
     }
     static func data(directions: [TypeDirection]) throws -> Data {
-        guard !directions.isEmpty else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Select at least one canvas."]) }
+        guard !directions.isEmpty else { throw NSError(domain: "Typefield", code: 1, userInfo: [NSLocalizedDescriptionKey: "Select at least one canvas."]) }
         let pages: [(Data, CGRect)] = directions.map { source in
             let plan = CanvasPlan(direction: specimenDirection(from: source))
             let view = CanvasNativeView(plan: plan)
             return (view.dataWithPDF(inside: view.bounds), CGRect(origin: .zero, size: plan.size))
         }
         let result = NSMutableData()
-        guard let consumer = CGDataConsumer(data: result as CFMutableData) else { throw NSError(domain: "FontShelf", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create the PDF destination."]) }
+        guard let consumer = CGDataConsumer(data: result as CFMutableData) else { throw NSError(domain: "Typefield", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create the PDF destination."]) }
         var defaultBox = pages[0].1
-        guard let context = CGContext(consumer: consumer, mediaBox: &defaultBox, nil) else { throw NSError(domain: "FontShelf", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not create the PDF document."]) }
+        guard let context = CGContext(consumer: consumer, mediaBox: &defaultBox, nil) else { throw NSError(domain: "Typefield", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not create the PDF document."]) }
         for (data, box) in pages {
-            guard let provider = CGDataProvider(data: data as CFData), let document = CGPDFDocument(provider), let page = document.page(at: 1) else { throw NSError(domain: "FontShelf", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not render a type system page."]) }
+            guard let provider = CGDataProvider(data: data as CFData), let document = CGPDFDocument(provider), let page = document.page(at: 1) else { throw NSError(domain: "Typefield", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not render a type system page."]) }
             var mediaBox = box
             let pageInfo = [kCGPDFContextMediaBox: NSData(bytes: &mediaBox, length: MemoryLayout<CGRect>.size)] as CFDictionary
             context.beginPDFPage(pageInfo)

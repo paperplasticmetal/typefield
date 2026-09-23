@@ -159,7 +159,7 @@ final class ActivationManager: ObservableObject {
             if restore { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
             throw error
         }
-        return "Temporarily available to other apps until FontShelf quits or you log out."
+        return "Temporarily available to other apps until Typefield quits or you log out."
     }
     func deactivate(_ url: URL, restore: Bool = true) throws {
         guard let record = records.first(where: { $0.path == url.path }) else { return }
@@ -235,7 +235,7 @@ enum FontExporter {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
         panel.message = "Choose an export destination. Original font files are copied; collection files can contain additional styles."
         guard panel.runModal() == .OK, let base = panel.url else { return nil }
-        let folder = base.appendingPathComponent("FontShelf Export " + ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-") + "-" + String(UUID().uuidString.prefix(4)))
+        let folder = base.appendingPathComponent("Typefield Export " + ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-") + "-" + String(UUID().uuidString.prefix(4)))
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let result = copy(faces: faces, to: folder)

@@ -15,7 +15,9 @@
 - [x] User-selected migration path and disposable regression fixtures for Library, Spaces, Letterform Editor and app-managed Google Fonts.
 - [ ] Run the migration and external-folder reauthorization on a distribution-signed Store/TestFlight build, including a clean second-Mac install and recovery drill.
 
-The production bundle identifier must replace `local.fontshelf.app`. Never commit signing credentials or provisioning profiles. `archive-store.sh` takes `TEAM_ID` and `APP_BUNDLE_ID` from environment variables and runs `verify-store-archive.sh` on the team-signed archive. Xcode Organizer applies distribution signing during validation/upload; Xcode may use cloud-managed certificates. The script does not upload. Keep the production bundle ID stable after the first TestFlight upload.
+The screenshot set and privacy review are described in [SCREENSHOTS.md](SCREENSHOTS.md). Local tour and About-sheet screenshots were visually checked; final listing captures require a clean fixture account and signed build.
+
+The production bundle identifier must replace `local.typefield.app`. Never commit signing credentials or provisioning profiles. `archive-store.sh` takes `TEAM_ID` and `APP_BUNDLE_ID` from environment variables and runs `verify-store-archive.sh` on the team-signed archive. Xcode Organizer applies distribution signing during validation/upload; Xcode may use cloud-managed certificates. The script does not upload. Keep the production bundle ID stable after the first TestFlight upload.
 
 ## Migration from a local build
 
@@ -29,7 +31,7 @@ Migration refuses an occupied Store container and invalid project files. Use **E
 ## Distribution runbook
 
 1. Confirm Apple Developer team membership, registered bundle ID, App Store Connect app record and Xcode signing access for the team.
-2. Run `bash build.sh`, `node tests/figma-import.test.js`, then `TEAM_ID=… APP_BUNDLE_ID=… ./archive-store.sh`. The script leaves the team-signed archive in `dist/FontShelf.xcarchive` and checks its code signature, team, entitlements, version and privacy manifest.
+2. Run `bash build.sh`, `node tests/figma-import.test.js`, then `TEAM_ID=… APP_BUNDLE_ID=… ./archive-store.sh`. The script leaves the team-signed archive in `dist/Typefield.xcarchive` and checks its code signature, team, entitlements, version and privacy manifest.
 3. In Xcode Organizer, run **Validate App**, then upload to App Store Connect. TestFlight and App Store builds do not need Developer ID notarization; direct-download releases require separate Developer ID signing and notarization.
 4. Install the TestFlight build on a clean second Mac and the declared macOS 13 minimum. Check first launch, font listing, all three workspaces, folder denial/regrant, migration, export, activation cleanup, offline behavior and recovery from a corrupt saved file using disposable fixtures.
 
@@ -37,6 +39,6 @@ Session activation and font export should be checked with representative install
 
 ## Review notes draft
 
-FontShelf previews and organizes fonts available on the Mac and in user-selected folders. It does not modify original font files. Google font browsing retrieves public preview font files from GitHub; explicit downloads store font files and their license locally. Preview text and the user's library are not uploaded. Temporary activation uses Core Text session registration and is cleared on normal quit. Export copies originals to a user-selected destination. Adobe support exports static JSX scripts for users to run manually; FontShelf sends no Apple events. There are no accounts, in-app purchases, ads or analytics.
+Typefield previews and organizes fonts available on the Mac and in user-selected folders. It does not modify original font files. Google font browsing retrieves public preview font files from GitHub; explicit downloads store font files and their license locally. Preview text and the user's library are not uploaded. Temporary activation uses Core Text session registration and is cleared on normal quit. Export copies originals to a user-selected destination. Adobe support exports static JSX scripts for users to run manually; Typefield sends no Apple events. There are no accounts, in-app purchases, ads or analytics.
 
 See [Apple's App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) and [submission guidance](https://developer.apple.com/app-store/submitting/). Successful local checks do not establish App Store approval.

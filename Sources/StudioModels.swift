@@ -253,7 +253,7 @@ final class StudioStore: ObservableObject {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
             let loaded = try JSONDecoder().decode(StudioState.self, from: Data(contentsOf: url))
-            guard loaded.version == 1, loaded.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "The workspace has invalid data or requires a newer FontShelf version."]) }
+            guard loaded.version == 1, loaded.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "The workspace has invalid data or requires a newer Typefield version."]) }
             state = loaded
             focusedSpace = loaded.selectedSpace; focusedBoard = loaded.selectedBoard
         } catch { readBlocked = true; self.error = "Spaces could not be opened. The saved file has been preserved. " + error.localizedDescription }

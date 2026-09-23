@@ -1,19 +1,14 @@
-# App naming plan
+# Typefield identity and release plan
 
-## Current finding
+## Selected name
 
-The current **FontShelf** name overlaps with [Fontshelf™](https://fontshelf.com/collections/all), a font-organizing product for Adobe Photoshop and Illustrator. [FontLab](https://www.fontlab.com/font-editor/fontlab/) is an established font editor. The third workspace is therefore labeled **Letterform Editor** in the app. Internal `FontLab` types, filenames, and saved-data keys remain unchanged so existing projects continue to open.
+The app name is **Typefield**. The former FontShelf name overlaps with an existing font-organizing product, and FontLab is an established editor. The third workspace is called **Letterform Editor**. Internal `FontLab` models and `font-lab.json` remain in place so saved projects open unchanged.
 
-The whole app remains FontShelf until a replacement name is selected and checked. Web search is an initial collision check, not a trademark or App Store clearance opinion.
+Version 0.37.0 updates the visible name, icon, local development bundle ID, Xcode target, first-run tour, About/privacy sheet, Figma plugin presentation, export names, developer handoff names, documentation, and both GitHub repository names. Existing Library, Spaces and Letterform Editor files remain under `~/Library/Application Support/FontShelf` for a safe in-place local upgrade. Versioned Figma/Adobe JSON markers and Figma metadata namespace remain `fontshelf` so older handoffs still round-trip. The new local bundle reads known, unset preferences from `local.fontshelf.app.plist` on first launch when available. Store builds continue to offer explicit migration into their sandbox container.
 
-## Selection and release sequence
+## Before public distribution
 
-1. Choose a distinctive app name that covers font organization, typeboards, and letterform editing. Check Apple App Store listings, relevant trademark registers, domains, GitHub, and adjacent font/design products in launch territories. Keep a short record of the exact spelling and search date.
-2. Have a qualified trademark reviewer assess the finalist before public distribution. Secure the desired domain and product handles, then decide whether the existing bundle identifier can remain as a stable technical identifier.
-3. Update the display name, bundle name, icon, About screen, onboarding, help, website, screenshots, privacy copy, Figma plugin presentation, export labels, and developer handoff wording together. Keep versioned JSON formats and internal data directories compatible; new branding should not strand existing libraries or projects.
-4. Test a clean install and an upgrade from a FontShelf build in a disposable macOS user account. Verify Library collections, Spaces, Letterform Editor projects, downloaded font licenses, external-folder access renewal, backup import/export, and old-format Figma/Adobe handoffs.
-5. Use the final name for the signed TestFlight/App Store archive only after the above checks. Review the listing, metadata, privacy responses, and screenshots in App Store Connect before submission.
-
-## Decision needed
-
-Select a finalist app name and target launch regions. Until then, keep the app identity and support paths stable; the Letterform Editor workspace label can ship independently.
+1. Search Typefield in the target countries' trademark registers, App Store listings, domains, and design products, then have a qualified reviewer assess it. The name choice and initial web search do not establish clearance.
+2. Register the production bundle identifier with the Apple Developer team, sign and validate the archive through Xcode Organizer, and upload to App Store Connect. The local `local.typefield.app` identifier is for development only.
+3. Test a clean install and an upgrade from a FontShelf build in a disposable macOS account, and test a signed TestFlight build on a second Mac and on macOS 13. Verify collections, Spaces, Letterform Editor projects, downloaded font licenses, external-folder reauthorization, backup import/export, and old Figma/Adobe handoffs.
+4. Prepare final App Store screenshots, listing, support and privacy URLs, and metadata. Review the screenshots for personal fonts or projects before publishing them.

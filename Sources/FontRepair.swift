@@ -118,7 +118,7 @@ enum FontRepairEngine {
 
     static func parse(_ data: Data, issues: inout [FontHealthIssue]) -> Parsed? {
         guard data.count >= 12, let scaler = data.fsUInt32(0) else { issues.append(FontHealthIssue(.error, "Truncated font header", "The file does not contain a complete SFNT header.")); return nil }
-        if scaler == 0x74746366 { issues.append(FontHealthIssue(.info, "Font collection is read-only", "TTC and OTC collections can be inspected by Core Text, but FontShelf does not rewrite a shared multi-font container.")); return nil }
+        if scaler == 0x74746366 { issues.append(FontHealthIssue(.info, "Font collection is read-only", "TTC and OTC collections can be inspected by Core Text, but Typefield does not rewrite a shared multi-font container.")); return nil }
         guard [0x00010000, 0x4F54544F, 0x74727565, 0x74797031].contains(scaler) else { issues.append(FontHealthIssue(.error, "Unsupported font container", "Repair currently supports individual TrueType and OpenType SFNT files, not WOFF, WOFF2, dfont or unknown containers.")); return nil }
         guard let countValue = data.fsUInt16(4) else { return nil }
         let count = Int(countValue), directoryEnd = 12 + count * 16
@@ -176,9 +176,9 @@ enum FontRepairEngine {
         for record in records { if seen[record.identity, default: []].contains(record.raw) { exactDuplicates += 1 }; seen[record.identity, default: []].insert(record.raw) }
         for values in seen.values where values.count > 1 { conflicts += 1 }
         if exactDuplicates > 0 { issues.append(FontHealthIssue(.warning, "Duplicate name records", "\(exactDuplicates) byte-identical duplicate \(exactDuplicates == 1 ? "record" : "records") can be removed safely.", fix: .removeDuplicateNames)) }
-        if conflicts > 0 { issues.append(FontHealthIssue(.warning, "Conflicting localized names", "\(conflicts) platform/language/name ID \(conflicts == 1 ? "combination contains" : "combinations contain") different strings. Review these manually; FontShelf will not guess which one is correct.")) }
+        if conflicts > 0 { issues.append(FontHealthIssue(.warning, "Conflicting localized names", "\(conflicts) platform/language/name ID \(conflicts == 1 ? "combination contains" : "combinations contain") different strings. Review these manually; Typefield will not guess which one is correct.")) }
         let present = Set(records.filter { !($0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }.map(\.nameID))
-        for required: UInt16 in [1, 2, 4, 6] where !present.contains(required) { issues.append(FontHealthIssue(.error, "Missing name ID \(required)", "A required family, subfamily, full-name or PostScript-name record is absent. FontShelf will not invent identity data.")) }
+        for required: UInt16 in [1, 2, 4, 6] where !present.contains(required) { issues.append(FontHealthIssue(.error, "Missing name ID \(required)", "A required family, subfamily, full-name or PostScript-name record is absent. Typefield will not invent identity data.")) }
         if records.contains(where: { $0.nameID == 17 && !($0.text?.isEmpty ?? true) }) {
             let legacy = Set(records.filter { $0.nameID == 2 }.compactMap(\.text))
             let allowed = Set(["Regular", "Italic", "Bold", "Bold Italic"])
@@ -218,7 +218,7 @@ enum FontRepairEngine {
         }
         let output = buildSFNT(scaler: parsed.scaler, tables: tableValues)
         var outputIssues: [FontHealthIssue] = []
-        guard parse(output, issues: &outputIssues) != nil else { throw FontRepairError.invalid("The repaired copy failed FontShelf's structural validation.") }
+        guard parse(output, issues: &outputIssues) != nil else { throw FontRepairError.invalid("The repaired copy failed Typefield's structural validation.") }
         if validateWithCoreText {
             let descriptors = CTFontManagerCreateFontDescriptorsFromData(output as CFData) as? [CTFontDescriptor] ?? []
             guard !descriptors.isEmpty else { throw FontRepairError.invalid("Core Text rejected the repaired copy. No file was written.") }
@@ -343,7 +343,7 @@ struct FontHealthView: View {
                 }.frame(minWidth: 260, idealWidth: 310, maxWidth: 380)
                 Group {
                     if let item = selected { detail(item) }
-                    else { VStack(spacing: 10) { Image(systemName: "stethoscope").font(.system(size: 34)).foregroundStyle(.secondary); Text("Select an inspected font").font(.headline); Text("FontShelf does not modify files during inspection.").foregroundStyle(.secondary) }.frame(maxWidth: .infinity, maxHeight: .infinity) }
+                    else { VStack(spacing: 10) { Image(systemName: "stethoscope").font(.system(size: 34)).foregroundStyle(.secondary); Text("Select an inspected font").font(.headline); Text("Typefield does not modify files during inspection.").foregroundStyle(.secondary) }.frame(maxWidth: .infinity, maxHeight: .infinity) }
                 }.frame(minWidth: 450, maxWidth: .infinity, maxHeight: .infinity)
             }
             Divider()
@@ -434,7 +434,7 @@ struct FontHealthView: View {
         let panel = NSSavePanel(), ext = item.url.pathExtension
         panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .data]
         panel.nameFieldStringValue = item.url.deletingPathExtension().lastPathComponent + "-repaired." + ext
-        panel.directoryURL = item.url.deletingLastPathComponent(); panel.message = "FontShelf writes a new repaired copy and leaves the original untouched."
+        panel.directoryURL = item.url.deletingLastPathComponent(); panel.message = "Typefield writes a new repaired copy and leaves the original untouched."
         guard panel.runModal() == .OK, let destination = panel.url else { return }
         guard destination.standardizedFileURL != item.url.standardizedFileURL else { status = "Choose a different filename; Export never overwrites the original"; return }
         do { let data = try FontRepairEngine.repairedData(for: item.url, actions: selectedFixes); try data.write(to: destination, options: .atomic); status = "Repaired copy saved as " + destination.lastPathComponent; NSWorkspace.shared.activateFileViewerSelecting([destination]) }
@@ -446,7 +446,7 @@ struct FontHealthView: View {
     }
     func repairOriginal(_ item: FontInspection) {
         let alert = NSAlert(); alert.messageText = "Repair the original font file?"
-        alert.informativeText = "FontShelf will first create a .fontshelf-backup beside the original, then atomically replace the original with the reviewed repair. This can affect every app using this font."
+        alert.informativeText = "Typefield will first create a .fontshelf-backup beside the original, then atomically replace the original with the reviewed repair. This can affect every app using this font."
         alert.alertStyle = .warning; alert.addButton(withTitle: "Repair & Keep Backup"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
@@ -477,7 +477,7 @@ enum FontRepairChecks {
         var head = Data(repeating: 0, count: 54); head.fsSetUInt32(12, 0x5F0F3CF5)
         var os2 = Data(repeating: 0, count: 64); os2[62] = 0; os2[63] = 0x40
         let fixture = FontRepairEngine.buildSFNT(scaler: 0x00010000, tables: [("head", head), ("name", FontRepairEngine.buildName(records)), ("cmap", Data(repeating: 0, count: 4)), ("maxp", Data(repeating: 0, count: 6)), ("OS/2", os2)])
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-repair-check-" + UUID().uuidString)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-repair-check-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
         let source = root.appendingPathComponent("BudNull.ttf"); try fixture.write(to: source)
         let before = FontRepairEngine.inspect(source)

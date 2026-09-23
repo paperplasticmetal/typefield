@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.37.0 — 2026-09-22
+
+- Rebranded the app, icon, project, bundle, menus and three-workspace header as Typefield. Kept existing library/project storage and versioned Figma/Adobe interchange identifiers compatible.
+- Added a four-step, skippable first-run tour of Library, Spaces and Letterform Editor, plus a Help-menu replay and an About sheet with privacy and font/artwork rights guidance.
+- Updated Figma plugin presentation, exported filenames, developer handoff labels and generated SwiftUI/Compose names. The local development bundle imports unset preferences from the former bundle identifier when available.
+- Renamed the build/archive scripts, CI target and documentation for Typefield.
+- Replaced the cramped three-way sidebar segment with full workspace labels and refreshed the sidebar mark to match the new icon. The Typefield window now starts with its own centered placement preference.
+- Finished the Letterform Editor section heading and remaining Spaces error copy with the Typefield names.
+
 ## 0.36.0 — 2026-09-22
 
 - Renamed the third workspace label to Letterform Editor while retaining the project format and internal storage keys. Documented a whole-app rebrand plan for review before public distribution.

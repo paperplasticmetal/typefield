@@ -21,7 +21,7 @@ enum LibraryBackupTools {
         if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: url, to: target) }
     }
     static func export(_ library: Library) {
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "FontShelf-library.json"
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Typefield-library.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             guard !library.fontLab.readBlocked else { throw CocoaError(.fileReadCorruptFile) }
@@ -67,7 +67,7 @@ enum LibraryBackupTools {
         library.regroup()
     }
     static func restore(_ library: Library) {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a FontShelf backup. Existing settings are kept; spaces and Letterform Editor projects are imported as copies."
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a Typefield backup. Existing settings are kept; spaces and Letterform Editor projects are imported as copies."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try merge(JSONDecoder().decode(LibraryBackup.self, from: Data(contentsOf: url)), into: library)
@@ -101,7 +101,7 @@ enum StoreMigration {
         let hasGoogle = fm.fileExists(atPath: googleSource.path)
         guard !dataFiles.contains(where: { fm.fileExists(atPath: destination.appendingPathComponent($0).path) }),
               !fm.fileExists(atPath: destination.appendingPathComponent("Google Fonts").path) else {
-            throw invalid("This FontShelf container already has saved data. Export a backup before using the separate merge command; migration will not overwrite or duplicate it.")
+            throw invalid("This Typefield container already has saved data. Export a backup before using the separate merge command; migration will not overwrite or duplicate it.")
         }
 
         var files: [String: Data] = [:]
@@ -124,11 +124,11 @@ enum StoreMigration {
             case "pro-library.json": _ = try JSONDecoder().decode(ProState.self, from: data); files[name] = data
             case "spaces.json":
                 let state = try JSONDecoder().decode(StudioState.self, from: data)
-                guard state.version == 1, state.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw invalid("Spaces data is invalid or needs a newer FontShelf version.") }
+                guard state.version == 1, state.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw invalid("Spaces data is invalid or needs a newer Typefield version.") }
                 files[name] = data
             case "font-lab.json":
                 let state = try JSONDecoder().decode(FontLabState.self, from: data)
-                guard state.isValid else { throw invalid("Letterform Editor data is invalid or needs a newer FontShelf version.") }
+                guard state.isValid else { throw invalid("Letterform Editor data is invalid or needs a newer Typefield version.") }
                 files[name] = data
             default: break
             }
@@ -210,7 +210,7 @@ enum StoreMigration {
         panel.allowedContentTypes = [.propertyList]
         panel.message = "Choose local.fontshelf.app.plist in Library/Preferences. Existing Store preferences are kept."
         guard panel.runModal() == .OK, let file = panel.url else { return }
-        do { library.message = "Imported \(try importPreferences(from: file)) earlier preferences. Reopen FontShelf to see them everywhere." }
+        do { library.message = "Imported \(try importPreferences(from: file)) earlier preferences. Reopen Typefield to see them everywhere." }
         catch { library.message = "Preferences were not imported: " + error.localizedDescription }
     }
 }
@@ -241,7 +241,7 @@ enum SpecimenExporter {
                 context.beginPDFPage(nil); context.setFillColor(NSColor.white.cgColor); context.fill(page)
                 let title = NSAttributedString(string: face.originalFamily + " · " + face.style, attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor.black])
                 context.textPosition = CGPoint(x: 44, y: 746); CTLineDraw(CTLineCreateWithAttributedString(title), context)
-                let footer = NSAttributedString(string: "FontShelf · " + face.name, attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.darkGray])
+                let footer = NSAttributedString(string: "Typefield · " + face.name, attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.darkGray])
                 context.textPosition = CGPoint(x: 44, y: 26); CTLineDraw(CTLineCreateWithAttributedString(footer), context)
                 cursor = 708
             }
@@ -273,7 +273,7 @@ enum SpecimenExporter {
         context.closePDF(); return result as Data
     }
     static func export(faces: [Face], library: Library, sample: String) {
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = "FontShelf specimens.pdf"
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = "Typefield specimens.pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try data(faces: faces, library: library, sample: sample).write(to: url, options: .atomic); library.message = "Specimen PDF exported." } catch { library.message = error.localizedDescription }
     }
@@ -320,9 +320,9 @@ enum FigmaLayoutExporter {
     }
     static func write(board: TypeBoard, parent: URL) throws -> URL {
         guard let resources = Bundle.main.resourceURL?.appendingPathComponent("FigmaImport"), FileManager.default.fileExists(atPath: resources.appendingPathComponent("code.js").path) else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "The Figma importer is missing from this build."]) }
-        let folder = parent.appendingPathComponent("FontShelf-Figma-" + UUID().uuidString.prefix(8))
+        let folder = parent.appendingPathComponent("Typefield-Figma-" + UUID().uuidString.prefix(8))
         try FileManager.default.copyItem(at: resources, to: folder)
-        try JSONSerialization.data(withJSONObject: payload(board: board), options: [.prettyPrinted, .sortedKeys]).write(to: folder.appendingPathComponent("layout.fontshelf.json"), options: .atomic)
+        try JSONSerialization.data(withJSONObject: payload(board: board), options: [.prettyPrinted, .sortedKeys]).write(to: folder.appendingPathComponent("layout.typefield.json"), options: .atomic)
         return folder
     }
 }
@@ -330,7 +330,7 @@ enum FigmaLayoutExporter {
 enum FigmaLayoutImporter {
     static func board(data: Data, fonts: [Face]) throws -> TypeBoard {
         func invalid(_ message: String) -> NSError { NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
-        guard data.count <= 20_000_000, let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], root["format"] as? String == "fontshelf-figma", root["version"] as? Int == 1, let frames = root["frames"] as? [[String: Any]], !frames.isEmpty, frames.count <= 30 else { throw invalid("Choose a FontShelf layout JSON exported by the Figma bridge. Native .fig files are not supported.") }
+        guard data.count <= 20_000_000, let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], root["format"] as? String == "fontshelf-figma", root["version"] as? Int == 1, let frames = root["frames"] as? [[String: Any]], !frames.isEmpty, frames.count <= 30 else { throw invalid("Choose a Typefield layout JSON exported by the Figma bridge. Native .fig files are not supported.") }
         func number(_ object: [String: Any], _ key: String, fallback: Double? = nil) throws -> Double {
             guard let n = object[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite else { if let fallback, object[key] == nil { return fallback }; throw invalid("Invalid numeric value: " + key) }; return n.doubleValue
         }
@@ -363,7 +363,7 @@ enum FigmaLayoutImporter {
                     style.wordSpacing = try number(e, "wordSpacing", fallback: 0)
                     for (tag, value) in e["axes"] as? [String: Double] ?? [:] where tag.utf8.count == 4 { style.axes[tag.utf8.reduce(0) { ($0 << 8) | Int($1) }] = value }
                     layer.style = style
-                } else if e["kind"] as? String != "rectangle" { throw invalid("Unsupported layer kind. Export it again with the FontShelf bridge.") }
+                } else if e["kind"] as? String != "rectangle" { throw invalid("Unsupported layer kind. Export it again with the Typefield bridge.") }
                 layers.append(layer)
             }
             let layout = ImportedLayout(width: width, height: height, layers: layers)

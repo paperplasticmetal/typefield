@@ -162,26 +162,26 @@ enum AdobeBridge {
             if (!targets.length) throw new Error("Select text or text frames first.");
             app.doScript(function () {
                 for (var k = 0; k < targets.length; k++) targets[k].appliedFont = font;
-            }, ScriptLanguage.JAVASCRIPT, undefined, UndoModes.ENTIRE_SCRIPT, "FontShelf: Apply font");
+            }, ScriptLanguage.JAVASCRIPT, undefined, UndoModes.ENTIRE_SCRIPT, "Typefield: Apply font");
             """
         }
         return """
         #target \(target.directive)
-        // FontShelf: applies one font style to the current selection; does not save the document.
+        // Typefield: applies one font style to the current selection; does not save the document.
         // Photoshop applies to the entire active text layer. Custom variable axes are not transferred.
         (function () {
             try {
                 var fontName = \(quoted(font));
                 if (!app.documents.length) throw new Error("Open a document first.");
                 \(operation)
-            } catch (error) { alert("FontShelf: " + error.message); }
+            } catch (error) { alert("Typefield: " + error.message); }
         })();
         """
     }
     static func export(face: Face, target: AdobeTarget) {
         let panel = NSSavePanel()
         panel.title = "Export \(target.rawValue) script"
-        panel.nameFieldStringValue = "FontShelf-\(target.rawValue)-\(face.name.replacingOccurrences(of: "/", with: "-" )).jsx"
+        panel.nameFieldStringValue = "Typefield-\(target.rawValue)-\(face.name.replacingOccurrences(of: "/", with: "-" )).jsx"
         panel.message = target == .photoshop ? "Run through File → Scripts → Browse in Photoshop. Applies to the entire active text layer." : target == .illustrator ? "Run through File → Scripts → Other Script in Illustrator. Applies to selected text or text frames." : "Run from InDesign’s Scripts panel. Applies to selected text or text frames."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try script(font: face.name, target: target).write(to: url, atomically: true, encoding: .utf8) }
