@@ -1,13 +1,13 @@
 # Build and verification status
 
-Current source: **0.35.0, build 46**. Updated 2026-09-22.
+Current source: **0.36.0, build 47**. Updated 2026-09-22.
 
 | Check | Status |
 | --- | --- |
 | Local optimized Apple Silicon build, Swift warnings as errors | Passed |
 | Built-in regression suite | Passed |
 | Layout checks | 21,260 cases across 4,252 available styles on the release machine |
-| Xcode Release build, 0.34.0 | Passed with Swift warnings treated as errors; all new Font Lab sources are included in the Xcode target |
+| Xcode Release archive, 0.36.0 | Passed unsigned with Swift warnings treated as errors; Apple Distribution signing remains pending |
 | Spaces and canvas regression checks | Passed: independent directions, checkpoints, imported layers, persistence and 28 canvas/viewport combinations |
 | Live folder watcher and session activation | Passed with a temporary copy of an existing Google font; visibility checked in a separate process, then deactivated and removed |
 | New designer UI | Website desktop/mobile comparison and Unicode lookup/metrics inspected locally |
@@ -65,3 +65,7 @@ Local bundles are ad-hoc signed. They are not notarized downloads and are not Ap
 Added Objects/Nodes selection, counter-preserving whole-object selection, corner resize handles with Shift proportional scaling, Select all, preview-only ink color and saved freehand pen width. Native disposable UI confirmed one-click selection of a 480-point ring with its counter and corner dragging updating both editor and word preview. Regression coverage checks counter grouping, anchor/handle scaling and one commit per gesture. The existing design sheet is now labeled Components & masters. Automatic vector weight offsets and multicolor export remain deferred.
 
 0.34.1 validation: optimized warnings-as-errors build and full native suite passed, including 21,260 layout cases and object-selection/resize regressions. Canonical installation, code signature and installed/tested binary identity passed.
+
+## 0.36.0 priority refinement
+
+Library saved searches, Spaces contrast/entered-line proofing, and per-project Letterform Editor preview ink have native regression coverage. The third-workspace label changed without renaming saved-data files or keys. Optimized native checks passed with 21,260 layout cases across 4,252 styles; the Figma bridge suite passed; a warnings-as-errors unsigned Xcode Release archive succeeded. Canonical 0.36.0 (47) installation passed ad-hoc signature verification and matches the tested executable hash. App-wide FontShelf branding remains pending name selection and clearance; see REBRAND_PLAN.md. External device, Adobe, second-machine, signed TestFlight, App Store Connect and final-brand validation remain open.

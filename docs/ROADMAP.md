@@ -1,6 +1,6 @@
 # FontShelf outstanding work and competitor reference
 
-Snapshot: **0.34.1 (45), 2026-09-21, application commit ebc0512**. This is a continuation checklist, not a promise to implement everything. No new product features were implemented for this inventory.
+Snapshot: **0.36.0 (47), 2026-09-22**. This is a continuation checklist, not a promise to implement everything. See the changelog for this pass.
 
 ## How to use this list
 
@@ -15,7 +15,7 @@ The inventory combines current source, current workflow documents, recorded QA l
 
 ## What already exists — do not rebuild these
 
-**Font Lab:** vector pen, cubic handles, primitives, node transforms, contour/counter and boolean operations, Objects/Nodes modes, corner resizing and Shift proportional scaling, preview ink, freehand pen width, artwork tracing and alphabet-sheet assignment, SVG and static TrueType export, project deletion/restoration. Components, independent masters, group kerning and reviewed trace smoothing all ship. Access them through **Components & masters** and **Smooth trace…**.
+**Letterform Editor:** vector pen, cubic handles, primitives, node transforms, contour/counter and boolean operations, Objects/Nodes modes, corner resizing and Shift proportional scaling, preview ink, freehand pen width, artwork tracing and alphabet-sheet assignment, SVG and static TrueType export, project deletion/restoration. Components, independent masters, group kerning and reviewed trace smoothing all ship. Access them through **Components & masters** and **Smooth trace…**.
 
 **Important limits:** components support translation/uniform scale; masters do not interpolate; kerning exports as legacy `kern`, not GPOS; smoothing is a reviewed operation on polygons, bounded to 6,000 points. Preview ink is not exported color. Pen width does not change filled vector outline weight. SVG import rasterizes and retraces. Procreate import reads an embedded preview, not native layers.
 
@@ -36,7 +36,7 @@ The inventory combines current source, current workflow documents, recorded QA l
 
 Start each implementation task by reproducing the current behavior in a disposable fixture. Preserve real fonts/projects; follow the repository's test, version, commit, push and canonical-install workflow.
 
-## Font Lab
+## Letterform Editor
 
 | ID | Priority / state / effort | Outstanding work |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 | FL-03 | **P0 · Partial · M–L** | **Lossless outlined-SVG import.** Read paths, transforms, compound contours and fill rules directly, retaining Bézier handles. Keep tracing as an explicit fallback for unsupported content. |
 | FL-04 | **P0 · Partial + QA · M** | **Real artwork import quality.** Test actual Procreate-produced files and diverse alphabet sheets: stylized labels, detached accents/dots, overlapping regions, light ink, noisy scans and inconsistent baselines. Make preview-resolution limits, crop/assignment corrections and confidence clearer. Synthetic fixtures are not sufficient validation. |
 | FL-05 | **P0 · Partial · S–M** | **Feature discoverability.** Contextual Components/Masters/Kerning entry points, useful empty states, disabled-control explanations, an editable starter/demo, and short workflows for imported artwork → correction → spacing → export. The renamed button is only the first improvement. |
-| FL-06 | P1 · Partial · M | **Appearance controls.** Persist useful project/canvas preview choices; distinguish fill/stroke/background from exported font color. Per-object pen thickness, caps/joins and variable-width pen profiles need more work. Do not imply that changing preview ink produces a color font. |
+| FL-06 | P1 · Partial · M | **Appearance controls.** Preview ink now persists per project and remains separate from monochrome export. Broader fill/stroke/background choices remain. Per-object pen thickness, caps/joins and variable-width pen profiles need more work. Do not imply that changing preview ink produces a color font. |
 | FL-07 | P1 · Partial · M | **Trace fitting workflow.** Optional import-stage fitting, batch processing with review, zoomable/difference previews, corner control, denser outlines, cancellation/progress and clearer failure feedback. Current fitting is per-glyph and can decline complex outlines. |
 | FL-08 | P1 · Partial · M | **Drawing polish.** Persistent/custom guides, ruler units, angle snapping, alignment/distribution of whole shapes, robust join/split/scissors operations and better dense-path performance. Existing primitives/booleans are not a complete Illustrator-style drawing toolset. |
 | FL-09 | P1 · Missing · M | **Background/reference layers.** Place and lock source artwork, control opacity, compare trace against source, and manage foreground/background layers without losing editability. |
@@ -87,9 +87,9 @@ Start each implementation task by reproducing the current behavior in a disposab
 | SP-10 | **P1 · Partial + QA · M–L** | **Export fidelity.** Check wrapping, leading, kerning, axes, OpenType settings, shapes and alignment in actual destination apps. Make approximations/losses visible. Developer handoff is currently a typography reference, not a pixel-perfect production layout export. |
 | SP-11 | **P1 · Partial + QA · M** | **Live Adobe bridge verification.** Execute Illustrator/InDesign builders and returns in supported app versions with real documents, edits, missing fonts and unsupported content. Generated-JSX/parser tests do not establish live Adobe compatibility. |
 | SP-12 | P1 · Partial · M | **Figma plugin delivery.** Package/document the already-working local bridge for ordinary users, resolve fonts cleanly, and broaden fidelity tests. Publishing a plugin is outstanding; outbound/inbound JSON already exists. |
-| SP-13 | P1 · Research · M | **Proofing utilities.** Contrast checks, missing-glyph/fallback warnings, line-length/readability inspection and useful export preflight. Inventory existing diagnostics before building duplicate checks. |
+| SP-13 | P1 · Partial · M | **Proofing utilities.** Selected text now shows saved ink/canvas contrast and longest entered line. Missing-font fallback warning already exists. Add actual background sampling, rendered line lengths, missing-glyph checks and export preflight. |
 | SP-14 | P2 · Missing · L | **General layout system.** Constraints, responsive reflow, stacks/grids, spacing/padding and layout guides. Current template/custom-block layouts and imported positions are not general Figma auto layout. |
-| SP-15 | P2 · Missing · L | **Reusable layout components.** Linked instances, variants and shared blocks. These are Spaces UI/layout components, distinct from Font Lab glyph components. |
+| SP-15 | P2 · Missing · L | **Reusable layout components.** Linked instances, variants and shared blocks. These are Spaces UI/layout components, distinct from Letterform Editor glyph components. |
 | SP-16 | P2 · Missing · M–L | **Deeper vector and appearance tools.** Arbitrary paths, masks/clipping, blend modes, gradients, effects, images and richer shape types. Decide how much general illustration belongs in a typography app. |
 | SP-17 | P2 · Missing · L | **Advanced typography.** Text on a path, columns, linked text frames, wrap around objects, hyphenation, optical margins, baseline grids and richer justification. Optical kerning needs its own algorithm/quality review. |
 | SP-18 | P2 · Partial · M | **Presentation/review.** Better reusable specimen templates, annotations, comparison summaries, print/export presets and shareable review artifacts. PDFs and comparison views already exist. |
@@ -104,7 +104,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 | LB-01 | **P0 · Partial + QA · M** | **Folder access and activation reliability.** Diagnose the repeated access-renewal notice seen during local launches; distinguish valid permission renewal from avoidable repeated prompting. Test relocation, revocation, unavailable volumes and recovery without repeated scans. Verify session activation under final App Store sandbox entitlements. |
 | LB-02 | **P1 · Missing · L–XL** | **Document-triggered activation.** Identify missing fonts requested by another app and activate the correct face/version. This is a major Typeface/Extensis workflow gap, distinct from current manual session activation and watched-folder refresh. Investigate supported macOS/app integration before promising broad coverage. |
 | LB-03 | P1 · Missing · M–L | **Collection migration.** Import Font Book/Typeface/FontBase/legacy-manager organization where accessible, with mapping, duplicate/conflict review and source preservation. Reading font files is not importing another manager's collection database. |
-| LB-04 | P1 · Research · M | **Saved searches / smart collections.** Save useful compound filters and automatically update membership. Nested tags and property tokens already exist; audit any partial persistence/UI before adding another parallel search system. |
+| LB-04 | P1 · Partial · M | **Saved searches / smart collections.** Named searches now persist the active section, query, sorting, source, writing system, tag, property and required-text filters; reapplying recomputes membership from the current catalog. Add management polish and robustness for renamed/deleted sections. |
 | LB-05 | P1 · Partial · M | **License records and provenance.** User-supplied receipts/license documents, foundry/source, desktop/web/app permissions, notes and renewal fields with search/export. Existing license-file handling for downloads is not a full entitlement tracker. Do not present metadata as an automatic legal determination. |
 | LB-06 | P1 · Partial · M–L | **Font identity/conflict management.** Explain duplicate binaries versus same-name/different-version faces, active copies, family merge/split and recovery. Exact-duplicate detection and basic family tools already exist. Prioritize safe resolution over aggressive automated deletion. |
 | LB-07 | P1 · Partial + QA · M | **Large-library and bad-font resilience.** Test substantially beyond the current approximately 4,252-style machine: corrupt files, slow/network disks, missing volumes, cache invalidation, cancellation and responsive filtering. Existing timing measurements are not universal performance guarantees. |
@@ -127,10 +127,10 @@ Start each implementation task by reproducing the current behavior in a disposab
 | --- | --- | --- |
 | X-01 | **P0 · QA · M** | Critical manual matrix: object selection, Shift resizing, Undo/Redo, clipboard, numeric focus/commit, color controls, pinch/scroll and real drag/drop. Include disabled states, small windows and accessibility. Automated tests are not a claim that every interaction was manually verified. |
 | X-02 | **P0 before external release · Partial + QA · M–L** | Signed-archive preflight and bundle checks are implemented. Apple Distribution identity, Organizer/App Store Connect validation, TestFlight, final-entitlement checks on the signed build and clean second-Mac install/recovery remain. The local app is still ad-hoc signed. |
-| X-03 | **P0 before Store migration · Partial + QA · M** | User-selected migration copies Library/Spaces/Font Lab data and managed Google Fonts into a fresh container, with source preservation and collision/corruption checks. External folder permissions must be granted again through Live folders; a signed Store-build migration test remains. |
+| X-03 | **P0 before Store migration · Partial + QA · M** | User-selected migration copies Library/Spaces/Letterform Editor data and managed Google Fonts into a fresh container, with source preservation and collision/corruption checks. External folder permissions must be granted again through Live folders; a signed Store-build migration test remains. |
 | X-04 | P1 · QA · M | macOS 13 and second-machine testing, sleep/wake, offline behavior, inaccessible files, crash recovery, accessibility/VoiceOver and keyboard-only workflows. Intel is not shipped; decide support intentionally. |
 | X-05 | P1 · Partial · S–M | Keep in-app help and docs aligned with releases; avoid calling shipped foundations missing or calling prototypes complete. Add a concise feature/status page and useful changelog. |
-| X-06 | P1 before branding/release · Research · S | Review the workspace name **Font Lab** for confusion with the existing commercial **FontLab** product. This is a naming/product review, not a conclusion about trademark rights. |
+| X-06 | P1 before branding/release · Partial · S | The workspace is labeled **Letterform Editor**; internal project keys remain compatible. The whole-app FontShelf overlap with Fontshelf™ needs a selected replacement and clearance before public distribution. See [rebrand plan](REBRAND_PLAN.md). |
 | X-07 | P1 · Partial + QA · M | Backup/restore/migration stress tests across versions, corrupt files and large projects; accessible restore UI and export portability. Backups and preservation safeguards already exist. |
 | X-08 | P2 · Research · M | Localization, documentation/examples, onboarding and support diagnostics that avoid collecting private fonts or project content by default. |
 | X-09 | P3 · Research · XL | Cloud architecture, accounts, billing, team permissions and optional AI services only if those strategic directions are approved. Do not let these block local editing quality. |

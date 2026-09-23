@@ -55,7 +55,7 @@ enum FontLabArtworkChecks {
         let plist = try PropertyListSerialization.data(fromPropertyList: ["$archiver": "NSKeyedArchiver", "$version": 100000, "$objects": ["$null"], "$top": [:]] as [String: Any], format: .binary, options: 0)
         try archive([("Document.archive", plist), ("QuickLook/Thumbnail.png", png)]).write(to: folder.appendingPathComponent("synthetic-preview.procreate"))
         try """
-        Font Lab artwork import fixtures
+        Letterform Editor artwork import fixtures
 
         alphabet-A-Z.svg / .png — Original geometric A–Z artwork, left to right in four rows. Use Detect letters and Apply order → A–Z, or Grid sheet with 7 columns / 4 rows. Review all 26 outlines, then import into a new project.
         single-O.svg / .png — A single letter with an open counter. Choose Single letter, label O and inspect the white hole.

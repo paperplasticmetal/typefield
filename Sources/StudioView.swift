@@ -90,7 +90,7 @@ struct WorkspaceSidebarRevealButton: View {
         .onHover { hovered = $0 }
         .help("Show sidebar (Control-Command-S)")
         .accessibilityLabel("Show sidebar")
-        .accessibilityHint("Restores Library, Spaces, and Font Lab navigation. You can also press Control-Command-S.")
+        .accessibilityHint("Restores Library, Spaces, and Letterform Editor navigation. You can also press Control-Command-S.")
         .accessibilityIdentifier("workspace-sidebar-show")
     }
 }
@@ -675,6 +675,16 @@ struct TypeBoardEditor: View {
                 }
                 Text(selectedTextID == nil ? "Sample text" : "Selected text").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: styleBinding(\.text)).frame(height: 100).overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
+                DisclosureGroup("Proofing") {
+                    let ink = importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].color } ?? direction.ink
+                    if let ratio = SpacesProofing.contrastRatio(ink: ink, paper: direction.paper) {
+                        Text(String(format: "Ink/canvas contrast: %.2f:1", ratio))
+                        if ratio < 4.5 { Label("Below the 4.5:1 small-text reference", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    }
+                    Text("Longest entered line: \(SpacesProofing.longestLine(style.text)) characters")
+                    if direction.canvas == .imported { Text("Contrast uses saved layer ink and canvas color; overlapping artwork may change the result.") }
+                    else { Text("Wrapping and rendered line length depend on the frame and font.") }
+                }.font(.caption).foregroundStyle(.secondary)
                 }
                 }
                 Divider()

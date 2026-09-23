@@ -8,7 +8,7 @@ struct LibraryBackup: Codable {
     var library: SavedLibrary
     var pro: ProState
     var spaces: StudioState
-    /// Optional so version-1 backups created before Font Lab remain decodable.
+    /// Optional so version-1 backups created before Letterform Editor remain decodable.
     var fontLab: FontLabState? = nil
 }
 enum LibraryBackupTools {
@@ -27,7 +27,7 @@ enum LibraryBackupTools {
             guard !library.fontLab.readBlocked else { throw CocoaError(.fileReadCorruptFile) }
             let backup = LibraryBackup(library: library.saved, pro: library.pro, spaces: library.studio.state, fontLab: library.fontLab.state)
             try JSONEncoder().encode(backup).write(to: url, options: .atomic)
-            library.message = "Library, Spaces, and Font Lab backup exported. Font files are not included."
+            library.message = "Library, Spaces, and Letterform Editor backup exported. Font files are not included."
         } catch { library.message = error.localizedDescription }
     }
     static func merge(_ backup: LibraryBackup, into library: Library) throws {
@@ -67,7 +67,7 @@ enum LibraryBackupTools {
         library.regroup()
     }
     static func restore(_ library: Library) {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a FontShelf backup. Existing settings are kept; spaces and Font Lab projects are imported as copies."
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a FontShelf backup. Existing settings are kept; spaces and Letterform Editor projects are imported as copies."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try merge(JSONDecoder().decode(LibraryBackup.self, from: Data(contentsOf: url)), into: library)
@@ -128,7 +128,7 @@ enum StoreMigration {
                 files[name] = data
             case "font-lab.json":
                 let state = try JSONDecoder().decode(FontLabState.self, from: data)
-                guard state.isValid else { throw invalid("Font Lab data is invalid or needs a newer FontShelf version.") }
+                guard state.isValid else { throw invalid("Letterform Editor data is invalid or needs a newer FontShelf version.") }
                 files[name] = data
             default: break
             }
@@ -171,7 +171,7 @@ enum StoreMigration {
         guard panel.runModal() == .OK, let source = panel.url else { return }
         let alert = NSAlert()
         alert.messageText = "Copy your FontShelf data?"
-        alert.informativeText = "Library, Spaces, Font Lab and downloaded Google fonts will be copied. The originals stay in place. External font and WOFF2 folders need access granted again. Files outside this folder are not moved."
+        alert.informativeText = "Library, Spaces, Letterform Editor and downloaded Google fonts will be copied. The originals stay in place. External font and WOFF2 folders need access granted again. Files outside this folder are not moved."
         alert.addButton(withTitle: "Copy and Quit")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }

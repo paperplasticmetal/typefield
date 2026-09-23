@@ -79,6 +79,25 @@ struct TypeStyle: Codable, Equatable {
         return result
     }
 }
+
+enum SpacesProofing {
+    static func contrastRatio(ink: String, paper: String) -> Double? {
+        func luminance(_ hex: String) -> Double? {
+            guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+            let channels = [16, 8, 0].map { shift -> Double in
+                let component = Double((value >> shift) & 0xff) / 255
+                return component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+        }
+        guard let foreground = luminance(ink), let background = luminance(paper) else { return nil }
+        return (max(foreground, background) + 0.05) / (min(foreground, background) + 0.05)
+    }
+
+    static func longestLine(_ text: String) -> Int {
+        text.components(separatedBy: "\n").map(\.count).max() ?? 0
+    }
+}
 enum TextAlignmentOption: String, Codable, CaseIterable { case left = "Left", center = "Center", right = "Right", justified = "Justified"
     var native: NSTextAlignment { switch self { case .left: return .left; case .center: return .center; case .right: return .right; case .justified: return .justified } }
 }
@@ -317,7 +336,7 @@ final class StudioStore: ObservableObject {
     }
 }
 
-struct TagQuery: Equatable {
+struct TagQuery: Codable, Equatable {
     var included: Set<String> = []
     var excluded: Set<String> = []
     var matchAll = true

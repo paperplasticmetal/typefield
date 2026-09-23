@@ -1,6 +1,6 @@
-# Import drawings into Font Lab
+# Import drawings into Letterform Editor
 
-Choose **Font Lab → Import artwork**, then select a PNG, JPEG, TIFF, HEIC, outlined SVG or `.procreate` file.
+Choose **Letterform Editor → Import artwork**, then select a PNG, JPEG, TIFF, HEIC, outlined SVG or `.procreate` file.
 
 1. Use **Detect letters** for separated drawings, **Grid sheet** for regularly spaced cells, or **Single letter** for one character. Use plain/transparent backgrounds; switch **Light ink** for white drawings. Adjust the threshold and speck cleanup, then **Rescan**.
 2. Inspect the source boxes and traced shapes. Click a box to select its row. Remove incorrect boxes and drag new regions around touching letters or disconnected marks.

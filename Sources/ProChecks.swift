@@ -13,6 +13,18 @@ enum ProChecks {
         library.acceptCatalog([])
         precondition(library.families.isEmpty, "Empty refresh retained stale fonts")
         library.acceptCatalog(catalog)
+        library.search = "Helvetica"
+        library.advanced.slant = "Roman"
+        precondition(library.saveCurrentSearch(as: "Roman Helvetica"))
+        let savedMatches = library.filtered.map(\.name)
+        library.search = ""; library.advanced = AdvancedFilter()
+        library.applySavedSearch("Roman Helvetica")
+        precondition(library.search == "Helvetica" && library.advanced.slant == "Roman" && library.filtered.map(\.name) == savedMatches)
+        let reloadedSearches = Library(storageURL: library.saveURL)
+        precondition(reloadedSearches.saved.savedSearches?["Roman Helvetica"]?.query == "Helvetica")
+        precondition(!library.saveCurrentSearch(as: "Roman Helvetica"))
+        precondition(library.deleteSavedSearch("Roman Helvetica") && library.saved.savedSearches?.isEmpty == true)
+        library.search = ""; library.advanced = AdvancedFilter()
         let overlayReference = catalog[0].representative.name
         library.toggleOverlay(overlayReference)
         precondition(library.overlayName == overlayReference, "A/B did not activate the selected reference")

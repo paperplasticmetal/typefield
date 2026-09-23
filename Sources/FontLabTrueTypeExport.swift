@@ -138,7 +138,7 @@ enum FontLabTrueTypeExporter {
             case let .openContours(character):
                 return "Close the open vector contours in \(character) before exporting the font. SVG can preserve open paths."
             case .invalidProject:
-                return "The Font Lab project contains invalid data and cannot be exported."
+                return "The Letterform Editor project contains invalid data and cannot be exported."
             case .noDrawnCharacters:
                 return "Draw at least one character before exporting an installable font."
             case let .glyphTooComplex(character):
@@ -277,7 +277,7 @@ enum FontLabTrueTypeExporter {
     static func selfTest() throws {
         var project = FontLabProject(
             id: UUID(uuidString: "5F111111-2222-4333-8444-555555555555")!,
-            name: "Font Lab Export Test",
+            name: "Letterform Editor Export Test",
             characters: ["A", "x", "é", "😀", "Z"]
         )
         let diagonal = FontLabStroke(
@@ -620,7 +620,7 @@ enum FontLabTrueTypeExporter {
     }
 
     private static func markerStrokeContours(points: [TTPoint], radii: [Double]) -> [[TTPoint]] {
-        // Font Lab's marker is 1.28× the nominal pen width with square caps
+        // Letterform Editor's marker is 1.28× the nominal pen width with square caps
         // and bevel-style joins. Extending every segment by its half-width
         // produces the same square cap while overlaps close the bevel joins.
         guard points.count > 1 else {

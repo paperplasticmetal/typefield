@@ -242,7 +242,7 @@ final class FontLabVectorEditor: ObservableObject {
     }
     func pastePaths() {
         guard let data=NSPasteboard.general.data(forType:.init("local.fontshelf.vector-paths")),data.count<8_000_000,
-              var added=try? JSONDecoder().decode([FontLabVectorPath].self,from:data),added.allSatisfy(\.isValid) else {message="Copy vector contours from a Font Lab glyph first.";return}
+              var added=try? JSONDecoder().decode([FontLabVectorPath].self,from:data),added.allSatisfy(\.isValid) else {message="Copy vector contours from a Letterform Editor glyph first.";return}
         for p in added.indices {added[p].id=UUID();for n in added[p].nodes.indices {added[p].nodes[n].id=UUID()}}
         if apply(paths+added) {selection=Set(added.flatMap(\.nodes).map(\.id))}
     }
@@ -255,14 +255,17 @@ struct FontLabVectorEditorView: View {
     let onChange: (FontLabGlyph)->Void
     let onUndo: ()->Void
     let onRedo: ()->Void
+    let onPreviewInkChange: (String)->Void
     @StateObject private var editor: FontLabVectorEditor
     @State private var x = ""
     @State private var y = ""
     @State private var scale = "100"
     @State private var angle = "0"
-    init(glyph:FontLabGlyph,metrics:FontLabMetrics,componentStrokes:[FontLabStroke]=[],onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void) {
-        self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo
-        _editor=StateObject(wrappedValue:FontLabVectorEditor(glyph:glyph,metrics:metrics))
+    init(glyph:FontLabGlyph,metrics:FontLabMetrics,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
+        self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo;self.onPreviewInkChange=onPreviewInkChange
+        let value=FontLabVectorEditor(glyph:glyph,metrics:metrics)
+        if let previewInkHex { value.inkColor=Color(nsColor:NSColor(hex:previewInkHex)) }
+        _editor=StateObject(wrappedValue:value)
     }
     var body: some View {
         VStack(alignment:.leading,spacing:8) {
@@ -348,6 +351,7 @@ struct FontLabVectorEditorView: View {
         .onChange(of:metrics) {editor.metrics=$0}
         .onChange(of:editor.selection) {_ in updateCoordinates()}
         .onChange(of:editor.glyph) {_ in updateCoordinates()}
+        .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
     }
     private func updateCoordinates() {
         guard !editor.selection.isEmpty else {x="";y="";return}

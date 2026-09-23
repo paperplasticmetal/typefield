@@ -1,6 +1,6 @@
-# Font Lab vector editing
+# Letterform Editor vector editing
 
-Font Lab now opens glyphs in **Vector** mode. **Sketch** retains the existing freehand pens, pressure input and eraser. Imported polygon contours become editable nodes on their first vector edit; opening a project does not rewrite its artwork.
+Letterform Editor now opens glyphs in **Vector** mode. **Sketch** retains the existing freehand pens, pressure input and eraser. Imported polygon contours become editable nodes on their first vector edit; opening a project does not rewrite its artwork.
 
 ## Workflow
 

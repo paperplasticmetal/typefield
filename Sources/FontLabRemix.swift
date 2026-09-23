@@ -4,7 +4,7 @@ import CoreText
 import CoreGraphics
 
 /// The local remix modes are deliberately described as vector operations, not AI.
-/// They turn outlines from fonts already available to CoreText into editable Font Lab
+/// They turn outlines from fonts already available to CoreText into editable Letterform Editor
 /// contours without copying or embedding either source font file.
 enum FontLabRemixMode: String, Codable, CaseIterable, Identifiable {
     case blend
@@ -255,7 +255,7 @@ enum FontLabRemixEngine {
               first.project.glyphs.values.allSatisfy({ glyph in
                   glyph.strokes.allSatisfy { $0.contours?.isEmpty == false && $0.isValid }
               }) else {
-            throw FontLabStore.SelfTestError.failed("Deterministic Font Lab remix generation failed.")
+            throw FontLabStore.SelfTestError.failed("Deterministic Letterform Editor remix generation failed.")
         }
 
         let originalArtifact = try FontLabTrueTypeExporter.artifact(for: first.project)
@@ -275,20 +275,20 @@ enum FontLabRemixEngine {
         let legacyData = try JSONSerialization.data(withJSONObject: legacyObject, options: [.sortedKeys])
         let decodedLegacy = try JSONDecoder().decode(FontLabProject.self, from: legacyData)
         guard decodedLegacy.remixProvenance == nil else {
-            throw FontLabStore.SelfTestError.failed("Legacy Font Lab projects unexpectedly acquired remix metadata.")
+            throw FontLabStore.SelfTestError.failed("Legacy Letterform Editor projects unexpectedly acquired remix metadata.")
         }
         var futureCopy = first.provenance
         futureCopy.generatorName = "Localized generator name"
         futureCopy.distributionNotice = "Updated license guidance"
         guard futureCopy.isValid else {
-            throw FontLabStore.SelfTestError.failed("Harmless future provenance wording would invalidate saved Font Lab data.")
+            throw FontLabStore.SelfTestError.failed("Harmless future provenance wording would invalidate saved Letterform Editor data.")
         }
 
         var invalid = recipe
         invalid.blendAmount = 2
         do {
             _ = try generate(recipe: invalid, characters: ["A"], projectID: id)
-            throw FontLabStore.SelfTestError.failed("An invalid Font Lab remix recipe was accepted.")
+            throw FontLabStore.SelfTestError.failed("An invalid Letterform Editor remix recipe was accepted.")
         } catch RemixError.invalidRecipe {
             // Expected.
         }
@@ -298,7 +298,7 @@ enum FontLabRemixEngine {
             modeRecipe.mode = mode
             let result = try generate(recipe: modeRecipe, projectName: mode.title, characters: ["A"], projectID: id)
             guard result.project.completedCount == 1 else {
-                throw FontLabStore.SelfTestError.failed("Font Lab \(mode.title) remix mode produced no editable glyph.")
+                throw FontLabStore.SelfTestError.failed("Letterform Editor \(mode.title) remix mode produced no editable glyph.")
             }
         }
 
@@ -309,7 +309,7 @@ enum FontLabRemixEngine {
         unavailable.primaryPostScriptName = "FontShelf-Definitely-Missing-Face"
         do {
             _ = try generate(recipe: unavailable, characters: ["A"], projectID: id)
-            throw FontLabStore.SelfTestError.failed("An unavailable Font Lab source face was accepted.")
+            throw FontLabStore.SelfTestError.failed("An unavailable Letterform Editor source face was accepted.")
         } catch let RemixError.unavailableFont(name) where name == "FontShelf-Definitely-Missing-Face" {
             // Expected; CoreText's silent fallback must never be mistaken for the requested face.
         }

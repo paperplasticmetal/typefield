@@ -42,9 +42,9 @@ struct ShelfEditableName: View {
 }
 
 enum ShelfRename {
-    static func prompt(_ title: String, current: String, validate: (String) -> String? = { _ in nil }) -> String? {
+    static func prompt(_ title: String, current: String, actionTitle: String = "Rename", validate: (String) -> String? = { _ in nil }) -> String? {
         let alert = NSAlert(); alert.messageText = title; alert.informativeText = "Choose a name. Existing contents will stay unchanged."
-        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: actionTitle); alert.addButton(withTitle: "Cancel")
         let field = NSTextField(string: current); field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
         field.setAccessibilityLabel("Name"); alert.accessoryView = field; alert.window.initialFirstResponder = field
         while alert.runModal() == .alertFirstButtonReturn {

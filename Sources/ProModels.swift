@@ -100,7 +100,7 @@ enum OpenType {
         return font
     }
 }
-struct AdvancedFilter: Equatable {
+struct AdvancedFilter: Codable, Equatable {
     var foundry = ""
     var feature = ""
     var format = "Any"

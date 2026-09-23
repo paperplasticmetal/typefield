@@ -7,7 +7,7 @@ struct FontLabPoint: Codable, Equatable {
     var x: Double
     var y: Double
     /// Optional native tablet data. Keeping these fields optional preserves
-    /// decoding for Font Lab projects created before pressure support existed.
+    /// decoding for Letterform Editor projects created before pressure support existed.
     var pressure: Double? = nil
     var tiltX: Double? = nil
     var tiltY: Double? = nil
@@ -281,7 +281,7 @@ enum FontLabSVGExporter {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \(number(glyph.contourDesignWidth == nil ? 1000 : glyph.resolvedDesignWidth * 1000)) 1000" role="img" aria-label="\(escaped(projectName)) glyph \(escaped(glyph.character))">
-          <metadata>FontShelf Font Lab; character=\(escaped(glyph.character)); baseline=\(number(metrics.baseline)); x-height=\(number(metrics.xHeight)); cap-height=\(number(metrics.capHeight)); left-side-bearing=\(number(glyph.leftSideBearing)); right-side-bearing=\(number(glyph.rightSideBearing))</metadata>
+          <metadata>FontShelf Letterform Editor; character=\(escaped(glyph.character)); baseline=\(number(metrics.baseline)); x-height=\(number(metrics.xHeight)); cap-height=\(number(metrics.capHeight)); left-side-bearing=\(number(glyph.leftSideBearing)); right-side-bearing=\(number(glyph.rightSideBearing))</metadata>
         \(elements)
         </svg>
         """
@@ -391,6 +391,8 @@ struct FontLabProject: Codable, Identifiable, Equatable {
     var activeMasterID: UUID? = nil
     var kerningGroups: [FontLabKerningGroup]? = nil
     var kerningPairs: [FontLabKerningPair]? = nil
+    /// Canvas-only preview ink. Exported outlines remain monochrome.
+    var previewInkHex: String? = nil
 
     init(id: UUID = UUID(), name: String = "Untitled font", characters: [String] = FontLabProject.starterCharacters) {
         self.id = id
@@ -405,7 +407,8 @@ struct FontLabProject: Codable, Identifiable, Equatable {
             !characters.isEmpty && characters.count <= 2_000 && Set(characters).count == characters.count &&
             characters.allSatisfy { $0.count == 1 } && metrics.isValid && previewText.count <= 2_000 &&
             glyphs.count <= 2_000 && glyphs.allSatisfy { key, glyph in key == glyph.character && glyph.isValid } &&
-            (remixProvenance?.isValid ?? true) && designIsValid
+            (remixProvenance?.isValid ?? true) && designIsValid &&
+            (previewInkHex.map { $0.count == 6 && UInt64($0, radix: 16) != nil } ?? true)
     }
 }
 
@@ -465,12 +468,12 @@ final class FontLabStore: ObservableObject {
         do {
             let loaded = try JSONDecoder().decode(FontLabState.self, from: Data(contentsOf: url))
             guard loaded.isValid else {
-                throw NSError(domain: "FontShelf.FontLab", code: 1, userInfo: [NSLocalizedDescriptionKey: "The file contains invalid or unsupported Font Lab data."])
+                throw NSError(domain: "FontShelf.FontLab", code: 1, userInfo: [NSLocalizedDescriptionKey: "The file contains invalid or unsupported Letterform Editor data."])
             }
             state = loaded
         } catch {
             readBlocked = true
-            self.error = "Font Lab could not be opened. The original file has been preserved and saving is disabled. " + error.localizedDescription
+            self.error = "Letterform Editor could not be opened. The original file has been preserved and saving is disabled. " + error.localizedDescription
         }
     }
 
@@ -499,7 +502,7 @@ final class FontLabStore: ObservableObject {
     /// stall the sheet-to-workspace transition; termination still flushes it.
     @discardableResult func addGeneratedProject(_ generated: FontLabProject) -> UUID? {
         guard !readBlocked, generated.isValid else {
-            if !readBlocked { error = "The generated Font Lab project is invalid and was not saved." }
+            if !readBlocked { error = "The generated Letterform Editor project is invalid and was not saved." }
             return nil
         }
         var project = generated
@@ -556,7 +559,7 @@ final class FontLabStore: ObservableObject {
         var project = state.projects[index]
         edit(&project)
         guard project.isValid else {
-            error = "Font Lab contains invalid project data and was not saved."
+            error = "Letterform Editor contains invalid project data and was not saved."
             return
         }
         state.projects[index] = project
@@ -579,7 +582,7 @@ final class FontLabStore: ObservableObject {
     @discardableResult func importProjects(_ projects: [FontLabProject]) -> Bool {
         guard !readBlocked else { return false }
         guard projects.allSatisfy(\.isValid) else {
-            error = "The backup contains invalid Font Lab project data."
+            error = "The backup contains invalid Letterform Editor project data."
             return false
         }
         guard !projects.isEmpty else { return true }
@@ -605,7 +608,7 @@ final class FontLabStore: ObservableObject {
         pendingSave = nil
         guard !readBlocked else { return false }
         guard state.isValid else {
-            error = "Font Lab contains invalid project data and was not saved."
+            error = "Letterform Editor contains invalid project data and was not saved."
             return false
         }
         // The synchronous snapshot below includes all current state, so a
@@ -626,7 +629,7 @@ final class FontLabStore: ObservableObject {
             persistenceErrorMessage = nil
             return true
         case let .failure(saveError):
-            let message = "Font Lab could not be saved. " + saveError.localizedDescription
+            let message = "Letterform Editor could not be saved. " + saveError.localizedDescription
             persistenceErrorMessage = message
             error = message
             return false
@@ -655,7 +658,7 @@ final class FontLabStore: ObservableObject {
         pendingSave = nil
         guard !readBlocked else { return }
         guard state.isValid else {
-            error = "Font Lab contains invalid project data and was not saved."
+            error = "Letterform Editor contains invalid project data and was not saved."
             return
         }
         let snapshot = state
@@ -696,7 +699,7 @@ final class FontLabStore: ObservableObject {
                 if error == persistenceErrorMessage { error = "" }
                 persistenceErrorMessage = nil
             case let .failure(saveError):
-                let message = "Font Lab could not be saved. " + saveError.localizedDescription
+                let message = "Letterform Editor could not be saved. " + saveError.localizedDescription
                 persistenceErrorMessage = message
                 error = message
             }
@@ -773,10 +776,16 @@ final class FontLabStore: ObservableObject {
         }
         let loaded = FontLabStore(url: file)
         guard loaded.selectedProject?.glyphs["A"] == glyph else { throw SelfTestError.failed("The saved glyph did not round-trip.") }
+        guard loaded.selectedProject?.previewInkHex == nil else { throw SelfTestError.failed("Older projects should use the default preview ink.") }
+        store.updateProject(id) { $0.previewInkHex = "3278AB" }
+        guard FontLabStore(url: file).selectedProject?.previewInkHex == "3278AB" else { throw SelfTestError.failed("Preview ink did not persist.") }
+        store.updateProject(id) { $0.previewInkHex = "invalid" }
+        guard !store.error.isEmpty else { throw SelfTestError.failed("Invalid preview ink was accepted.") }
+        store.updateProject(id) { $0.previewInkHex = "3278AB" }
         guard loaded.selectedProject?.completedCount == 1 else { throw SelfTestError.failed("Glyph completion was not restored.") }
         guard loaded.selectedProject?.name == "Untitled font" else { throw SelfTestError.failed("The safe project name did not round-trip.") }
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path) else {
-            throw SelfTestError.failed("Font Lab did not create an automatic state backup.")
+            throw SelfTestError.failed("Letterform Editor did not create an automatic state backup.")
         }
 
         let importFile = root.appendingPathComponent("imported-font-lab.json")
@@ -786,7 +795,7 @@ final class FontLabStore: ObservableObject {
               importStore.state.projects[0].id != id,
               importStore.state.projects[0].name == "Untitled font (imported)",
               importStore.state.projects[0].glyphs["A"] == glyph else {
-            throw SelfTestError.failed("Font Lab backup projects did not import as independent copies.")
+            throw SelfTestError.failed("Letterform Editor backup projects did not import as independent copies.")
         }
 
         // A synchronous flush must invalidate every older queued snapshot and
@@ -806,7 +815,7 @@ final class FontLabStore: ObservableObject {
         revisionStore.flushPendingSave()
         let revisionReloaded = FontLabStore(url: revisionFile)
         guard revisionReloaded.selectedProject?.previewText == "Termination flush" else {
-            throw SelfTestError.failed("A stale background snapshot overwrote the latest Font Lab state.")
+            throw SelfTestError.failed("A stale background snapshot overwrote the latest Letterform Editor state.")
         }
         let generatedFixture = FontLabProject(name: "Generated fixture", characters: ["A"])
         guard let generatedID = revisionStore.addGeneratedProject(generatedFixture) else {
@@ -823,9 +832,9 @@ final class FontLabStore: ObservableObject {
         // and invalidate pending saves so deleted projects cannot reappear.
         revisionStore.scheduleSave(after: 60)
         guard revisionStore.deleteProject(revisionProjectID), revisionStore.state.selectedProject == generatedID,
-              revisionStore.state.projects.count == 1 else { throw SelfTestError.failed("Deleting an unselected Font Lab project changed the selection.") }
+              revisionStore.state.projects.count == 1 else { throw SelfTestError.failed("Deleting an unselected Letterform Editor project changed the selection.") }
         guard revisionStore.deleteProject(generatedID), revisionStore.state.projects.isEmpty,
-              revisionStore.state.selectedProject == nil else { throw SelfTestError.failed("Deleting the last Font Lab project left an invalid selection.") }
+              revisionStore.state.selectedProject == nil else { throw SelfTestError.failed("Deleting the last Letterform Editor project left an invalid selection.") }
         revisionStore.flushPendingSave()
         let trashReloaded = FontLabStore(url: revisionFile)
         guard trashReloaded.state.projects.isEmpty, trashReloaded.state.deletedProjects?.count == 2,
@@ -833,11 +842,11 @@ final class FontLabStore: ObservableObject {
               trashReloaded.selectedProject?.previewText == "Termination flush",
               !trashReloaded.restoreProject(revisionProjectID),
               !trashReloaded.deleteProject(UUID()), trashReloaded.state.isValid else {
-            throw SelfTestError.failed("Font Lab deletion recovery lost data or accepted duplicate restoration.")
+            throw SelfTestError.failed("Letterform Editor deletion recovery lost data or accepted duplicate restoration.")
         }
         let restored = FontLabStore(url: revisionFile)
         guard restored.selectedProject?.id == revisionProjectID, restored.state.deletedProjects?.count == 1 else {
-            throw SelfTestError.failed("Restored Font Lab projects did not persist.")
+            throw SelfTestError.failed("Restored Letterform Editor projects did not persist.")
         }
 
         let artworkFile = root.appendingPathComponent("artwork-import.json")
@@ -868,12 +877,12 @@ final class FontLabStore: ObservableObject {
         }
         let legacyPoint = try JSONDecoder().decode(FontLabPoint.self, from: Data("{\"x\":0.2,\"y\":0.3}".utf8))
         guard legacyPoint.isValid, legacyPoint.pressure == nil, legacyPoint.tiltX == nil, legacyPoint.tiltY == nil else {
-            throw SelfTestError.failed("Pre-pressure Font Lab points are no longer backward compatible.")
+            throw SelfTestError.failed("Pre-pressure Letterform Editor points are no longer backward compatible.")
         }
         let legacyStrokeJSON = "{\"id\":\"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE\",\"points\":[{\"x\":0.2,\"y\":0.3}],\"width\":0.03}"
         let legacyStroke = try JSONDecoder().decode(FontLabStroke.self, from: Data(legacyStrokeJSON.utf8))
         guard legacyStroke.isValid, legacyStroke.nibStyle == nil, legacyStroke.resolvedNibStyle == .round else {
-            throw SelfTestError.failed("Pre-nib-style Font Lab strokes are no longer backward compatible.")
+            throw SelfTestError.failed("Pre-nib-style Letterform Editor strokes are no longer backward compatible.")
         }
         let tabletPoint = FontLabPoint(x: 0.8, y: 0.9, pressure: 0.75, tiltX: -0.2, tiltY: 0.4)
         let smoothed = FontLabDrawingOperations.smoothed(tabletPoint, after: FontLabPoint(x: 0.2, y: 0.3, pressure: 0.25), level: .gentle)
@@ -1058,7 +1067,7 @@ struct FontLabView: View {
         } message: {
             Text("This removes every stroke from \(clearRequest?.glyph.character ?? "this glyph"). The current project file is backed up before the change.")
         }
-        .alert("Delete Font Lab project?", isPresented: Binding(get: { deleteRequest != nil }, set: { if !$0 { deleteRequest = nil } })) {
+        .alert("Delete Letterform Editor project?", isPresented: Binding(get: { deleteRequest != nil }, set: { if !$0 { deleteRequest = nil } })) {
             Button("Delete project", role: .destructive) {
                 if let request = deleteRequest { _ = store.deleteProject(request.id) }
                 deleteRequest = nil
@@ -1119,7 +1128,7 @@ struct FontLabView: View {
                     }
                     Spacer()
                     Button { _ = store.addProject(name: "") } label: { Image(systemName: "plus") }
-                        .buttonStyle(.plain).help("New Font Lab project").disabled(store.readBlocked)
+                        .buttonStyle(.plain).help("New Letterform Editor project").disabled(store.readBlocked)
                 }
                 ScrollView {
                     LazyVStack(spacing: 4) {
@@ -1178,7 +1187,7 @@ struct FontLabView: View {
                 Text("\(project.completedCount)/\(project.characters.count) glyphs")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Delete", systemImage: "trash", role: .destructive) { deleteRequest = project }
-                    .disabled(store.readBlocked || isExportingFont).help("Delete this Font Lab project")
+                    .disabled(store.readBlocked || isExportingFont).help("Delete this Letterform Editor project")
                 Button("Components & masters", systemImage: "square.stack.3d.up") { showFontDesign = true }.help("Components, masters, kerning groups and glyph set").disabled(store.readBlocked || isExportingFont)
                 Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
                     .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
@@ -1340,10 +1349,14 @@ struct FontLabView: View {
                         .disabled(!glyph.hasArtwork || store.readBlocked)
                 }
                 if vectorEditing || glyph.components?.isEmpty == false {
-                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)),
+                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex,
                         onChange: { edited in recordGlyphEdit(edited, projectID: project.id) },
                         onUndo: { undoStroke(glyph, projectID: project.id) },
-                        onRedo: { redoGlyph(projectID: project.id) })
+                        onRedo: { redoGlyph(projectID: project.id) },
+                        onPreviewInkChange: { hex in
+                            store.updateProject(project.id, save: false) { $0.previewInkHex = hex }
+                            store.scheduleSave()
+                        })
                         .id(project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString)
                         .disabled(store.readBlocked)
                 } else {
@@ -1467,7 +1480,7 @@ struct FontLabView: View {
             }
             TextField("Preview text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
                 .onSubmit { store.flushPendingSave() }.disabled(store.readBlocked)
-            FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], selectedCharacter: selectedCharacter, onSelect: { character in
+            FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: { character in
                 if project.characters.contains(character) { selectedCharacter = character }
             })
                 .frame(height: 118).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -1480,7 +1493,7 @@ struct FontLabView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "pencil.and.outline").font(.system(size: 42)).foregroundStyle(.secondary)
-            Text(store.readBlocked ? "Font Lab data needs attention" : "Start a Font Lab project").font(.title2)
+            Text(store.readBlocked ? "Letterform Editor data needs attention" : "Start a Letterform Editor project").font(.title2)
             Text(store.error.isEmpty ? "Draw from scratch or import your own letter artwork. Tune every glyph and export SVG artwork or an installable TrueType font." : store.error)
                 .foregroundStyle(Color(nsColor: store.error.isEmpty ? .secondaryLabelColor : .systemOrange)).multilineTextAlignment(.center).frame(maxWidth: 520)
             if !store.readBlocked {
@@ -2176,6 +2189,7 @@ struct FontLabPreviewCanvas: NSViewRepresentable {
     var kerningPairs: [FontLabKerningPair] = []
     var maximumEm: CGFloat = 96
     var centered = false
+    var previewInkHex: String? = nil
     var selectedCharacter: String? = nil
     var onSelect: ((String) -> Void)? = nil
 
@@ -2194,6 +2208,7 @@ struct FontLabPreviewCanvas: NSViewRepresentable {
         view.kerningPairs = kerningPairs
         view.maximumEm = maximumEm
         view.centered = centered
+        view.inkColor = previewInkHex.map(NSColor.init(hex:)) ?? .labelColor
         view.selectedCharacter = selectedCharacter
         view.onSelect = onSelect
         view.needsDisplay = true
@@ -2208,6 +2223,7 @@ final class FontLabPreviewNSView: NSView {
     var kerningPairs: [FontLabKerningPair] = []
     var maximumEm: CGFloat = 96
     var centered = false
+    var inkColor: NSColor = .labelColor
     var selectedCharacter: String?
     var onSelect: ((String) -> Void)?
     private var hitRegions: [(String, CGRect)] = []
@@ -2251,7 +2267,7 @@ final class FontLabPreviewNSView: NSView {
             }
             if let glyph, glyph.hasArtwork {
                 let rect = NSRect(x: x + left, y: originY, width: inkWidth, height: em)
-                fontLabDrawStrokes(glyph.strokes, in: rect, color: .labelColor)
+                fontLabDrawStrokes(glyph.strokes, in: rect, color: inkColor)
             } else {
                 let placeholder = NSRect(x: x + left, y: originY + em * 0.18, width: inkWidth, height: em * 0.64)
                 let path = NSBezierPath(roundedRect: placeholder, xRadius: 5, yRadius: 5)

@@ -29,6 +29,18 @@ struct Family: Identifiable {
     var representative: Face { faces.first(where: { ["Regular", "Book", "Roman", "Normal"].contains($0.style) }) ?? faces[0] }
     var userFont: Bool { faces.contains { face in guard let p = face.url?.path else { return false }; return !p.hasPrefix("/System/") && !p.hasPrefix("/Library/Apple/") } }
 }
+struct SavedSearch: Codable, Equatable {
+    var section: String
+    var query: String
+    var sort: String
+    var source: String
+    var writing: String?
+    var variableOnly: Bool
+    var tagQuery: TagQuery
+    var advanced: AdvancedFilter
+    var requireCoverage: Bool
+    var requiredText: String
+}
 struct SavedLibrary: Codable {
     var favorites: Set<String> = []
     var overrides: [String: Category] = [:]
@@ -40,6 +52,7 @@ struct SavedLibrary: Codable {
     var autoActivateFolders: Set<String>?
     var fontUsage: [String: FontUsageRecord]?
     var webAssetFolders: [String]?
+    var savedSearches: [String: SavedSearch]?
 }
 
 enum FontCatalog {
@@ -118,7 +131,7 @@ enum FontCatalog {
 enum WorkspaceMode: String, CaseIterable, Identifiable {
     case library = "Library"
     case spaces = "Spaces"
-    case fontLab = "Font Lab"
+    case fontLab = "Letterform Editor"
     var id: String { rawValue }
 }
 
@@ -354,6 +367,33 @@ final class Library: ObservableObject {
         if section.hasPrefix("tag:") { return TagQuery.contains(String(section.dropFirst(4)), in: tags(f)) }
         if section.hasPrefix("collection:") { return saved.collections[String(section.dropFirst(11))]?.contains(f.name) ?? false }
         return category(f).rawValue == section
+    }
+    @discardableResult func saveCurrentSearch(as name: String) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, saved.savedSearches?[name] == nil else { return false }
+        let snapshot = SavedSearch(section: selection, query: search, sort: sort, source: source,
+                                   writing: writing?.rawValue, variableOnly: variableOnly, tagQuery: tagQuery,
+                                   advanced: advanced, requireCoverage: requireCoverage, requiredText: requiredText)
+        let previous = saved.savedSearches
+        saved.savedSearches?[name] = snapshot
+        if saved.savedSearches == nil { saved.savedSearches = [name: snapshot] }
+        guard save() else { saved.savedSearches = previous; return false }
+        return true
+    }
+    func applySavedSearch(_ name: String) {
+        guard let snapshot = saved.savedSearches?[name] else { return }
+        selection = snapshot.section; search = snapshot.query; sort = snapshot.sort; source = snapshot.source
+        writing = snapshot.writing.flatMap(WritingSystem.init(rawValue:))
+        variableOnly = snapshot.variableOnly; tagQuery = snapshot.tagQuery; advanced = snapshot.advanced
+        requireCoverage = snapshot.requireCoverage; requiredText = snapshot.requiredText
+        workspace = .library
+    }
+    @discardableResult func deleteSavedSearch(_ name: String) -> Bool {
+        guard saved.savedSearches?[name] != nil else { return false }
+        let previous = saved.savedSearches
+        saved.savedSearches?.removeValue(forKey: name)
+        guard save() else { saved.savedSearches = previous; return false }
+        return true
     }
     var filtered: [Family] {
         let parsed = FontSearchQuery(search)
@@ -671,6 +711,19 @@ struct ContentView: View {
                 }
             }
             }
+            SidebarSection(title: "SAVED SEARCHES", key: "sidebar.saved-searches", onAdd: { saveSearch() }) {
+                ForEach((library.saved.savedSearches ?? [:]).keys.sorted(), id: \.self) { name in
+                    Button { library.applySavedSearch(name) } label: {
+                        HStack { Image(systemName: "magnifyingglass").frame(width: 20); Text(name).lineLimit(1); Spacer() }
+                            .padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).padding(.horizontal, 8)
+                    .contextMenu { Button("Delete saved search", role: .destructive) { _ = library.deleteSavedSearch(name) } }
+                }
+                if library.saved.savedSearches?.isEmpty != false {
+                    Text("Save filters to revisit live results").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14)
+                }
+            }
             SidebarSection(title: "COLLECTIONS", key: "sidebar.collections", onAdd: { showCollection = true }) {
             Group {
                 VStack(spacing: 6) {
@@ -716,6 +769,11 @@ struct ContentView: View {
     func renameCollection(_ name: String) {
         if let renamed = ShelfRename.prompt("Rename collection", current: name, validate: { candidate in candidate != name && library.saved.collections[candidate] != nil ? "A collection with this name already exists. Choose another name." : nil }) { _ = library.renameCollection(name, to: renamed) }
     }
+    func saveSearch() {
+        if let name = ShelfRename.prompt("Save current Library search", current: "My search", actionTitle: "Save", validate: { candidate in library.saved.savedSearches?[candidate] != nil ? "A saved search with this name already exists." : nil }) {
+            if !library.saveCurrentSearch(as: name) { library.message = "Could not save this search. " + library.message }
+        }
+    }
     var header: some View {
         HStack(spacing: 12) {
             if library.selection.hasPrefix("collection:") {
@@ -742,6 +800,7 @@ struct ContentView: View {
                 Toggle("Metadata table", isOn: $metadataView)
                 Button("Export library backup…") { LibraryBackupTools.export(library) }
                 Button("Import library backup…") { LibraryBackupTools.restore(library) }
+                Button("Save current search…") { saveSearch() }
                 Button("Migrate earlier FontShelf data…") { StoreMigration.chooseSource(for: library) }
                 Button("Import earlier preferences…") { StoreMigration.choosePreferences(for: library) }
                 Button("Show automatic backups") { NSWorkspace.shared.open(library.saveURL.deletingLastPathComponent().appendingPathComponent("Backups")) }
@@ -844,7 +903,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Browse Google Fonts…", "Google Fonts", to: fileMenu)
         addCommand("New Collection…", "collection", to: fileMenu, key: "n")
         addCommand("Spaces", "spaces", to: fileMenu)
-        addCommand("Font Lab", "fontLab", to: fileMenu)
+        addCommand("Letterform Editor", "fontLab", to: fileMenu)
         addCommand("New Typeboard", "pair", to: fileMenu, key: "k")
         addCommand("Watched Folders…", "Folders", to: fileMenu)
         addCommand("Inspect Font Files…", "Font Health", to: fileMenu)

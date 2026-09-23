@@ -79,6 +79,10 @@ enum StudioChecks {
         print("PASS: live recursive watcher, original-file preview, temporary activation visible to a separate process, deactivation and removal reconciliation.")
     }
     static func run(catalog: [Family]) throws {
+        try verify(abs((SpacesProofing.contrastRatio(ink: "000000", paper: "FFFFFF") ?? 0) - 21) < 0.001)
+        try verify(abs((SpacesProofing.contrastRatio(ink: "777777", paper: "FFFFFF") ?? 0) - 4.478) < 0.01)
+        try verify(SpacesProofing.contrastRatio(ink: "bad", paper: "FFFFFF") == nil)
+        try verify(SpacesProofing.longestLine("Short\nA longer line") == 13)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-studio-checks-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -149,8 +153,8 @@ enum StudioChecks {
         try verify(!WorkspaceSidebarPreference.collapsed(in: sidebarDefaults), "Expanded workspace sidebar state must persist")
         try verify(WorkspaceSidebarLayout.reservedWidth(collapsed: false) == 256 && WorkspaceSidebarLayout.reservedWidth(collapsed: true) == 0, "Collapsing the workspace sidebar must return its complete width to Library and Spaces")
         try verify(WorkspaceSidebarLayout.revealWidth >= 44 && WorkspaceSidebarLayout.revealHeight >= 44, "The collapsed sidebar reveal control must keep a full-size accessible hit target")
-        try verify(WorkspaceHeaderLayout.horizontalPadding == 20 && WorkspaceHeaderLayout.verticalPadding == 14 && WorkspaceHeaderLayout.titleSize == 22 && WorkspaceHeaderLayout.titleHeight == 30, "Library, Spaces, and Font Lab must share one header geometry")
-        try verify(FontLabCharacterPanelLayout.clamped(0) == FontLabCharacterPanelLayout.minimumWidth && FontLabCharacterPanelLayout.clamped(9_999) == FontLabCharacterPanelLayout.maximumWidth && FontLabCharacterPanelLayout.clamped(300) == 300, "Font Lab character panel resizing must remain usable and bounded")
+        try verify(WorkspaceHeaderLayout.horizontalPadding == 20 && WorkspaceHeaderLayout.verticalPadding == 14 && WorkspaceHeaderLayout.titleSize == 22 && WorkspaceHeaderLayout.titleHeight == 30, "Library, Spaces, and Letterform Editor must share one header geometry")
+        try verify(FontLabCharacterPanelLayout.clamped(0) == FontLabCharacterPanelLayout.minimumWidth && FontLabCharacterPanelLayout.clamped(9_999) == FontLabCharacterPanelLayout.maximumWidth && FontLabCharacterPanelLayout.clamped(300) == 300, "Letterform Editor character panel resizing must remain usable and bounded")
         var inserted = TypeDirection(); let beforeInsert = CanvasPlan(direction: inserted)
         let insertedID = inserted.insert(.heading, target: beforeInsert.sections[1].id, before: true, visible: beforeInsert.sections.map(\.id))
         let afterInsert = CanvasPlan(direction: inserted)
@@ -466,7 +470,7 @@ enum StudioChecks {
         var importedLibrary = library.saved
         importedLibrary.fontUsage = [usageName: FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 30), applicationCount: 2)]
         let fontLabProjectIDValue = library.fontLab.addProject(name: "Backup lettering")
-        try verify(fontLabProjectIDValue != nil, "Could not create Font Lab backup fixture")
+        try verify(fontLabProjectIDValue != nil, "Could not create Letterform Editor backup fixture")
         let fontLabProjectID = fontLabProjectIDValue!
         let fontLabStroke = FontLabStroke(points: [FontLabPoint(x: 0.2, y: 0.2), FontLabPoint(x: 0.8, y: 0.8)], width: 0.03)
         var fontLabGlyph = FontLabGlyph(character: "A")
@@ -484,8 +488,8 @@ enum StudioChecks {
         try verify(library.saved.fontUsage?[usageName] == FontUsageRecord(lastAppliedAt: Date(timeIntervalSinceReferenceDate: 30), applicationCount: 4), "Backup merge must keep the newest use date without double-counting applications")
         try verify(library.studio.state.spaces[0].id != store.state.spaces[0].id)
         let importedFontLabProject = library.fontLab.state.projects.first { $0.id != fontLabProjectID }
-        try verify(importedFontLabProject?.name == "Backup lettering (imported)" && importedFontLabProject?.glyphs["A"] == fontLabGlyph, "Backup merge must preserve Font Lab artwork in an independent project copy")
+        try verify(importedFontLabProject?.name == "Backup lettering (imported)" && importedFontLabProject?.glyphs["A"] == fontLabGlyph, "Backup merge must preserve Letterform Editor artwork in an independent project copy")
         try verify(FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path))
-        print("PASS: typography and legacy decoding, section reorder/removal, Figma layout payload, search tokens, independent directions and relaunch persistence, corrupt workspace preservation, nested AND/OR/NOT tags, recursive folder changes, Unicode lookup/SVG, \(plans) responsive canvases, specimen PDF and Library/Spaces/Font Lab backup merge.")
+        print("PASS: typography and legacy decoding, section reorder/removal, Figma layout payload, search tokens, independent directions and relaunch persistence, corrupt workspace preservation, nested AND/OR/NOT tags, recursive folder changes, Unicode lookup/SVG, \(plans) responsive canvases, specimen PDF and Library/Spaces/Letterform Editor backup merge.")
     }
 }

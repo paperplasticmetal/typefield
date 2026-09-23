@@ -34,7 +34,7 @@ struct FontLabArtworkImportSheet: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Import your letter artwork").font(.title2.weight(.semibold))
-                    Text("Scan a letter or a whole alphabet. Review the labels, then refine the outlines in Font Lab.")
+                    Text("Scan a letter or a whole alphabet. Review the labels, then refine the outlines in Letterform Editor.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()

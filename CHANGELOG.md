@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.36.0 — 2026-09-22
+
+- Renamed the third workspace label to Letterform Editor while retaining the project format and internal storage keys. Documented a whole-app rebrand plan for review before public distribution.
+- Added saved Library searches that restore compound filters and update results against the current catalog.
+- Persisted preview ink per Letterform Editor project without changing monochrome font export.
+- Added a Spaces proofing readout for saved ink/canvas contrast and entered line length, with an imported-layout approximation note.
+
+
 ## 0.35.0 — 2026-09-22
 
 - Added a guided Store-container migration for Library, Spaces, Font Lab and app-managed Google Fonts, with validation, source preservation, collision protection and reauthorization guidance for external folders.

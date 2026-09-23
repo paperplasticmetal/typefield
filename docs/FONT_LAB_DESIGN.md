@@ -1,4 +1,4 @@
-# Font Lab design controls
+# Letterform Editor design controls
 
 Open a project and choose **Components & masters**. Changes are staged until **Apply**; Cancel preserves the current project. **Undo setup** restores the previous project while that applied setup is still the latest change.
 

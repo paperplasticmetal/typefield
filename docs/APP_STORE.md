@@ -12,7 +12,7 @@
 - [ ] Store screenshots, description, keywords, copyright, price and territories.
 - [ ] Age rating, privacy, export-compliance, applicable EU trader-status and review-contact information.
 - [ ] Applicable agreements/tax/banking setup if selling the app.
-- [x] User-selected migration path and disposable regression fixtures for Library, Spaces, Font Lab and app-managed Google Fonts.
+- [x] User-selected migration path and disposable regression fixtures for Library, Spaces, Letterform Editor and app-managed Google Fonts.
 - [ ] Run the migration and external-folder reauthorization on a distribution-signed Store/TestFlight build, including a clean second-Mac install and recovery drill.
 
 The production bundle identifier must replace `local.fontshelf.app`. Never commit signing credentials or provisioning profiles. `archive-store.sh` takes `TEAM_ID` and `APP_BUNDLE_ID` from environment variables and runs `verify-store-archive.sh` on the team-signed archive. Xcode Organizer applies distribution signing during validation/upload; Xcode may use cloud-managed certificates. The script does not upload. Keep the production bundle ID stable after the first TestFlight upload.
@@ -21,10 +21,10 @@ The production bundle identifier must replace `local.fontshelf.app`. Never commi
 
 1. Quit the earlier FontShelf app. Keep its Application Support folder and font files in place.
 2. On a fresh Store build, open **Library → Tools → Migrate earlier FontShelf data…**. In the file picker, use Command–Shift–G to choose `~/Library/Application Support/FontShelf` if the Library folder is hidden. Review the confirmation and choose **Copy and Quit**.
-3. Reopen the Store app. Library collections, tags, Spaces, Font Lab projects and downloaded Google Fonts should be present. The old support folder remains untouched. In **Live folders**, choose each external font folder again to grant the Store app its own security scope. Rechoose external WOFF2 folders in the web-font audit. Saved paths remain listed until access is renewed.
+3. Reopen the Store app. Library collections, tags, Spaces, Letterform Editor projects and downloaded Google Fonts should be present. The old support folder remains untouched. In **Live folders**, choose each external font folder again to grant the Store app its own security scope. Rechoose external WOFF2 folders in the web-font audit. Saved paths remain listed until access is renewed.
 4. Optionally choose **Tools → Import earlier preferences…** and select `~/Library/Preferences/local.fontshelf.app.plist`. This imports only known preferences that are not already set in the Store app. Reopen to refresh all screens.
 
-Migration refuses an occupied Store container and invalid project files. Use **Export library backup…** first if the Store app already contains work; **Import library backup…** is a separate merge operation that imports Spaces and Font Lab projects as copies. Neither operation moves external fonts. The folder migration includes app-managed Google Font files and licenses. Validate this flow on a signed TestFlight build before offering it to users.
+Migration refuses an occupied Store container and invalid project files. Use **Export library backup…** first if the Store app already contains work; **Import library backup…** is a separate merge operation that imports Spaces and Letterform Editor projects as copies. Neither operation moves external fonts. The folder migration includes app-managed Google Font files and licenses. Validate this flow on a signed TestFlight build before offering it to users.
 
 ## Distribution runbook
 
