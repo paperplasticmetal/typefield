@@ -12,18 +12,35 @@ struct FontFileStamp: Equatable {
     }
 }
 enum FontFolderSnapshot {
-    static func read(_ roots: [String]) -> (files: [String: FontFileStamp], errors: [String]) {
+    static func read(_ roots: [String], pauseOnError: Set<String> = []) -> (files: [String: FontFileStamp], errors: [String], failedProtectedRoots: Set<String>) {
         var files: [String: FontFileStamp] = [:], errors: [String] = []
+        var failedProtectedRoots = Set<String>()
         for root in roots {
+            let protected = pauseOnError.contains(root)
             var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: root, isDirectory: &isDirectory), isDirectory.boolValue else { errors.append(root + ": Folder unavailable"); continue }
-            guard let enumerator = FileManager.default.enumerator(at: URL(fileURLWithPath: root), includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey, .isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { url, error in errors.append(url.path + ": " + error.localizedDescription); return true }) else { errors.append(root + ": Cannot read folder"); continue }
+            guard FileManager.default.fileExists(atPath: root, isDirectory: &isDirectory), isDirectory.boolValue else {
+                errors.append(root + ": Folder unavailable")
+                if protected { failedProtectedRoots.insert(root) }
+                continue
+            }
+            guard let enumerator = FileManager.default.enumerator(at: URL(fileURLWithPath: root), includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey, .isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { url, error in
+                errors.append(url.path + ": " + error.localizedDescription)
+                if protected { failedProtectedRoots.insert(root) }
+                return !protected
+            }) else {
+                errors.append(root + ": Cannot read folder")
+                if protected { failedProtectedRoots.insert(root) }
+                continue
+            }
             for case let url as URL in enumerator where DuplicateFinder.extensions.contains(url.pathExtension.lowercased()) {
                 if let stamp = FontFileStamp.read(url) { files[url.standardizedFileURL.path] = stamp }
-                else { errors.append(url.path + ": Cannot read font") }
+                else {
+                    errors.append(url.path + ": Cannot read font")
+                    if protected { failedProtectedRoots.insert(root); break }
+                }
             }
         }
-        return (files, errors)
+        return (files, errors, failedProtectedRoots)
     }
     static func contains(_ path: String, root: String) -> Bool { path.hasPrefix(URL(fileURLWithPath: root).standardizedFileURL.path + "/") }
 }
@@ -32,31 +49,42 @@ final class FolderWatcher {
     private let queue = DispatchQueue(label: "FontShelf.folder-watch", qos: .utility)
     private var timer: DispatchSourceTimer?
     private var roots: [String] = []
+    private var activeRoots: [String] = []
+    private var protectedRoots: Set<String> = []
+    private var suppressedRoots: Set<String> = []
     private var last: [String: FontFileStamp]?
     private var errors: [String] = []
-    func configure(roots: [String], initialized: (([String]) -> Void)? = nil, changed: @escaping ([String]) -> Void) {
+    func configure(roots: [String], pauseOnError: Set<String> = [], initialized: (([String], Set<String>) -> Void)? = nil, changed: @escaping ([String], Set<String>) -> Void) {
         queue.async { [weak self] in
-            guard let self, self.roots != roots || self.timer == nil else { return }
-            self.timer?.cancel(); self.timer = nil; self.roots = roots; self.last = nil
+            guard let self, self.roots != roots || self.protectedRoots != pauseOnError || self.timer == nil else { return }
+            self.timer?.cancel(); self.timer = nil; self.roots = roots; self.protectedRoots = pauseOnError; self.last = nil
+            // A removed root may be added again only after the user explicitly
+            // chooses it through the picker and Library configures that root.
+            self.suppressedRoots.formIntersection(roots)
+            self.activeRoots = roots.filter { !self.suppressedRoots.contains($0) }
             self.errors = []
             guard !roots.isEmpty else {
                 self.last = [:]
-                if let initialized { DispatchQueue.main.async { initialized([]) } }
+                if let initialized { DispatchQueue.main.async { initialized([], []) } }
                 return
             }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: .now(), repeating: 3, leeway: .milliseconds(500))
             timer.setEventHandler { [weak self] in
                 guard let self else { return }
-                let current = FontFolderSnapshot.read(roots)
+                let current = FontFolderSnapshot.read(self.activeRoots, pauseOnError: self.protectedRoots)
+                if !current.failedProtectedRoots.isEmpty {
+                    self.suppressedRoots.formUnion(current.failedProtectedRoots)
+                    self.activeRoots.removeAll { current.failedProtectedRoots.contains($0) }
+                }
                 guard self.last != nil else {
                     self.last = current.files; self.errors = current.errors
-                    if let initialized { DispatchQueue.main.async { initialized(current.errors) } }
+                    if let initialized { DispatchQueue.main.async { initialized(current.errors, current.failedProtectedRoots) } }
                     return
                 }
-                let differs = self.last != current.files || self.errors != current.errors
+                let differs = self.last != current.files || self.errors != current.errors || !current.failedProtectedRoots.isEmpty
                 self.last = current.files; self.errors = current.errors
-                if differs { DispatchQueue.main.async { changed(current.errors) } }
+                if differs { DispatchQueue.main.async { changed(current.errors, current.failedProtectedRoots) } }
             }
             self.timer = timer; timer.resume()
         }
@@ -77,6 +105,20 @@ extension SavedLibrary {
 }
 
 extension Library {
+    func pauseProtectedWatchRoots(_ roots: Set<String>) {
+        guard !roots.isEmpty else { return }
+        for root in roots {
+            for savedPath in savedPathsByResolvedFolder[root] ?? [] {
+                folderAccess.pauseWatchAfterError(savedPath)
+                pausedFolders.insert(savedPath)
+            }
+            savedPathsByResolvedFolder.removeValue(forKey: root)
+        }
+        resolvedFolders.removeAll { roots.contains($0) }
+        // Reconfigure with only the remaining roots. Neither the saved paths
+        // nor the bookmarks are changed, and the failed root is not probed.
+        configureWatcher()
+    }
     @discardableResult func stopWatchingFolder(_ path: String) -> Bool {
         let previous = saved
         saved.folders.removeAll { $0 == path }
@@ -95,14 +137,28 @@ extension Library {
         return true
     }
     func configureWatcher() {
+        let protectedRoots = Set(resolvedFolders.filter { root in
+            folderAccess.shouldPauseWatchOnError(root) ||
+                (savedPathsByResolvedFolder[root] ?? []).contains(where: folderAccess.shouldPauseWatchOnError)
+        })
         folderWatcher.configure(
             roots: resolvedFolders,
-            initialized: { [weak self] errors in
-                guard let self, !errors.isEmpty else { return }
-                self.folderStatus = errors.joined(separator: "\n")
-            },
-            changed: { [weak self] errors in
+            pauseOnError: protectedRoots,
+            initialized: { [weak self] errors, failedRoots in
                 guard let self else { return }
+                self.pauseProtectedWatchRoots(failedRoots)
+                if !errors.isEmpty {
+                    self.folderStatus = failedRoots.isEmpty ? errors.joined(separator: "\n") :
+                        "A protected watched folder was paused after an access error. Choose it again in Live folders to resume."
+                }
+            },
+            changed: { [weak self] errors, failedRoots in
+                guard let self else { return }
+                if !failedRoots.isEmpty {
+                    self.pauseProtectedWatchRoots(failedRoots)
+                    self.folderStatus = "A protected watched folder was paused after an access error. Choose it again in Live folders to resume."
+                    return
+                }
                 self.folderStatus = errors.isEmpty ? "Changes detected; refreshing…" : errors.joined(separator: "\n")
                 self.reload(register: true)
             }
@@ -137,7 +193,10 @@ struct WatchedFoldersView: View {
                             Text(path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                             HStack {
                                 Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path) }
-                                if !library.resolvedFolders.contains(path) {
+                                if library.pausedFolders.contains(path) {
+                                    Label("Paused to avoid macOS permission prompts", systemImage: "pause.circle").font(.caption).foregroundStyle(.secondary)
+                                    Button("Resume watching…") { library.addFolder(replacing: path) }
+                                } else if !library.resolvedFolders.contains(path) {
                                     Label("Access needs attention", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
                                     Button("Choose Folder Again…") { library.addFolder(replacing: path) }
                                 }

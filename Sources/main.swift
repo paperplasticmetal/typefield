@@ -188,6 +188,8 @@ final class Library: ObservableObject {
     var queuedReload = false
     var queuedRegistration = false
     var resolvedFolders: [String] = []
+    var savedPathsByResolvedFolder: [String: Set<String>] = [:]
+    @Published var pausedFolders: Set<String> = []
     var reportedFolderAccessFailures: Set<String> = []
     var proSaveBlocked = false
     var proURL: URL { saveURL.deletingLastPathComponent().appendingPathComponent("pro-library.json") }
@@ -372,18 +374,25 @@ final class Library: ObservableObject {
         guard !loading else { queuedReload = true; queuedRegistration = queuedRegistration || register; return }
         loading = true
         var folders: [String] = []
+        var sources: [String: Set<String>] = [:]
+        var paused: Set<String> = []
         for path in saved.folders {
             do {
-                folders.append(try folderAccess.restore(path))
+                let resolved = try folderAccess.restore(path)
+                folders.append(resolved)
+                sources[resolved, default: []].insert(path)
                 reportedFolderAccessFailures.remove(path)
             }
             catch {
+                if FolderAccess.isPaused(error) { paused.insert(path); continue }
                 if reportedFolderAccessFailures.insert(path).inserted {
                     message = error.localizedDescription
                 }
             }
         }
+        pausedFolders = paused
         resolvedFolders = folders
+        savedPathsByResolvedFolder = sources
         configureWatcher()
         for path in autoActivatedPaths where FontFileStamp.read(URL(fileURLWithPath: path)) != autoActivatedStamps[path] || !folders.contains(where: { FontFolderSnapshot.contains(path, root: $0) }) {
             do { try ActivationManager.shared.deactivate(URL(fileURLWithPath: path), restore: false); autoActivatedPaths.remove(path); autoActivatedStamps.removeValue(forKey: path) }
@@ -517,6 +526,7 @@ final class Library: ObservableObject {
             guard save() else { saved = previous; return }
         }
         if !resolvedFolders.contains(url.path) { resolvedFolders.append(url.path) }
+        savedPathsByResolvedFolder[url.path, default: []].insert(url.path)
         openTools("Folders")
         if let oldPath {
             resolvedFolders.removeAll { $0 == oldPath && $0 != url.path }
@@ -1132,7 +1142,7 @@ private struct TypefieldAbout: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(spacing: 18) {
-                        Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 74, height: 74)
+                        TypefieldIconPreview(size: 74)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Typefield").font(.system(size: 30, weight: .semibold, design: .rounded))
                             Text(version).foregroundStyle(.secondary)

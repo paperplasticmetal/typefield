@@ -679,7 +679,7 @@ enum FigmaLayoutExporter {
     static func payload(board: TypeBoard) -> [String: Any] {
         let frames: [[String: Any]] = board.directions.map { direction in
             let plan = CanvasPlan(direction: direction)
-            let elements: [[String: Any]] = plan.elements.map { item in
+            let elements: [[String: Any]] = plan.elements.filter { $0.image == nil }.map { item in
                 var object: [String: Any] = ["x": item.rect.minX, "y": item.rect.minY, "width": item.rect.width, "height": item.rect.height, "section": plan.sections.first { $0.id == item.sectionID }?.title ?? "Section"]
                 if let text = item.text, let style = item.style {
                     let font = style.font
@@ -697,7 +697,11 @@ enum FigmaLayoutExporter {
             }
             return ["name": direction.name, "width": plan.size.width, "height": plan.size.height, "paper": color(plan.paper), "elements": elements]
         }
-        return ["format": "fontshelf-figma", "version": 1, "name": board.name, "frames": frames]
+        var payload: [String: Any] = ["format": "fontshelf-figma", "version": 1, "name": board.name, "frames": frames]
+        if board.directions.contains(where: { !($0.artworkLayers ?? []).isEmpty }) {
+            payload["warnings"] = ["Spaces image artwork is omitted from editable Figma export. Use Preview PDF for a visual handoff."]
+        }
+        return payload
     }
     static func write(board: TypeBoard, parent: URL) throws -> URL {
         guard let resources = Bundle.main.resourceURL?.appendingPathComponent("FigmaImport"), FileManager.default.fileExists(atPath: resources.appendingPathComponent("code.js").path) else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "The Figma importer is missing from this build."]) }

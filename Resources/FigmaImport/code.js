@@ -24,6 +24,7 @@ function paint(c) {
 }
 function validate(data) {
   if (!data || data.format !== 'fontshelf-figma' || data.version !== 1 || !shortText(data.name, 256) || !Array.isArray(data.frames) || !data.frames.length || data.frames.length > 30) throw Error('Unsupported Typefield layout.');
+  if (data.warnings !== undefined && (!Array.isArray(data.warnings) || data.warnings.length > 100 || !data.warnings.every(warning => shortText(warning, 1024)))) throw Error('Invalid import notes.');
   let totalLayers = 0, totalText = 0;
   for (const frame of data.frames) {
     if (!frame || !number(frame.width, 1, 10000) || !number(frame.height, 1, 100000) || !shortText(frame.name, 256) || !Array.isArray(frame.elements) || frame.elements.length > 5000) throw Error('Invalid frame.');
@@ -51,7 +52,7 @@ function validate(data) {
 }
 async function importLayout(data, api) {
   validate(data);
-  const created = [], warnings = new Set(), loaded = new Map();
+  const created = [], warnings = new Set(data.warnings || []), loaded = new Map();
   let x = api.viewport.center.x;
   try {
     for (const layout of data.frames) {

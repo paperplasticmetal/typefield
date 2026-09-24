@@ -52,7 +52,7 @@ struct TypefieldSettingsView: View {
     @AppStorage("adaptiveGridView") private var grid = true
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    private var darkIcon: Bool { iconAppearance == "Dark" || (iconAppearance == "Automatic" && scheme == .dark) }
+    private var darkIcon: Bool { TypefieldIcon.isDark(mode: iconAppearance, scheme: scheme) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -125,7 +125,7 @@ struct TypefieldSettingsView: View {
                     ForEach(TypefieldPalette.allCases) { item in
                         Button { palette = item.rawValue } label: {
                             HStack(spacing: 12) {
-                                Circle().fill(Color(nsColor: item.accent(dark: scheme == .dark))).frame(width: 26, height: 26)
+                                Circle().fill(Color(nsColor: item.swatch(dark: scheme == .dark))).frame(width: 26, height: 26)
                                 Text(item.title).foregroundStyle(.primary)
                                 Spacer()
                                 Image(systemName: palette == item.rawValue ? "checkmark.circle.fill" : "circle").foregroundStyle(.secondary)
@@ -199,7 +199,7 @@ struct TypefieldSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 section("Stored on this Mac", "Your collections, tags, notes, settings, projects, and folder bookmarks are stored locally. Typefield has no account, advertising, analytics, or tracking. It does not upload fonts, preview text, or your library.")
-                section("Live-folder permissions", "You grant access through the macOS folder picker. Live Folders lists your selected folders and lets you stop watching them. Stopping a watch leaves the original font files in place.")
+                section("Live-folder permissions", "You grant access through the macOS folder picker. Local builds pause saved watches that include Desktop, Documents or Downloads when Typefield opens, avoiding repeated system permission prompts. Resume a paused watch from Live Folders when you need it. Stopping a watch leaves the original font files in place.")
                 Button("Manage Live Folders") { selection.page = .folders }
                 section("Google Fonts & network access", "Browsing Google Fonts contacts Google’s public font repository on GitHub for previews. Downloads also retrieve font files and licenses. GitHub receives normal connection information such as your IP address and the requested public file path. Preview text is rendered locally and is not sent. Remote previews use an ephemeral network session and an in-memory font cache; explicit downloads are saved locally.")
                 section("Exports & licensing", "Exports are saved where you choose. Figma, Adobe, and developer handoffs refer to fonts by name and do not contain font binaries. Adobe scripts are saved for you to run manually. Use or export only fonts and artwork you have permission to use; Typefield cannot verify redistribution, embedding, or commercial-use rights.")

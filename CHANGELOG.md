@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.48.0 — 2026-09-23
+
+- Added file picker and Finder drag-and-drop for SVG, PNG and other common image artwork on individual Spaces canvases. Artwork is embedded in saved typeboards and appears in canvas previews and PDFs. Editable Figma and Adobe handoffs explain when they omit image artwork.
+- Paused local-build watches that include Desktop, Documents or Downloads at launch, so Typefield no longer probes those protected folders automatically. A protected watch also stops polling after an access error instead of repeating macOS permission prompts. Live Folders keeps the saved locations and offers an explicit Resume watching action.
+
+## 0.47.1 — 2026-09-23
+
+- Gave the Appearance accents Indian-inspired color directions: Turmeric, Indigo, Neem, Jamun and Rose. The chooser shows richer pigment swatches while light and dark control shades keep selection text readable on neutral surfaces. Existing saved choices retain their IDs.
+- Made the workspace header and About preview update immediately when the Dock icon design or its Light/Dark setting changes in Settings.
+
 ## 0.47.0 — 2026-09-23
 
 - Added a durable backup-import journal and next-launch recovery for interrupted changes to Library, Spaces, advanced settings and Letterform Editor projects. Editing stays blocked if recovery cannot verify or finish the saved copies.

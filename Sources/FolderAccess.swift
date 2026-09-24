@@ -9,13 +9,17 @@ final class FolderAccess {
     }()
     private let file: URL
     private let managedDirectory: URL
+    private let protectedHome: URL
     private let sandboxed: Bool
     private var bookmarks: [String: Data] = [:]
     private var active: [String: URL] = [:]
+    private var resumedProtectedPaths: Set<String> = []
+    private var pausedAfterWatchError: Set<String> = []
     private var loadFailed = false
-    init(directory: URL, sandboxed: Bool? = nil) {
+    init(directory: URL, sandboxed: Bool? = nil, protectedHome: URL? = nil) {
         managedDirectory = directory.standardizedFileURL
         file = managedDirectory.appendingPathComponent("folder-access.json")
+        self.protectedHome = (protectedHome ?? FileManager.default.homeDirectoryForCurrentUser).standardizedFileURL
         self.sandboxed = sandboxed ?? Self.processIsSandboxed
         do {
             try TypefieldInputFile.requireRegularFileIfPresent(file)
@@ -42,6 +46,34 @@ final class FolderAccess {
     private func renewalError(_ url: URL) -> NSError {
         issue(3, "Saved access is no longer valid for \(url.lastPathComponent). Choose that folder again in Live folders.")
     }
+    private func pausedError(_ url: URL) -> NSError {
+        issue(5, "Watching \(url.lastPathComponent) is paused to avoid repeated macOS folder-access prompts. Choose it again in Live folders to resume.")
+    }
+    static func isPaused(_ error: Error) -> Bool {
+        let value = error as NSError
+        return value.domain == "FontShelf" && value.code == 5
+    }
+    private func normalizedPath(_ path: String) -> String { (path as NSString).standardizingPath }
+    private func intersectsProtectedUserFolder(_ path: String) -> Bool {
+        let candidate = normalizedPath(path)
+        let home = normalizedPath(protectedHome.path)
+        return ["Desktop", "Documents", "Downloads"].contains { name in
+            let root = home + "/" + name
+            return candidate == root || candidate.hasPrefix(root + "/") ||
+                candidate == "/" || root.hasPrefix(candidate + "/")
+        }
+    }
+    func needsExplicitResume(_ path: String) -> Bool {
+        let normalized = normalizedPath(path)
+        return pausedAfterWatchError.contains(normalized) ||
+            (!sandboxed && intersectsProtectedUserFolder(path) && !resumedProtectedPaths.contains(normalized))
+    }
+    func shouldPauseWatchOnError(_ path: String) -> Bool { intersectsProtectedUserFolder(path) }
+    func pauseWatchAfterError(_ path: String) {
+        let normalized = normalizedPath(path)
+        resumedProtectedPaths.remove(normalized)
+        pausedAfterWatchError.insert(normalized)
+    }
     private func readableLocalFolder(_ url: URL) throws -> String {
         do { _ = try FileManager.default.contentsOfDirectory(atPath: url.path); return url.path }
         catch { throw isUnavailable(url) ? unavailableError(url) : renewalError(url) }
@@ -61,6 +93,8 @@ final class FolderAccess {
             do { try persist() } catch { bookmarks[url.path] = previous; throw error }
             if let former = active.removeValue(forKey: url.path) { former.stopAccessingSecurityScopedResource() }
             if started { active[url.path] = url }
+            resumedProtectedPaths.insert(normalizedPath(url.path))
+            pausedAfterWatchError.remove(normalizedPath(url.path))
         } catch {
             if started { url.stopAccessingSecurityScopedResource() }
             throw error
@@ -71,6 +105,10 @@ final class FolderAccess {
         let requested = URL(fileURLWithPath: path).standardizedFileURL
         let managedRoot = managedDirectory.path.hasSuffix("/") ? managedDirectory.path : managedDirectory.path + "/"
         if requested.path == managedDirectory.path || requested.path.hasPrefix(managedRoot) { return path }
+        // Local ad-hoc builds may lose macOS Desktop/Documents/Downloads grants
+        // between builds. Never probe these saved paths during automatic startup;
+        // the user can resume a watch explicitly through the folder picker.
+        if needsExplicitResume(path) { throw pausedError(requested) }
         if !sandboxed {
             if let data = bookmarks[path] {
                 var stale = false
@@ -95,7 +133,7 @@ final class FolderAccess {
             return path
         }
         guard let data = bookmarks[path] else {
-            if isUnavailable(requested) { throw unavailableError(requested) }
+            if !intersectsProtectedUserFolder(path), isUnavailable(requested) { throw unavailableError(requested) }
             throw issue(2, "Access is not saved for \(requested.lastPathComponent). Choose that folder again in Live folders.")
         }
         if let url = active[path] {
@@ -105,9 +143,9 @@ final class FolderAccess {
         var stale = false
         let url: URL
         do { url = try URL(resolvingBookmarkData: data, options: [.withSecurityScope, .withoutUI], relativeTo: nil, bookmarkDataIsStale: &stale) }
-        catch { throw isUnavailable(requested) ? unavailableError(requested) : renewalError(requested) }
-        if isUnavailable(url) { throw unavailableError(url) }
+        catch { throw !intersectsProtectedUserFolder(path) && isUnavailable(requested) ? unavailableError(requested) : renewalError(requested) }
         guard url.startAccessingSecurityScopedResource() else { throw renewalError(requested) }
+        if isUnavailable(url) { url.stopAccessingSecurityScopedResource(); throw unavailableError(url) }
         active[path] = url
         if stale {
             let previous = bookmarks[path]

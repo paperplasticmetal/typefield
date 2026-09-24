@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CoreText
+import ImageIO
 
 enum CanvasKind: String, Codable, CaseIterable { case website = "Website", product = "Product UI", editorial = "Editorial", poster = "Poster", specimen = "Type system", custom = "Custom layout", imported = "Figma layout" }
 enum ImportedLayoutSource: String, Codable {
@@ -140,6 +141,9 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var sectionOrder: [String]?
     var hiddenSections: Set<String>?
     var importedLayout: ImportedLayout?
+    /// Artwork is independent of the template and its typography, including
+    /// on canvases that did not originate from an imported layout.
+    var artworkLayers: [ImportedLayer]?
     /// Optional so projects created before source tracking still decode. A
     /// missing value denotes the original Figma import flow.
     var importedSource: ImportedLayoutSource?
@@ -148,9 +152,17 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var textPositions: [String: CanvasTextPosition]?
     var canvasDisplayName: String { canvas == .imported ? (importedSource ?? .figma).displayName : canvas.rawValue }
     var canvasUnitLabel: String { canvas == .imported ? (importedSource ?? .figma).unitLabel : "px" }
+    var artworkLayersAreValid: Bool {
+        let layers = artworkLayers ?? []
+        return layers.count <= 128 && Set(layers.map(\.id)).count == layers.count &&
+            layers.allSatisfy(\.isValidArtwork) &&
+            layers.reduce(0) { $0 + ($1.artworkData?.count ?? 0) } <= 64 * 1024 * 1024
+    }
     var maximumCanvasScale: Double {
-        let widest = max(width, importedLayout?.layers.map { $0.x + $0.width }.max() ?? width)
-        let tallest = max(importedLayout?.height ?? 1, importedLayout?.layers.map { $0.y + $0.height }.max() ?? 1)
+        let widest = max(width, importedLayout?.layers.map { $0.x + $0.width }.max() ?? width,
+                         artworkLayers?.map { $0.x + $0.width }.max() ?? width)
+        let tallest = max(importedLayout?.height ?? 1, importedLayout?.layers.map { $0.y + $0.height }.max() ?? 1,
+                          artworkLayers?.map { $0.y + $0.height }.max() ?? 1)
         let fontSize = (canvas == .imported ? importedLayout?.layers.compactMap { $0.style?.size }.max() : styles.values.map(\.size).max()) ?? 1
         let strokeWidth = importedLayout?.layers.map(\.visibleStrokeWidth).max() ?? 0
         let exportSafe = min(4, 10_000 / max(1, widest), 10_000 / max(1, tallest),
@@ -225,6 +237,23 @@ struct ImportedLayer: Codable, Identifiable, Equatable {
     var strokeColor: String?
     var strokeOpacity: Double?
     var strokeWidth: Double?
+    /// A bounded, normalized PNG embedded in the project, so artwork remains
+    /// available after its source file is moved or access is revoked.
+    var artworkData: Data?
+    /// Missing in existing projects; newly imported artwork sits behind the
+    /// template until the user explicitly brings it in front.
+    var artworkInFront: Bool?
+    var isValidArtwork: Bool {
+        guard let artworkData, artworkData.count > 8,
+              artworkData.count <= SpacesArtworkImport.maximumEmbeddedBytes else { return false }
+        return artworkData.starts(with: SpacesArtworkImport.pngSignature) &&
+            !name.isEmpty && name.count <= 1_024 &&
+            [x, y, width, height, opacity].allSatisfy(\.isFinite) &&
+            abs(x) <= 100_000 && abs(y) <= 100_000 &&
+            (0.01...100_000).contains(width) && (0.01...100_000).contains(height) &&
+            (0...1).contains(opacity) && style == nil &&
+            strokeColor == nil && strokeOpacity == nil && strokeWidth == nil
+    }
     var visibleStrokeWidth: Double { strokeColor == nil ? 0 : (strokeWidth ?? 0) }
     var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
@@ -244,11 +273,108 @@ struct ImportedLayout: Codable, Equatable {
             (layer.strokeColor.map { $0.range(of: #"^[0-9A-Fa-f]{6}$"#, options: .regularExpression) != nil } ?? true) &&
             (layer.strokeWidth.map { $0.isFinite && (0...1000).contains($0) && ($0 == 0 || layer.strokeColor != nil) } ?? true) &&
             (layer.strokeOpacity.map { $0.isFinite && (0...1).contains($0) } ?? true) &&
+            layer.artworkData == nil &&
             (layer.style == nil || (layer.strokeColor == nil && layer.strokeWidth == nil && layer.strokeOpacity == nil)) &&
             (layer.style.map { $0.size.isFinite && (1...1000).contains($0.size) && TypeDirection.acceptsCanvasText($0.text) && $0.tracking.isFinite && abs($0.tracking) <= 100 && ($0.lineHeight.map { $0.isFinite && (1...2000).contains($0) } ?? true) && $0.axes.values.allSatisfy(\.isFinite) && [$0.paragraphSpacing, $0.indent, $0.wordSpacing].allSatisfy { $0.map { $0.isFinite && abs($0) <= 1000 } ?? true } } ?? true)
         }
     }
 }
+
+enum SpacesArtworkImportError: LocalizedError {
+    case unsupported
+    case tooLarge
+    case unreadable
+    case cannotRender
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupported: return "Choose an SVG, PNG, JPEG, TIFF, HEIC, BMP, or GIF image."
+        case .tooLarge: return "This artwork is too large for an embedded Spaces image. Choose a smaller export."
+        case .unreadable: return "The artwork file could not be read. Try exporting it as PNG."
+        case .cannotRender: return "The artwork could not be rendered. Try exporting it as PNG."
+        }
+    }
+}
+
+/// Imports an image into the project itself rather than retaining a path to a
+/// protected folder. SVG is validated by the existing plain-SVG reader and
+/// rasterized once; the Spaces image is not an editable vector object.
+enum SpacesArtworkImport {
+    static let supportedExtensions: Set<String> = ["svg", "png", "jpg", "jpeg", "tif", "tiff", "heic", "heif", "bmp", "gif"]
+    static let maximumSourceBytes = 64 * 1024 * 1024
+    static let maximumEmbeddedBytes = 16 * 1024 * 1024
+    static let pngSignature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
+
+    static func load(_ url: URL) throws -> ImportedLayer {
+        guard url.isFileURL, supportedExtensions.contains(url.pathExtension.lowercased()) else {
+            throw SpacesArtworkImportError.unsupported
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let data: Data
+        do {
+            data = try TypefieldInputFile.read(url, maximumBytes: maximumSourceBytes)
+        } catch let error as CocoaError where error.code == .fileReadTooLarge {
+            throw SpacesArtworkImportError.tooLarge
+        } catch {
+            // Preserve the input reader's specific regular-file/permission
+            // explanation instead of silently following a dropped symlink.
+            throw error
+        }
+        guard !data.isEmpty else { throw SpacesArtworkImportError.unreadable }
+        guard data.count <= maximumSourceBytes else { throw SpacesArtworkImportError.tooLarge }
+
+        let source: CGImage
+        if url.pathExtension.lowercased() == "svg" {
+            source = try FontLabArtworkReader.svgImage(data)
+        } else {
+            guard let decoder = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(decoder, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 2400,
+                    kCGImageSourceShouldCacheImmediately: true
+                  ] as CFDictionary), image.width > 0, image.height > 0 else {
+                throw SpacesArtworkImportError.cannotRender
+            }
+            source = image
+        }
+        let (png, width, height) = try normalizedPNG(source)
+        var layer = ImportedLayer(name: url.deletingPathExtension().lastPathComponent,
+                                  x: 0, y: 0, width: Double(width), height: Double(height), color: "FFFFFF")
+        layer.artworkData = png
+        return layer
+    }
+
+    private static func normalizedPNG(_ source: CGImage) throws -> (Data, Int, Int) {
+        for limit in [2400, 1800, 1200] {
+            let image: CGImage
+            if max(source.width, source.height) > limit {
+                let scale = Double(limit) / Double(max(source.width, source.height))
+                let width = max(1, Int((Double(source.width) * scale).rounded()))
+                let height = max(1, Int((Double(source.height) * scale).rounded()))
+                guard let context = CGContext(data: nil, width: width, height: height,
+                                              bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                    throw SpacesArtworkImportError.cannotRender
+                }
+                context.interpolationQuality = .high
+                context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+                guard let scaled = context.makeImage() else { throw SpacesArtworkImportError.cannotRender }
+                image = scaled
+            } else {
+                image = source
+            }
+            guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+                throw SpacesArtworkImportError.cannotRender
+            }
+            if png.count <= maximumEmbeddedBytes { return (png, image.width, image.height) }
+        }
+        throw SpacesArtworkImportError.tooLarge
+    }
+}
+
 struct TypeBoard: Codable, Identifiable, Equatable {
     var id = UUID()
     var name = "Untitled typeboard"

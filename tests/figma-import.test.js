@@ -26,6 +26,8 @@ function mock(failFont = false, failText = false) {
   const largeUnicodeText = fixture(); largeUnicodeText.frames[0].elements[0].text = '👋'.repeat(50001); assert.throws(() => validate(largeUnicodeText), /text layer/);
   const excessiveText = fixture(); excessiveText.frames[0].elements = Array.from({ length: 26 }, () => ({ ...fixture().frames[0].elements[0], text: 'A'.repeat(200000) })); assert.throws(() => validate(excessiveText), /too much text/);
   const warn = fixture(); warn.frames[0].elements[0].wordSpacing = 3; assert.match(await importLayout(warn, mock()), /manual|Review/);
+  warn.warnings = ['Spaces image artwork is omitted from editable Figma export.'];
+  assert.match(await importLayout(warn, mock()), /Spaces image artwork is omitted/);
   const outlined = fixture(); outlined.frames[0].elements.push({ kind: 'rectangle', section: 'Card', x: 10, y: 180, width: 200, height: 100,
     color: { r: 0, g: 0, b: 0, a: 0 }, radius: 8, stroke: { r: .2, g: .3, b: .4, a: .75 }, strokeWidth: 4 });
   const outlinedApi = mock(); await importLayout(outlined, outlinedApi);

@@ -2,15 +2,57 @@ import AppKit
 import CoreText
 import SwiftUI
 
-/// Accent colors retain their stored IDs; the Dock renderer gives each ID its own design.
+/// Accent colors retain their stored IDs so existing appearance and Dock choices survive palette revisions.
 enum TypefieldPalette: String, CaseIterable, Identifiable {
     case neutral, amber, ocean, forest, plum, rose
     var id: String { rawValue }
-    var title: String { switch self { case .neutral: return "Porcelain"; case .amber: return "Amber"; case .ocean: return "Ocean"; case .forest: return "Forest"; case .plum: return "Plum"; case .rose: return "Rose" } }
-    var lightAccent: String { switch self { case .neutral: return "505968"; case .amber: return "885317"; case .ocean: return "235F9A"; case .forest: return "28664E"; case .plum: return "76538F"; case .rose: return "984C60" } }
-    var darkAccent: String { switch self { case .neutral: return "BAC6D8"; case .amber: return "E3A857"; case .ocean: return "85BAED"; case .forest: return "87CBA9"; case .plum: return "C7A9E3"; case .rose: return "EDABBB" } }
+    var title: String {
+        switch self {
+        case .neutral: return "Porcelain"
+        case .amber: return "Turmeric"
+        case .ocean: return "Indigo"
+        case .forest: return "Neem"
+        case .plum: return "Jamun"
+        case .rose: return "Rose"
+        }
+    }
+    var lightAccent: String {
+        switch self {
+        case .neutral: return "505968"
+        case .amber: return "704C00"
+        case .ocean: return "25528B"
+        case .forest: return "215D43"
+        case .plum: return "68467D"
+        case .rose: return "8C3C4D"
+        }
+    }
+    var darkAccent: String {
+        switch self {
+        case .neutral: return "BAC6D8"
+        case .amber: return "E6BA58"
+        case .ocean: return "8EB8EF"
+        case .forest: return "91CFA5"
+        case .plum: return "CBA8DF"
+        case .rose: return "EBA2B0"
+        }
+    }
     static func resolve(_ value: String?) -> Self { Self(rawValue: value ?? "") ?? .neutral }
     func accent(dark: Bool) -> NSColor { Self.color(dark ? darkAccent : lightAccent) }
+    /// The light-mode chips can show the pigment at full strength; controls use
+    /// darker shades so selected text remains readable on neutral surfaces.
+    func swatch(dark: Bool) -> NSColor {
+        if dark { return accent(dark: true) }
+        let pigment: String
+        switch self {
+        case .neutral: pigment = lightAccent
+        case .amber: pigment = "D9A625"
+        case .ocean: pigment = "4A5CA5"
+        case .forest: pigment = "438A61"
+        case .plum: pigment = "925A9C"
+        case .rose: pigment = "C85872"
+        }
+        return Self.color(pigment)
+    }
     static func color(_ hex: String) -> NSColor {
         let value = UInt32(hex, radix: 16) ?? 0
         return NSColor(srgbRed: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: 1)
@@ -346,6 +388,9 @@ enum TypefieldIcon {
     static func isDark(mode: String, appearance: NSAppearance = NSApp.effectiveAppearance) -> Bool {
         mode == "Dark" || (mode == "Automatic" && appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
     }
+    static func isDark(mode: String, scheme: ColorScheme) -> Bool {
+        mode == "Dark" || (mode == "Automatic" && scheme == .dark)
+    }
     static func apply() {
         let defaults = UserDefaults.standard
         let palette = TypefieldPalette.resolve(defaults.string(forKey: "typefield.iconPalette"))
@@ -356,5 +401,25 @@ enum TypefieldIcon {
                let rep = NSBitmapImageRep(data: data) { rep.size = icon.size; icon.addRepresentation(rep) }
         }
         NSApp.applicationIconImage = icon
+    }
+}
+
+/// SwiftUI must observe these preferences directly; changing the Dock image alone
+/// does not invalidate an `Image(nsImage:)` already shown in another window.
+struct TypefieldIconPreview: View {
+    let size: CGFloat
+    @AppStorage("typefield.iconPalette") private var iconPalette = "neutral"
+    @AppStorage("typefield.iconAppearance") private var iconAppearance = "Automatic"
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Image(nsImage: TypefieldIcon.image(
+            palette: .resolve(iconPalette),
+            dark: TypefieldIcon.isDark(mode: iconAppearance, scheme: scheme),
+            size: 128
+        ))
+        .resizable()
+        .interpolation(.high)
+        .frame(width: size, height: size)
     }
 }

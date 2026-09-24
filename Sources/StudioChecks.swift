@@ -60,7 +60,7 @@ enum StudioChecks {
         func check(_ condition: Bool, _ message: String) throws { if !condition { throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) } }
         let watcher = FolderWatcher()
         var initialized = false, changes = 0
-        watcher.configure(roots: [root.path], initialized: { _ in initialized = true }) { _ in changes += 1 }
+        watcher.configure(roots: [root.path], initialized: { _, _ in initialized = true }) { _, _ in changes += 1 }
         func wait(_ predicate: () -> Bool) -> Bool {
             let end = Date().addingTimeInterval(10)
             while !predicate() && Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
@@ -386,6 +386,69 @@ enum StudioChecks {
         let legacyShape = try JSONDecoder().decode(ImportedLayer.self, from: JSONEncoder().encode(shape))
         try verify(legacyShape.strokeColor == nil && legacyShape.strokeWidth == nil && legacyShape.strokeOpacity == nil,
                    "Shapes saved before stroke editing must remain readable")
+        let artworkFile = root.appendingPathComponent("artwork.png")
+        guard let artworkContext = CGContext(data: nil, width: 16, height: 8,
+            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
+            throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create artwork fixture"])
+        }
+        artworkContext.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        artworkContext.fill(CGRect(x: 0, y: 0, width: 16, height: 8))
+        guard let artworkImage = artworkContext.makeImage(),
+              let artworkPNG = NSBitmapImageRep(cgImage: artworkImage).representation(using: .png, properties: [:]) else {
+            throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not encode artwork fixture"])
+        }
+        try artworkPNG.write(to: artworkFile)
+        var rasterArtwork = try SpacesArtworkImport.load(artworkFile)
+        try verify(rasterArtwork.isValidArtwork && rasterArtwork.width == 16 && rasterArtwork.height == 8
+                   && rasterArtwork.artworkData?.starts(with: SpacesArtworkImport.pngSignature) == true,
+                   "Raster artwork must become a self-contained PNG layer at its intrinsic aspect ratio")
+        let svgFile = root.appendingPathComponent("artwork.svg")
+        try Data(##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16" viewBox="0 0 32 16"><rect width="32" height="16" fill="#d44"/></svg>"##.utf8).write(to: svgFile)
+        var svgArtwork = try SpacesArtworkImport.load(svgFile)
+        try verify(svgArtwork.isValidArtwork && svgArtwork.artworkData?.starts(with: SpacesArtworkImport.pngSignature) == true
+                   && svgArtwork.width / svgArtwork.height == 2,
+                   "SVG artwork must be validated and rendered to a portable embedded image")
+        rasterArtwork.x = 80; rasterArtwork.y = 100; rasterArtwork.artworkInFront = true
+        svgArtwork.x = 200; svgArtwork.y = 100; svgArtwork.width = 160; svgArtwork.height = 80
+        var artworkCanvas = TypeDirection()
+        artworkCanvas.artworkLayers = [rasterArtwork, svgArtwork]
+        let restoredArtworkCanvas = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(artworkCanvas))
+        try FileManager.default.removeItem(at: artworkFile)
+        try FileManager.default.removeItem(at: svgFile)
+        try verify(restoredArtworkCanvas.artworkLayersAreValid && restoredArtworkCanvas.artworkLayers == artworkCanvas.artworkLayers,
+                   "Embedded artwork must survive project round-trip after original files are removed")
+        let artworkPlan = CanvasPlan(direction: restoredArtworkCanvas)
+        try verify(artworkPlan.elements.filter { $0.image != nil }.count == 2
+                   && artworkPlan.sections.contains { $0.id == rasterArtwork.id },
+                   "Every Spaces canvas must render embedded artwork as selectable image layers")
+        let artworkView = CanvasNativeView(plan: artworkPlan)
+        let artworkPDF = artworkView.dataWithPDF(inside: artworkView.bounds)
+        guard let pdfProvider = CGDataProvider(data: artworkPDF as CFData),
+              let document = CGPDFDocument(pdfProvider), let page = document.page(at: 1) else {
+            throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Artwork PDF could not be read"])
+        }
+        let pdfBox = page.getBoxRect(.mediaBox)
+        let pdfWidth = Int(pdfBox.width), pdfHeight = Int(pdfBox.height)
+        var pixels = [UInt8](repeating: 0, count: pdfWidth * pdfHeight * 4)
+        pixels.withUnsafeMutableBytes { bytes in
+            guard let context = CGContext(data: bytes.baseAddress, width: pdfWidth, height: pdfHeight,
+                                          bitsPerComponent: 8, bytesPerRow: pdfWidth * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue |
+                                              CGBitmapInfo.byteOrder32Big.rawValue) else { return }
+            context.drawPDFPage(page)
+        }
+        let redArtworkRendered = stride(from: 0, to: pixels.count, by: 4).contains { index in
+            pixels[index] > 220 && pixels[index + 1] < 50 && pixels[index + 2] < 50 && pixels[index + 3] > 220
+        }
+        try verify(redArtworkRendered, "Spaces PDF export must contain visible imported image pixels")
+        var invalidArtwork = rasterArtwork; invalidArtwork.artworkData = Data("not png".utf8)
+        try verify(!invalidArtwork.isValidArtwork, "Invalid embedded artwork must not pass project validation")
+        let corruptArtworkFile = root.appendingPathComponent("broken.png")
+        try Data("not a bitmap".utf8).write(to: corruptArtworkFile)
+        do { _ = try SpacesArtworkImport.load(corruptArtworkFile); try verify(false, "Damaged artwork was accepted") }
+        catch SpacesArtworkImportError.cannotRender { }
         var outlined = shape
         outlined.strokeColor = "32547A"; outlined.strokeOpacity = 0.75; outlined.strokeWidth = 5
         let outlinedRoundTrip = try JSONDecoder().decode(ImportedLayer.self, from: JSONEncoder().encode(outlined))

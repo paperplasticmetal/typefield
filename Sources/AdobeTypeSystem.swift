@@ -162,9 +162,10 @@ enum AdobeTypeSystemExporter {
             guard direction.isValid else { throw ExportError.invalidCanvas(direction.name) }
             let plan = CanvasPlan(direction: direction)
             guard plan.size.width.isFinite, plan.size.height.isFinite, plan.size.width > 0, plan.size.height > 0 else { throw ExportError.invalidCanvas(direction.name) }
-            totalItems += plan.elements.count
+            let exportElements = plan.elements.filter { $0.image == nil }
+            totalItems += exportElements.count
             var items: [Item] = []
-            for (itemIndex, element) in plan.elements.enumerated() {
+            for (itemIndex, element) in exportElements.enumerated() {
                 let values = [element.rect.minX, element.rect.minY, element.rect.width, element.rect.height, element.radius]
                 guard values.allSatisfy(\.isFinite), element.rect.width > 0, element.rect.height > 0 else { throw ExportError.invalidCanvas(direction.name) }
                 let section = plan.sections.first { $0.id == element.sectionID }?.title ?? "Canvas"
@@ -237,14 +238,18 @@ enum AdobeTypeSystemExporter {
                     ))
                 }
             }
-            let sourceWarnings = Array(Set(direction.importWarnings ?? [])).sorted()
-            sourceWarnings.forEach { collectedWarnings.insert($0) }
+            var sourceWarnings = Set(direction.importWarnings ?? [])
+            if exportElements.count != plan.elements.count {
+                sourceWarnings.insert("Spaces image artwork is omitted from editable Adobe builders. Use Preview PDF for a visual handoff.")
+            }
+            let sortedSourceWarnings = sourceWarnings.sorted()
+            sortedSourceWarnings.forEach { collectedWarnings.insert($0) }
             let fallbackName = "Canvas \(canvasIndex + 1)"
             canvases.append(Canvas(
                 name: direction.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallbackName : direction.name,
                 sourceKind: direction.canvasDisplayName,
                 width: rounded(plan.size.width), height: rounded(plan.size.height), paper: rgba(plan.paper),
-                sourceWarnings: sourceWarnings, items: items
+                sourceWarnings: sortedSourceWarnings, items: items
             ))
         }
         guard totalItems <= 50_000, totalTextBytes <= 5_000_000 else { throw ExportError.tooMuchContent }

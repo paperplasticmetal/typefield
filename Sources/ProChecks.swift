@@ -105,6 +105,52 @@ enum ProChecks {
         try aliasAccess.remember(URL(fileURLWithPath: alternateSpelling))
         let restoredBookmarkAlias = try FolderAccess(directory: aliasAccessRoot, sandboxed: false).restore(alternateSpelling)
         precondition(restoredBookmarkAlias == alternateSpelling, "Relaunch changed the watched-folder path through a system alias")
+        let testHome = root.appendingPathComponent("isolated-home")
+        let protectedFonts = testHome.appendingPathComponent("Desktop/fonts")
+        try FileManager.default.createDirectory(at: protectedFonts, withIntermediateDirectories: true)
+        let protectedAccessRoot = root.appendingPathComponent("protected-access")
+        let protectedAccess = FolderAccess(directory: protectedAccessRoot, sandboxed: false, protectedHome: testHome)
+        precondition(protectedAccess.needsExplicitResume(protectedFonts.path), "Protected watch should pause before any automatic folder probe")
+        precondition(protectedAccess.needsExplicitResume(testHome.appendingPathComponent("Downloads/fonts").path), "Downloads watch should pause")
+        precondition(protectedAccess.needsExplicitResume(testHome.appendingPathComponent("Documents/fonts").path), "Documents watch should pause")
+        precondition(protectedAccess.needsExplicitResume(testHome.path), "A home-directory watch can descend into protected folders")
+        precondition(protectedAccess.needsExplicitResume(testHome.deletingLastPathComponent().path), "An ancestor watch can descend into protected folders")
+        do {
+            _ = try protectedAccess.restore(testHome.path)
+            preconditionFailure("A home-directory watch was probed during automatic restore")
+        } catch { precondition(FolderAccess.isPaused(error), "A home-directory watch did not return its paused status") }
+        do {
+            _ = try protectedAccess.restore(testHome.appendingPathComponent("Downloads/missing").path)
+            preconditionFailure("Missing protected watch was probed during automatic restore")
+        } catch { precondition(FolderAccess.isPaused(error), "Protected watch was probed before the user resumed it") }
+        do {
+            _ = try protectedAccess.restore(protectedFonts.path)
+            preconditionFailure("Protected watch resumed without an explicit folder choice")
+        } catch { precondition(FolderAccess.isPaused(error), "Protected watch did not return its paused status") }
+        try protectedAccess.remember(protectedFonts)
+        let resumedProtectedPath = try protectedAccess.restore(protectedFonts.path)
+        precondition(resumedProtectedPath == protectedFonts.path, "Explicitly chosen protected folder did not resume")
+        protectedAccess.pauseWatchAfterError(protectedFonts.path)
+        do {
+            _ = try protectedAccess.restore(protectedFonts.path)
+            preconditionFailure("A protected watch kept reading after a poll access error")
+        } catch { precondition(FolderAccess.isPaused(error), "A failed protected watch did not pause") }
+        let missingProtectedRoot = testHome.appendingPathComponent("Downloads/missing")
+        let failedPoll = FontFolderSnapshot.read([missingProtectedRoot.path], pauseOnError: [missingProtectedRoot.path])
+        precondition(failedPoll.failedProtectedRoots == [missingProtectedRoot.path], "A failed protected poll was not marked for suspension")
+        try protectedAccess.remember(protectedFonts)
+        let restoredAfterPollPause = try protectedAccess.restore(protectedFonts.path)
+        precondition(restoredAfterPollPause == protectedFonts.path, "Explicitly choosing a protected folder did not clear its poll pause")
+        let nextLaunch = FolderAccess(directory: protectedAccessRoot, sandboxed: false, protectedHome: testHome)
+        do {
+            _ = try nextLaunch.restore(protectedFonts.path)
+            preconditionFailure("A new launch automatically probed a protected watched folder")
+        } catch { precondition(FolderAccess.isPaused(error), "Relaunch did not pause protected watch") }
+        let sandboxAccess = FolderAccess(directory: root.appendingPathComponent("sandbox-access"), sandboxed: true, protectedHome: testHome)
+        do {
+            _ = try sandboxAccess.restore(testHome.appendingPathComponent("Downloads/missing").path)
+            preconditionFailure("A protected sandbox watch without a bookmark was accepted")
+        } catch { precondition(!FolderAccess.isPaused(error), "Sandbox bookmark recovery was incorrectly paused") }
         var watched = SavedLibrary()
         watched.folders = [external.path]
         watched.autoActivateFolders = [external.path]
