@@ -146,7 +146,14 @@ final class ActivationManager: ObservableObject {
         let scope = CTFontManagerGetScopeForURL(url as CFURL)
         guard !url.path.hasPrefix("/System/"), !url.path.hasPrefix("/Library/Apple/"), scope != .persistent, scope != .session else { return "Already available to other apps. No activation changed." }
         let restore = scope == .process
-        if restore { CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil) }
+        if restore {
+            var processError: Unmanaged<CFError>?
+            let removedProcessScope = CTFontManagerUnregisterFontsForURL(url as CFURL, .process, &processError)
+            let retainedProcessError = processError?.takeRetainedValue()
+            if !removedProcessScope && CTFontManagerGetScopeForURL(url as CFURL) == .process {
+                throw retainedProcessError ?? NSError(domain: "FontShelf", code: 10, userInfo: [NSLocalizedDescriptionKey: "The font is still registered for Typefield, so temporary activation was not started."])
+            }
+        }
         var error: Unmanaged<CFError>?
         guard CTFontManagerRegisterFontsForURL(url as CFURL, .session, &error) else {
             if restore { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
@@ -154,18 +161,37 @@ final class ActivationManager: ObservableObject {
         }
         records.append(ActivationRecord(path: url.path, restoreProcess: restore))
         do { try persist() } catch {
-            CTFontManagerUnregisterFontsForURL(url as CFURL, .session, nil)
+            let persistenceError = error
+            var unregisterError: Unmanaged<CFError>?
+            let removedSessionScope = CTFontManagerUnregisterFontsForURL(url as CFURL, .session, &unregisterError)
+            let retainedUnregisterError = unregisterError?.takeRetainedValue()
+            let confirmedNotRegistered = retainedUnregisterError.map {
+                CFEqual(CFErrorGetDomain($0), kCTFontManagerErrorDomain) && CFErrorGetCode($0) == CTFontManagerError.notRegistered.rawValue
+            } ?? false
+            if (!removedSessionScope && !confirmedNotRegistered) || CTFontManagerGetScopeForURL(url as CFURL) == .session {
+                // Keep the in-memory owner and try again so termination cleanup can retry.
+                try? persist()
+                throw NSError(domain: "FontShelf", code: 13, userInfo: [NSLocalizedDescriptionKey: "The activation history could not be saved, and macOS did not confirm removal of the session font. Its activation record was retained for cleanup.", NSUnderlyingErrorKey: (retainedUnregisterError as Error?) ?? persistenceError])
+            }
             records.removeAll { $0.path == url.path }
             if restore { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
-            throw error
+            throw persistenceError
         }
         return "Temporarily available to other apps until Typefield quits or you log out."
     }
     func deactivate(_ url: URL, restore: Bool = true) throws {
         guard let record = records.first(where: { $0.path == url.path }) else { return }
         var error: Unmanaged<CFError>?
-        if CTFontManagerGetScopeForURL(url as CFURL) == .session && !CTFontManagerUnregisterFontsForURL(url as CFURL, .session, &error) {
-            throw error?.takeRetainedValue() as Error? ?? NSError(domain: "FontShelf", code: 2)
+        let removedSessionScope = CTFontManagerUnregisterFontsForURL(url as CFURL, .session, &error)
+        let unregisterError = error?.takeRetainedValue()
+        let confirmedNotRegistered = unregisterError.map {
+            CFEqual(CFErrorGetDomain($0), kCTFontManagerErrorDomain) && CFErrorGetCode($0) == CTFontManagerError.notRegistered.rawValue
+        } ?? false
+        if !removedSessionScope && !confirmedNotRegistered {
+            throw unregisterError as Error? ?? NSError(domain: "FontShelf", code: 11, userInfo: [NSLocalizedDescriptionKey: "macOS could not confirm removal of the session registration. Its activation record was kept so it can be retried."])
+        }
+        if CTFontManagerGetScopeForURL(url as CFURL) == .session {
+            throw NSError(domain: "FontShelf", code: 12, userInfo: [NSLocalizedDescriptionKey: "macOS still reports this font as active for the session. Its activation record was kept so it can be retried."])
         }
         let previous = records
         records.removeAll { $0.path == url.path }

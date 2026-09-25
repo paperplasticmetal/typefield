@@ -56,7 +56,13 @@ enum StudioChecks {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let target = root.appendingPathComponent(source.lastPathComponent)
         let manager = ActivationManager(journal: root.appendingPathComponent("activation.json"))
-        defer { manager.clear(restore: false); CTFontManagerUnregisterFontsForURL(target as CFURL, .process, nil); try? FileManager.default.removeItem(at: root) }
+        defer {
+            if !FileManager.default.fileExists(atPath: target.path) { try? FileManager.default.copyItem(at: source, to: target) }
+            manager.clear(restore: false)
+            CTFontManagerUnregisterFontsForURL(target as CFURL, .session, nil)
+            CTFontManagerUnregisterFontsForURL(target as CFURL, .process, nil)
+            try? FileManager.default.removeItem(at: root)
+        }
         func check(_ condition: Bool, _ message: String) throws { if !condition { throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) } }
         let watcher = FolderWatcher()
         var initialized = false, changes = 0
@@ -74,6 +80,8 @@ enum StudioChecks {
         try check(count == 1 && CTFontManagerGetScopeForURL(target as CFURL) == .process, "Font did not register for preview")
         _ = try manager.activate(target)
         try check(manager.owns(target) && CTFontManagerGetScopeForURL(target as CFURL) == .session, "Session activation failed")
+        let overlappingProcessScope = CTFontManagerRegisterFontsForURL(target as CFURL, .process, nil)
+        let processWinsScopeLookup = overlappingProcessScope && CTFontManagerGetScopeForURL(target as CFURL) == .process
         let descriptor = (CTFontManagerCreateFontDescriptorsFromURL(target as CFURL) as? [CTFontDescriptor])!.first!
         let name = CTFontDescriptorCopyAttribute(descriptor, kCTFontNameAttribute) as! String
         let process = Process(); process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]); process.arguments = ["--font-available", name]
@@ -81,11 +89,19 @@ enum StudioChecks {
         try check(process.terminationStatus == 0, "Session font was not visible to a separate process")
         try manager.deactivate(target)
         try check(!manager.owns(target) && CTFontManagerGetScopeForURL(target as CFURL) == .process, "Deactivation did not restore preview scope")
+        if overlappingProcessScope {
+            CTFontManagerUnregisterFontsForURL(target as CFURL, .process, nil)
+            try check(CTFontManagerGetScopeForURL(target as CFURL) != .session, "Deactivation left a hidden session registration after overlapping process registration")
+            print("PASS: overlapping process registration during session activation (scope lookup preferred process: \(processWinsScopeLookup)).")
+        } else {
+            print("SKIP: CoreText rejected overlapping process registration during session activation; dual-scope regression path was not exercised.")
+        }
         let prior = changes
         try FileManager.default.removeItem(at: target)
         try check(wait { changes > prior }, "Watcher did not detect deletion")
         FontCatalog.reconcileFolders([root.path])
         try check(FontCatalog.registeredFiles[target.path] == nil, "Removed font remained registered")
+        try check(!FontCatalog.scan().flatMap(\.faces).contains { $0.name == name }, "Removed font remained in the fresh catalog")
         withExtendedLifetime(watcher) {}
         print("PASS: live recursive watcher, original-file preview, temporary activation visible to a separate process, deactivation and removal reconciliation.")
     }

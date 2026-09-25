@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.48.2 — 2026-09-25
+
+- Fixed temporary font deactivation when CoreText reports a process registration while the same file also has a session registration. Deactivation now attempts the owned session-scope cleanup directly and keeps its activation record if CoreText cannot confirm cleanup.
+- Activation now checks that the process registration was removed before registering the file for the session. Failed activation-history writes retain cleanup ownership if CoreText cannot confirm rollback.
+
 ## 0.48.1 — 2026-09-25
 
 - Improved Spaces checkpoint save feedback and corrected imported Type system PDF behavior.
