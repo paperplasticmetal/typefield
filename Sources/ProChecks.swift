@@ -13,6 +13,18 @@ enum ProChecks {
         library.acceptCatalog([])
         precondition(library.families.isEmpty, "Empty refresh retained stale fonts")
         library.acceptCatalog(catalog)
+        if catalog.count > 1 {
+            let retainedFamily = catalog[0]
+            let removedFamily = catalog[1]
+            library.comparison = [retainedFamily.name, removedFamily.name]
+            library.selectedFamilies = [retainedFamily.name, removedFamily.name]
+            library.acceptCatalog([retainedFamily])
+            precondition(library.comparison == [retainedFamily.name] && library.compared.map(\.name) == [retainedFamily.name], "Catalog refresh retained a stale shortlist entry or removed a valid one")
+            precondition(library.selectedFamilies == [retainedFamily.name], "Catalog refresh retained a selection for a removed family")
+            library.acceptCatalog(catalog)
+            library.comparison = []
+            library.selectedFamilies = []
+        }
         library.search = "Helvetica"
         library.advanced.slant = "Roman"
         precondition(library.saveCurrentSearch(as: "Roman Helvetica"))
@@ -53,6 +65,32 @@ enum ProChecks {
         let previousTags = broken.pro.tags
         precondition(!broken.mergeTagBackup(["imported": ["tag"]]), "Unreadable pro settings permitted a tag import")
         precondition(broken.pro.tags == previousTags, "Failed tag import was not rolled back")
+        let blockedInspectorURL = root.appendingPathComponent("blocked-inspector/library.json")
+        let blockedInspectorProURL = blockedInspectorURL.deletingLastPathComponent().appendingPathComponent("pro-library.json")
+        try FileManager.default.createDirectory(at: blockedInspectorProURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try corrupt.write(to: blockedInspectorProURL)
+        let blockedInspector = Library(storageURL: blockedInspectorURL)
+        let blockedBefore = blockedInspector.pro
+        precondition(!blockedInspector.updatePro { state in
+            state.axes["Fixture-Regular"] = [2003265652: 500]
+            state.features["Fixture-Regular"] = ["liga": 1]
+            state.mainPreviews["Fixture"] = "Fixture-Regular"
+        }, "Inspector pro changes succeeded with unreadable settings")
+        precondition(blockedInspector.pro.axes == blockedBefore.axes && blockedInspector.pro.features == blockedBefore.features && blockedInspector.pro.mainPreviews == blockedBefore.mainPreviews, "Unreadable Inspector settings left axis, feature, or main-preview changes in memory")
+        let blockedInspectorData = try Data(contentsOf: blockedInspectorProURL)
+        precondition(blockedInspectorData == corrupt && !blockedInspector.message.isEmpty, "Unreadable Inspector settings were overwritten or did not report the error")
+        let diskFailure = Library(storageURL: root.appendingPathComponent("inspector-write-failure/library.json"))
+        diskFailure.pro.tags["Fixture-Regular"] = ["baseline"]
+        let diskBaseline = diskFailure.pro
+        try FileManager.default.createDirectory(at: diskFailure.proURL, withIntermediateDirectories: true)
+        precondition(!diskFailure.updatePro { state in
+            state.axes["Fixture-Regular"] = [2003265652: 650]
+            state.features["Fixture-Regular"] = ["kern": 1]
+            state.mainPreviews["Fixture"] = "Fixture-Regular"
+        }, "Inspector pro changes succeeded when the settings destination was obstructed")
+        precondition(diskFailure.pro.axes == diskBaseline.axes && diskFailure.pro.features == diskBaseline.features && diskFailure.pro.mainPreviews == diskBaseline.mainPreviews && diskFailure.pro.tags == diskBaseline.tags, "Inspector write failure did not restore the previous pro settings")
+        let obstructionValues = try diskFailure.proURL.resourceValues(forKeys: [.isDirectoryKey])
+        precondition(!diskFailure.message.isEmpty && obstructionValues.isDirectory == true, "Inspector write failure did not report the obstruction or changed its destination")
         let tagFixture = Library(storageURL: root.appendingPathComponent("tag-apply/library.json"))
         tagFixture.acceptCatalog(catalog)
         let taggedFace = catalog[0].representative.name

@@ -230,9 +230,18 @@ final class Library: ObservableObject {
         do { try FileManager.default.createDirectory(at: proURL.deletingLastPathComponent(), withIntermediateDirectories: true); try LibraryBackupTools.preserve(proURL); try JSONEncoder().encode(pro).write(to: proURL, options: .atomic); return true }
         catch { message = "Could not save settings: " + error.localizedDescription; return false }
     }
+    @discardableResult func updatePro(_ change: (inout ProState) -> Void) -> Bool {
+        let previous = pro
+        change(&pro)
+        guard savePro() else { pro = previous; return false }
+        return true
+    }
     func acceptCatalog(_ catalog: [Family]) {
         originalFamilies = catalog
         regroup()
+        let availableNames = Set(families.map(\.name))
+        comparison.removeAll { !availableNames.contains($0) }
+        selectedFamilies.formIntersection(availableNames)
         if let folder = pendingImportFolder { pendingImportFolder = nil; recordImport(folder: folder) }
     }
     func recordImport(folder: String) {
