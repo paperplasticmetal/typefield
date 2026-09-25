@@ -10,6 +10,44 @@ enum FontLabVectorChecks {
     static func run() throws {
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
+        let focusViewport=CGSize(width:600,height:520)
+        let contourBounds=CGRect(x:0.1,y:0.18,width:0.8,height:0.6)
+        guard let contourFocus=FontLabVectorEditor.focusTransform(selectionBounds:contourBounds,viewport:focusViewport,designWidth:glyph.resolvedDesignWidth) else {
+            throw FontLabStore.SelfTestError.failed("Focus Selection rejected a valid contour.")
+        }
+        let focusEm=max(80,min((focusViewport.width-90)/glyph.resolvedDesignWidth,focusViewport.height-75))*contourFocus.zoom
+        let focusLeft=(focusViewport.width-focusEm*glyph.resolvedDesignWidth)/2+contourFocus.pan.x+contourBounds.minX*focusEm*glyph.resolvedDesignWidth
+        let focusRight=(focusViewport.width-focusEm*glyph.resolvedDesignWidth)/2+contourFocus.pan.x+contourBounds.maxX*focusEm*glyph.resolvedDesignWidth
+        let focusBottom=(focusViewport.height-focusEm)/2+contourFocus.pan.y+contourBounds.minY*focusEm
+        let focusTop=(focusViewport.height-focusEm)/2+contourFocus.pan.y+contourBounds.maxY*focusEm
+        try check(focusLeft>=31 && focusRight<=focusViewport.width-31 && focusBottom>=31 && focusTop<=focusViewport.height-31,"Focus Selection did not frame contour bounds with padding.")
+        let overshootPath = FontLabVectorPath(nodes: [
+            FontLabVectorNode(point: FontLabPoint(x: 0.3, y: 0.35), outgoing: FontLabPoint(x: -1.5, y: -1.0)),
+            FontLabVectorNode(point: FontLabPoint(x: 0.7, y: 0.65), incoming: FontLabPoint(x: 2.5, y: 2.0))
+        ])
+        let overshootGlyph = FontLabGlyph(character: "C", strokes: [FontLabStroke(vectorPaths: [overshootPath])], contourDesignWidth: 0.62)
+        let overshootEditor = FontLabVectorEditor(glyph: overshootGlyph, metrics: metrics)
+        overshootEditor.selection = [overshootPath.nodes[0].id]
+        let overshootBounds = overshootEditor.selectedFocusBounds
+        guard let overshootFocus = FontLabVectorEditor.focusTransform(selectionBounds: overshootBounds,
+                                                                       viewport: focusViewport,
+                                                                       designWidth: overshootGlyph.resolvedDesignWidth) else {
+            throw FontLabStore.SelfTestError.failed("Focus Selection rejected a valid overshooting curve.")
+        }
+        let overshootEm = max(80, min((focusViewport.width - 90) / overshootGlyph.resolvedDesignWidth, focusViewport.height - 75)) * overshootFocus.zoom
+        let overshootLeft = (focusViewport.width - overshootEm * overshootGlyph.resolvedDesignWidth) / 2 + overshootFocus.pan.x + overshootBounds.minX * overshootEm * overshootGlyph.resolvedDesignWidth
+        let overshootRight = (focusViewport.width - overshootEm * overshootGlyph.resolvedDesignWidth) / 2 + overshootFocus.pan.x + overshootBounds.maxX * overshootEm * overshootGlyph.resolvedDesignWidth
+        let overshootBottom = (focusViewport.height - overshootEm) / 2 + overshootFocus.pan.y + overshootBounds.minY * overshootEm
+        let overshootTop = (focusViewport.height - overshootEm) / 2 + overshootFocus.pan.y + overshootBounds.maxY * overshootEm
+        try check(overshootEditor.selectedBounds.minX == 0.3 && overshootBounds.minX == -1.5 && overshootBounds.maxX == 2.5
+                  && overshootFocus.zoom < 0.5 && overshootLeft >= 31 && overshootRight <= focusViewport.width - 31
+                  && overshootBottom >= 31 && overshootTop <= focusViewport.height - 31,
+                  "Focus Selection must include selected Bézier control handles and keep their overshooting curves inside the viewport")
+        let nodeFocus=FontLabVectorEditor.focusTransform(selectionBounds:CGRect(x:0.96,y:0.94,width:0,height:0),viewport:focusViewport,designWidth:glyph.resolvedDesignWidth)
+        let emptyFocus=FontLabVectorEditor.focusTransform(selectionBounds:.null,viewport:focusViewport,designWidth:glyph.resolvedDesignWidth)
+        let emptyRejected: Bool
+        if case .none = emptyFocus { emptyRejected=true } else { emptyRejected=false }
+        try check((nodeFocus?.zoom ?? 0)>0 && emptyRejected,"Focus Selection did not handle a single node or empty selection.")
         let objectEditor=FontLabVectorEditor(glyph:glyph,metrics:metrics)
         objectEditor.selectObject(1,adding:false)
         try check(objectEditor.selection.count == 8,"Object selection failed to include outer contour and counter")

@@ -196,8 +196,34 @@ enum StudioChecks {
         visible = CanvasVisibility.selecting(canvasB, from: canvasA, shown: visible)
         visible = CanvasVisibility.selecting(canvasC, from: canvasB, shown: visible)
         try verify(visible == [canvasA, canvasB, canvasC], "Selecting another canvas must preserve the visible comparison set")
+        try verify(CanvasBoardLayout.frameControlsAreActive(canvasID: canvasC, selectedDirectionID: canvasC, frameCanvasID: nil)
+                   && !CanvasBoardLayout.frameControlsAreActive(canvasID: canvasA, selectedDirectionID: canvasC, frameCanvasID: nil)
+                   && CanvasBoardLayout.frameControlsAreActive(canvasID: canvasA, selectedDirectionID: canvasC, frameCanvasID: canvasA),
+                   "Normal canvas selection must show resize handles, and explicit frame selection must remain active")
         visible.remove(canvasA)
         try verify(CanvasVisibility.prune(visible, valid: [canvasA, canvasC], selected: canvasC) == [canvasC] && CanvasVisibility.solo(canvasB) == [canvasB], "Canvas hide, prune and solo state")
+        var tallLegacyImport = TypeDirection(name: "Tall legacy import")
+        tallLegacyImport.canvas = .imported
+        tallLegacyImport.width = 320
+        tallLegacyImport.importedLayout = ImportedLayout(width: 320, height: 20_000,
+            layers: [ImportedLayer(name: "Lower text", x: 20, y: 15_000, width: 280, height: 500, color: "222222",
+                                   style: TypeStyle(fontName: "Helvetica", size: 28, text: "Legacy lower content"))])
+        let tallLegacyPlan = CanvasPlan(direction: tallLegacyImport)
+        try verify(tallLegacyPlan.size.height >= 20_000 && tallLegacyPlan.artboardSize.height >= 20_000
+                   && tallLegacyPlan.size == tallLegacyPlan.artboardSize
+                   && (tallLegacyPlan.elements.first { $0.text != nil }?.rect.minY ?? 0) >= 15_000,
+                   "Untouched legacy imported text below 10k must retain its full preview and export artboard bounds")
+        let tallLegacyView = CanvasNativeView(plan: tallLegacyPlan)
+        let tallLegacyPDF = tallLegacyView.dataWithPDF(inside: tallLegacyView.bounds)
+        guard let tallLegacyProvider = CGDataProvider(data: tallLegacyPDF as CFData),
+              let tallLegacyDocument = CGPDFDocument(tallLegacyProvider),
+              let tallLegacyPage = tallLegacyDocument.page(at: 1) else {
+            throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tall legacy imported canvas PDF could not be read"])
+        }
+        let tallLegacyMediaBox = tallLegacyPage.getBoxRect(.mediaBox)
+        try verify(tallLegacyMediaBox.height >= 20_000
+                   && (tallLegacyPlan.elements.first { $0.text != nil }?.rect.maxY ?? .greatestFiniteMagnitude) <= tallLegacyMediaBox.maxY,
+                   "Legacy imported lower text must remain within the full-height PDF media box")
         let sidebarSuite = "FontShelf-sidebar-check-" + UUID().uuidString
         let sidebarDefaults = UserDefaults(suiteName: sidebarSuite)!
         defer { sidebarDefaults.removePersistentDomain(forName: sidebarSuite) }
@@ -578,6 +604,7 @@ enum StudioChecks {
         let legacyArrangement = try JSONDecoder().decode(TypeDirection.self, from: JSONSerialization.data(withJSONObject: legacyArrangementJSON))
         try verify(legacyArrangement.boardPosition == nil && legacyArrangement.canvasScale == nil && legacyArrangement.isValid,
                    "Older canvases without placement or scale must retain their original layout")
+        try verify(legacyArrangement.canvasHeight == nil, "Older canvases without an artboard height must retain generated content bounds")
         let startPosition = CanvasBoardPosition(x: 1000, y: 1000)
         let baseArtboard = CanvasPlan(direction: arrangementA).artboardSize
         let topLeftResize = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
@@ -590,6 +617,176 @@ enum StudioChecks {
                                                            corner: .bottomRight, by: CGSize(width: 100_000, height: 100_000), zoom: 1)
         try verify(bottomRightResize.scale == arrangementA.maximumCanvasScale && bottomRightResize.position == startPosition,
                    "Corner resize must respect export-safe scale bounds")
+        let rightEdgeResize = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
+                                                        edge: .right, by: CGSize(width: 120, height: 0), zoom: 0.5)
+        try verify(abs(rightEdgeResize.width - (arrangementA.width + 240)) < 0.001
+                   && abs((rightEdgeResize.height ?? 0) - Double(baseArtboard.height)) < 0.001
+                   && rightEdgeResize.position == startPosition,
+                   "Right edge resize must change width in zoom-adjusted units while retaining rendered height and left/top anchoring")
+        let leftEdgeResize = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
+                                                       edge: .left, by: CGSize(width: -40, height: 0), zoom: 1)
+        let bottomEdgeResize = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
+                                                         edge: .bottom, by: CGSize(width: 0, height: 60), zoom: 1)
+        try verify(leftEdgeResize.width >= arrangementA.width + 40
+                   && abs(leftEdgeResize.position.x - (startPosition.x - (leftEdgeResize.width - arrangementA.width))) < 0.001
+                   && abs((leftEdgeResize.height ?? 0) - Double(baseArtboard.height)) < 0.001
+                   && (bottomEdgeResize.height ?? 0) >= baseArtboard.height + 60
+                   && bottomEdgeResize.width == arrangementA.width && bottomEdgeResize.position == startPosition,
+                   "All side handles must change one dimension and keep text-fit minimums")
+        let topEdgeResize = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
+                                                      edge: .top, by: CGSize(width: 0, height: -80), zoom: 0.5)
+        try verify(abs((topEdgeResize.height ?? 0) - (baseArtboard.height + 160)) < 0.001
+                   && abs(topEdgeResize.position.y - (startPosition.y - 160)) < 0.001
+                   && topEdgeResize.width == arrangementA.width,
+                   "Top edge resize must change only artboard height while anchoring the opposite edge")
+        var horizontalOnlyCanvas = arrangementA
+        horizontalOnlyCanvas.width = 960
+        horizontalOnlyCanvas.canvasHeight = 1_316
+        let horizontalOnlyResize = CanvasBoardLayout.resized(canvas: horizontalOnlyCanvas,
+            artboardSize: CanvasPlan(direction: horizontalOnlyCanvas).artboardSize, position: startPosition,
+            edge: .right, by: CGSize(width: -63, height: 0), zoom: 1)
+        let verticalOnlyResize = CanvasBoardLayout.resized(canvas: horizontalOnlyCanvas,
+            artboardSize: CanvasPlan(direction: horizontalOnlyCanvas).artboardSize, position: startPosition,
+            edge: .bottom, by: CGSize(width: 0, height: -63), zoom: 1)
+        try verify(abs(horizontalOnlyResize.width - 897) < 0.001
+                   && (horizontalOnlyResize.height ?? 0) >= 1_316
+                   && horizontalOnlyResize.position == startPosition
+                   && verticalOnlyResize.width == 960 && verticalOnlyResize.position == startPosition,
+                   "Horizontal edge drags must preserve a 1,316pt height while vertical drags preserve the 960pt width")
+        let originalHeightPlan = CanvasPlan(direction: arrangementA)
+        let minimumTextSize = CanvasBoardLayout.textContentBounds(in: originalHeightPlan)
+        var heightLimitedCanvas = arrangementA
+        heightLimitedCanvas.canvasHeight = Double(minimumTextSize.height)
+        let boundedHeightResize = CanvasBoardLayout.resized(canvas: heightLimitedCanvas, artboardSize: CGSize(width: 960, height: CGFloat(minimumTextSize.height)), position: startPosition,
+                                                            edge: .bottom, by: CGSize(width: 0, height: -10_000), zoom: 1)
+        try verify((boundedHeightResize.height ?? 0) >= Double(minimumTextSize.height),
+                   "Independent artboard height resize must retain all rendered text after an attempted shrink")
+        let leftWidthClamp = CanvasBoardLayout.resized(canvas: arrangementA, artboardSize: baseArtboard, position: startPosition,
+                                                       edge: .left, by: CGSize(width: -100_000, height: 0), zoom: 1)
+        try verify(leftWidthClamp.width == 1_600 && abs(leftWidthClamp.position.x - (startPosition.x - (1_600 - arrangementA.width))) < 0.001,
+                   "Left edge resize must keep the opposite side fixed after width clamping")
+        let legacyHeightJSON = try JSONSerialization.data(withJSONObject: legacyArrangementJSON)
+        let decodedLegacyHeight = try JSONDecoder().decode(TypeDirection.self, from: legacyHeightJSON)
+        try verify(decodedLegacyHeight.canvasHeight == nil,
+                   "Legacy canvas JSON without canvasHeight must decode without migration")
+        let heightLimitedPlan = CanvasPlan(direction: heightLimitedCanvas)
+        let heightLimitedText = heightLimitedPlan.elements.first { $0.text != nil }!
+        let originalHeightText = originalHeightPlan.elements.first { $0.textID == heightLimitedText.textID }!
+        try verify(Double(heightLimitedPlan.artboardSize.height) == minimumTextSize.height && Double(heightLimitedPlan.size.height) == minimumTextSize.height
+                   && heightLimitedText.rect == originalHeightText.rect
+                   && heightLimitedText.text?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == originalHeightText.text?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
+                   "An independent height override must preserve text geometry while keeping a safe text margin")
+        let persistedHeightCanvas = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(heightLimitedCanvas))
+        try verify(persistedHeightCanvas.canvasHeight == Double(minimumTextSize.height) && persistedHeightCanvas.isValid,
+                   "Independent artboard height must persist and remain valid")
+        var resizedImported = TypeDirection(name: "Imported frame")
+        resizedImported.canvas = .imported; resizedImported.width = 100
+        resizedImported.importedLayout = ImportedLayout(width: 100, height: 100,
+            layers: [ImportedLayer(name: "Overflow", x: 0, y: 0, width: 150, height: 140, color: "222222")])
+        let legacyOverflowCanvas = resizedImported
+        let legacyExpandedImported = CanvasPlan(direction: resizedImported)
+        resizedImported.canvasWidth = 100; resizedImported.canvasHeight = 90
+        let explicitlyBoundImported = CanvasPlan(direction: resizedImported)
+        try verify(legacyExpandedImported.artboardSize == CGSize(width: 150, height: 140)
+                   && explicitlyBoundImported.artboardSize == CGSize(width: 100, height: 90),
+                   "Legacy imported overflow must remain visible until the user saves explicit artboard bounds")
+        let noMotionImportedResize = CanvasBoardLayout.resized(canvas: legacyOverflowCanvas, artboardSize: legacyExpandedImported.artboardSize,
+                                                               position: startPosition, edge: .right, by: .zero, zoom: 1)
+        try verify(noMotionImportedResize.importedWidth == 150,
+                   "The first imported edge gesture must start from the rendered legacy width without jumping")
+        let verticalLegacyImportedResize = CanvasBoardLayout.resized(canvas: legacyOverflowCanvas,
+            artboardSize: legacyExpandedImported.artboardSize, position: startPosition,
+            edge: .bottom, by: CGSize(width: 0, height: 20), zoom: 1)
+        try verify(verticalLegacyImportedResize.importedWidth == 150 && verticalLegacyImportedResize.height == 160,
+                   "Vertical resize must retain an imported legacy canvas's already-expanded rendered width")
+        let persistedImportedFrame = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(resizedImported))
+        try verify(persistedImportedFrame.canvasWidth == 100 && persistedImportedFrame.canvasHeight == 90,
+                   "Independent imported artboard dimensions must survive JSON round-trip")
+        var boundedExportBoard = TypeBoard(); boundedExportBoard.directions = [heightLimitedCanvas]
+        let boundedFigma = (FigmaLayoutExporter.payload(board: boundedExportBoard)["frames"] as! [[String: Any]])[0]
+        try verify((boundedFigma["width"] as? CGFloat) == 960 && (boundedFigma["height"] as? CGFloat) == CGFloat(minimumTextSize.height),
+                   "Figma export must preserve independently resized artboard dimensions")
+        let boundedAdobe = try AdobeTypeSystemExporter.script(directions: [heightLimitedCanvas], title: "Bounded", target: .illustrator)
+        try verify(boundedAdobe.contains("\"width\":960") && boundedAdobe.contains("\"height\":\(Int(minimumTextSize.height))"),
+                   "Adobe export must preserve independently resized artboard dimensions")
+        let boundedView = CanvasNativeView(plan: heightLimitedPlan)
+        let boundedPDF = boundedView.dataWithPDF(inside: boundedView.bounds)
+        guard let boundedProvider = CGDataProvider(data: boundedPDF as CFData),
+              let boundedDocument = CGPDFDocument(boundedProvider), let boundedPage = boundedDocument.page(at: 1) else {
+            throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Resized canvas PDF could not be read"])
+        }
+        let boundedBox = boundedPage.getBoxRect(.mediaBox)
+        try verify(Int(boundedBox.width) == 960 && Int(boundedBox.height) == Int(minimumTextSize.height),
+                   "Preview PDF must use independently resized artboard dimensions")
+        var scaledHeightCanvas = heightLimitedCanvas
+        scaledHeightCanvas.canvasScale = 2
+        try verify(Double(CanvasPlan(direction: scaledHeightCanvas).artboardSize.height) == minimumTextSize.height * 2,
+                   "Corner scaling must continue to scale an independently sized artboard uniformly")
+        var exportBoundCanvas = heightLimitedCanvas
+        exportBoundCanvas.canvasWidth = nil
+        exportBoundCanvas.canvasHeight = 10_000
+        try verify(exportBoundCanvas.maximumCanvasScale <= 1 && exportBoundCanvas.isValid,
+                   "The maximum corner scale must include an explicit artboard dimension in export safety bounds")
+        var positionedTextCanvas = TypeDirection(name: "Positioned text")
+        let positionedTextSource = CanvasPlan(direction: positionedTextCanvas).elements.first { $0.textID != nil }!
+        positionedTextCanvas.textPositions = [positionedTextSource.textID!: CanvasTextPosition(x: 900, y: 5_000)]
+        let positionedTextPlan = CanvasPlan(direction: positionedTextCanvas)
+        let positionedTextBounds = CanvasBoardLayout.textContentBounds(in: positionedTextPlan)
+        try verify(Double(positionedTextPlan.artboardSize.width) >= positionedTextBounds.width
+                   && Double(positionedTextPlan.artboardSize.height) >= positionedTextBounds.height
+                   && positionedTextPlan.elements.filter { $0.text != nil }.allSatisfy { $0.rect.minX >= 0 && $0.rect.maxX <= positionedTextPlan.artboardSize.width && $0.rect.maxY <= positionedTextPlan.artboardSize.height },
+                   "Saved custom text positions near the right and bottom edges must remain inside the board")
+        var longTokenCanvas = TypeDirection(name: "Long token")
+        longTokenCanvas.styles[TypeRole.display.rawValue]!.size = 160
+        longTokenCanvas.styles[TypeRole.display.rawValue]!.tracking = 12
+        longTokenCanvas.styles[TypeRole.display.rawValue]!.indent = 200
+        longTokenCanvas.styles[TypeRole.display.rawValue]!.alignment = .right
+        let longTokenSource = CanvasPlan(direction: longTokenCanvas).elements.first { $0.role == .display && $0.textID != nil }!
+        longTokenCanvas.textOverrides = [longTokenSource.textID!: String(repeating: "W", count: 32)]
+        let longTokenPlan = CanvasPlan(direction: longTokenCanvas)
+        let longTokenBounds = CanvasBoardLayout.textContentBounds(in: longTokenPlan)
+        let longTokenElement = longTokenPlan.elements.first { $0.textID == longTokenSource.textID }!
+        let unwrappedStorage = NSTextStorage(attributedString: longTokenElement.text!)
+        let unwrappedLayout = NSLayoutManager()
+        let unwrappedContainer = NSTextContainer(containerSize: CGSize(width: 100_000, height: 100_000))
+        unwrappedContainer.lineFragmentPadding = 0
+        unwrappedLayout.addTextContainer(unwrappedContainer); unwrappedStorage.addLayoutManager(unwrappedLayout)
+        unwrappedLayout.ensureLayout(for: unwrappedContainer)
+        let unwrappedWidth = Double(unwrappedLayout.usedRect(for: unwrappedContainer).width)
+        try verify(unwrappedWidth + 200 <= Double(longTokenElement.rect.width) + 0.5
+                   && Double(longTokenPlan.artboardSize.width) >= Double(longTokenElement.rect.maxX) + 12
+                   && longTokenElement.rect.maxX <= longTokenPlan.artboardSize.width
+                   && Double(longTokenPlan.artboardSize.height) >= longTokenBounds.height,
+                   "Indented right-aligned unbreakable text must get a drawable frame wide enough for the complete token and remain inside the artboard")
+        let verticalLongTokenResize = CanvasBoardLayout.resized(canvas: longTokenCanvas,
+            artboardSize: longTokenPlan.artboardSize, position: startPosition,
+            edge: .bottom, by: CGSize(width: 0, height: 20), zoom: 1)
+        try verify(verticalLongTokenResize.warning == nil && verticalLongTokenResize.width == longTokenCanvas.width
+                   && (verticalLongTokenResize.height ?? 0) >= longTokenPlan.artboardSize.height + 20,
+                   "Vertical resize must preserve a content-expanded generated width for an unbreakable token")
+        var longTokenBoard = TypeBoard(name: "Long token export")
+        longTokenBoard.directions = [longTokenCanvas]
+        let longTokenFigma = (FigmaLayoutExporter.payload(board: longTokenBoard)["frames"] as! [[String: Any]])[0]
+        let exportedLongToken = (longTokenFigma["elements"] as! [[String: Any]]).first { $0["text"] as? String == longTokenElement.text?.string }!
+        try verify((exportedLongToken["width"] as? CGFloat) == longTokenElement.rect.width,
+                   "Figma export must use the expanded drawable text frame")
+        let longTokenAdobe = try AdobeTypeSystemExporter.script(directions: [longTokenCanvas], title: "Long token", target: .illustrator)
+        try verify(longTokenAdobe.contains("\"width\":\(Int(longTokenElement.rect.width.rounded()))"),
+                   "Adobe export must use the expanded drawable text frame")
+        let blockedLongTokenResize = CanvasBoardLayout.resized(canvas: longTokenCanvas, artboardSize: longTokenPlan.artboardSize,
+                                                               position: startPosition, edge: .right, by: .zero, zoom: 1)
+        try verify(blockedLongTokenResize.warning != nil && blockedLongTokenResize.width == longTokenCanvas.width,
+                   "An over-cap unbreakable token must cancel resize with an explanatory warning")
+        var negativeTextCanvas = TypeDirection(name: "Negative import text")
+        negativeTextCanvas.canvas = .imported; negativeTextCanvas.width = 320
+        negativeTextCanvas.importedLayout = ImportedLayout(width: 320, height: 200,
+            layers: [ImportedLayer(name: "Outside", x: -20, y: -10, width: 180, height: 80, color: "222222",
+                                   style: TypeStyle(fontName: "Helvetica", size: 24, text: "Outside"))])
+        let negativeTextPlan = CanvasPlan(direction: negativeTextCanvas)
+        let blockedNegativeTextResize = CanvasBoardLayout.resized(canvas: negativeTextCanvas, artboardSize: negativeTextPlan.artboardSize,
+                                                                  position: startPosition, edge: .right, by: CGSize(width: 20, height: 0), zoom: 1)
+        try verify(blockedNegativeTextResize.warning != nil && blockedNegativeTextResize.importedWidth == negativeTextCanvas.canvasWidth,
+                   "Imported text beyond the left or top edge must block resize until repositioned")
         arrangementA.canvasScale = 2
         let scaledPlan = CanvasPlan(direction: arrangementA), basePlan = CanvasPlan(direction: TypeDirection(name: "Canvas 1"))
         let scaledText = scaledPlan.elements.first { $0.role == .display && $0.text != nil }!

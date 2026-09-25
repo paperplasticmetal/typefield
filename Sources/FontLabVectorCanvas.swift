@@ -434,10 +434,21 @@ final class FontLabVectorNSView: NSView {
         case "d" where !shift:editor.duplicate()
         case "0" where !shift:editor.fit()
         case "+","=":editor.zoom=min(8,editor.zoom*1.25)
-        case "-" where !shift:editor.zoom=max(0.5,editor.zoom/1.25)
+        case "-" where !shift:editor.zoom=max(0.1,editor.zoom/1.25)
         default:return false
         }
         return true
+    }
+    func focusSelection() {
+        guard !editor.selection.isEmpty,
+              let transform = FontLabVectorEditor.focusTransform(
+                selectionBounds: editor.selectedFocusBounds,
+                viewport: bounds.size,
+                designWidth: editor.glyph.resolvedDesignWidth
+              ) else { return }
+        editor.zoom = transform.zoom
+        editor.pan = transform.pan
+        needsDisplay = true
     }
     override func scrollWheel(with event:NSEvent) {
         if event.modifierFlags.contains(.option) {zoom(by:exp(-event.scrollingDeltaY*0.015),at:convert(event.locationInWindow,from:nil))}
@@ -445,7 +456,7 @@ final class FontLabVectorNSView: NSView {
     }
     override func magnify(with event:NSEvent) {zoom(by:1+event.magnification,at:convert(event.locationInWindow,from:nil))}
     private func zoom(by factor:Double,at point:CGPoint) {
-        let before=design(point,clamp:false);editor.zoom=min(8,max(0.5,editor.zoom*factor));let after=screen(before)
+        let before=design(point,clamp:false);editor.zoom=min(8,max(0.1,editor.zoom*factor));let after=screen(before)
         editor.pan=CGPoint(x:editor.pan.x+point.x-after.x,y:editor.pan.y+point.y-after.y)
     }
 }

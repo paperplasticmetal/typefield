@@ -24,11 +24,35 @@ final class FontLabVectorEditor: ObservableObject {
     var onCommit: (FontLabGlyph) -> Void = { _ in }
     var onUndo: () -> Void = {}
     var onRedo: () -> Void = {}
+    var onFocusSelectionRequested: () -> Void = {}
     var activePath: UUID?
     init(glyph: FontLabGlyph, metrics: FontLabMetrics) { self.glyph=glyph;self.metrics=metrics }
     var paths: [FontLabVectorPath] { FontLabVectorMath.paths(in:glyph) }
     var selectedNodes: [FontLabVectorNode] { paths.flatMap(\.nodes).filter { selection.contains($0.id) } }
     var selectedBounds: CGRect { FontLabVectorMath.bounds(selectedNodes.map(\.point)) }
+    var selectedFocusBounds: CGRect {
+        var geometry: [FontLabPoint] = []
+        for path in paths {
+            let selectedIndices = Set(path.nodes.indices.filter { selection.contains(path.nodes[$0].id) })
+            guard !selectedIndices.isEmpty else { continue }
+            for index in selectedIndices {
+                let node = path.nodes[index]
+                geometry.append(node.point)
+                if let incoming = node.incoming { geometry.append(incoming) }
+                if let outgoing = node.outgoing { geometry.append(outgoing) }
+            }
+            for segment in 0..<path.segmentCount {
+                let next = (segment + 1) % path.nodes.count
+                if selectedIndices.contains(segment) || selectedIndices.contains(next) {
+                    // The cubic is inside the convex hull of its anchors and
+                    // controls, so these bounds frame both the selected curve
+                    // and its handles without pulling in unrelated contours.
+                    geometry.append(contentsOf: path.controls(segment))
+                }
+            }
+        }
+        return FontLabVectorMath.bounds(geometry)
+    }
     var openCount: Int { paths.filter { !$0.closed }.count }
     func receive(_ value: FontLabGlyph) {
         guard value != glyph else { return }
@@ -51,6 +75,7 @@ final class FontLabVectorEditor: ObservableObject {
     func finishGesture(from before: FontLabGlyph) { if glyph != before { onCommit(glyph) } }
     func selectAll() { selection=Set(paths.flatMap(\.nodes).map(\.id)) }
     func fit() { zoom=1;pan = .zero }
+    func requestFocusSelection() { onFocusSelectionRequested() }
     func selectObject(_ index: Int, adding: Bool) {
         let value = paths
         guard value.indices.contains(index) else { return }
@@ -79,6 +104,23 @@ final class FontLabVectorEditor: ObservableObject {
             result[p].nodes[n].outgoing = result[p].nodes[n].outgoing.map(point)
         } }
         return result
+    }
+    static func focusTransform(selectionBounds: CGRect, viewport: CGSize, designWidth: Double) -> (zoom: Double, pan: CGPoint)? {
+        guard !selectionBounds.isNull, !selectionBounds.isInfinite,
+              selectionBounds.minX.isFinite, selectionBounds.minY.isFinite,
+              selectionBounds.width.isFinite, selectionBounds.height.isFinite,
+              viewport.width.isFinite, viewport.height.isFinite, designWidth.isFinite, designWidth > 0 else { return nil }
+        let viewWidth = Double(viewport.width), viewHeight = Double(viewport.height)
+        let width = Double(designWidth)
+        let baseEm = max(80, min((viewWidth - 90) / width, viewHeight - 75))
+        let availableWidth = max(1, viewWidth - 64)
+        let availableHeight = max(1, viewHeight - 64)
+        let selectionWidth = max(Double(selectionBounds.width) * width, 0.02 * width)
+        let selectionHeight = max(Double(selectionBounds.height), 0.02)
+        let zoom = min(8, max(0.1, min(availableWidth / (baseEm * selectionWidth), availableHeight / (baseEm * selectionHeight))))
+        let em = baseEm * zoom
+        return (zoom, CGPoint(x: CGFloat(-(Double(selectionBounds.midX) - 0.5) * em * width),
+                              y: CGFloat(-(Double(selectionBounds.midY) - 0.5) * em)))
     }
     func setPenWidth(_ units: Double) {
         guard units.isFinite, (2...200).contains(units) else { return }
@@ -306,10 +348,14 @@ struct FontLabVectorEditorView: View {
             HStack(spacing:10) {
                 Toggle("Grid",isOn:$editor.grid);Toggle("Snap",isOn:$editor.snap);Toggle("Fill",isOn:$editor.fill)
                 Spacer(minLength:0)
-                Button("−") {editor.zoom=max(0.5,editor.zoom/1.25)}.help("Zoom out")
+                Button("−") {editor.zoom=max(0.1,editor.zoom/1.25)}.help("Zoom out")
                 Text("\(Int(editor.zoom*100))%").monospacedDigit().frame(width:42)
                 Button("+") {editor.zoom=min(8,editor.zoom*1.25)}.help("Zoom in")
                 Button("Fit") {editor.fit()}
+                Button("Focus") {editor.requestFocusSelection()}
+                    .disabled(editor.selection.isEmpty)
+                    .help("Zoom and center the selected contour or nodes")
+                    .accessibilityLabel("Focus selection")
             }.toggleStyle(.checkbox).font(.caption)
             HStack(spacing:6) {
                 Text("\(editor.selection.count) nodes").foregroundStyle(.secondary).frame(width:65,alignment:.leading)
@@ -367,6 +413,8 @@ private struct FontLabVectorCanvas: NSViewRepresentable {
     let onRedo:()->Void
     func makeNSView(context:Context)->FontLabVectorNSView {FontLabVectorNSView(editor:editor)}
     func updateNSView(_ view:FontLabVectorNSView,context:Context) {
-        editor.onCommit=onChange;editor.onUndo=onUndo;editor.onRedo=onRedo;view.needsDisplay=true
+        editor.onCommit=onChange;editor.onUndo=onUndo;editor.onRedo=onRedo
+        editor.onFocusSelectionRequested = { [weak view] in view?.focusSelection() }
+        view.needsDisplay=true
     }
 }

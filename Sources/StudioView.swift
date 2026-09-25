@@ -404,11 +404,26 @@ enum CanvasFrameCorner: CaseIterable, Hashable {
     var left: Bool { self == .topLeft || self == .bottomLeft }
     var top: Bool { self == .topLeft || self == .topRight }
 }
+enum CanvasFrameEdge: String, CaseIterable, Hashable {
+    case left, right, top, bottom
+    var horizontal: Bool { self == .left || self == .right }
+    var leading: Bool { self == .left || self == .top }
+}
 
 enum CanvasBoardLayout {
+    struct TextContentBounds {
+        var minX: Double
+        var minY: Double
+        var width: Double
+        var height: Double
+    }
     struct ResizeResult {
         var scale: Double
+        var width: Double
+        var importedWidth: Double?
+        var height: Double?
         var position: CanvasBoardPosition
+        var warning: String?
     }
     static func positions(for canvases: [TypeDirection]) -> [UUID: CanvasBoardPosition] {
         var result: [UUID: CanvasBoardPosition] = [:]
@@ -429,6 +444,9 @@ enum CanvasBoardLayout {
         CanvasBoardPosition(x: min(100_000, max(0, position.x + translation.width / max(0.01, zoom))),
                             y: min(100_000, max(0, position.y + translation.height / max(0.01, zoom))))
     }
+    static func frameControlsAreActive(canvasID: UUID, selectedDirectionID: UUID?, frameCanvasID: UUID?) -> Bool {
+        selectedDirectionID == canvasID || frameCanvasID == canvasID
+    }
     static func resized(canvas: TypeDirection, artboardSize: CGSize, position: CanvasBoardPosition,
                         corner: CanvasFrameCorner, by translation: CGSize, zoom: Double) -> ResizeResult {
         let originalScale = canvas.canvasScale ?? 1
@@ -437,18 +455,155 @@ enum CanvasBoardLayout {
         let horizontal = (corner.left ? -translation.width : translation.width) / max(1, baseWidth * zoom)
         let vertical = (corner.top ? -translation.height : translation.height) / max(1, baseHeight * zoom)
         let change = abs(horizontal) >= abs(vertical) ? horizontal : vertical
-        let maximum = canvas.maximumCanvasScale
-        let scale = min(maximum, max(canvas.minimumCanvasScale, originalScale + change))
+        let scale = min(canvas.maximumCanvasScale, max(canvas.minimumCanvasScale, originalScale + change))
         let x = corner.left ? position.x + (originalScale - scale) * baseWidth : position.x
         let y = corner.top ? position.y + (originalScale - scale) * baseHeight : position.y
-        return ResizeResult(scale: scale, position: CanvasBoardPosition(x: min(100_000, max(0, x)), y: min(100_000, max(0, y))))
+        var fitted = canvas
+        fitted.canvasScale = scale
+        let plan = CanvasPlan(direction: fitted)
+        let bounds = textContentBounds(in: plan)
+        let width = artboardSize.width * scale / originalScale
+        let height = artboardSize.height * scale / originalScale
+        if bounds.minX < 0 || bounds.minY < 0 || bounds.width > width + 0.5 || bounds.height > height + 0.5 || width > 10_000 || height > 10_000 {
+            return ResizeResult(scale: originalScale, width: canvas.width, importedWidth: canvas.canvasWidth, height: canvas.canvasHeight,
+                                position: position, warning: "Canvas resize was canceled because the text does not fit within the export-safe artboard limits.")
+        }
+        return ResizeResult(scale: scale, width: canvas.width, importedWidth: canvas.canvasWidth, height: canvas.canvasHeight,
+                            position: CanvasBoardPosition(x: min(100_000, max(0, x)), y: min(100_000, max(0, y))), warning: nil)
+    }
+    static func resized(canvas: TypeDirection, artboardSize: CGSize, position: CanvasBoardPosition,
+                        edge: CanvasFrameEdge, by translation: CGSize, zoom: Double) -> ResizeResult {
+        let scale = canvas.canvasScale ?? 1
+        let baseHeight = canvas.canvasHeight ?? artboardSize.height / scale
+        let delta = edge.horizontal
+            ? (edge.leading ? -translation.width : translation.width) / max(0.01, zoom * scale)
+            : (edge.leading ? -translation.height : translation.height) / max(0.01, zoom * scale)
+        let currentWidth = canvas.canvas == .imported ? (canvas.canvasWidth ?? (artboardSize.width / scale)) : canvas.width
+        var width = edge.horizontal && canvas.canvas != .imported ? min(1_600, max(320, canvas.width + delta)) : canvas.width
+        var importedWidth = canvas.canvas == .imported ? min(10_000, max(1, currentWidth + (edge.horizontal ? delta : 0))) : canvas.canvasWidth
+        // Horizontal edge drags must preserve the rendered starting height.
+        // Save it explicitly so responsive reflow cannot shrink the orthogonal
+        // dimension; only the later text-fit check may grow it.
+        var height: Double? = edge.horizontal ? baseHeight : min(canvas.maximumCanvasHeight, max(canvas.minimumCanvasHeight, baseHeight + delta))
+        var candidate = canvas
+        candidate.width = width
+        candidate.canvasWidth = importedWidth
+        candidate.canvasHeight = height
+        var warning: String?
+        if edge.horizontal {
+            // Rebuild after changing width so responsive layouts, wraps, and
+            // explicitly positioned text all contribute to the safe bounds.
+            for _ in 0..<5 {
+                candidate.width = width
+                candidate.canvasWidth = importedWidth
+                let required = textContentBounds(in: CanvasPlan(direction: candidate)).width
+                if canvas.canvas == .imported {
+                    if required > 10_000 {
+                        importedWidth = canvas.canvasWidth
+                        warning = "Canvas width cannot be reduced without clipping text; resize was canceled."
+                        break
+                    }
+                    let next = min(10_000, max(importedWidth ?? currentWidth, required))
+                    if abs(next - (importedWidth ?? currentWidth)) < 0.5 { break }
+                    importedWidth = next
+                } else {
+                    if required > 1_600 {
+                        width = canvas.width
+                        warning = "Canvas width cannot be reduced without clipping text; resize was canceled."
+                        break
+                    }
+                    let next = min(1_600, max(width, required))
+                    if abs(next - width) < 0.5 { break }
+                    width = next
+                }
+            }
+        }
+        candidate.width = width
+        candidate.canvasWidth = importedWidth
+        if let requestedHeight = height {
+            let required = textContentBounds(in: CanvasPlan(direction: candidate)).height
+            if required > canvas.maximumCanvasHeight {
+                height = canvas.canvasHeight ?? baseHeight
+                warning = "Canvas height cannot be reduced without clipping text; resize was canceled."
+            } else { height = min(canvas.maximumCanvasHeight, max(requestedHeight, required)) }
+        }
+        let appliedDelta = edge.horizontal
+            ? (canvas.canvas == .imported ? (importedWidth ?? currentWidth) - currentWidth : width - canvas.width)
+            : (height ?? baseHeight) - baseHeight
+        let x = edge == .left ? position.x - appliedDelta : position.x
+        let y = edge == .top ? position.y - appliedDelta : position.y
+        let fittedDirection = {
+            var value = canvas
+            value.width = width; value.canvasWidth = importedWidth; value.canvasHeight = height
+            return value
+        }()
+        let fittedPlan = CanvasPlan(direction: fittedDirection)
+        let bounds = textContentBounds(in: fittedPlan)
+        // A vertical gesture holds the rendered width, which can exceed the
+        // stored template width when an unbreakable text run needs more room.
+        // Imported legacy plans likewise use their already-expanded width.
+        let targetWidth = edge.horizontal
+            ? (canvas.canvas == .imported ? (importedWidth ?? currentWidth) : width) * scale
+            : fittedPlan.artboardSize.width
+        let targetHeight = (height ?? (fittedPlan.artboardSize.height / scale)) * scale
+        if bounds.minX < 0 || bounds.minY < 0 || bounds.width > targetWidth + 0.5 || bounds.height > targetHeight + 0.5 || targetWidth > 10_000 || targetHeight > 10_000 {
+            width = canvas.width; importedWidth = canvas.canvasWidth; height = canvas.canvasHeight
+            warning = "Canvas resize was canceled because the text does not fit within the export-safe artboard limits."
+            return ResizeResult(scale: scale, width: width, importedWidth: importedWidth, height: height, position: position, warning: warning)
+        }
+        return ResizeResult(scale: scale, width: width, importedWidth: importedWidth, height: height,
+                            position: CanvasBoardPosition(x: min(100_000, max(0, x)), y: min(100_000, max(0, y))), warning: warning)
+    }
+    static func textContentBounds(in plan: CanvasPlan, padding: Double = 12) -> TextContentBounds {
+        var maxX = 0.0, maxY = 0.0
+        var minX = 0.0, minY = 0.0
+        for element in plan.elements where element.text != nil {
+            maxX = max(maxX, Double(element.rect.maxX))
+            maxY = max(maxY, Double(element.rect.maxY))
+            minX = min(minX, Double(element.rect.minX))
+            minY = min(minY, Double(element.rect.minY))
+            guard let text = element.text, text.length > 0 else { continue }
+            let storage = NSTextStorage(attributedString: text)
+            let layout = NSLayoutManager(); layout.usesFontLeading = true
+            let container = NSTextContainer(containerSize: CGSize(width: max(1, element.rect.width), height: .greatestFiniteMagnitude))
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container); storage.addLayoutManager(layout)
+            layout.ensureLayout(for: container)
+            let used = layout.usedRect(for: container).offsetBy(dx: element.rect.minX, dy: element.rect.minY)
+            maxX = max(maxX, Double(used.maxX))
+            maxY = max(maxY, Double(used.maxY))
+            minX = min(minX, Double(used.minX))
+            minY = min(minY, Double(used.minY))
+            maxX = max(maxX, Double(element.rect.minX) + minimumTextFrameWidth(for: element))
+        }
+        return TextContentBounds(minX: minX, minY: minY, width: ceil(maxX + padding), height: ceil(maxY + padding))
+    }
+    static func minimumTextFrameWidth(for element: CanvasElement) -> Double {
+        guard let text = element.text, text.length > 0 else { return Double(element.rect.width) }
+        let source = text.string as NSString
+        let tokenMatcher = try? NSRegularExpression(pattern: #"\S+"#)
+        var required = Double(element.rect.width)
+        tokenMatcher?.enumerateMatches(in: text.string, range: NSRange(location: 0, length: source.length)) { match, _, _ in
+            guard let range = match?.range, range.length > 0 else { return }
+            let token = text.attributedSubstring(from: range)
+            let line = CTLineCreateWithAttributedString(token as CFAttributedString)
+            let tokenWidth = CTLineGetTypographicBounds(line, nil, nil, nil)
+            let paragraphRange = source.paragraphRange(for: NSRange(location: range.location, length: 0))
+            let prefix = source.substring(with: NSRange(location: paragraphRange.location,
+                                                        length: max(0, range.location - paragraphRange.location)))
+            let isFirstToken = prefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let paragraphStyle = token.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+            let indent = isFirstToken ? max(0, paragraphStyle?.firstLineHeadIndent ?? 0) : 0
+            required = max(required, tokenWidth + Double(indent))
+        }
+        return ceil(required)
     }
 }
 
 private struct CanvasFrameInteraction {
     enum Mode {
-        case move, resize(CanvasFrameCorner)
-        var isResize: Bool { if case .resize = self { return true }; return false }
+        case move, resizeCorner(CanvasFrameCorner), resizeEdge(CanvasFrameEdge)
+        var isResize: Bool { if case .move = self { return false }; return true }
     }
     var id: UUID
     var mode: Mode
@@ -481,7 +636,7 @@ enum CanvasDragPayload {
 
 extension TypeDirection {
     var isValid: Bool {
-        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (boardPosition?.isValid ?? true) && (canvasScale.map { $0.isFinite && $0 >= minimumCanvasScale && $0 <= maximumCanvasScale } ?? true) && (importedLayout?.isValid ?? (canvas != .imported)) && artworkLayersAreValid && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy(Self.acceptsCanvasText) } ?? true) && (textPositions.map { $0.count <= 5000 && $0.values.allSatisfy(\.isValid) } ?? true) && TypeRole.allCases.allSatisfy { role in
+        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (canvasWidth.map { canvas == .imported && $0.isFinite && (1...10000).contains($0) } ?? true) && (canvasHeight.map { $0.isFinite && (minimumCanvasHeight...maximumCanvasHeight).contains($0) } ?? true) && (boardPosition?.isValid ?? true) && (canvasScale.map { $0.isFinite && $0 >= minimumCanvasScale && $0 <= maximumCanvasScale } ?? true) && (importedLayout?.isValid ?? (canvas != .imported)) && artworkLayersAreValid && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy(Self.acceptsCanvasText) } ?? true) && (textPositions.map { $0.count <= 5000 && $0.values.allSatisfy(\.isValid) } ?? true) && TypeRole.allCases.allSatisfy { role in
             guard let s = styles[role.rawValue] else { return false }
             return s.size.isFinite && (8...160).contains(s.size) && s.leading.isFinite && (1...2.5).contains(s.leading) && s.tracking.isFinite && (-3...12).contains(s.tracking) && s.axes.values.allSatisfy(\.isFinite) && (s.lineHeight.map { $0.isFinite && (8...400).contains($0) } ?? true) && [s.paragraphSpacing, s.indent].allSatisfy { $0.map { $0.isFinite && (0...200).contains($0) } ?? true } && (s.wordSpacing.map { $0.isFinite && (-3...40).contains($0) } ?? true)
         }
@@ -685,7 +840,7 @@ struct TypeBoardEditor: View {
                     }
                     Divider()
                     Menu("Quick A/B") {
-                        let candidates = board.directions.filter { $0.id != direction.id && $0.canvas == direction.canvas && $0.width == direction.width && $0.canvasScale == direction.canvasScale }
+                        let candidates = board.directions.filter { $0.id != direction.id && $0.canvas == direction.canvas && $0.width == direction.width && $0.canvasWidth == direction.canvasWidth && $0.canvasHeight == direction.canvasHeight && $0.canvasScale == direction.canvasScale }
                         if candidates.isEmpty { Text("Duplicate a canvas to start"); Text("Use the same format, width, and scale") }
                         ForEach(candidates) { candidate in Button(board.canvasName(candidate)) { abID = candidate.id; shownCanvasIDs = [direction.id] } }
                     }.disabled(board.directions.count < 2)
@@ -730,7 +885,7 @@ struct TypeBoardEditor: View {
                 }
             } else { floatingInspector.close() }
         }
-        .onChange(of: direction.id) { id in shownCanvasIDs.insert(id); if !(direction.artworkLayers ?? []).contains(where: { $0.id == selectedSection }) { selectedSection = nil }; selectedTextID = nil; draggedSection = nil; if frameCanvasID != id { frameCanvasID = nil }; if let other = board.directions.first(where: { $0.id == abID }), other.canvas != direction.canvas || other.width != direction.width || other.canvasScale != direction.canvasScale { abID = nil } }
+        .onChange(of: direction.id) { id in shownCanvasIDs.insert(id); if !(direction.artworkLayers ?? []).contains(where: { $0.id == selectedSection }) { selectedSection = nil }; selectedTextID = nil; draggedSection = nil; if frameCanvasID != id { frameCanvasID = nil }; if let other = board.directions.first(where: { $0.id == abID }), other.canvas != direction.canvas || other.width != direction.width || other.canvasWidth != direction.canvasWidth || other.canvasHeight != direction.canvasHeight || other.canvasScale != direction.canvasScale { abID = nil } }
         .onChange(of: direction.canvas) { _ in abID = nil; selectedSection = nil; selectedTextID = nil }
         .onChange(of: direction.width) { _ in abID = nil }
         .onDisappear { floatingInspector.close(); if focusCanvas { sidebarCollapsed = sidebarBeforeFocus; focusCanvas = false } }
@@ -908,11 +1063,19 @@ struct TypeBoardEditor: View {
         switch interaction.mode {
         case .move:
             return CanvasFrameDisplay(direction: item, position: CanvasBoardLayout.moved(from: position, by: interaction.translation, zoom: zoom))
-        case .resize(let corner):
+        case .resizeCorner(let corner):
             let result = CanvasBoardLayout.resized(canvas: item, artboardSize: CanvasPlanCache.plan(for: item).artboardSize,
                                                    position: position, corner: corner, by: interaction.translation, zoom: zoom)
             var rendered = item
             rendered.canvasScale = result.scale
+            return CanvasFrameDisplay(direction: rendered, position: result.position)
+        case .resizeEdge(let edge):
+            let result = CanvasBoardLayout.resized(canvas: item, artboardSize: CanvasPlanCache.plan(for: item).artboardSize,
+                                                   position: position, edge: edge, by: interaction.translation, zoom: zoom)
+            var rendered = item
+            rendered.width = result.width
+            rendered.canvasWidth = result.importedWidth
+            rendered.canvasHeight = result.height
             return CanvasFrameDisplay(direction: rendered, position: result.position)
         }
     }
@@ -933,6 +1096,8 @@ struct TypeBoardEditor: View {
         defer { frameInteraction = nil; interactionZoom = nil }
         guard let index = board.directions.firstIndex(where: { $0.id == id }) else { return }
         let wasSelected = board.selectedDirection == id
+        let startingDirections = board.directions
+        var resizeWarning: String?
         frameCanvasID = id
         let dragged = hypot(translation.width, translation.height) > 2
         if dragged {
@@ -948,17 +1113,30 @@ struct TypeBoardEditor: View {
             switch mode {
             case .move:
                 board.directions[index].boardPosition = CanvasBoardLayout.moved(from: start, by: translation, zoom: zoom)
-            case .resize(let corner):
+            case .resizeCorner(let corner):
                 let result = CanvasBoardLayout.resized(canvas: original, artboardSize: CanvasPlanCache.plan(for: original).artboardSize,
                                                        position: start, corner: corner, by: translation, zoom: zoom)
                 board.directions[index].boardPosition = result.position
                 board.directions[index].canvasScale = result.scale
+                resizeWarning = result.warning
+            case .resizeEdge(let edge):
+                let result = CanvasBoardLayout.resized(canvas: original, artboardSize: CanvasPlanCache.plan(for: original).artboardSize,
+                                                       position: start, edge: edge, by: translation, zoom: zoom)
+                board.directions[index].boardPosition = result.position
+                board.directions[index].width = result.width
+                board.directions[index].canvasWidth = result.importedWidth
+                board.directions[index].canvasHeight = result.height
+                resizeWarning = result.warning
             }
+            if resizeWarning != nil { board.directions = startingDirections }
         }
         shownCanvasIDs.insert(id)
         board.selectedDirection = id
         abID = nil
-        if dragged || !wasSelected { save(dragged ? (mode.isResize ? "Resize Canvas" : "Move Canvas") : "Select Canvas") }
+        if let resizeWarning { status = resizeWarning }
+        if (dragged && board.directions != startingDirections) || !wasSelected {
+            save(dragged ? (mode.isResize ? "Resize Canvas" : "Move Canvas") : "Select Canvas")
+        }
     }
     func selectCanvas(_ id: UUID) { frameCanvasID = nil; shownCanvasIDs = CanvasVisibility.selecting(id, from: direction.id, shown: shownCanvasIDs); board.selectedDirection = id; abID = nil; save() }
     func selectAdjacentCanvas(_ offset: Int) {
@@ -975,7 +1153,7 @@ struct TypeBoardEditor: View {
     }
     func showOnlyCurrent() { shownCanvasIDs = CanvasVisibility.solo(direction.id); abID = nil }
     func hideCanvas(_ id: UUID) { guard id != direction.id else { return }; shownCanvasIDs.remove(id) }
-    func swapAB() { guard let id = abID, board.directions.contains(where: { $0.id == id && $0.canvas == direction.canvas && $0.width == direction.width && $0.canvasScale == direction.canvasScale }) else { return }; abID = direction.id; board.selectedDirection = id; shownCanvasIDs = [id]; save() }
+    func swapAB() { guard let id = abID, board.directions.contains(where: { $0.id == id && $0.canvas == direction.canvas && $0.width == direction.width && $0.canvasWidth == direction.canvasWidth && $0.canvasHeight == direction.canvasHeight && $0.canvasScale == direction.canvasScale }) else { return }; abID = direction.id; board.selectedDirection = id; shownCanvasIDs = [id]; save() }
     func moveSection(_ source: String, _ target: String, _ before: Bool) {
         let plan = CanvasPlanCache.plan(for: direction)
         if let layers = direction.artworkLayers, let index = layers.firstIndex(where: { $0.id == source }) {
@@ -1080,7 +1258,9 @@ struct TypeBoardEditor: View {
         }
     }
     private func canvasFrameControls(_ canvas: TypeDirection, size: CGSize, zoom: Double) -> some View {
-        let active = frameCanvasID == canvas.id
+        let active = CanvasBoardLayout.frameControlsAreActive(canvasID: canvas.id,
+                                                               selectedDirectionID: board.selectedDirection,
+                                                               frameCanvasID: frameCanvasID)
         let width = max(1, size.width), height = max(1, size.height)
         return ZStack {
             Rectangle()
@@ -1099,7 +1279,12 @@ struct TypeBoardEditor: View {
             if active {
                 ForEach(CanvasFrameCorner.allCases, id: \.self) { corner in
                     canvasResizeHandle(canvas.id, corner: corner, zoom: zoom)
-                        .position(x: corner.left ? 6 : max(6, width - 6), y: corner.top ? 6 : max(6, height - 6))
+                        .position(x: corner.left ? 0 : width, y: corner.top ? 0 : height)
+                }
+                ForEach(CanvasFrameEdge.allCases, id: \.self) { edge in
+                    canvasResizeEdgeHandle(canvas.id, edge: edge, zoom: zoom)
+                        .position(x: edge == .left ? 0 : edge == .right ? width : width / 2,
+                                  y: edge == .top ? 0 : edge == .bottom ? height : height / 2)
                 }
             }
         }
@@ -1120,9 +1305,37 @@ struct TypeBoardEditor: View {
             .frame(width: 12, height: 12)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { beginFrameInteraction(id, mode: .resize(corner), translation: $0.translation, zoom: zoom) }
-                .onEnded { finishFrameInteraction(id, mode: .resize(corner), translation: $0.translation, zoom: zoom) })
+                .onChanged { beginFrameInteraction(id, mode: .resizeCorner(corner), translation: $0.translation, zoom: zoom) }
+                .onEnded { finishFrameInteraction(id, mode: .resizeCorner(corner), translation: $0.translation, zoom: zoom) })
             .help("Drag to resize the canvas and its contents proportionally")
+            .accessibilityElement()
+            .accessibilityLabel("Resize canvas from \(corner.left ? "left" : "right") \(corner.top ? "top" : "bottom") corner")
+            .accessibilityHint("Drag to resize the canvas and its contents proportionally. Use increment and decrement to resize by 10 points.")
+            .accessibilityAdjustableAction { direction in
+                let delta = direction == .increment ? 10.0 : -10.0
+                finishFrameInteraction(id, mode: .resizeCorner(corner), translation: CGSize(width: corner.left ? -delta : delta, height: corner.top ? -delta : delta), zoom: zoom)
+            }
+            .onHover { if $0 { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() } }
+    }
+    private func canvasResizeEdgeHandle(_ id: UUID, edge: CanvasFrameEdge, zoom: Double) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(Color(nsColor: .windowBackgroundColor))
+            .overlay { RoundedRectangle(cornerRadius: 3).strokeBorder(Color.accentColor, lineWidth: 1.5) }
+            .frame(width: 12, height: 12)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { beginFrameInteraction(id, mode: .resizeEdge(edge), translation: $0.translation, zoom: zoom) }
+                .onEnded { finishFrameInteraction(id, mode: .resizeEdge(edge), translation: $0.translation, zoom: zoom) })
+            .help(edge.horizontal ? "Drag to resize canvas width. Text stays inside the artboard." : "Drag to resize canvas height. Text stays inside the artboard.")
+            .accessibilityElement()
+            .accessibilityLabel("Resize canvas from \(edge.rawValue) edge")
+            .accessibilityHint("Changes only the artboard dimension while keeping text inside the canvas. Use increment and decrement to resize by 10 points.")
+            .accessibilityAdjustableAction { direction in
+                let delta = direction == .increment ? 10.0 : -10.0
+                let signed = edge.leading ? -delta : delta
+                finishFrameInteraction(id, mode: .resizeEdge(edge), translation: edge.horizontal ? CGSize(width: signed, height: 0) : CGSize(width: 0, height: signed), zoom: zoom)
+            }
+            .onHover { if $0 { (edge.horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set() } else { NSCursor.arrow.set() } }
     }
     func selectText(_ element: CanvasElement) {
         selectedSection = element.sectionID
@@ -1740,7 +1953,11 @@ struct CanvasPlan {
                 size.height = max(size.height, rect.maxY)
             }
             appendArtworkLayers(d.artworkLayers ?? [], hidden: d.hiddenSections ?? [])
+            artboardSize = size
             applyCanvasScale(d.canvasScale ?? 1)
+            expandTextFramesForUnbreakableContent()
+            applyArtboardBounds(width: d.width, importedWidth: d.canvasWidth, height: d.canvasHeight,
+                                preserveImportedOverflow: d.canvasWidth == nil && d.canvasHeight == nil)
             updateAccessibilityText()
             return
         }
@@ -1899,11 +2116,18 @@ struct CanvasPlan {
         artboardSize = size
         for i in elements.indices {
             if let id = elements[i].textID, let position = d.textPositions?[id], position.isValid {
-                elements[i].rect.origin = CGPoint(x: position.x, y: position.y)
+                let fittedWidth = min(elements[i].rect.width, max(1, d.width))
+                let fittedX = min(max(0, position.x), max(0, d.width - fittedWidth))
+                let fittedY = min(max(0, position.y), max(0, 10_000 / max(0.01, d.canvasScale ?? 1) - elements[i].rect.height))
+                elements[i].rect.origin = CGPoint(x: fittedX, y: fittedY)
+                elements[i].rect.size.width = fittedWidth
             }
         }
         appendArtworkLayers(d.artworkLayers ?? [], hidden: d.hiddenSections ?? [])
         applyCanvasScale(d.canvasScale ?? 1)
+        expandTextFramesForUnbreakableContent()
+        applyArtboardBounds(width: d.width, importedWidth: d.canvasWidth, height: d.canvasHeight,
+                            preserveImportedOverflow: d.canvas == .imported && d.canvasWidth == nil && d.canvasHeight == nil)
         updateAccessibilityText()
     }
     private mutating func appendArtworkLayers(_ layers: [ImportedLayer], hidden: Set<String>) {
@@ -1952,6 +2176,26 @@ struct CanvasPlan {
                 elements[index].text = scaledText
             }
         }
+    }
+    private mutating func expandTextFramesForUnbreakableContent() {
+        for index in elements.indices where elements[index].text != nil {
+            let minimumWidth = CanvasBoardLayout.minimumTextFrameWidth(for: elements[index])
+            if minimumWidth > Double(elements[index].rect.width) {
+                elements[index].rect.size.width = minimumWidth
+            }
+        }
+    }
+    private mutating func applyArtboardBounds(width: Double, importedWidth: Double?, height: Double?, preserveImportedOverflow: Bool) {
+        let scale = contentScale
+        let requestedWidth = importedWidth.map { $0 * scale } ?? (preserveImportedOverflow ? artboardSize.width : width * scale)
+        let requestedHeight = (height.map { max(1, $0) } ?? artboardSize.height / max(0.01, scale)) * scale
+        let textBounds = CanvasBoardLayout.textContentBounds(in: self)
+        let finalWidth = max(requestedWidth, Double(textBounds.width))
+        let finalHeight = max(requestedHeight, Double(textBounds.height))
+        let boundedWidth = preserveImportedOverflow ? finalWidth : min(10_000, finalWidth)
+        let boundedHeight = preserveImportedOverflow ? finalHeight : min(10_000, finalHeight)
+        artboardSize = CGSize(width: boundedWidth, height: boundedHeight)
+        size = artboardSize
     }
 }
 
@@ -2434,6 +2678,7 @@ final class CanvasNativeView: NSView {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSGraphicsContext.current?.cgContext.scaleBy(x: zoom, y: zoom)
+        NSBezierPath(rect: NSRect(origin: .zero, size: plan.artboardSize)).addClip()
         for element in plan.elements {
             if let image = element.image {
                 image.draw(in: element.rect, from: .zero, operation: .sourceOver,
@@ -2543,6 +2788,8 @@ enum TypeSystemPDFExporter {
         direction.sectionOrder = nil
         direction.hiddenSections = nil
         direction.importedLayout = nil
+        direction.canvasWidth = nil
+        direction.canvasHeight = nil
         direction.importedSource = nil
         direction.importWarnings = nil
         direction.textOverrides = nil

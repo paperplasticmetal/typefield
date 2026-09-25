@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.49.0 — 2026-09-25
+
+- Added independent left, right, top and bottom edge resizing for Spaces canvases, with centered corner handles for proportional scaling and border dragging for moving. Resizing checks the resulting text layout, preserves opposite-edge anchoring, cancels unsafe changes with an explanation, and keeps PDF/Figma/Adobe canvas dimensions aligned with the artboard.
+- Added Focus Selection to the Letterform Editor to zoom and center selected contours or nodes.
+- Added source regression coverage for legacy canvas decoding, resize bounds and anchoring, saved custom text positions, unbreakable text, imported negative text coordinates, and PDF/Figma/Adobe dimension parity. The final native suite and Figma bridge tests pass. Focus Selection frames selected Bézier control handles along with their anchors, keeping curves that overshoot selected nodes in view without pulling in unrelated contours; the regression uses control points at (-1.5, -1.0) and (2.5, 2.0) and checks 31-point viewport margins. `./install-local.sh` completed with exit 0 for canonical `/Applications/Typefield.app` 0.49.0 (69); strict signature verification passes and installed/dist executable SHA-256 matches (`baa567697045f468277ff05d79cff88126acd709cdb5949a4bac887b4418d2c0`). The pre-copy native test passed 21,260 layouts, 778 families / 4,252 styles; installed-app self-test passed 2,640 layouts, 180 families / 528 styles, and all listed suites passed. An isolated UI pass on the preceding candidate verified all eight canvas handles, right/top/bottom/corner resizing, border dragging, and visible text; it exposed orthogonal height drift, fixed in current source. A second UI pass on the refreshed candidate is pending Mac unlock. See the current status entry for provenance and release validation state.
+
 ## 0.48.2 — 2026-09-25
 
 - Fixed temporary font deactivation when CoreText reports a process registration while the same file also has a session registration. Deactivation now attempts the owned session-scope cleanup directly and keeps its activation record if CoreText cannot confirm cleanup.
