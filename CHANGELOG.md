@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.48.1 — 2026-09-24 (release candidate; matching-source sandbox QA passed under 0.48.0/66; canonical 0.48.1 install pending)
+## 0.48.1 — 2026-09-25
 
 - Improved Spaces checkpoint save feedback and corrected imported Type system PDF behavior.
 - Fixed Library Shortlist and Inspector rollback after failed saves.
