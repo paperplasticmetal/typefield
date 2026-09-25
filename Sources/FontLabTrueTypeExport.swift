@@ -118,6 +118,7 @@ enum FontLabTrueTypeExporter {
     private struct RevisionKerning: Encodable { let left: String; let right: String; let value: Int }
     private struct RevisionPayload: Encodable {
         let metrics: FontLabMetrics
+        let weightClass: UInt16
         let glyphs: [RevisionGlyph]
         let provenance: RevisionProvenance?
         let kerning: [RevisionKerning]?
@@ -159,14 +160,16 @@ enum FontLabTrueTypeExporter {
     /// that have artwork, plus a blank space and a visible `.notdef` glyph.
     static func artifact(for project: FontLabProject) throws -> FontLabTrueTypeArtifact {
         guard project.isValid else { throw ExportError.invalidProject }
-        let masterName = project.masters?.first(where: { $0.id == project.activeMasterID })?.name
+        let activeMaster = project.masters?.first(where: { $0.id == project.activeMasterID })
+        let masterName = activeMaster?.name
+        let weightClass = UInt16(activeMaster?.weight ?? 400)
         var project = project.outputProject
         if let masterName { project.name += " — " + masterName }
         for glyph in project.glyphs.values where glyph.strokes.contains(where: { $0.vectorPaths?.contains(where: { !$0.closed }) == true }) {
             throw ExportError.openContours(glyph.character)
         }
 
-        let revision = try fontRevision(for: project)
+        let revision = try fontRevision(for: project, weightClass: weightClass)
         let familyName = uniqueFamilyName(project.name, projectID: project.id, fingerprint: revision.fingerprint)
         let postScriptName = sanitizedPostScriptName(familyName)
         let mappings = mappedGlyphs(project)
@@ -208,7 +211,8 @@ enum FontLabTrueTypeExporter {
             postScriptName: postScriptName,
             revision: revision,
             glyphs: glyphRecords,
-            cmap: scalarMappings
+            cmap: scalarMappings,
+            weightClass: weightClass
         )
 
         let mappedCharacters = mappings.map(\.character)
@@ -755,7 +759,8 @@ enum FontLabTrueTypeExporter {
         postScriptName: String,
         revision: FontRevision,
         glyphs: [GlyphRecord],
-        cmap: [UInt32: UInt16]
+        cmap: [UInt32: UInt16],
+        weightClass: UInt16
     ) throws -> Data {
         guard glyphs.count <= Int(UInt16.max) else { throw ExportError.valueOutOfRange("glyph count") }
         let glyfAndLoca = try glyfAndLocaTables(glyphs)
@@ -767,7 +772,7 @@ enum FontLabTrueTypeExporter {
         let descent = min(globalYMin, -Int((project.metrics.baseline * Double(unitsPerEm)).rounded()))
 
         var tables = [
-            Table(tag: "OS/2", data: try os2Table(project: project, glyphs: glyphs, cmap: cmap, ascent: ascent, descent: descent)),
+            Table(tag: "OS/2", data: try os2Table(project: project, glyphs: glyphs, cmap: cmap, ascent: ascent, descent: descent, weightClass: weightClass)),
             Table(tag: "cmap", data: cmapTable(cmap)),
             Table(tag: "glyf", data: glyfAndLoca.glyf),
             Table(tag: "head", data: try headTable(revision: revision, xMin: globalXMin, yMin: globalYMin, xMax: globalXMax, yMax: globalYMax)),
@@ -1027,7 +1032,7 @@ enum FontLabTrueTypeExporter {
         return writer.data
     }
 
-    private static func os2Table(project: FontLabProject, glyphs: [GlyphRecord], cmap: [UInt32: UInt16], ascent: Int, descent: Int) throws -> Data {
+    private static func os2Table(project: FontLabProject, glyphs: [GlyphRecord], cmap: [UInt32: UInt16], ascent: Int, descent: Int, weightClass: UInt16) throws -> Data {
         let nonzeroAdvances = glyphs.map(\.advanceWidth).filter { $0 > 0 }
         let average = nonzeroAdvances.isEmpty ? 0 : nonzeroAdvances.reduce(0, +) / nonzeroAdvances.count
         let firstBMP = cmap.keys.filter { $0 <= 0xFFFF }.min().map(UInt16.init) ?? 0xFFFF
@@ -1040,7 +1045,7 @@ enum FontLabTrueTypeExporter {
         }
         var writer = BigEndianWriter()
         let embeddingPermission: UInt16 = project.remixProvenance == nil ? 0 : 0x0002
-        writer.uint16(4); writer.int16(Int16(average)); writer.uint16(400); writer.uint16(5); writer.uint16(embeddingPermission)
+        writer.uint16(4); writer.int16(Int16(average)); writer.uint16(weightClass); writer.uint16(5); writer.uint16(embeddingPermission)
         for value: Int16 in [650, 600, 0, 75, 650, 600, 0, 350, 50, 300, 0] { writer.int16(value) }
         for _ in 0..<10 { writer.uint8(0) } // PANOSE: Any
         let functionalScalars = Set(mappedGlyphs(project).compactMap { $0.glyph == nil ? nil : $0.scalar })
@@ -1364,7 +1369,7 @@ enum FontLabTrueTypeExporter {
         return String((result.isEmpty ? "Typefield-Lab" : result).prefix(63))
     }
 
-    private static func fontRevision(for project: FontLabProject) throws -> FontRevision {
+    private static func fontRevision(for project: FontLabProject, weightClass: UInt16) throws -> FontRevision {
         let glyphs = mappedGlyphs(project).compactMap { mapping -> RevisionGlyph? in
             guard let glyph = mapping.glyph else { return nil }
             return RevisionGlyph(
@@ -1396,7 +1401,7 @@ enum FontLabTrueTypeExporter {
             )
         }
         let kern = try project.resolvedKerning(characters: Set(mappedGlyphs(project).map(\.character))).map { RevisionKerning(left: $0.left, right: $0.right, value: $0.value) }
-        let payload = RevisionPayload(metrics: project.metrics, glyphs: glyphs, provenance: provenance, kerning: kern.isEmpty ? nil : kern)
+        let payload = RevisionPayload(metrics: project.metrics, weightClass: weightClass, glyphs: glyphs, provenance: provenance, kerning: kern.isEmpty ? nil : kern)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let encoded = try encoder.encode(payload)

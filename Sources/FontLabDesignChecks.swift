@@ -73,6 +73,17 @@ enum FontLabDesignChecks {
         p.switchMaster(bold);try check(p.glyphs==edited && p.kerningPairs![0].value == -60,"Switching masters lost edits or kerning")
         let roundTrip=try JSONDecoder().decode(FontLabProject.self,from:JSONEncoder().encode(p))
         try check(roundTrip==p && roundTrip.isValid,"Components/masters/kerning did not persist")
+        try check(roundTrip.masters?.first(where: { $0.id == roundTrip.activeMasterID })?.weight == 700,"The active master weight did not persist")
+        let weightedArtifact=try FontLabTrueTypeExporter.artifact(for:roundTrip)
+        let weightedFont=CTFontCreateWithGraphicsFont(CGFont(CGDataProvider(data:weightedArtifact.data as CFData)!)!,1000,nil,nil)
+        let os2=CTFontCopyTable(weightedFont,CTFontTableTag(0x4f532f32),[]) as Data?
+        try check(os2.map { UInt16($0[4]) << 8 | UInt16($0[5]) } == 700,"Active master weight was not written to OS/2.usWeightClass")
+        var lighter=roundTrip
+        var lighterMasters=lighter.masters ?? []
+        if let index=lighterMasters.firstIndex(where: { $0.id == lighter.activeMasterID }) { lighterMasters[index].weight=400 }
+        lighter.masters=lighterMasters
+        let lighterArtifact=try FontLabTrueTypeExporter.artifact(for:lighter)
+        try check(lighterArtifact.postScriptName != weightedArtifact.postScriptName,"Changing master weight reused the exported font identity")
         let source=fixture().glyphs["O"]!,smooth=try FontLabTraceSmoothing.fit(source,units:1)
         let paths=FontLabVectorMath.paths(in:smooth),compound=CGMutablePath();paths.forEach {compound.addPath($0.cgPath)}
         try check(paths.count==2 && paths.reduce(0,{$0+$1.nodes.count})<240 && paths.contains { $0.nodes.contains { $0.incoming != nil } },"Trace smoothing failed to reduce points into curves")

@@ -8,6 +8,7 @@ struct FontLabDesignView: View {
     @State private var project: FontLabProject
     @State private var tab = "Masters"
     @State private var masterName = "Bold"
+    @State private var masterWeight = 700.0
     @State private var source = "A"
     @State private var groupName = ""
     @State private var groupMembers = ""
@@ -65,6 +66,9 @@ struct FontLabDesignView: View {
                     TextField("Master name", text: Binding(get: { project.masters?.first { $0.id == master.id }?.name ?? "" }, set: { name in
                         if let i = project.masters?.firstIndex(where: { $0.id == master.id }) { project.masters?[i].name = String(name.prefix(80)) }
                     })).textFieldStyle(.roundedBorder)
+                    Text("Weight")
+                    TextField("400", value: masterWeightBinding(master.id), format: .number.precision(.fractionLength(0)))
+                        .textFieldStyle(.roundedBorder).frame(width: 64).help("OpenType weight class from 1 to 1000").accessibilityLabel("Weight class")
                     Text("\(master.id == project.activeMasterID ? project.completedCount : master.glyphs.values.filter(\.hasArtwork).count) drawn").font(.caption).foregroundStyle(.secondary).frame(width: 80)
                     Button(master.id == project.activeMasterID ? "Active" : "Switch") { change { $0.switchMaster(master.id) } }.disabled(master.id == project.activeMasterID)
                 }
@@ -72,14 +76,23 @@ struct FontLabDesignView: View {
             Divider()
             HStack {
                 TextField("New master name", text: $masterName).textFieldStyle(.roundedBorder)
+                Text("Weight")
+                TextField("700", value: $masterWeight, format: .number.precision(.fractionLength(0)))
+                    .textFieldStyle(.roundedBorder).frame(width: 64).help("OpenType weight class from 1 to 1000")
                 Button("Duplicate current as master") {
                     let name = masterName.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !name.isEmpty else { return }
-                    change { $0.addMaster(name: String(name.prefix(80)), weight: 400) }
+                    change { $0.addMaster(name: String(name.prefix(80)), weight: min(1000, max(1, masterWeight.rounded()))) }
                 }.disabled((project.masters?.count ?? 0) >= 16 || masterName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             preview(project.previewText)
         }
+    }
+    private func masterWeightBinding(_ id: UUID) -> Binding<Double> {
+        Binding(get: { project.masters?.first { $0.id == id }?.weight ?? 400 }, set: { value in
+            guard value.isFinite, let index = project.masters?.firstIndex(where: { $0.id == id }) else { return }
+            project.masters?[index].weight = min(1000, max(1, value.rounded()))
+        })
     }
     private var componentControls: some View {
         VStack(alignment: .leading, spacing: 12) {

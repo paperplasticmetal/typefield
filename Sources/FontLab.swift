@@ -513,9 +513,10 @@ final class FontLabStore: ObservableObject {
         guard !readBlocked else { return nil }
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let project = FontLabProject(name: cleaned.isEmpty ? nextProjectName : cleaned)
+        let previous = state
         state.projects.append(project)
         state.selectedProject = project.id
-        _ = save()
+        guard save() else { state = previous; return nil }
         return project.id
     }
 
@@ -579,6 +580,7 @@ final class FontLabStore: ObservableObject {
 
     func updateProject(_ id: UUID, save shouldSave: Bool = true, _ edit: (inout FontLabProject) -> Void) {
         guard !readBlocked, let index = state.projects.firstIndex(where: { $0.id == id }) else { return }
+        let previous = state
         var project = state.projects[index]
         edit(&project)
         guard project.isValid else {
@@ -586,7 +588,7 @@ final class FontLabStore: ObservableObject {
             return
         }
         state.projects[index] = project
-        if shouldSave { _ = save() }
+        if shouldSave, !save() { state = previous }
     }
 
     func renameProject(_ id: UUID, to name: String) {
@@ -808,6 +810,11 @@ final class FontLabStore: ObservableObject {
         let loaded = FontLabStore(url: file)
         guard loaded.selectedProject?.glyphs["A"] == glyph else { throw SelfTestError.failed("The saved glyph did not round-trip.") }
         guard loaded.selectedProject?.previewInkHex == nil else { throw SelfTestError.failed("Older projects should use the default preview ink.") }
+        store.updateProject(id) { $0.addMaster(name: "Bold", weight: 700) }
+        guard store.error.isEmpty,
+              FontLabStore(url: file).selectedProject?.masters?.first(where: { $0.id == store.selectedProject?.activeMasterID })?.weight == 700 else {
+            throw SelfTestError.failed("A 700 master weight did not persist through the Letterform save path.")
+        }
         store.updateProject(id) { $0.previewInkHex = "3278AB" }
         guard FontLabStore(url: file).selectedProject?.previewInkHex == "3278AB" else { throw SelfTestError.failed("Preview ink did not persist.") }
         store.updateProject(id) { $0.previewInkHex = "invalid" }
@@ -817,6 +824,30 @@ final class FontLabStore: ObservableObject {
         guard loaded.selectedProject?.name == "Untitled font" else { throw SelfTestError.failed("The safe project name did not round-trip.") }
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path) else {
             throw SelfTestError.failed("Letterform Editor did not create an automatic state backup.")
+        }
+
+        // Failed writes must not leave a phantom project or an unsaved edit in
+        // the observable in-memory state.
+        let blockedParent = root.appendingPathComponent("blocked-parent")
+        try Data("file blocks directory creation".utf8).write(to: blockedParent)
+        let blockedStore = FontLabStore(url: blockedParent.appendingPathComponent("nested/font-lab.json"))
+        guard blockedStore.addProject(name: "Must not appear") == nil,
+              blockedStore.state.projects.isEmpty, blockedStore.state.selectedProject == nil,
+              !blockedStore.error.isEmpty else {
+            throw SelfTestError.failed("A failed Letterform project creation reported success or left a phantom project.")
+        }
+
+        let failedUpdateFile = root.appendingPathComponent("failed-update/font-lab.json")
+        let failedUpdateStore = FontLabStore(url: failedUpdateFile)
+        guard let failedUpdateID = failedUpdateStore.addProject(name: "Saved before failure") else {
+            throw SelfTestError.failed("Could not create the failed-update fixture.")
+        }
+        let stateBeforeFailedUpdate = failedUpdateStore.state
+        try FileManager.default.removeItem(at: failedUpdateFile)
+        try FileManager.default.createDirectory(at: failedUpdateFile, withIntermediateDirectories: false)
+        failedUpdateStore.updateProject(failedUpdateID) { $0.previewText = "This edit cannot be saved" }
+        guard failedUpdateStore.state == stateBeforeFailedUpdate, !failedUpdateStore.error.isEmpty else {
+            throw SelfTestError.failed("A failed Letterform project update remained in memory or hid its save error.")
         }
 
         let importFile = root.appendingPathComponent("imported-font-lab.json")

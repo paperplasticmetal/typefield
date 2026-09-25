@@ -34,7 +34,7 @@ struct FontLabMaster: Codable, Equatable, Identifiable {
     var groups: [FontLabKerningGroup]?
     var pairs: [FontLabKerningPair]?
     var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 80 && weight.isFinite && (1...1000).contains(weight) && metrics.isValid &&
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 80 && weight.isFinite && weight.rounded() == weight && (1...1000).contains(weight) && metrics.isValid &&
         FontLabDesign.valid(glyphs: glyphs, groups: groups ?? [], pairs: pairs ?? [])
     }
 }
