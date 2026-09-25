@@ -292,14 +292,21 @@ struct DetailView: View {
     @State var tab = "All styles"
     @State var overlayStyles = false
     @State private var exportStatus = ""
+    @State private var settingsError = ""
     @Environment(\.dismiss) var dismiss
     var face: Face { family.faces.first { $0.name == chosen } ?? library.chosenFace(family) }
+    private func persistPro(_ change: (inout ProState) -> Void) {
+        if !library.updatePro(change) { settingsError = library.message }
+    }
+    private func setMainPreview(_ name: String) {
+        persistPro { $0.mainPreviews[family.name] = name }
+    }
     private func weight(_ face: Face) -> Double {
         let traits = CTFontCopyTraits(CTFontCreateWithName(face.name as CFString, 24, nil)) as NSDictionary
         return (traits[kCTFontWeightTrait] as? Double ?? 0) + (face.style.lowercased().contains("italic") ? 0.001 : 0)
     }
-    var axesBinding: Binding<[Int: Double]> { Binding(get: { library.pro.axes[face.name] ?? [:] }, set: { library.pro.axes[face.name] = $0; library.savePro() }) }
-    var featureBinding: Binding<[String: Int]> { Binding(get: { library.pro.features[face.name] ?? [:] }, set: { library.pro.features[face.name] = $0; library.savePro() }) }
+    var axesBinding: Binding<[Int: Double]> { Binding(get: { library.pro.axes[face.name] ?? [:] }, set: { values in persistPro { $0.axes[face.name] = values } }) }
+    var featureBinding: Binding<[String: Int]> { Binding(get: { library.pro.features[face.name] ?? [:] }, set: { values in persistPro { $0.features[face.name] = values } }) }
     var axes: [Axis] {
         let values = CTFontCopyVariationAxes(CTFontCreateWithName(face.name as CFString, 24, nil)) as? [[String: Any]] ?? []
         return values.compactMap { d in
@@ -310,9 +317,12 @@ struct DetailView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack { Text(family.name).font(.title2); Spacer(); Button("Find similar") { tab = "Similar" }; Button("Export font…") { if let result = FontExporter.export([face]) { exportStatus = result } }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                .alert("Settings not saved", isPresented: Binding(get: { !settingsError.isEmpty }, set: { if !$0 { settingsError = "" } })) {
+                    Button("OK") { settingsError = "" }
+                } message: { Text(settingsError) }
             HStack {
                 ShelfDropdown(title: "Style", selection: $chosen, options: family.faces.map { ($0.style, $0.name) }).frame(width: 300)
-                Button("Use as main preview") { library.pro.mainPreviews[family.name] = face.name; library.savePro() }
+                Button("Use as main preview") { setMainPreview(face.name) }
                 Button("Compare in library") { library.overlayName = face.name; dismiss() }
                 Spacer(); Text(library.category(family).rawValue).foregroundStyle(.secondary)
             }
@@ -334,7 +344,7 @@ struct DetailView: View {
                             LazyVStack(alignment: .leading, spacing: 12) {
                                 ForEach(family.faces.sorted { weight($0) < weight($1) }) { style in
                                     VStack(alignment: .leading, spacing: 12) {
-                                        HStack { Text(style.style).font(.headline); Spacer(); Button("Inspect") { chosen = style.name; tab = "Preview" }; Button("Compare in library") { library.overlayName = style.name; dismiss() }; Button("Use as main preview") { library.pro.mainPreviews[family.name] = style.name; library.savePro() } }
+                                        HStack { Text(style.style).font(.headline); Spacer(); Button("Inspect") { chosen = style.name; tab = "Preview" }; Button("Compare in library") { library.overlayName = style.name; dismiss() }; Button("Use as main preview") { setMainPreview(style.name) } }
                                         if overlayStyles {
                                             OverlayPreview(text: preview, candidate: style.name, reference: face.name, size: size, library: library)
                                         } else {
