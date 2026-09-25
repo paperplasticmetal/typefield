@@ -119,6 +119,21 @@ extension Library {
         }
         return true
     }
+
+    @discardableResult func applyTags(_ tags: Set<String>, to postScriptNames: [String], removing: Bool) -> Bool {
+        guard !tags.isEmpty, !postScriptNames.isEmpty else { return false }
+        let previous = pro.tags
+        for name in postScriptNames {
+            var values = pro.tags[name] ?? []
+            if removing { values.subtract(tags) } else { values.formUnion(tags) }
+            pro.tags[name] = values
+        }
+        guard savePro() else {
+            pro.tags = previous
+            return false
+        }
+        return true
+    }
 }
 
 struct AdvancedFiltersView: View {
@@ -187,12 +202,12 @@ struct TagEditorView: View {
         }.padding(10)
     }
     func apply(remove: Bool) {
-        for face in library.selectedFaces {
-            var tags = library.pro.tags[face.name] ?? []
-            if remove { tags.subtract(entries) } else { tags.formUnion(entries) }
-            library.pro.tags[face.name] = tags
+        let faces = library.selectedFaces
+        guard library.applyTags(Set(entries), to: faces.map(\.name), removing: remove) else {
+            status = library.message.isEmpty ? "Could not save tag settings." : library.message
+            return
         }
-        library.savePro(); status = "Updated \(library.selectedFaces.count) styles."
+        status = "Updated \(faces.count) styles."
     }
     func backup() {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "Typefield-tags.json"
@@ -226,7 +241,7 @@ struct FamilyEditorView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { TextField("Search fonts or families", text: $query); Toggle("Modified only", isOn: $modifiedOnly).toggleStyle(.checkbox) }
             HStack { Text("\(selected.count) styles selected"); Button("Select results") { selected.formUnion(faces.map(\.name)) }; Button("Clear") { selected = [] }; Spacer() }
-            HStack { TextField("Family name to group selected styles under", text: $name); Button("Apply group") { let target = name.trimmingCharacters(in: .whitespacesAndNewlines); library.editFamily(names: selected, target: target); status = "Grouped \(selected.count) styles under \(target)." }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.isEmpty); Button("Restore original families") { library.editFamily(names: selected, target: nil); status = "Restored original families for selected styles." }.disabled(selected.isEmpty) }
+            HStack { TextField("Family name to group selected styles under", text: $name); Button("Apply group") { let target = name.trimmingCharacters(in: .whitespacesAndNewlines); if library.editFamily(names: selected, target: target) { status = "Grouped \(selected.count) styles under \(target)." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.isEmpty); Button("Restore original families") { if library.editFamily(names: selected, target: nil) { status = "Restored original families for selected styles." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(selected.isEmpty) }
             Text(status).font(.caption).foregroundStyle(.secondary)
             Text("Group selected styles to merge families, or assign a subset to split a family. Font files are not modified.").font(.caption).foregroundStyle(.secondary)
             ScrollView {

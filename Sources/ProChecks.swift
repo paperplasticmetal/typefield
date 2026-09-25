@@ -53,6 +53,17 @@ enum ProChecks {
         let previousTags = broken.pro.tags
         precondition(!broken.mergeTagBackup(["imported": ["tag"]]), "Unreadable pro settings permitted a tag import")
         precondition(broken.pro.tags == previousTags, "Failed tag import was not rolled back")
+        let tagFixture = Library(storageURL: root.appendingPathComponent("tag-apply/library.json"))
+        tagFixture.acceptCatalog(catalog)
+        let taggedFace = catalog[0].representative.name
+        tagFixture.pro.tags[taggedFace] = ["keep"]
+        precondition(tagFixture.savePro(), "Could not prepare tag apply fixture")
+        let tagsBeforeFailedApply = tagFixture.pro.tags
+        tagFixture.proSaveBlocked = true
+        precondition(!tagFixture.applyTags(["new"], to: [taggedFace], removing: false), "Failed tag addition reported success")
+        precondition(tagFixture.pro.tags == tagsBeforeFailedApply, "Failed tag addition remained in memory")
+        precondition(!tagFixture.applyTags(["keep"], to: [taggedFace], removing: true), "Failed tag removal reported success")
+        precondition(tagFixture.pro.tags == tagsBeforeFailedApply, "Failed tag removal remained in memory")
         let splitURL = root.appendingPathComponent("split-save/library.json")
         let split = Library(storageURL: splitURL)
         split.acceptCatalog(catalog)
