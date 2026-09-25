@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.48.1 — 2026-09-24 (release candidate; final live QA pending)
+
+- Improved Spaces checkpoint save feedback and corrected imported Type system PDF behavior.
+- Fixed Library Shortlist and Inspector rollback after failed saves.
+- Fixed Letterform Editor master-weight font export and project rollback after failed saves.
+
 ## 0.48.0 — 2026-09-23
 
 - Added file picker and Finder drag-and-drop for SVG, PNG and other common image artwork on individual Spaces canvases. Artwork is embedded in saved typeboards and appears in canvas previews and PDFs. Editable Figma and Adobe handoffs explain when they omit image artwork.
