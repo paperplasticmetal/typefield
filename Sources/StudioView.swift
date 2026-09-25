@@ -622,7 +622,7 @@ struct TypeBoardEditor: View {
                     Button("Editable Figma layout…") { exportFigma() }
                 }.fixedSize()
                 Menu {
-                    Button("Save checkpoint") { var values = board.checkpoints ?? []; values.append(DirectionCheckpoint(direction: direction)); board.checkpoints = Array(values.suffix(50)); save(); status = "Checkpoint saved" }
+                    Button("Save checkpoint") { saveCheckpoint() }
                     Menu("Restore checkpoint as canvas") {
                         ForEach((board.checkpoints ?? []).reversed()) { checkpoint in Button(checkpoint.direction.name + " · " + checkpoint.date.formatted(date: .abbreviated, time: .shortened)) { let copy = checkpoint.direction.copy(name: checkpoint.direction.name + " restored"); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save() } }
                     }.disabled((board.checkpoints ?? []).isEmpty)
@@ -1344,6 +1344,15 @@ struct TypeBoardEditor: View {
     func openFontSummary() {
         showFontSummary = true
     }
+    func saveCheckpoint() {
+        let outcome = StudioCheckpointSave.save(direction: direction, board: board) { onSave($0, "Save Checkpoint") }
+        board = outcome.board
+        if outcome.saved {
+            status = "Checkpoint saved"
+        } else {
+            status = library.studio.error.isEmpty ? "Checkpoint could not be saved" : "Checkpoint could not be saved: " + library.studio.error
+        }
+    }
     var fontSummaryPopover: some View {
         let summary = fontSummary
         return VStack(alignment: .leading, spacing: 14) {
@@ -1378,7 +1387,7 @@ struct TypeBoardEditor: View {
                     Button("InDesign builder (.jsx)…") { exportAdobeTypeSystem(.indesign) }
                 }.fixedSize()
             }
-            Text("Each selected canvas contributes its visible text styles. Type system PDF creates one specimen page per canvas. Adobe builders create editable native documents when you run the saved script inside Illustrator or InDesign; fonts are referenced, never bundled.").font(.caption).foregroundStyle(.secondary)
+            Text("Each selected canvas contributes its visible text styles. Type system PDF creates one specimen page per canvas; imported Figma and Adobe canvases are not supported yet. Use Preview PDF for their visual layout. Adobe builders create editable native documents when you run the saved script inside Illustrator or InDesign; fonts are referenced, never bundled.").font(.caption).foregroundStyle(.secondary)
         }.padding(18).frame(width: 540)
     }
     enum CollectionScope { case canvas, typeboard, project }
@@ -2515,6 +2524,16 @@ extension CanvasPlan {
 }
 
 enum TypeSystemPDFExporter {
+    enum ExportError: LocalizedError {
+        case importedCanvas
+
+        var errorDescription: String? {
+            switch self {
+            case .importedCanvas:
+                return "Type system PDF does not support imported Figma or Adobe canvases yet. Use Preview PDF to export the selected imported canvas."
+            }
+        }
+    }
     static func specimenDirection(from source: TypeDirection) -> TypeDirection {
         var direction = source
         direction.canvas = .specimen
@@ -2531,6 +2550,7 @@ enum TypeSystemPDFExporter {
     }
     static func data(directions: [TypeDirection]) throws -> Data {
         guard !directions.isEmpty else { throw NSError(domain: "Typefield", code: 1, userInfo: [NSLocalizedDescriptionKey: "Select at least one canvas."]) }
+        guard !directions.contains(where: { $0.canvas == .imported }) else { throw ExportError.importedCanvas }
         let pages: [(Data, CGRect)] = directions.map { source in
             let plan = CanvasPlan(direction: specimenDirection(from: source))
             let view = CanvasNativeView(plan: plan)

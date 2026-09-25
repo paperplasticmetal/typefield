@@ -230,6 +230,16 @@ enum StudioChecks {
         let typeSystemPDF = try TypeSystemPDFExporter.data(directions: [summaryDirection, secondSummaryDirection])
         let typeSystemDocument = CGDataProvider(data: typeSystemPDF as CFData).flatMap(CGPDFDocument.init)
         try verify(typeSystemDocument?.numberOfPages == 2, "Type system export must create one PDF page per selected canvas")
+        var importedPDFDirection = TypeDirection(name: "Imported Figma frame")
+        importedPDFDirection.canvas = .imported
+        importedPDFDirection.importedSource = .figma
+        importedPDFDirection.importedLayout = ImportedLayout(width: 320, height: 200, layers: [ImportedLayer(name: "Imported headline", x: 12, y: 12, width: 280, height: 48, color: "111111", style: TypeStyle(fontName: "Helvetica", size: 30, text: "Imported content"))])
+        do {
+            _ = try TypeSystemPDFExporter.data(directions: [importedPDFDirection])
+            throw NSError(domain: "FontShelfCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Type system PDF must reject imported canvases instead of exporting unrelated template content."])
+        } catch let error as TypeSystemPDFExporter.ExportError {
+            try verify(error.localizedDescription.contains("Use Preview PDF"), "Imported type system PDF failure must explain the supported visual export path")
+        }
         var webBoard = TypeBoard(); webBoard.name = "Web audit"; webBoard.directions = [summaryDirection, secondSummaryDirection]
         let webCoverage = CharacterSet.alphanumerics.union(.punctuationCharacters)
         func webFace(_ name: String, family: String = "Georgia", variable: Bool = false, weight: Int = 400, italic: Bool = false, axisRanges: [Int: ClosedRange<Double>] = [:]) -> WebFontAssetFace { WebFontAssetFace(postScriptName: name, familyName: family, coverage: webCoverage, writingSystems: [.latin], glyphCount: 1_000, variable: variable, weight: weight, italic: italic, axisRanges: axisRanges) }
@@ -779,6 +789,13 @@ enum StudioChecks {
         }()
         guard let boardID = store.addBoard(space: space) else { throw NSError(domain: "TypefieldCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create typeboard rollback fixture"]) }
         store.undoManager.groupsByEvent = false
+        let initialBoard = store.state.spaces[0].boards[0]
+        let successfulCheckpoint = StudioCheckpointSave.save(direction: initialBoard.directions[0], board: initialBoard) { proposed in
+            _ = store.update(space: space, board: proposed, action: "Save Checkpoint")
+            return store.state.spaces[0].boards[0]
+        }
+        try verify(successfulCheckpoint.saved && successfulCheckpoint.board.checkpoints?.count == 1 && store.state.spaces[0].boards[0] == successfulCheckpoint.board, "A checkpoint is successful only after it appears in persisted typeboard state")
+        store.undoManager.removeAllActions()
         let original = try Data(contentsOf: store.url)
         let originalBoard = store.state.spaces[0].boards[0]
         try fm.moveItem(at: parent, to: savedParent)
@@ -793,6 +810,11 @@ enum StudioChecks {
         try verify(!store.renameSpace(space, to: "Unsaved") && store.state.spaces[0].name == "Before", "Failed space rename must roll back")
         var edited = originalBoard; edited.name = "Unsaved typeboard"
         try verify(!store.update(space: space, board: edited, action: "Rename Typeboard") && store.state.spaces[0].boards[0] == originalBoard && !store.undoManager.canUndo, "Failed typeboard edit must roll back without adding undo")
+        let failedCheckpoint = StudioCheckpointSave.save(direction: originalBoard.directions[0], board: originalBoard) { proposed in
+            _ = store.update(space: space, board: proposed, action: "Save Checkpoint")
+            return store.state.spaces[0].boards[0]
+        }
+        try verify(!failedCheckpoint.saved && failedCheckpoint.board == originalBoard && store.state.spaces[0].boards[0] == originalBoard, "A failed checkpoint save must return the persisted board and report failure")
         try verify(!store.removeBoard(space: space, id: boardID) && store.state.spaces[0].boards[0] == originalBoard && !store.undoManager.canUndo, "Failed typeboard deletion must roll back without adding undo")
         try verify(!store.removeSpace(space) && store.state.spaces[0].id == space, "Failed space deletion must roll back")
         let importedSpace = DesignSpace(name: "Unsaved import", boards: [TypeBoard()])

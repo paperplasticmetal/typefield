@@ -394,6 +394,22 @@ struct DirectionCheckpoint: Codable, Identifiable, Equatable {
     var date = Date()
     var direction: TypeDirection
 }
+enum StudioCheckpointSave {
+    struct Outcome {
+        var board: TypeBoard
+        var saved: Bool
+    }
+
+    static func save(direction: TypeDirection, board: TypeBoard, persist: (TypeBoard) -> TypeBoard) -> Outcome {
+        var proposed = board
+        var checkpoints = proposed.checkpoints ?? []
+        let checkpoint = DirectionCheckpoint(direction: direction)
+        checkpoints.append(checkpoint)
+        proposed.checkpoints = Array(checkpoints.suffix(50))
+        let persisted = persist(proposed)
+        return Outcome(board: persisted, saved: persisted.checkpoints?.contains(where: { $0.id == checkpoint.id }) == true)
+    }
+}
 struct DesignSpace: Codable, Identifiable {
     var id = UUID()
     var name = "Untitled space"
