@@ -1,6 +1,6 @@
 # Typefield outstanding work and competitor reference
 
-Snapshot: **0.40.0 (52), 2026-09-23**. This is a continuation checklist, not a promise to implement everything. See the [production readiness audit](PRODUCTION_READINESS.md) for release risks and the changelog for this pass.
+Originally audited at **0.40.0 (52), 2026-09-23**; updated for the 0.50.0 starter-letter workflow. This is a continuation checklist, not a promise to implement everything. See the [production readiness audit](PRODUCTION_READINESS.md) for release risks and the changelog for this pass.
 
 ## How to use this list
 
@@ -15,7 +15,7 @@ The inventory combines current source, current workflow documents, recorded QA l
 
 ## What already exists — do not rebuild these
 
-**Letterform Editor:** vector pen, cubic handles, primitives, node transforms, contour/counter and boolean operations, Objects/Nodes modes, corner resizing and Shift proportional scaling, preview ink, freehand pen width, artwork tracing and alphabet-sheet assignment, SVG and static TrueType export, project deletion/restoration. Components, independent masters, group kerning and reviewed trace smoothing all ship. Access them through **Components & masters** and **Smooth trace…**.
+**Letterform Editor:** vector pen, cubic handles, primitives, node transforms, contour/counter and boolean operations, Objects/Nodes modes, corner resizing and Shift proportional scaling, preview ink, freehand pen width, artwork tracing and alphabet-sheet assignment, SVG and static TrueType export from partial or full character sets, project deletion/restoration. Reviewed, editable starter-letter suggestions, components, independent masters, group kerning and trace smoothing all ship. Access them through **Suggest missing letters…**, **Components & masters** and **Smooth trace…**.
 
 **Important limits:** components support translation/uniform scale; masters do not interpolate; kerning exports as legacy `kern`, not GPOS; smoothing is a reviewed operation on polygons, bounded to 6,000 points. Preview ink is not exported color. Pen width does not change filled vector outline weight. SVG import rasterizes and retraces. Procreate import reads an embedded preview, not native layers.
 
@@ -44,7 +44,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 | FL-02 | **P0 · Missing · L** | **Real vector weight / outline thickness.** Inset/outset filled contours with preview, optical review, counter-collapse detection and Undo; selected-object scope. Separate stroke width, expanding a stroke, and changing a glyph's weight. Current Pen width only edits freehand strokes. |
 | FL-03 | **P0 · Partial · M–L** | **Lossless outlined-SVG import.** Read paths, transforms, compound contours and fill rules directly, retaining Bézier handles. Keep tracing as an explicit fallback for unsupported content. |
 | FL-04 | **P0 · Partial + QA · M** | **Real artwork import quality.** Test actual Procreate-produced files and diverse alphabet sheets: stylized labels, detached accents/dots, overlapping regions, light ink, noisy scans and inconsistent baselines. Make preview-resolution limits, crop/assignment corrections and confidence clearer. Synthetic fixtures are not sufficient validation. |
-| FL-05 | **P0 · Partial · S–M** | **Feature discoverability.** Contextual Components/Masters/Kerning entry points, useful empty states, disabled-control explanations, an editable starter/demo, and short workflows for imported artwork → correction → spacing → export. The renamed button is only the first improvement. |
+| FL-05 | **P0 · Partial · S–M** | **Feature discoverability.** Starter-letter suggestions now appear in the Characters panel. Contextual Components/Masters/Kerning entry points, useful empty states, disabled-control explanations, a sample project, and short workflows for imported artwork → correction → spacing → export still need work. |
 | FL-06 | P1 · Partial · M | **Appearance controls.** Preview ink now persists per project and remains separate from monochrome export. Broader fill/stroke/background choices remain. Per-object pen thickness, caps/joins and variable-width pen profiles need more work. Do not imply that changing preview ink produces a color font. |
 | FL-07 | P1 · Partial · M | **Trace fitting workflow.** Optional import-stage fitting, batch processing with review, zoomable/difference previews, corner control, denser outlines, cancellation/progress and clearer failure feedback. Current fitting is per-glyph and can decline complex outlines. |
 | FL-08 | P1 · Partial · M | **Drawing polish.** Persistent/custom guides, ruler units, angle snapping, alignment/distribution of whole shapes, robust join/split/scissors operations and better dense-path performance. Existing primitives/booleans are not a complete Illustrator-style drawing toolset. |
@@ -68,7 +68,7 @@ Start each implementation task by reproducing the current behavior in a disposab
 | FL-26 | P2 · Partial + QA · M | **Tablet workflow.** Real Apple Pencil/Sidecar and vendor-tablet pressure tests, eraser behavior, tilt-aware nibs and calibration. Pressure capture exists; tilt is captured but not used to rotate the current nib. |
 | FL-27 | P3 · Research · XL | **Native Procreate layer decoding.** Evaluate format access, resolution, compression, layer blending and maintenance cost. Current embedded-preview support is useful but not a native Procreate document editor; PNG export remains the practical high-resolution path. |
 | FL-28 | P3 · Research · L–XL | **Advanced type-design automation.** Optical correction, smart corners/ink traps, advanced curve harmonization, smart/variable components, scripting/plugins and batch actions. Keep these behind foundational editing/export work. |
-| FL-29 | P3 · Research · XL | **Optional generative assistance.** Only with a defined user-owned-artwork workflow, explicit consent and clear output provenance/quality checks. No decision to build a model service has been made. |
+| FL-29 | P3 · Research · XL | **Optional model-backed assistance.** The 0.50.0 starter-letter assist is local, deterministic, and reviewable; it does not infer a complete style from a few drawings. Any future model service needs a defined user-owned-artwork workflow, explicit consent, provenance and quality checks. No decision to build that service has been made. |
 | FL-30 | **HOLD · Shelved** | **New from fonts / two-font combination.** Keep product entry points removed. Existing saved experiments remain readable. Reconsider only if the user explicitly changes this decision; do not silently revive it as an interpolation shortcut. |
 
 ## Spaces

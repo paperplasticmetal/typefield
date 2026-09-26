@@ -2,6 +2,12 @@
 
 Open a project and choose **Components & masters**. Changes are staged until **Apply**; Cancel preserves the current project. **Undo setup** restores the previous project while that applied setup is still the latest change.
 
+## Starter letters
+
+An installable TrueType font can already be exported with only the letters that have artwork. Undrawn characters are omitted from the font's character map. To get editable starting points for the missing Latin letters, draw or import at least one letter and choose **Suggest missing letters…** in the Characters panel. Drawing **H** and **O** helps establish capital strokes and curves; **x**, **n**, **o**, and **p** provide lowercase height, stems, bowls and descenders. These examples improve the suggestions but are not required to export a partial font.
+
+The review sheet separates uppercase and lowercase suggestions. It shows the source characters and whether a shape adapts existing curves or uses a provisional template measured against the project artwork and guides. Choose individual letters to add; Cancel leaves the project untouched. Apply fills only empty glyphs in the active master, keeps every existing drawing, and offers **Undo suggestions** while that project snapshot is current. Suggested outlines are independent editable vector paths. Inspect them at editing zoom, adjust their curves and bearings, and proof words before distributing a font. A few sample letters cannot determine every design choice in an alphabet, so this is a starter workflow rather than automatic type design or model-backed generation.
+
 ## Components
 
 Choose the destination glyph, then Components → Source glyph → Insert component. Adjust X/Y in font units or Scale in percent. Editing a source updates its uses in the active master. Linked geometry appears teal in the vector canvas; edit the source or choose **Decompose** to obtain independent nodes in the destination. Decomposition gives every copied path and node a new editing identity.

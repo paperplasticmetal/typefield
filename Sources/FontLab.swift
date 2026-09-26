@@ -334,6 +334,9 @@ struct FontLabGlyph: Codable, Equatable {
     var rightSideBearing = 0.08
     var importedFrom: String?
     var importFormat: FontLabImportFormat?
+    /// Identifies an accepted starter proposal. Optional for older projects and
+    /// excluded from font revision data because it does not affect the outline.
+    var starterOrigin: String? = nil
     var contourDesignWidth: Double? = nil
     var components: [FontLabComponentUse]? = nil
     var resolvedDesignWidth: Double { contourDesignWidth ?? 0.62 }
@@ -345,6 +348,7 @@ struct FontLabGlyph: Codable, Equatable {
             (contourDesignWidth.map { $0.isFinite && (0.02...3).contains($0) } ?? true) &&
             leftSideBearing.isFinite && rightSideBearing.isFinite &&
             (0...0.4).contains(leftSideBearing) && (0...0.4).contains(rightSideBearing) &&
+            (starterOrigin.map { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= 160 } ?? true) &&
             ((importedFrom == nil && importFormat == nil) || (importedFrom?.isEmpty == false && importFormat != nil))
     }
 }
@@ -1070,7 +1074,9 @@ struct FontLabView: View {
     @State private var vectorEditing = true
     @State private var showFontDesign = false
     @State private var showSmoothing = false
+    @State private var showStarterAssist = false
     @State private var designUndo: (before: FontLabProject, after: FontLabProject)?
+    @State private var starterUndo: (before: FontLabProject, after: FontLabProject)?
     @State private var glyphEditRevision = UUID()
 
     private struct ClearRequest: Identifiable {
@@ -1184,6 +1190,27 @@ struct FontLabView: View {
         .sheet(isPresented: $showSmoothing) {
             if let current = store.selectedProject, let glyph = current.glyphs[selectedCharacter] {
                 FontLabSmoothingView(original: glyph, metrics: current.metrics) { edited in recordGlyphEdit(edited, projectID: current.id) }
+            }
+        }
+        .sheet(isPresented: $showStarterAssist) {
+            if let original = store.selectedProject {
+                FontLabStarterAssistView(original: original) { updated in
+                    guard store.replaceArtworkProject(original, with: updated) else {
+                        store.error = "The project changed while suggestions were open. Reopen suggestions to review the current artwork."
+                        return false
+                    }
+                    starterUndo = (before: original, after: updated)
+                    glyphUndo = []; glyphRedo = []; glyphEditRevision = UUID()
+                    vectorEditing = true
+                    if let firstAdded = updated.characters.first(where: {
+                        original.glyphs[$0]?.hasArtwork != true && updated.glyphs[$0]?.hasArtwork == true
+                    }) { selectedCharacter = firstAdded }
+                    let count = updated.characters.filter {
+                        original.glyphs[$0]?.hasArtwork != true && updated.glyphs[$0]?.hasArtwork == true
+                    }.count
+                    store.status = "Added \(count) editable letter \(count == 1 ? "suggestion" : "suggestions"). Review shapes and spacing before export."
+                    return true
+                }
             }
         }
         .onDisappear { store.flushPendingSave() }
@@ -1304,6 +1331,20 @@ struct FontLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
+            if let undo = starterUndo, undo.after == project {
+                Button("Undo suggestions") {
+                    if store.replaceArtworkProject(undo.after, with: undo.before) {
+                        starterUndo = nil; glyphUndo = []; glyphRedo = []; glyphEditRevision = UUID()
+                        store.status = "Suggestions removed. Your original drawings are unchanged."
+                        if !undo.before.characters.contains(selectedCharacter) { selectedCharacter = undo.before.characters.first ?? "A" }
+                    }
+                }
+                .font(.caption)
+                .disabled(store.readBlocked)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20).padding(.bottom, 8)
+                .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+            }
             Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Draw Bézier contours in Vector, or freehand in Sketch. Export SVG artwork or an installable TrueType font (.ttf).")
                 .font(.caption2).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
@@ -1363,10 +1404,17 @@ struct FontLabView: View {
                 }
                 .accessibilityElement(children: .contain)
             }
+            Button("Suggest missing letters…", systemImage: "wand.and.stars") { showStarterAssist = true }
+                .font(.caption)
+                .disabled(store.readBlocked || !FontLabStarterAssist.hasLatinArtwork(in: project))
+                .help(FontLabStarterAssist.hasLatinArtwork(in: project)
+                    ? "Propose editable uppercase and lowercase letterforms from the artwork in this project"
+                    : "Draw or import at least one A–Z or a–z letter before requesting suggestions. You can already export a font with only the letters you draw.")
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 34, maximum: 46), spacing: 6)], spacing: 6) {
                     ForEach(project.characters, id: \.self) { character in
                         let complete = project.resolvedGlyph(character)?.hasArtwork == true
+                        let starterOrigin = project.glyphs[character]?.starterOrigin
                         let selectedForExport = selectedCharacters.contains(character)
                         Button {
                             selectedCharacter = character
@@ -1384,7 +1432,12 @@ struct FontLabView: View {
                                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                         .padding(3)
                                 }
-                                if complete {
+                                if complete, starterOrigin != nil {
+                                    Image(systemName: "sparkles").font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(ShelfPalette.ink)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                                        .padding(3)
+                                } else if complete {
                                     Circle().fill(Color.green).frame(width: 6, height: 6)
                                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                                         .padding(4)
@@ -1394,8 +1447,9 @@ struct FontLabView: View {
                             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selectedForExport || selectedCharacter == character ? ShelfPalette.indiaYellow : Color.primary.opacity(0.08)))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("\(character), \(complete ? "drawn" : "empty")")
+                        .accessibilityLabel("\(character), \(complete ? (starterOrigin == nil ? "existing artwork" : "started from a suggestion") : "empty")")
                         .accessibilityValue(selectingCharacters ? (selectedForExport ? "Selected for export" : "Not selected for export") : (selectedCharacter == character ? "Current glyph" : ""))
+                        .help(starterOrigin ?? (complete ? "Existing artwork" : "No artwork yet"))
                     }
                 }
             }
@@ -1689,6 +1743,7 @@ struct FontLabView: View {
         edited.components = nil
         edited.importedFrom = nil
         edited.importFormat = nil
+        edited.starterOrigin = nil
         store.setGlyph(edited, in: projectID, save: true)
     }
 
@@ -1864,7 +1919,7 @@ private struct FontLabMetricsGuideSheet: View {
                 definition("Cap height", "The height of flat-topped capitals such as H. Rounded capitals can overshoot it slightly by design.")
                 definition("Side bearings", "The blank space to the left and right of this glyph. They control rhythm and spacing; they are not crop lines.")
             }
-            Text("Tip: draw H and O to establish capitals, then x, n, o, and p for lowercase proportions and spacing before completing the full character set.")
+            Text("Tip: draw H and O to establish capitals, then x, n, o, and p for lowercase proportions and spacing. Choose Suggest missing letters in the Characters panel for editable starting points. You can also export a font with only the letters you have drawn.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         .padding(24).frame(width: 660, height: 570)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.50.0 — 2026-09-25
+
+- Added **Suggest missing letters…** to Letterform Editor. The local assist proposes editable uppercase and lowercase Latin starter outlines from a partial set of drawn letters, adapts compatible source curves where possible, and uses measured provisional constructions for the rest. A review sheet shows each proposed letter, its source and method before any artwork is saved.
+- Suggestions fill only empty glyphs in the active master. Existing user drawings stay intact; the accepted batch can be undone while its project snapshot is current. Partial fonts continue to export without suggestions, omitting characters with no artwork.
+
 ## 0.49.0 — 2026-09-25
 
 - Added independent left, right, top and bottom edge resizing for Spaces canvases, with centered corner handles for proportional scaling and border dragging for moving. Resizing checks the resulting text layout, preserves opposite-edge anchoring, cancels unsafe changes with an explanation, and keeps PDF/Figma/Adobe canvas dimensions aligned with the artboard.
