@@ -60,7 +60,7 @@ enum FontLabStarterAssist {
         let weight = measuredWeight(in: project, characters: stemSamples.isEmpty ? sampled : stemSamples)
         let sources = Dictionary(uniqueKeysWithValues: drawn.compactMap { character -> (String, FontLabGlyph)? in
             guard let glyph = project.resolvedGlyph(character), glyph.hasArtwork else { return nil }
-            return (character, glyph)
+            return (character, compact(glyph))
         })
         let style = FontLabStarterStyle(project: project, sources: sources, weight: weight)
         var glyphs: [String: FontLabGlyph] = [:]
@@ -96,6 +96,7 @@ enum FontLabStarterAssist {
                 skipped[character] = "Could not construct valid editable geometry for this letter."
                 continue
             }
+            candidate = compact(candidate)
             candidate.starterOrigin = detail.confidence == .adapted
                 ? "Starter adaptation from \(detail.sourceCharacters.joined(separator: ", "))"
                 : "Starter template informed by \(detail.sourceCharacters.joined(separator: ", "))"
@@ -110,6 +111,13 @@ enum FontLabStarterAssist {
             glyphs: glyphs, details: details, skipped: skipped,
             note: "Starter letters are editable suggestions. Adapted letters reuse your outlines; templates use measured proportions and spacing. A few examples cannot determine every curve or serif. Review each letter before export."
         )
+    }
+
+    private static func compact(_ glyph: FontLabGlyph) -> FontLabGlyph {
+        for units in [3.0, 2.0] {
+            if let fitted = try? FontLabTraceSmoothing.fit(glyph, units: units, refitDenseCurves: true) { return fitted }
+        }
+        return glyph
     }
 
     /// Prefer an actual closed outline for weight measurement. The sample is
@@ -135,8 +143,8 @@ enum FontLabStarterAssist {
                 }
             }
             var start: Int? = nil
-            for i in 0...500 {
-                let inside = path.contains(CGPoint(x: Double(i) * 2, y: y * 1_000), using: .winding, transform: .identity)
+            for i in 0...501 {
+                let inside = i <= 500 && path.contains(CGPoint(x: Double(i) * 2, y: y * 1_000), using: .winding, transform: .identity)
                 if inside && start == nil { start = i }
                 if !inside, let first = start {
                     let run = Double(i - first) / 500 * glyph.resolvedDesignWidth
@@ -209,7 +217,36 @@ enum FontLabStarterAssist {
                 var shape = FontLabStarterSkeleton(width: width, metrics: style.metrics, weight: fittedWeight,
                                                    terminalCap: cap, descenderDepth: style.descenderDepth)
                 shape.draw(character)
-                guard let paths = shape.outlines(), !paths.isEmpty else { continue }
+                guard var paths = shape.outlines(), !paths.isEmpty else { continue }
+                // Carry the measured stem lean into constructed letters.
+                func lean(_ p: FontLabPoint) -> FontLabPoint {
+                    .init(x:p.x + style.slant * (p.y - style.metrics.baseline) / width,y:p.y)
+                }
+                for p in paths.indices { for n in paths[p].nodes.indices {
+                    paths[p].nodes[n].point = lean(paths[p].nodes[n].point)
+                    paths[p].nodes[n].incoming = paths[p].nodes[n].incoming.map(lean)
+                    paths[p].nodes[n].outgoing = paths[p].nodes[n].outgoing.map(lean)
+                } }
+                // Skeleton coordinates include construction margins. Those
+                // margins must not become extra side bearings: the measured
+                // source width is an ink width, so fit the actual ink to it.
+                let outline = CGMutablePath()
+                paths.forEach { outline.addPath($0.cgPath) }
+                let box = outline.boundingBoxOfPath
+                let inset = isUpper ? style.upperInsets : style.lowerInsets
+                let left = abs(style.slant) < 0.12 ? inset.0 : 0
+                let right = abs(style.slant) < 0.12 ? inset.1 : 0
+                guard box.width > 0 else { continue }
+                func align(_ p: FontLabPoint) -> FontLabPoint {
+                    .init(x: min(1, max(0, left + (1-left-right) * (p.x * 1000 - box.minX) / box.width)), y: p.y)
+                }
+                for p in paths.indices { for n in paths[p].nodes.indices {
+                    paths[p].nodes[n].point = align(paths[p].nodes[n].point)
+                    // Handles may legitimately lie outside the ink box.
+                    func handle(_ h: FontLabPoint) -> FontLabPoint { .init(x:left + (1-left-right) * (h.x * 1000 - box.minX) / box.width,y:h.y) }
+                    paths[p].nodes[n].incoming = paths[p].nodes[n].incoming.map(handle)
+                    paths[p].nodes[n].outgoing = paths[p].nodes[n].outgoing.map(handle)
+                } }
                 let glyph = FontLabGlyph(character: character, strokes: [FontLabStroke(vectorPaths: paths)],
                                          leftSideBearing: style.leftBearing(uppercase: isUpper),
                                          rightSideBearing: style.rightBearing(uppercase: isUpper),
@@ -232,6 +269,10 @@ private struct FontLabStarterStyle {
     let lowerRightBearing: Double
     let terminalCap: CGLineCap
     let descenderDepth: Double
+    let upperInsets: (Double, Double)
+    let lowerInsets: (Double, Double)
+    let slant: Double
+    let fixedAdvance: Double?
 
     var safeWeight: Double { min(weight, (metrics.xHeight - metrics.baseline) * 0.65) }
 
@@ -246,6 +287,8 @@ private struct FontLabStarterStyle {
         let regularLower = Array("nopabhduce").map(String.init).compactMap { sources[$0] }
         let caps = regularCaps.isEmpty ? sources.filter { $0.key == $0.key.uppercased() }.map(\.value) : regularCaps
         let lower = regularLower.isEmpty ? sources.filter { $0.key == $0.key.lowercased() }.map(\.value) : regularLower
+        let advances = sources.values.map { $0.resolvedDesignWidth + $0.leftSideBearing + $0.rightSideBearing }
+        fixedAdvance = !caps.isEmpty && !lower.isEmpty && advances.count >= 3 && (advances.max()! - advances.min()!) < 0.006 ? median(advances) : nil
         let capWidth = median(caps.map(\.resolvedDesignWidth))
         let lowerWidth = median(lower.map(\.resolvedDesignWidth))
         uppercaseWidth = min(2.2, max(0.32, capWidth ?? lowerWidth.map { $0 / 0.88 } ?? 0.65))
@@ -256,6 +299,26 @@ private struct FontLabStarterStyle {
         upperRightBearing = median(upperBearings.map(\.rightSideBearing)) ?? 0.075
         lowerLeftBearing = median(lowerBearings.map(\.leftSideBearing)) ?? 0.075
         lowerRightBearing = median(lowerBearings.map(\.rightSideBearing)) ?? 0.075
+        func extent(_ glyph: FontLabGlyph, _ y: Double) -> (Double,Double)? {
+            let path=CGMutablePath()
+            FontLabVectorMath.paths(in:glyph).forEach { path.addPath($0.cgPath) }
+            let samples=(0...500).filter { path.contains(CGPoint(x:Double($0)*2,y:y*1000)) }
+            guard let first=samples.first,let last=samples.last else {return nil}
+            return (Double(first)/500,Double(last)/500)
+        }
+        func insets(_ glyph: FontLabGlyph?, top: Double) -> (Double,Double) {
+            guard let glyph, let edge=extent(glyph,project.metrics.baseline+(top-project.metrics.baseline)*0.3) else {return (0,0)}
+            return (min(0.20,edge.0),min(0.20,1-edge.1))
+        }
+        upperInsets=insets(sources["H"],top:metrics.capHeight)
+        lowerInsets=insets(sources["n"],top:metrics.xHeight)
+        var slopes:[Double]=[]
+        for (character,top) in [("H",metrics.capHeight),("n",metrics.xHeight),("p",metrics.xHeight)] {
+            guard let glyph=sources[character] else {continue}
+            let low=metrics.baseline+(top-metrics.baseline)*0.25,high=metrics.baseline+(top-metrics.baseline)*0.65
+            if let a=extent(glyph,low),let b=extent(glyph,high) { slopes.append((b.0-a.0)*glyph.resolvedDesignWidth/(high-low)) }
+        }
+        slant=min(0.65,max(-0.65,median(slopes) ?? 0))
         let stem = ["H", "h", "n", "p"].compactMap { sources[$0] }.first
         if let stem {
             let paths = FontLabVectorMath.paths(in: stem)
@@ -278,7 +341,10 @@ private struct FontLabStarterStyle {
     }
 
     func width(_ base: Double, uppercase: Bool) -> Double {
-        min(2.5, max(0.22, base * (uppercase ? uppercaseWidth / 0.65 : lowercaseWidth / 0.57)))
+        if let fixedAdvance {
+            return max(0.02, fixedAdvance - leftBearing(uppercase:uppercase) - rightBearing(uppercase:uppercase))
+        }
+        return min(2.5, max(0.22, base * (uppercase ? uppercaseWidth / 0.65 : lowercaseWidth / 0.57)))
     }
     func leftBearing(uppercase: Bool) -> Double { uppercase ? upperLeftBearing : lowerLeftBearing }
     func rightBearing(uppercase: Bool) -> Double { uppercase ? upperRightBearing : lowerRightBearing }
@@ -300,12 +366,28 @@ private extension FontLabStarterAssist {
             return .init(glyph: glyph, sources: [sourceCharacter], method: "Mirrored outline",
                          explanation: "The drawn \(sourceCharacter) contours were reflected horizontally. The curves and stroke character are retained; check the letter's terminals and spacing.")
         }
+        // Reuse a complete stem/bowl join when an ascender/descender partner
+        // exists. Adding a generic stem to o discards that characteristic join.
+        let stemPartners: [String: [(String, Bool)]] = [
+            "b": [("p", false), ("q", true)], "d": [("q", false), ("p", true)],
+            "p": [("b", false), ("d", true)], "q": [("d", false), ("b", true)]
+        ]
+        for (origin, horizontal) in (abs(style.slant) < 0.12 ? stemPartners[character] ?? [] : []) {
+            guard let source = sources[origin], exportable(source) else { continue }
+            if let glyph = transformed(source, to: character, width: source.resolvedDesignWidth,
+                                       x: { horizontal ? 1 - $0 : $0 },
+                                       y: { style.metrics.baseline + style.metrics.xHeight - $0 },
+                                       swapBearings: horizontal, reverseWinding: !horizontal) {
+                return .init(glyph: glyph, sources: [origin], method: "Reflected stem and bowl",
+                             explanation: "The drawn \(origin) stem, bowl and join were reflected into \(character). Review the reflected curve balance and ascender or descender length.")
+            }
+        }
         let verticalPairs = ["n":"u", "u":"n"]
         if let sourceCharacter = verticalPairs[character], let source = sources[sourceCharacter], exportable(source) {
             let top = character == character.uppercased() ? style.metrics.capHeight : style.metrics.xHeight
             if let glyph = transformed(source, to: character, width: source.resolvedDesignWidth,
                                        x: { $0 }, y: { style.metrics.baseline + top - $0 },
-                                       reverseWinding: true) {
+                                       reverseWinding: true, verticalSlant: style.slant) {
                 return .init(glyph: glyph, sources: [sourceCharacter], method: "Mirrored outline",
                              explanation: "The drawn \(sourceCharacter) contours were reflected vertically between the baseline and \(character == character.uppercased() ? "cap" : "x") height. Review joins and optical balance.")
             }
@@ -359,9 +441,12 @@ private extension FontLabStarterAssist {
             }
         }
         if character == "m", let source = sources["n"], exportable(source),
-           let glyph = repeatedN(source, weight: style.safeWeight) {
+           var glyph = repeatedN(source, weight: style.safeWeight) {
+            if let advance = style.fixedAdvance {
+                glyph.contourDesignWidth = max(0.02, advance - glyph.leftSideBearing - glyph.rightSideBearing)
+            }
             return .init(glyph: glyph, sources: ["n"], method: "Repeated source outline",
-                         explanation: "Two independent copies of the drawn n outline form the m arches. Edit the middle join and side bearings as needed.")
+                         explanation: "Two independent copies of the drawn n outline form the m arches, fitted to a shared advance when the references are monospaced. Edit the middle join and side bearings as needed.")
         }
 
         if ["a", "b", "d", "p", "q"].contains(character), let (source, origin) = bowl(false),
@@ -397,9 +482,13 @@ private extension FontLabStarterAssist {
 
     static func transformed(_ source: FontLabGlyph, to character: String, width: Double,
                             x: (Double) -> Double, y: (Double) -> Double,
-                            swapBearings: Bool = false, reverseWinding: Bool = false) -> FontLabGlyph? {
+                            swapBearings: Bool = false, reverseWinding: Bool = false, verticalSlant: Double = 0) -> FontLabGlyph? {
         func map(_ value: FontLabPoint) -> FontLabPoint {
-            var point = value; point.x = x(value.x); point.y = y(value.y); return point
+            var point = value; point.x = x(value.x); point.y = y(value.y)
+            // Reflect the vertical structure in deskewed space, then restore
+            // the source lean. A direct y reflection reverses italic stems.
+            point.x += verticalSlant * (point.y - value.y) / width
+            return point
         }
         var strokes = FontLabDesign.detachedStrokes(source.strokes)
         for index in strokes.indices {
@@ -454,8 +543,8 @@ private extension FontLabStarterAssist {
         guard let outline = closedOutline(glyph) else { return nil }
         var runs: [Double] = []
         var start: Int?
-        for i in 0...500 {
-            let inside = outline.contains(CGPoint(x: Double(i) * 2, y: y * 1_000),
+        for i in 0...501 {
+            let inside = i <= 500 && outline.contains(CGPoint(x: Double(i) * 2, y: y * 1_000),
                                           using: .winding, transform: .identity)
             if inside && start == nil { start = i }
             if !inside, let first = start {

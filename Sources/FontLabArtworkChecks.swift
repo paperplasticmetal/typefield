@@ -43,13 +43,59 @@ enum FontLabArtworkChecks {
     static let singleSVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"240\" height=\"260\"><path d=\"M120 25 C5 25 5 235 120 235 C235 235 235 25 120 25 Z M120 65 C180 65 180 195 120 195 C60 195 60 65 120 65 Z\" fill=\"black\"/></svg>"
     static let dottedSVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"360\" height=\"200\"><g fill=\"black\"><circle cx=\"50\" cy=\"30\" r=\"10\"/><rect x=\"42\" y=\"65\" width=\"16\" height=\"95\"/><circle cx=\"150\" cy=\"30\" r=\"10\"/><path d=\"M142 65 H158 V154 Q158 193 120 188 V172 Q142 178 142 153 Z\"/><rect x=\"243\" y=\"20\" width=\"16\" height=\"95\"/><circle cx=\"251\" cy=\"151\" r=\"10\"/></g></svg>"
 
+    // Original uneven marker strokes, with a deliberately offset handwritten
+    // i dot. These exercise import independently of installed typefaces/OCR.
+    static let handwritingSVG = """
+    <svg xmlns="http://www.w3.org/2000/svg" width="700" height="240" viewBox="0 0 700 240">
+    <g fill="none" stroke="black" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 173 Q35 130 45 91 M39 128 C67 67 105 80 92 128 L82 174"/>
+    <path d="M196 89 C142 64 132 171 168 177 C211 188 234 83 196 89 Z"/>
+    <path d="M270 218 L302 91 M294 124 C331 66 363 99 342 150 Q324 186 286 168"/>
+    <path d="M413 172 L438 91"/>
+    <path d="M557 88 L531 180 Q524 215 499 207"/>
+    </g><g fill="black"><ellipse cx="455" cy="54" rx="8" ry="9"/><ellipse cx="565" cy="51" rx="9" ry="8"/></g></svg>
+    """
+    static let bubbleSVG = """
+    <svg xmlns="http://www.w3.org/2000/svg" width="450" height="250" viewBox="0 0 450 250">
+    <g fill="black" fill-rule="evenodd">
+    <path d="M37 217 C10 198 15 63 36 34 C65 9 160 16 177 58 C191 85 174 111 159 119 C205 134 199 198 169 216 C135 241 60 235 37 217 Z M69 61 C88 47 133 52 132 78 C131 99 89 101 67 94 Z M64 146 C98 127 145 144 143 171 C140 196 87 200 63 184 Z"/>
+    <path d="M312 24 C225 25 216 214 298 228 C389 244 438 45 348 25 Q329 19 312 24 Z M309 76 C347 54 370 91 357 140 C345 187 306 194 283 166 C263 141 278 91 309 76 Z"/>
+    </g></svg>
+    """
+
     static func writeFixtures(to folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        for (name, svg) in [("alphabet-A-Z", alphabetSVG()), ("single-O", singleSVG), ("detached-ij!", dottedSVG)] {
+        for (name, svg) in [("alphabet-A-Z", alphabetSVG()), ("single-O", singleSVG), ("detached-ij!", dottedSVG), ("handwriting-nopij", handwritingSVG), ("bubble-BO", bubbleSVG)] {
             let data = Data(svg.utf8)
             try data.write(to: folder.appendingPathComponent(name + ".svg"))
             let image = try FontLabArtworkReader.svgImage(data)
             try NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent(name + ".png"))
+        }
+        for (filename, letters) in [("handwriting-nopij", "nopij"), ("bubble-BO", "BO")] {
+            let source = try FontLabArtworkReader.load(folder.appendingPathComponent(filename + ".png"))
+            var scan = try FontLabArtworkEngine.scan(source, options: FontLabArtworkOptions(), recognize: false)
+            guard scan.regions.count == letters.count else { continue }
+            for (i, character) in letters.enumerated() { scan.regions[i].character = String(character) }
+            let project = try FontLabArtworkEngine.project(from: scan, name: filename)
+            let proposal = FontLabStarterAssist.propose(for: project)
+            let shown = Array(letters + "CDEGQabcdhmu").map(String.init)
+            var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1200\" height=\"540\" viewBox=\"0 0 1200 540\"><rect width=\"1200\" height=\"540\" fill=\"white\"/>"
+            for (i, character) in shown.enumerated() {
+                let original = project.glyphs[character]?.hasArtwork == true
+                guard let glyph = original ? project.glyphs[character] : proposal.glyphs[character] else { continue }
+                let x = 15 + (i % 8) * 150, y = 10 + (i / 8) * 175
+                let paths = FontLabVectorMath.paths(in:glyph)
+                let ink = paths.map { $0.svg(xScale:glyph.resolvedDesignWidth) }.joined(separator:" ")
+                svg += "<g transform=\"translate(\(x) \(y)) scale(0.15)\"><path d=\"\(ink)\" fill=\"\(original ? "#222222" : "#596875")\"/>"
+                for node in paths.flatMap(\.nodes) {
+                    svg += "<circle cx=\"\(node.point.x*glyph.resolvedDesignWidth*1000)\" cy=\"\((1-node.point.y)*1000)\" r=\"9\" fill=\"#0088ee\"/>"
+                }
+                svg += "</g>"
+            }
+            svg += "</svg>"
+            try Data(svg.utf8).write(to:folder.appendingPathComponent(filename + "-editable.svg"))
+            let image = try FontLabArtworkReader.svgImage(Data(svg.utf8))
+            try NSBitmapImageRep(cgImage:image).representation(using:.png,properties:[:])!.write(to:folder.appendingPathComponent(filename + "-editable.png"))
         }
         let png = try Data(contentsOf: folder.appendingPathComponent("alphabet-A-Z.png"))
         let plist = try PropertyListSerialization.data(fromPropertyList: ["$archiver": "NSKeyedArchiver", "$version": 100000, "$objects": ["$null"], "$top": [:]] as [String: Any], format: .binary, options: 0)
@@ -60,6 +106,9 @@ enum FontLabArtworkChecks {
         alphabet-A-Z.svg / .png — Original geometric A–Z artwork, left to right in four rows. Use Detect letters and Apply order → A–Z, or Grid sheet with 7 columns / 4 rows. Review all 26 outlines, then import into a new project.
         single-O.svg / .png — A single letter with an open counter. Choose Single letter, label O and inspect the white hole.
         detached-ij!.svg / .png — Tests detached dots and a descender. The order is ij!.
+        handwriting-nopij.svg / .png — Uneven handwriting with slanted stems, a p descender, and offset detached i/j dots. Order: nopij.
+        bubble-BO.svg / .png — Original thick, irregular bubble letters with two B counters and one O counter. Order: BO.
+        *-editable.svg / .png — Imported letters followed by CDEGQabcdhmu suggestions. Blue dots mark editing anchors; dark ink is source artwork, slate ink is suggested. This is a visual review aid, not ground truth for missing-letter design.
         synthetic-preview.procreate — A synthetic ZIP container with Document.archive and an embedded flattened PNG, matching the supported Procreate preview layout. It is an importer fixture, not a document produced or editable by Procreate; it does not validate every Procreate version or native layer codec.
 
         The SVG and PNG artwork here is original test geometry. No installed font outlines or user projects were used.
@@ -74,6 +123,45 @@ enum FontLabArtworkChecks {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("fontshelf-artwork-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         try writeFixtures(to: folder)
+        for (filename, letters, counters) in [("handwriting-nopij", "nopij", [1,2,2,2,2]), ("bubble-BO", "BO", [3,2])] {
+            let edgeSource = try FontLabArtworkReader.load(folder.appendingPathComponent(filename + ".png"))
+            var scan = try FontLabArtworkEngine.scan(edgeSource, options: FontLabArtworkOptions(), recognize: false)
+            try check(scan.regions.count == letters.count, "\(filename) detached marks split or letters merged: \(scan.regions.count)")
+            for (i, character) in letters.enumerated() { scan.regions[i].character = String(character) }
+            let edgeProject = try FontLabArtworkEngine.project(from: scan, name: filename)
+            let rawProject = try FontLabArtworkEngine.project(from: scan, name: filename, fitCurves: false)
+            var beforeCount=0,afterCount=0
+            for (i, character) in letters.enumerated() {
+                let glyph=edgeProject.glyphs[String(character)]!, paths=FontLabVectorMath.paths(in:glyph)
+                try check(paths.count == counters[i], "\(filename) lost a counter or detached mark in \(character)")
+                print("ARTWORK GLYPH \(filename) \(character): \(scan.regions[i].contours.reduce(0) { $0+$1.count }) → \(paths.reduce(0) { $0+$1.nodes.count })")
+                beforeCount += scan.regions[i].contours.reduce(0) { $0+$1.count }
+                afterCount += paths.reduce(0) { $0+$1.nodes.count }
+                // Compare against the unsmoothed import in the SAME source
+                // frame; independently normalizing each box would hide shifts.
+                let rawPaths=FontLabVectorMath.paths(in:rawProject.glyphs[String(character)]!)
+                let box=rawPaths.reduce(CGRect.null) { $0.union($1.cgPath.boundingBoxOfPath) }
+                let actual=CGMutablePath(),expected=CGMutablePath()
+                let transform=CGAffineTransform(a:1/box.width,b:0,c:0,d:1/box.height,tx:-box.minX/box.width,ty:-box.minY/box.height)
+                paths.forEach { actual.addPath($0.cgPath,transform:transform) }
+                rawPaths.forEach { expected.addPath($0.cgPath,transform:transform) }
+                var intersection=0,union=0
+                for y in 0..<160 { for x in 0..<160 {
+                    let point=CGPoint(x:(Double(x)+0.5)/160,y:(Double(y)+0.5)/160)
+                    let a=actual.contains(point),b=expected.contains(point)
+                    if a && b {intersection += 1};if a || b {union += 1}
+                } }
+                let score=Double(intersection)/Double(max(1,union))
+                try check(score > 0.975,"\(filename) \(character) curve fitting changed too much ink: \(score)")
+            }
+            try check(afterCount < beforeCount/2,"\(filename) remained too dense to edit: \(beforeCount) → \(afterCount)")
+            let restored=try JSONDecoder().decode(FontLabProject.self,from:JSONEncoder().encode(edgeProject))
+            try check(restored == edgeProject,"Edge-case curves failed persistence")
+            _ = try FontLabTrueTypeExporter.artifact(for:edgeProject)
+            let suggestions=FontLabStarterAssist.propose(for:edgeProject)
+            try check(suggestions.glyphs.count == 52-letters.count,"Edge-case suggestions lost Latin coverage")
+            print("ARTWORK EDGE \(filename): \(beforeCount) → \(afterCount) anchors; counters, detached marks, >97.5% overlap, persistence and font export passed")
+        }
         let source = try FontLabArtworkReader.load(folder.appendingPathComponent("alphabet-A-Z.png"))
         var sheet = try FontLabArtworkEngine.scan(source, options: FontLabArtworkOptions(), recognize: false)
         try check(sheet.regions.count == 26, "Alphabet segmentation found \(sheet.regions.count) regions instead of 26.")
@@ -128,7 +216,7 @@ enum FontLabArtworkChecks {
         let ell = project.glyphs["L"]!
         func contains(_ x: Double, _ y: Double) -> Bool {
             let path = CGMutablePath()
-            for ring in ell.strokes[0].contours! { path.addLines(between: ring.map { CGPoint(x: $0.x, y: $0.y) }); path.closeSubpath() }
+            for outline in FontLabVectorMath.paths(in: ell) { path.addPath(outline.cgPath, transform: CGAffineTransform(scaleX: 0.001, y: 0.001)) }
             return path.contains(CGPoint(x: x, y: y))
         }
         try check(contains(0.8, project.metrics.baseline + 0.025) && !contains(0.8, project.metrics.capHeight - 0.025), "Artwork tracing flipped the vertical axis.")

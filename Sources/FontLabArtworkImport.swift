@@ -321,7 +321,10 @@ enum FontLabArtworkEngine {
                 let body = bodies[i]
                 let overlap = max(0, min(body.maxX, dot.maxX) - max(body.minX, dot.minX))
                 let gap = max(0, max(body.minY, dot.minY) - min(body.maxY, dot.maxY))
-                return overlap >= min(body.width, dot.width) * 0.35 && gap < tallest * 0.55
+                let horizontalGap = max(0, max(body.minX, dot.minX) - min(body.maxX, dot.maxX))
+                let offsetDot = dot.maxY < body.minY && dot.width < body.height * 0.3 &&
+                    horizontalGap < body.height * 0.15 && gap < body.height * 0.45
+                return (overlap >= min(body.width, dot.width) * 0.35 && gap < tallest * 0.55) || offsetDot
             }
             if let closest = candidates.min(by: { abs(bodies[$0].midY - dot.midY) < abs(bodies[$1].midY - dot.midY) }) {
                 bodies[closest] = bodies[closest].union(dot)
@@ -415,7 +418,7 @@ enum FontLabArtworkEngine {
         }
     }
 
-    static func project(from scan: FontLabArtworkScan, name: String, existing: FontLabProject? = nil, replace: Bool = false) throws -> FontLabProject {
+    static func project(from scan: FontLabArtworkScan, name: String, existing: FontLabProject? = nil, replace: Bool = false, fitCurves: Bool = true) throws -> FontLabProject {
         let selected = scan.regions.filter(\.included)
         let characters = selected.map { $0.character.trimmingCharacters(in: .whitespacesAndNewlines) }
         guard !selected.isEmpty, characters.allSatisfy({ $0.count == 1 }), Set(characters).count == characters.count else {
@@ -459,6 +462,9 @@ enum FontLabArtworkEngine {
                 FontLabPoint(x: p.x, y: project.metrics.baseline + (baseline - region.rect.maxY + p.y * region.rect.height) * scale)
             } }
             glyph.strokes = [FontLabStroke(contours: contours)]
+            // Keep the raw scan for the review UI; save a compact, bounded
+            // curve fit when it passes shape and topology validation.
+            if fitCurves { glyph = (try? FontLabTraceSmoothing.fit(glyph, units: min(3, max(1, scale * 1500)))) ?? glyph }
             glyph.importedFrom = scan.source.filename; glyph.importFormat = scan.source.format
             guard glyph.isValid else { throw FontLabArtworkError.message("A traced outline is too complex. Increase speck removal or import a simpler drawing.") }
             if !project.characters.contains(character) { project.characters.append(character) }

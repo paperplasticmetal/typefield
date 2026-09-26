@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.52.0 — 2026-09-26
+
+- Replaced dense trace smoothing with compact cubic fitting that retains sharp corners and checks boundary deviation, winding, counters, crossings, and filled-ink agreement. New imports use a source-resolution-aware fit; dense existing curves can also be reduced in **Smooth trace…**, including a reviewed **Editable · 5 units** option. Unsafe fits keep the original artwork.
+- Added original handwriting and bubble-letter import fixtures. Slanted handwriting dots just outside a stem’s horizontal bounds now stay attached to their letter. Regression checks cover silhouette fidelity, counters, dots, node reduction, persistence, and TrueType export.
+- Starter suggestions now account for construction margins, inset stems, measured lean, and shared advances. Compatible stem/bowl partners retain the source join, and n/u reflection preserves the measured lean; dense copied outlines are fitted before reuse, and the review displays editing-anchor counts.
+- Expanded the read-only holdout audit from five to nine installed faces, including handwriting, marker, and connected script. Original five-face mean overlap improved from 44.6% to 48.0%; the handwriting and bubble import fixtures use 93.9% and 98.1% fewer anchors, respectively. Scores measure sampled silhouette overlap, not prediction confidence; suggestions still require visual review.
+
 ## 0.51.0 — 2026-09-26
 
 - Improved **Suggest missing letters…** so compatible letters reuse independent, editable copies of the user's actual contours. The assist can open an O/o for C/c, reuse bowls and add stems or tails, reflect compatible letters, and repeat a drawn n for m. It also measures source widths, side bearings, terminal shape, and descender depth for the remaining constructed letters. Added stems now follow the copied bowl's weight, while tight S curves use a lighter optical stroke; very thin traced strokes remain measurable.

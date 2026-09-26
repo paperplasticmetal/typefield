@@ -223,7 +223,7 @@ struct FontLabSmoothingView: View {
     let metrics: FontLabMetrics
     let onApply: (FontLabGlyph) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var tolerance = 1.0
+    @State private var tolerance = 2.0
     @State private var candidate: FontLabGlyph?
     @State private var message = ""
     @State private var working = false
@@ -233,7 +233,7 @@ struct FontLabSmoothingView: View {
             Text("Smooth traced outline · " + original.character).font(.title2.bold())
             Text("Fit editable curves while keeping corners and counters. The original stays unchanged until you apply the preview.").foregroundStyle(.secondary)
             HStack {
-                Picker("Fit tolerance", selection: $tolerance) { Text("Gentle · 0.5 units").tag(0.5); Text("Balanced · 1 unit").tag(1.0); Text("Loose · 2 units").tag(2.0) }.disabled(working)
+                Picker("Fit tolerance", selection: $tolerance) { Text("Gentle · 0.5 units").tag(0.5); Text("Balanced · 1 unit").tag(1.0); Text("Loose · 2 units").tag(2.0); Text("Editable · 5 units").tag(5.0) }.disabled(working)
                 Button("Preview") { generate() }.disabled(working)
                 if working { ProgressView().controlSize(.small) }
             }
@@ -254,7 +254,7 @@ struct FontLabSmoothingView: View {
         let id = UUID(); revision = id; working = true; candidate = nil
         let source = original, units = tolerance
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try FontLabTraceSmoothing.fit(source, units: units) }
+            let result = Result { try FontLabTraceSmoothing.fit(source, units: units, refitDenseCurves: true) }
             DispatchQueue.main.async {
                 guard revision == id else { return }; working = false
                 switch result {

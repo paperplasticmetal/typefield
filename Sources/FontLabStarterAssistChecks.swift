@@ -184,6 +184,29 @@ enum FontLabStarterAssistChecks {
         let lower = fixture(["n", "o", "p"])
         let lowerProposal = FontLabStarterAssist.propose(for: lower)
         try check(lowerProposal.glyphs["O"] != nil && lowerProposal.details["O"]?.confidence == .adapted, "Lowercase o should offer a directly adapted uppercase O")
+        try check((lowerProposal.glyphs["i"]?.resolvedDesignWidth ?? 1) < lower.glyphs["n"]!.resolvedDesignWidth * 0.75,
+                  "Similar-width lowercase bowls alone must not imply a monospaced design")
+        var mono = mixed
+        for character in ["H","O","n","o","p"] {
+            mono.glyphs[character]?.contourDesignWidth = 0.60
+        }
+        let monoProposal=FontLabStarterAssist.propose(for:mono)
+        try check(abs(monoProposal.glyphs["m"]!.resolvedDesignWidth-0.60)<0.0001 &&
+                  abs(monoProposal.glyphs["i"]!.resolvedDesignWidth-0.60)<0.0001,
+                  "Equal advances across both cases did not constrain narrow and repeated letters")
+        var leaning = fixture(["n"])
+        var leaningN=leaning.glyphs["n"]!
+        var leaningPaths=FontLabVectorMath.paths(in:leaningN)
+        for path in leaningPaths.indices { for node in leaningPaths[path].nodes.indices {
+            leaningPaths[path].nodes[node].point.x += 0.15 * (leaningPaths[path].nodes[node].point.y-leaning.metrics.baseline)/leaningN.resolvedDesignWidth
+        } }
+        leaningN.strokes=[FontLabStroke(vectorPaths:leaningPaths)];leaning.glyphs["n"]=leaningN
+        let leaningProposal=FontLabStarterAssist.propose(for:leaning)
+        let leaningU=CGMutablePath()
+        FontLabVectorMath.paths(in:leaningProposal.glyphs["u"]!).forEach {leaningU.addPath($0.cgPath)}
+        func leftEdge(_ y: Double) -> Int { (0...1000).first {leaningU.contains(CGPoint(x:Double($0),y:y*1000))} ?? 1000 }
+        try check(leaningProposal.details["u"]?.confidence == .adapted && leftEdge(0.49)>leftEdge(0.25)+30,
+                  "Reflecting a handwritten n into u reversed its measured lean")
         let pSource = fixture(["P"])
         let rSuggestion = FontLabStarterAssist.propose(for: pSource)
         try check(rSuggestion.details["R"]?.confidence == .adapted && rSuggestion.glyphs["R"]?.strokes.count == 2,

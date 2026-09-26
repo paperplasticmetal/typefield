@@ -291,6 +291,8 @@ struct FontLabStarterAssistView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(adapted ? Color.accentColor : Color.orange)
                     }
+                    Text("\(FontLabVectorMath.paths(in: glyph).reduce(0) { $0 + $1.nodes.count }) editable anchors")
+                        .font(.caption).foregroundStyle(.secondary)
                     if let detail {
                         Text(detail.method).font(.subheadline.weight(.medium))
                         Text(detail.explanation).font(.caption).foregroundStyle(.secondary)

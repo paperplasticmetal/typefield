@@ -1483,7 +1483,7 @@ struct FontLabView: View {
                         Text("Sketch").tag(false).disabled(glyph.components?.isEmpty == false)
                     }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
                     Button("Smooth trace…") { showSmoothing = true }
-                        .disabled(store.readBlocked || FontLabVectorMath.paths(in: glyph).allSatisfy { !$0.closed || $0.nodes.contains { $0.incoming != nil || $0.outgoing != nil } })
+                        .disabled(store.readBlocked || FontLabVectorMath.paths(in: glyph).allSatisfy { !$0.closed || ($0.nodes.count <= 32 && $0.nodes.contains { $0.incoming != nil || $0.outgoing != nil }) })
                     Button("Redo") { redoGlyph(projectID: project.id) }.disabled(glyphRedo.isEmpty || store.readBlocked)
                     Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled((glyphUndo.isEmpty && glyph.strokes.isEmpty) || store.readBlocked)
                     Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }

@@ -86,7 +86,7 @@ enum FontLabDesignChecks {
         try check(lighterArtifact.postScriptName != weightedArtifact.postScriptName,"Changing master weight reused the exported font identity")
         let source=fixture().glyphs["O"]!,smooth=try FontLabTraceSmoothing.fit(source,units:1)
         let paths=FontLabVectorMath.paths(in:smooth),compound=CGMutablePath();paths.forEach {compound.addPath($0.cgPath)}
-        try check(paths.count==2 && paths.reduce(0,{$0+$1.nodes.count})<240 && paths.contains { $0.nodes.contains { $0.incoming != nil } },"Trace smoothing failed to reduce points into curves")
+        try check(paths.count==2 && paths.reduce(0,{$0+$1.nodes.count})<40 && paths.contains { $0.nodes.contains { $0.incoming != nil } },"Trace smoothing failed to reduce points into curves")
         try check(!compound.contains(CGPoint(x:500,y:480)) && compound.contains(CGPoint(x:250,y:480)),"Smoothing lost a counter or outer shape")
         try check(source.strokes[0].contours != nil && smooth.isValid,"Smoothing changed original data or returned invalid paths")
         var smoothedProject=fixture();smoothedProject.glyphs["O"]=smooth
@@ -102,6 +102,15 @@ enum FontLabDesignChecks {
         mixed.strokes.append(FontLabStroke(vectorPaths:[curve]))
         let fittedMixed=try FontLabTraceSmoothing.fit(mixed,units:1)
         try check(FontLabVectorMath.paths(in:fittedMixed).contains(curve),"Smoothing changed an existing Bézier contour")
+        var denseCurve=curve
+        for _ in 0..<4 {
+            for segment in (0..<denseCurve.segmentCount).reversed() { denseCurve.insertNode(segment:segment,t:0.5) }
+        }
+        let denseGlyph=FontLabGlyph(character:"o",strokes:[FontLabStroke(vectorPaths:[denseCurve])])
+        let compactCurve=try FontLabTraceSmoothing.fit(denseGlyph,units:1,refitDenseCurves:true)
+        try check(FontLabVectorMath.paths(in:compactCurve).flatMap(\.nodes).count < 16,
+                  "Dense generated curves were not reduced to practical editing anchors")
+        print("CURVE FIT: \(source.strokes[0].contours!.reduce(0) { $0+$1.count }) → \(paths.reduce(0) { $0+$1.nodes.count }) anchors; dense curve \(denseCurve.nodes.count) → \(FontLabVectorMath.paths(in:compactCurve).flatMap(\.nodes).count)")
         print("PASS: linked/nested components, cycle/bounds rejection, master isolation, kerning groups/exceptions and Core Text export, smoothing counters and design persistence.")
     }
 }

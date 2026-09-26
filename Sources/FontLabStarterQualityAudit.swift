@@ -11,7 +11,7 @@ enum FontLabStarterQualityAudit {
     @discardableResult static func run() -> Bool {
         var complete = true
         var audited = 0
-        for name in ["Helvetica", "Times-Roman", "Courier", "Menlo-Regular", "Avenir-Book"] {
+        for name in ["Helvetica", "Times-Roman", "Courier", "Menlo-Regular", "Avenir-Book", "ChalkboardSE-Regular", "Noteworthy-Light", "MarkerFelt-Wide", "SnellRoundhand"] {
             guard let font = exactFont(named: name) else { continue }
             let cap = Double(CTFontGetCapHeight(font))
             guard cap > 0 else { continue }
@@ -33,6 +33,7 @@ enum FontLabStarterQualityAudit {
             var widthErrors: [Double] = []
             var allScores: [Double] = []
             var missing: [String] = []
+            var anchors: [Double] = []
             for character in alphabet where !seeds.contains(character) {
                 guard let actual = truth[character] else { continue }
                 guard let candidate = proposal.glyphs[character] else {
@@ -40,6 +41,7 @@ enum FontLabStarterQualityAudit {
                     allScores.append(0)
                     continue
                 }
+                anchors.append(Double(FontLabVectorMath.paths(in: candidate).reduce(0) { $0 + $1.nodes.count }))
                 let method = proposal.details[character]?.method ?? "Unknown"
                 let score = overlap(candidate, actual)
                 byMethod[method, default: []].append(score)
@@ -52,7 +54,8 @@ enum FontLabStarterQualityAudit {
             let breakdown = byMethod.keys.sorted().map { key in
                 "\(key): \(byMethod[key]!.count) @ \(percent(mean(byMethod[key]!)))"
             }.joined(separator: "; ")
-            print("STARTER HOLDOUT \(name): \(allScores.count - missing.count)/\(allScores.count) glyphs, silhouette overlap \(percent(mean(allScores))), mean generated ink-width error \(String(format: "%.3f", mean(widthErrors))) em [\(breakdown)]\(missing.isEmpty ? "" : "; missing \(missing.joined(separator: ""))")")
+            print("STARTER ANCHORS \(name): mean \(String(format: "%.1f", mean(anchors))), max \(Int(anchors.max() ?? 0))")
+            print("STARTER HOLDOUT \(name): \(allScores.count - missing.count)/\(allScores.count) glyphs, silhouette overlap \(percent(mean(allScores))), mean design-width error \(String(format: "%.3f", mean(widthErrors))) em [\(breakdown)]\(missing.isEmpty ? "" : "; missing \(missing.joined(separator: ""))")")
         }
         return complete && audited > 0
     }
