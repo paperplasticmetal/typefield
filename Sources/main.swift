@@ -1471,6 +1471,8 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     catch { fputs("Artwork fixtures failed: \(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--performance-audit") {
     PerformanceAudit.run()
+} else if CommandLine.arguments.contains("--starter-quality-audit") {
+    exit(FontLabStarterQualityAudit.run() ? 0 : 1)
 } else if CommandLine.arguments.contains("--self-test") {
     for pointSize in [52.0, 131.0] {
         let views = ["Helvetica", "Times-Roman"].map { name -> BaselineTextView in

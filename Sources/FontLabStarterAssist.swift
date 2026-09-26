@@ -58,6 +58,11 @@ enum FontLabStarterAssist {
         let stemControls = Set(["H", "h", "n", "p", "N"])
         let stemSamples = sampled.filter { stemControls.contains($0) }
         let weight = measuredWeight(in: project, characters: stemSamples.isEmpty ? sampled : stemSamples)
+        let sources = Dictionary(uniqueKeysWithValues: drawn.compactMap { character -> (String, FontLabGlyph)? in
+            guard let glyph = project.resolvedGlyph(character), glyph.hasArtwork else { return nil }
+            return (character, glyph)
+        })
+        let style = FontLabStarterStyle(project: project, sources: sources, weight: weight)
         var glyphs: [String: FontLabGlyph] = [:]
         var details: [String: FontLabStarterDetail] = [:]
         for character in targets {
@@ -69,17 +74,22 @@ enum FontLabStarterAssist {
             var detail: FontLabStarterDetail?
             let counterpart = character == character.uppercased() ? character.lowercased() : character.uppercased()
             if compatibleCases.contains(character),
-               let source = project.resolvedGlyph(counterpart), source.hasArtwork {
+               let source = sources[counterpart] {
                 candidate = adapted(source, to: character, metrics: project.metrics)
                 if candidate != nil {
                     detail = FontLabStarterDetail(sourceCharacters: [counterpart], method: "Scaled outline", explanation: "The drawn \(counterpart) outline was scaled to the \(character == character.uppercased() ? "cap" : "x") height. Review its weight, spacing, and curve balance.", confidence: .adapted)
                 }
             }
+            if candidate == nil, let derived = sourceDerived(character, sources: sources, style: style) {
+                candidate = derived.glyph
+                detail = FontLabStarterDetail(sourceCharacters: derived.sources, method: derived.method,
+                                              explanation: derived.explanation, confidence: .adapted)
+            }
             if candidate == nil {
-                candidate = template(character, metrics: project.metrics, weight: weight)
+                candidate = template(character, style: style)
                 if candidate != nil {
                     let sources = sampled.isEmpty ? "the project guides" : "the project guides and \(sampled.joined(separator: ", "))"
-                    detail = FontLabStarterDetail(sourceCharacters: sampled, method: "Constructed outline", explanation: "A distinct Latin letterform was constructed from \(sources). This is a starting shape, not a prediction of your intended design; refine its curves and spacing.", confidence: .template)
+                    detail = FontLabStarterDetail(sourceCharacters: sampled, method: "Constructed outline", explanation: "A distinct Latin letterform was constructed using proportions, spacing, and stroke weight measured from \(sources). Its contours were not copied from those drawings; refine its curves and spacing.", confidence: .template)
                 }
             }
             guard var candidate, let detail else {
@@ -98,7 +108,7 @@ enum FontLabStarterAssist {
         }
         return FontLabStarterProposal(
             glyphs: glyphs, details: details, skipped: skipped,
-            note: "Starter letters are editable suggestions. Templates use your guides and an estimated stroke weight; a few examples cannot determine every curve, serif, or spacing choice. Review each letter before export."
+            note: "Starter letters are editable suggestions. Adapted letters reuse your outlines; templates use measured proportions and spacing. A few examples cannot determine every curve or serif. Review each letter before export."
         )
     }
 
@@ -130,13 +140,13 @@ enum FontLabStarterAssist {
                 if inside && start == nil { start = i }
                 if !inside, let first = start {
                     let run = Double(i - first) / 500 * glyph.resolvedDesignWidth
-                    if (0.018...0.15).contains(run) { widths.append(run) }
+                    if (0.006...0.15).contains(run) { widths.append(run) }
                     start = nil
                 }
             }
         }
         let sorted = widths.filter(\.isFinite).sorted()
-        return min(0.12, max(0.035, sorted.isEmpty ? 0.064 : sorted[sorted.count / 2]))
+        return min(0.12, max(0.012, sorted.isEmpty ? 0.064 : sorted[sorted.count / 2]))
     }
 
     private static func adapted(_ source: FontLabGlyph, to character: String, metrics: FontLabMetrics) -> FontLabGlyph? {
@@ -171,28 +181,370 @@ enum FontLabStarterAssist {
         return glyph.isValid ? glyph : nil
     }
 
-    private static func template(_ character: String, metrics: FontLabMetrics, weight: Double) -> FontLabGlyph? {
-        let width: Double
+    private static func template(_ character: String, style: FontLabStarterStyle) -> FontLabGlyph? {
+        let baseWidth: Double
         switch character {
-        case "M", "W": width = 0.84
-        case "I": width = 0.34
-        case "J": width = 0.50
-        case "m", "w": width = 0.82
-        case "i", "l": width = 0.29
-        case "j": width = 0.40
-        case "f", "r", "t": width = 0.43
-        default: width = character == character.uppercased() ? 0.65 : 0.57
+        case "M", "W": baseWidth = 0.84
+        case "I": baseWidth = 0.34
+        case "J": baseWidth = 0.50
+        case "m", "w": baseWidth = 0.82
+        case "i", "l": baseWidth = 0.29
+        case "j": baseWidth = 0.40
+        case "f", "r", "t": baseWidth = 0.43
+        default: baseWidth = character == character.uppercased() ? 0.65 : 0.57
         }
+        let isUpper = character == character.uppercased()
+        let width = style.width(baseWidth, uppercase: isUpper)
         // A very short x-height cannot fit a stroke measured from a tall cap.
         // Keep the proposed outline inside the user's guides in that case.
-        let safeWeight = min(weight, (metrics.xHeight - metrics.baseline) * 0.65)
-        var shape = FontLabStarterSkeleton(width: width, metrics: metrics, weight: safeWeight)
-        shape.draw(character)
-        guard let paths = shape.outlines(), !paths.isEmpty else { return nil }
-        let glyph = FontLabGlyph(character: character, strokes: [FontLabStroke(vectorPaths: paths)],
-                                 leftSideBearing: 0.075, rightSideBearing: 0.075,
+        // The editable box has strict anchor bounds. Heavy strokes and square
+        // terminals can push a diagonal or descender just outside that box.
+        // Keep the measured style whenever it fits; only taper a troublesome
+        // letter enough to produce valid, exportable contours.
+        let opticalWeight = ["S", "s"].contains(character) ? style.safeWeight * 0.78 : style.safeWeight
+        let caps: [CGLineCap] = style.terminalCap == .round ? [.round] : [.square, .round]
+        for cap in caps {
+            for fraction in [1.0, 0.90, 0.80, 0.68, 0.55, 0.42] {
+                let fittedWeight = max(0.008, opticalWeight * fraction)
+                var shape = FontLabStarterSkeleton(width: width, metrics: style.metrics, weight: fittedWeight,
+                                                   terminalCap: cap, descenderDepth: style.descenderDepth)
+                shape.draw(character)
+                guard let paths = shape.outlines(), !paths.isEmpty else { continue }
+                let glyph = FontLabGlyph(character: character, strokes: [FontLabStroke(vectorPaths: paths)],
+                                         leftSideBearing: style.leftBearing(uppercase: isUpper),
+                                         rightSideBearing: style.rightBearing(uppercase: isUpper),
+                                         contourDesignWidth: width)
+                if glyph.isValid && glyph.hasArtwork { return glyph }
+            }
+        }
+        return nil
+    }
+}
+
+private struct FontLabStarterStyle {
+    let metrics: FontLabMetrics
+    let weight: Double
+    let uppercaseWidth: Double
+    let lowercaseWidth: Double
+    let upperLeftBearing: Double
+    let upperRightBearing: Double
+    let lowerLeftBearing: Double
+    let lowerRightBearing: Double
+    let terminalCap: CGLineCap
+    let descenderDepth: Double
+
+    var safeWeight: Double { min(weight, (metrics.xHeight - metrics.baseline) * 0.65) }
+
+    init(project: FontLabProject, sources: [String: FontLabGlyph], weight: Double) {
+        metrics = project.metrics
+        self.weight = weight
+        func median(_ values: [Double]) -> Double? {
+            let values = values.filter { $0.isFinite }.sorted()
+            return values.isEmpty ? nil : values[values.count / 2]
+        }
+        let regularCaps = Array("HNOXCDPRSU").map(String.init).compactMap { sources[$0] }
+        let regularLower = Array("nopabhduce").map(String.init).compactMap { sources[$0] }
+        let caps = regularCaps.isEmpty ? sources.filter { $0.key == $0.key.uppercased() }.map(\.value) : regularCaps
+        let lower = regularLower.isEmpty ? sources.filter { $0.key == $0.key.lowercased() }.map(\.value) : regularLower
+        let capWidth = median(caps.map(\.resolvedDesignWidth))
+        let lowerWidth = median(lower.map(\.resolvedDesignWidth))
+        uppercaseWidth = min(2.2, max(0.32, capWidth ?? lowerWidth.map { $0 / 0.88 } ?? 0.65))
+        lowercaseWidth = min(2.0, max(0.25, lowerWidth ?? capWidth.map { $0 * 0.88 } ?? 0.57))
+        let upperBearings = caps.isEmpty ? lower : caps
+        let lowerBearings = lower.isEmpty ? caps : lower
+        upperLeftBearing = median(upperBearings.map(\.leftSideBearing)) ?? 0.075
+        upperRightBearing = median(upperBearings.map(\.rightSideBearing)) ?? 0.075
+        lowerLeftBearing = median(lowerBearings.map(\.leftSideBearing)) ?? 0.075
+        lowerRightBearing = median(lowerBearings.map(\.rightSideBearing)) ?? 0.075
+        let stem = ["H", "h", "n", "p"].compactMap { sources[$0] }.first
+        if let stem {
+            let paths = FontLabVectorMath.paths(in: stem)
+            let nodes = paths.flatMap(\.nodes)
+            let angular = !nodes.isEmpty && nodes.count <= 40 &&
+                Double(nodes.filter { $0.incoming == nil && $0.outgoing == nil }.count) / Double(nodes.count) >= 0.7
+            terminalCap = angular ? .square : .round
+        } else {
+            terminalCap = .round
+        }
+        let descenders = ["p", "q", "g", "j", "y"].compactMap { sources[$0] }.compactMap { glyph -> Double? in
+            let points = glyph.strokes.flatMap { stroke -> [FontLabPoint] in
+                stroke.points + (stroke.contours?.flatMap { $0 } ?? []) +
+                    (stroke.vectorPaths?.flatMap { $0.nodes.map(\.point) } ?? [])
+            }
+            return points.map(\.y).min()
+        }.filter { $0 < project.metrics.baseline }
+        let observed = descenders.map { (project.metrics.baseline - $0) / (project.metrics.capHeight - project.metrics.baseline) }
+        descenderDepth = min(0.38, max(0.015, median(observed) ?? min(0.25, max(0.015, (project.metrics.baseline - 0.012) / (project.metrics.capHeight - project.metrics.baseline)))))
+    }
+
+    func width(_ base: Double, uppercase: Bool) -> Double {
+        min(2.5, max(0.22, base * (uppercase ? uppercaseWidth / 0.65 : lowercaseWidth / 0.57)))
+    }
+    func leftBearing(uppercase: Bool) -> Double { uppercase ? upperLeftBearing : lowerLeftBearing }
+    func rightBearing(uppercase: Bool) -> Double { uppercase ? upperRightBearing : lowerRightBearing }
+}
+
+private struct FontLabStarterDerivation {
+    let glyph: FontLabGlyph
+    let sources: [String]
+    let method: String
+    let explanation: String
+}
+
+private extension FontLabStarterAssist {
+    static func sourceDerived(_ character: String, sources: [String: FontLabGlyph], style: FontLabStarterStyle) -> FontLabStarterDerivation? {
+        let horizontalPairs = ["p":"q", "q":"p", "b":"d", "d":"b"]
+        if let sourceCharacter = horizontalPairs[character], let source = sources[sourceCharacter], exportable(source),
+           let glyph = transformed(source, to: character, width: source.resolvedDesignWidth,
+                                   x: { 1 - $0 }, y: { $0 }, swapBearings: true, reverseWinding: true) {
+            return .init(glyph: glyph, sources: [sourceCharacter], method: "Mirrored outline",
+                         explanation: "The drawn \(sourceCharacter) contours were reflected horizontally. The curves and stroke character are retained; check the letter's terminals and spacing.")
+        }
+        let verticalPairs = ["n":"u", "u":"n"]
+        if let sourceCharacter = verticalPairs[character], let source = sources[sourceCharacter], exportable(source) {
+            let top = character == character.uppercased() ? style.metrics.capHeight : style.metrics.xHeight
+            if let glyph = transformed(source, to: character, width: source.resolvedDesignWidth,
+                                       x: { $0 }, y: { style.metrics.baseline + top - $0 },
+                                       reverseWinding: true) {
+                return .init(glyph: glyph, sources: [sourceCharacter], method: "Mirrored outline",
+                             explanation: "The drawn \(sourceCharacter) contours were reflected vertically between the baseline and \(character == character.uppercased() ? "cap" : "x") height. Review joins and optical balance.")
+            }
+        }
+
+        // A bowl source may come from the other case. Scale that actual outline
+        // once, then make the letter-specific change. No proposed glyph is used
+        // as an input to another proposal in the same review session.
+        func bowl(_ uppercase: Bool) -> (FontLabGlyph, String)? {
+            let preferred = uppercase ? "O" : "o", alternate = uppercase ? "o" : "O"
+            if let source = sources[preferred], exportable(source) { return (source, preferred) }
+            if let source = sources[alternate], exportable(source),
+               let scaled = adapted(source, to: preferred, metrics: style.metrics) { return (scaled, alternate) }
+            return nil
+        }
+        if character == "C" || character == "c", let (source, origin) = bowl(character == "C"),
+           let glyph = openedBowl(source, to: character) {
+            return .init(glyph: glyph, sources: [origin], method: "Reused bowl with aperture",
+                         explanation: "The drawn \(origin) curves form this C-shaped bowl. A right-side aperture was cut into a copy; refine the two new terminals.")
+        }
+        if character == "Q", let (source, origin) = bowl(true),
+           let box = inkBounds(source),
+           let glyph = appending(source, to: character, style: style,
+                                 points: [.init(x: box.minX + box.width * 0.62, y: box.minY + box.height * 0.25),
+                                          .init(x: min(0.94, box.maxX + box.width * 0.09),
+                                                y: max(style.safeWeight * 0.7 + 0.01, box.minY - box.height * 0.12))]) {
+            return .init(glyph: glyph, sources: [origin], method: "Reused outline with feature",
+                         explanation: "The drawn \(origin) bowl is retained and an editable diagonal tail was added. Adjust its angle and join to suit your design.")
+        }
+        if character == "R", let source = sources["P"], exportable(source), let box = inkBounds(source),
+           let glyph = appending(source, to: character, style: style,
+                                 points: [.init(x: box.midX, y: box.midY),
+                                          .init(x: min(0.94, box.maxX), y: max(style.metrics.baseline + style.safeWeight * 0.5, box.minY))]) {
+            return .init(glyph: glyph, sources: ["P"], method: "Reused outline with feature",
+                         explanation: "The drawn P bowl and stem are retained; an editable leg makes an R. Review the leg's join and angle.")
+        }
+        if character == "G", let source = sources["C"], exportable(source), let box = inkBounds(source),
+           let glyph = appending(source, to: character, style: style,
+                                 points: [.init(x: box.midX + box.width * 0.03, y: box.midY),
+                                          .init(x: min(0.94, box.maxX - box.width * 0.03), y: box.midY)]) {
+            return .init(glyph: glyph, sources: ["C"], method: "Reused outline with feature",
+                         explanation: "The drawn C outline is retained and an editable crossbar was added. Check its connection and right terminal.")
+        }
+        if character == "h", let source = sources["n"], exportable(source), let box = inkBounds(source) {
+            let x = box.minX + style.safeWeight / max(source.resolvedDesignWidth, 0.1) * 0.5
+            if let glyph = appending(source, to: character, style: style,
+                                     points: [.init(x: x, y: box.maxY - style.safeWeight * 0.3),
+                                              .init(x: x, y: style.metrics.capHeight - style.safeWeight * 0.5)]) {
+                return .init(glyph: glyph, sources: ["n"], method: "Reused outline with feature",
+                             explanation: "The drawn n arch is retained and its left stem is extended to cap height. Check the join and top terminal.")
+            }
+        }
+        if character == "m", let source = sources["n"], exportable(source),
+           let glyph = repeatedN(source, weight: style.safeWeight) {
+            return .init(glyph: glyph, sources: ["n"], method: "Repeated source outline",
+                         explanation: "Two independent copies of the drawn n outline form the m arches. Edit the middle join and side bearings as needed.")
+        }
+
+        if ["a", "b", "d", "p", "q"].contains(character), let (source, origin) = bowl(false),
+           let box = inkBounds(source) {
+            let right = ["a", "d", "q"].contains(character)
+            // The bowl may have been scaled from the other case. Its local
+            // side stroke is then the right reference for a joined stem; the
+            // cap/control-letter weight can be visibly heavier than that bowl.
+            let sideWeight = sideStrokeWeight(source, at: box.midY, right: right)
+            let featureWeight = max(0.006, min(style.safeWeight, (sideWeight ?? style.safeWeight) * 0.88))
+            let x = right
+                ? box.maxX - featureWeight / max(source.resolvedDesignWidth, 0.1) * 0.5
+                : box.minX + featureWeight / max(source.resolvedDesignWidth, 0.1) * 0.5
+            let top = ["b", "d"].contains(character) ? style.metrics.capHeight : style.metrics.xHeight
+            let bottom = ["p", "q"].contains(character)
+                ? max(featureWeight * 0.5 + 0.012, style.metrics.baseline - style.descenderDepth * (style.metrics.capHeight - style.metrics.baseline))
+                : style.metrics.baseline
+            if let glyph = appending(source, to: character, style: style,
+                                     points: [.init(x: x, y: bottom + featureWeight * 0.5),
+                                              .init(x: x, y: top - featureWeight * 0.5)],
+                                     strokeWidth: featureWeight) {
+                return .init(glyph: glyph, sources: [origin], method: "Reused bowl with stem",
+                             explanation: "The drawn \(origin) bowl is retained and an editable \(["p", "q"].contains(character) ? "descender" : ["b", "d"].contains(character) ? "ascender" : "stem") was added. Refine the join and spacing.")
+            }
+        }
+        return nil
+    }
+
+    static func exportable(_ glyph: FontLabGlyph) -> Bool {
+        glyph.hasArtwork && glyph.isValid &&
+            !glyph.strokes.contains { $0.vectorPaths?.contains(where: { !$0.closed }) == true }
+    }
+
+    static func transformed(_ source: FontLabGlyph, to character: String, width: Double,
+                            x: (Double) -> Double, y: (Double) -> Double,
+                            swapBearings: Bool = false, reverseWinding: Bool = false) -> FontLabGlyph? {
+        func map(_ value: FontLabPoint) -> FontLabPoint {
+            var point = value; point.x = x(value.x); point.y = y(value.y); return point
+        }
+        var strokes = FontLabDesign.detachedStrokes(source.strokes)
+        for index in strokes.indices {
+            strokes[index].points = strokes[index].points.map(map)
+            strokes[index].contours = strokes[index].contours?.map { contour in
+                let transformed = contour.map(map)
+                return reverseWinding ? Array(transformed.reversed()) : transformed
+            }
+            if var paths = strokes[index].vectorPaths {
+                for p in paths.indices { for n in paths[p].nodes.indices {
+                    paths[p].nodes[n].point = map(paths[p].nodes[n].point)
+                    paths[p].nodes[n].incoming = paths[p].nodes[n].incoming.map(map)
+                    paths[p].nodes[n].outgoing = paths[p].nodes[n].outgoing.map(map)
+                } }
+                if reverseWinding { for p in paths.indices where paths[p].closed { paths[p].reverse() } }
+                strokes[index].vectorPaths = paths
+            }
+        }
+        let glyph = FontLabGlyph(character: character, strokes: strokes,
+                                 leftSideBearing: swapBearings ? source.rightSideBearing : source.leftSideBearing,
+                                 rightSideBearing: swapBearings ? source.leftSideBearing : source.rightSideBearing,
                                  contourDesignWidth: width)
-        return glyph.isValid ? glyph : nil
+        return glyph.isValid && glyph.hasArtwork ? glyph : nil
+    }
+
+    static func inkBounds(_ glyph: FontLabGlyph) -> CGRect? {
+        if let outline = closedOutline(glyph) {
+            let bounds = outline.boundingBoxOfPath
+            let box = CGRect(x: bounds.minX / 1_000, y: bounds.minY / 1_000,
+                             width: bounds.width / 1_000, height: bounds.height / 1_000)
+            if box.width > 0.02 && box.height > 0.02 { return box }
+        }
+        let points = glyph.strokes.flatMap { stroke -> [FontLabPoint] in
+            stroke.points + (stroke.contours?.flatMap { $0 } ?? []) +
+                (stroke.vectorPaths?.flatMap { path in path.nodes.map(\.point) } ?? [])
+        }
+        guard !points.isEmpty else { return nil }
+        let box = FontLabVectorMath.bounds(points)
+        return box.width > 0.02 && box.height > 0.02 ? box : nil
+    }
+
+    static func closedOutline(_ glyph: FontLabGlyph) -> CGPath? {
+        guard exportable(glyph), glyph.strokes.allSatisfy({ $0.points.isEmpty }) else { return nil }
+        let paths = FontLabVectorMath.paths(in: glyph)
+        guard !paths.isEmpty && paths.allSatisfy(\.closed) else { return nil }
+        let combined = CGMutablePath()
+        for path in paths { combined.addPath(path.cgPath) }
+        return combined
+    }
+
+    static func sideStrokeWeight(_ glyph: FontLabGlyph, at y: Double, right: Bool) -> Double? {
+        guard let outline = closedOutline(glyph) else { return nil }
+        var runs: [Double] = []
+        var start: Int?
+        for i in 0...500 {
+            let inside = outline.contains(CGPoint(x: Double(i) * 2, y: y * 1_000),
+                                          using: .winding, transform: .identity)
+            if inside && start == nil { start = i }
+            if !inside, let first = start {
+                runs.append(Double(i - first) / 500 * glyph.resolvedDesignWidth)
+                start = nil
+            }
+        }
+        guard let value = right ? runs.last : runs.first, (0.006...0.18).contains(value) else { return nil }
+        return value
+    }
+
+    static func openedBowl(_ source: FontLabGlyph, to character: String) -> FontLabGlyph? {
+        guard let outline = closedOutline(source) else { return nil }
+        let box = outline.boundingBoxOfPath
+        guard box.width > 150 && box.height > 150 else { return nil }
+        let start = box.midX + box.width * 0.03
+        let notch = CGPath(rect: CGRect(x: start, y: box.minY + box.height * 0.35,
+                                      width: box.maxX - start + 100, height: box.height * 0.30), transform: nil)
+        let opened = outline.subtracting(notch, using: .winding)
+        let paths = FontLabVectorPath.from(opened)
+        guard !paths.isEmpty && paths.allSatisfy({ $0.closed && $0.isValid }) else { return nil }
+        let glyph = FontLabGlyph(character: character, strokes: [FontLabStroke(vectorPaths: paths)],
+                                 leftSideBearing: source.leftSideBearing, rightSideBearing: source.rightSideBearing,
+                                 contourDesignWidth: source.resolvedDesignWidth)
+        return glyph.isValid && glyph.hasArtwork ? glyph : nil
+    }
+
+    static func appending(_ source: FontLabGlyph, to character: String, style: FontLabStarterStyle,
+                          points: [FontLabPoint], strokeWidth: Double? = nil) -> FontLabGlyph? {
+        guard exportable(source), points.count >= 2 else { return nil }
+        let width = source.resolvedDesignWidth
+        let addedWidth = strokeWidth ?? style.safeWeight
+        let trace = CGMutablePath()
+        trace.move(to: CGPoint(x: points[0].x * width * 1_000, y: points[0].y * 1_000))
+        for point in points.dropFirst() { trace.addLine(to: CGPoint(x: point.x * width * 1_000, y: point.y * 1_000)) }
+        let filled = trace.copy(strokingWithWidth: addedWidth * 1_000, lineCap: style.terminalCap,
+                                lineJoin: style.terminalCap == .square ? .miter : .round, miterLimit: 4)
+        let normalized = CGMutablePath()
+        normalized.addPath(filled, transform: CGAffineTransform(scaleX: 1 / width, y: 1))
+        let converted = FontLabVectorPath.from(normalized)
+        let paths = !converted.isEmpty && converted.allSatisfy({ $0.closed && $0.isValid })
+            ? converted : (filledStrip(points: points, glyphWidth: width, strokeWidth: addedWidth).map { [$0] } ?? [])
+        guard !paths.isEmpty && paths.allSatisfy({ $0.closed && $0.isValid }) else { return nil }
+        var strokes = FontLabDesign.detachedStrokes(source.strokes)
+        strokes.append(FontLabStroke(vectorPaths: paths))
+        let glyph = FontLabGlyph(character: character, strokes: strokes,
+                                 leftSideBearing: source.leftSideBearing, rightSideBearing: source.rightSideBearing,
+                                 contourDesignWidth: width)
+        return glyph.isValid && glyph.hasArtwork ? glyph : nil
+    }
+
+    /// A four-anchor outline is a safe fallback for a straight feature when
+    /// Core Graphics emits a cap curve with out-of-box anchors. It retains the
+    /// source contours and uses the measured physical stroke width.
+    static func filledStrip(points: [FontLabPoint], glyphWidth: Double, strokeWidth: Double) -> FontLabVectorPath? {
+        guard points.count == 2 else { return nil }
+        let a = points[0], b = points[1]
+        let dx = (b.x - a.x) * glyphWidth, dy = b.y - a.y
+        let length = hypot(dx, dy)
+        guard length > 0.01 else { return nil }
+        let nx = -dy / length * strokeWidth * 0.5
+        let ny = dx / length * strokeWidth * 0.5
+        let corners = [
+            FontLabPoint(x: a.x + nx / glyphWidth, y: a.y + ny),
+            FontLabPoint(x: b.x + nx / glyphWidth, y: b.y + ny),
+            FontLabPoint(x: b.x - nx / glyphWidth, y: b.y - ny),
+            FontLabPoint(x: a.x - nx / glyphWidth, y: a.y - ny)
+        ]
+        let path = FontLabVectorPath(nodes: corners.map { FontLabVectorNode(point: $0) }, closed: true)
+        return path.isValid ? path : nil
+    }
+
+    static func repeatedN(_ source: FontLabGlyph, weight: Double) -> FontLabGlyph? {
+        guard let box = inkBounds(source), source.resolvedDesignWidth <= 1.65 else { return nil }
+        let halfStem = weight / (2 * source.resolvedDesignWidth)
+        let leftStemCenter = box.minX + halfStem
+        let rightStemCenter = box.maxX - halfStem
+        let separation = min(0.85, max(0.25, rightStemCenter - leftStemCenter)) * source.resolvedDesignWidth
+        let width = source.resolvedDesignWidth + separation
+        guard width <= 3 else { return nil }
+        let first = transformed(source, to: "m", width: width,
+                                x: { $0 * source.resolvedDesignWidth / width }, y: { $0 })
+        let second = transformed(source, to: "m", width: width,
+                                 x: { ($0 * source.resolvedDesignWidth + separation) / width }, y: { $0 })
+        guard let first, let second else { return nil }
+        let glyph = FontLabGlyph(character: "m", strokes: first.strokes + second.strokes,
+                                 leftSideBearing: source.leftSideBearing, rightSideBearing: source.rightSideBearing,
+                                 contourDesignWidth: width)
+        return glyph.isValid && glyph.hasArtwork ? glyph : nil
     }
 }
 
@@ -204,6 +556,8 @@ private struct FontLabStarterSkeleton {
     let width: Double
     let metrics: FontLabMetrics
     let weight: Double
+    let terminalCap: CGLineCap
+    let descenderDepth: Double
     private let centerlines = CGMutablePath()
     private let solids = CGMutablePath()
     private var capSpan: Double { metrics.capHeight - metrics.baseline }
@@ -211,7 +565,7 @@ private struct FontLabStarterSkeleton {
     // the guides. Solve for the lowercase centerline whose *outer* edge reaches
     // x-height, otherwise lowercase bowls overshoot the guide.
     private var h: Double { (metrics.xHeight - metrics.baseline - weight) / (capSpan - weight) }
-    private var d: Double { min(0.25, max(0.015, (metrics.baseline - 0.012) / capSpan)) }
+    private var d: Double { min(descenderDepth, max(0.015, (metrics.baseline - 0.012) / capSpan)) }
 
     private func point(_ x: Double, _ y: Double) -> CGPoint {
         let half = weight / 2
@@ -240,7 +594,8 @@ private struct FontLabStarterSkeleton {
         solids.addEllipse(in: CGRect(x: p.x-radius, y: p.y-radius, width: radius*2, height: radius*2))
     }
     func outlines() -> [FontLabVectorPath]? {
-        let stroked = centerlines.copy(strokingWithWidth: weight * 1_000, lineCap: .round, lineJoin: .round, miterLimit: 4)
+        let stroked = centerlines.copy(strokingWithWidth: weight * 1_000, lineCap: terminalCap,
+                                       lineJoin: terminalCap == .square ? .miter : .round, miterLimit: 4)
         let combined = CGMutablePath(); combined.addPath(stroked); combined.addPath(solids)
         let normalized = CGMutablePath(); normalized.addPath(combined, transform: CGAffineTransform(scaleX: 1 / width, y: 1))
         let paths = FontLabVectorPath.from(normalized)

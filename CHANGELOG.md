@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.51.0 — 2026-09-26
+
+- Improved **Suggest missing letters…** so compatible letters reuse independent, editable copies of the user's actual contours. The assist can open an O/o for C/c, reuse bowls and add stems or tails, reflect compatible letters, and repeat a drawn n for m. It also measures source widths, side bearings, terminal shape, and descender depth for the remaining constructed letters. Added stems now follow the copied bowl's weight, while tight S curves use a lighter optical stroke; very thin traced strokes remain measurable.
+- The review sheet now distinguishes reused outlines from constructed templates in its counts, rows, and detail preview. **Select → Only reused outlines** makes it easy to apply just the suggestions with source contours. Existing artwork and partial-font export remain preserved.
+- Added a disposable five-letter holdout audit against installed typefaces so future changes can be compared for shape overlap, width, and complete glyph coverage without opening saved projects. These measurements guide development; suggested letters still need visual and spacing review.
+
 ## 0.50.0 — 2026-09-25
 
 - Added **Suggest missing letters…** to Letterform Editor. The local assist proposes editable uppercase and lowercase Latin starter outlines from a partial set of drawn letters, adapts compatible source curves where possible, and uses measured provisional constructions for the rest. A review sheet shows each proposed letter, its source and method before any artwork is saved.

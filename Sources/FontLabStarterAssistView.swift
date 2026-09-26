@@ -60,10 +60,37 @@ struct FontLabStarterAssistView: View {
         original.masters?.first(where: { $0.id == original.activeMasterID })?.name ?? "Current design"
     }
 
-    private var sourceCharacters: [String] {
+    private var adaptedCharacters: [String] {
         guard let proposal else { return [] }
-        let used = Set(availableCharacters.flatMap { proposal.details[$0]?.sourceCharacters ?? [] })
-        return original.characters.filter { used.contains($0) }
+        return availableCharacters.filter { proposal.details[$0]?.confidence == .adapted }
+    }
+
+    private var templateCharacters: [String] {
+        guard let proposal else { return [] }
+        return availableCharacters.filter { proposal.details[$0]?.confidence == .template }
+    }
+
+    private var nextReferenceTip: String? {
+        guard let proposal else { return nil }
+        let opportunities: [(String, [String])] = [
+            ("o", ["a", "b", "c", "d", "p", "q"]),
+            ("n", ["h", "m", "u"]),
+            ("O", ["C", "Q"]),
+            ("P", ["R"])
+        ]
+        let useful = opportunities.compactMap { source, targets -> String? in
+            guard original.characters.contains(source), original.resolvedGlyph(source)?.hasArtwork != true,
+                  targets.contains(where: { emptyCharacters.contains($0) && proposal.details[$0]?.confidence == .template }) else { return nil }
+            return source
+        }
+        guard !useful.isEmpty else { return nil }
+        let names: String
+        switch useful.count {
+        case 1: names = useful[0]
+        case 2: names = useful.joined(separator: " and ")
+        default: names = useful.dropLast().joined(separator: ", ") + ", and " + useful.last!
+        }
+        return "Draw \(names) to unlock more suggestions that reuse your outlines. Reopen this review after drawing them."
     }
 
     private var proofGlyphs: [String: FontLabGlyph] {
@@ -102,10 +129,11 @@ struct FontLabStarterAssistView: View {
             if let proposal {
                 Text("\(availableCharacters.count) suggestions available · \(unavailableCharacters.count) without suggestions · \(selectedCharacters.count) selected")
                     .font(.subheadline.monospacedDigit())
-                if !sourceCharacters.isEmpty {
-                    Text("Using your drawings of \(sourceCharacters.joined(separator: " "))")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 16) {
+                    Label("\(adaptedCharacters.count) reuse your outlines", systemImage: "square.on.square")
+                    Label("\(templateCharacters.count) are constructed templates", systemImage: "square.dashed")
                 }
+                .font(.caption).foregroundStyle(.secondary)
                 if !proposal.note.isEmpty {
                     Text(proposal.note).font(.caption).foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -167,10 +195,13 @@ struct FontLabStarterAssistView: View {
             HStack {
                 Text("Review letters").font(.caption.weight(.semibold))
                 Spacer()
-                Button("All") { selected.formUnion(availableCharacters) }
-                    .disabled(availableCharacters.allSatisfy { selected.contains($0) })
-                Button("None") { selected.subtract(availableCharacters) }
-                    .disabled(selectedCharacters.isEmpty)
+                Menu("Select") {
+                    Button("All suggestions") { selected = Set(availableCharacters) }
+                    Button("Only reused outlines") { selected = Set(adaptedCharacters) }
+                        .disabled(adaptedCharacters.isEmpty)
+                    Button("None") { selected.removeAll() }
+                }
+                .disabled(availableCharacters.isEmpty)
             }
             .font(.caption)
 
@@ -178,6 +209,10 @@ struct FontLabStarterAssistView: View {
                 LazyVStack(spacing: 7) {
                     ForEach(availableCharacters, id: \.self) { character in
                         let detail = proposal.details[character]
+                        let adapted = detail?.confidence == .adapted
+                        let lineage = adapted
+                            ? "Reuses \(detail?.sourceCharacters.joined(separator: ", ") ?? "your") \(detail?.sourceCharacters.count == 1 ? "outline" : "outlines")"
+                            : "Constructed template"
                         HStack(spacing: 8) {
                             Toggle("Include \(character)", isOn: Binding(
                                 get: { selected.contains(character) },
@@ -193,8 +228,10 @@ struct FontLabStarterAssistView: View {
                                         .frame(width: 30)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("Suggested \(character)").font(.subheadline)
-                                        Text(detail?.confidence.title ?? "Review")
-                                            .font(.caption2).foregroundStyle(.secondary)
+                                        Label(lineage, systemImage: adapted ? "square.on.square" : "square.dashed")
+                                            .font(.caption2)
+                                            .foregroundStyle(adapted ? Color.accentColor : Color.orange)
+                                            .lineLimit(1)
                                     }
                                     Spacer()
                                     Image(systemName: focusedCharacter == character ? "chevron.right.circle.fill" : "chevron.right")
@@ -203,7 +240,7 @@ struct FontLabStarterAssistView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Review suggested \(character)")
+                            .accessibilityLabel("Review suggested \(character), \(lineage)")
                         }
                         .padding(8)
                         .background(focusedCharacter == character ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035),
@@ -242,13 +279,17 @@ struct FontLabStarterAssistView: View {
     private func inspectionPanel(_ proposal: FontLabStarterProposal) -> some View {
         if let character = inspectedCharacter, let glyph = proposal.glyphs[character] {
             let detail = proposal.details[character]
+            let adapted = detail?.confidence == .adapted
+            let sources = detail?.sourceCharacters ?? []
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Suggested \(character)").font(.headline)
                         Spacer()
-                        Text(detail?.confidence.title ?? "Review carefully")
-                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Label(detail?.confidence.title ?? "Review carefully",
+                              systemImage: adapted ? "square.on.square" : "square.dashed")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(adapted ? Color.accentColor : Color.orange)
                     }
                     if let detail {
                         Text(detail.method).font(.subheadline.weight(.medium))
@@ -256,11 +297,27 @@ struct FontLabStarterAssistView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     HStack(alignment: .top, spacing: 10) {
-                        if let sources = detail?.sourceCharacters, !sources.isEmpty {
-                            previewCard("Your source \(sources.count == 1 ? "letter" : "letters")", text: sources.joined(),
+                        if !sources.isEmpty {
+                            previewCard(adapted ? "Your source: \(sources.prefix(3).joined(separator: " "))" : "Style references: \(sources.prefix(3).joined(separator: " "))",
+                                        text: sources.prefix(3).joined(),
                                         glyphs: original.outputProject.glyphs)
                         }
-                        previewCard("Suggested outline", text: character, glyphs: [character: glyph])
+                        previewCard(adapted ? "Adapted suggestion: \(character)" : "Constructed suggestion: \(character)",
+                                    text: character, glyphs: [character: glyph])
+                    }
+                    if adapted, !sources.isEmpty {
+                        Text("This suggestion reuses some or all of your source outline and may add constructed parts. Compare the copied contours with your original.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !sources.isEmpty {
+                        Text("These drawings inform the suggested proportions and style. Their contours are not copied into \(character).")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let nextReferenceTip {
+                        Label(nextReferenceTip, systemImage: "lightbulb")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Text("The outline remains editable after Apply. Compare its curves, counters, width, and side bearings with your drawings.")
                         .font(.caption).foregroundStyle(.secondary)

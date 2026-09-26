@@ -23,6 +23,10 @@ enum FontLabStarterAssistChecks {
         }
         let fixtures: [String: FontLabGlyph] = [
             "H": h, "O": ring("O", 0.18, 0.78, 0.65),
+            "P": FontLabGlyph(character: "P", strokes: [FontLabStroke(vectorPaths: [
+                rectangle(0.17, 0.18, 0.11, 0.60),
+                FontLabVectorMath.rectangle(CGRect(x: 0.22, y: 0.45, width: 0.66, height: 0.33), ellipse: true)
+            ])], contourDesignWidth: 0.65),
             "n": n, "o": ring("o", 0.18, 0.56, 0.57),
             "p": FontLabGlyph(character: "p", strokes: [FontLabStroke(vectorPaths: [
                 rectangle(0.16, 0.03, 0.11, 0.53),
@@ -36,6 +40,20 @@ enum FontLabStarterAssistChecks {
     static func run() throws {
         func check(_ valid: @autoclosure () -> Bool, _ message: String) throws {
             if !valid() { throw FontLabStore.SelfTestError.failed(message) }
+        }
+        func horizontalRuns(_ glyph: FontLabGlyph, y: Double) -> [Double] {
+            let path = CGMutablePath()
+            for contour in FontLabVectorMath.paths(in: glyph) where contour.closed { path.addPath(contour.cgPath) }
+            var runs: [Double] = [], start: Int?
+            for i in 0...500 {
+                let inside = path.contains(CGPoint(x: Double(i) * 2, y: y * 1_000), using: .winding)
+                if inside && start == nil { start = i }
+                if !inside, let first = start {
+                    runs.append(Double(i - first) / 500 * glyph.resolvedDesignWidth)
+                    start = nil
+                }
+            }
+            return runs
         }
         let one = fixture(["H"])
         let oneBefore = one.glyphs["H"]
@@ -82,6 +100,35 @@ enum FontLabStarterAssistChecks {
         try check(heavyProposal.glyphs.count == 51,
                   "A heavy-stroke project with taller x-height must still propose every missing Latin letter; missing: \(heavyMissing)")
 
+        var hairline = fixture(["H"])
+        hairline.glyphs["H"] = FontLabGlyph(character: "H", strokes: [FontLabStroke(vectorPaths: [
+            rectangle(0.15, 0.18, 0.020, 0.60), rectangle(0.83, 0.18, 0.020, 0.60),
+            rectangle(0.16, 0.48, 0.68, 0.020)
+        ])], contourDesignWidth: 0.65)
+        let hairlineProposal = FontLabStarterAssist.propose(for: hairline)
+        try check(hairlineProposal.glyphs.count == 51, "Hairline source art lost starter-letter coverage")
+        let hairlineS = hairlineProposal.glyphs["S"]!
+        let sRuns = [0.28, 0.5, 0.72].flatMap { fraction in
+            horizontalRuns(hairlineS, y: hairline.metrics.baseline + (hairline.metrics.capHeight - hairline.metrics.baseline) * fraction)
+        }
+        try check(!sRuns.isEmpty && (sRuns.min() ?? 1) < 0.045,
+                  "A thin drawn H fell back to a heavy constructed S")
+
+        var thinBowl = fixture(["H", "O"])
+        let outer = FontLabVectorMath.rectangle(CGRect(x: 0.13, y: 0.18, width: 0.74, height: 0.60), ellipse: true)
+        var inner = FontLabVectorMath.rectangle(CGRect(x: 0.225, y: 0.25, width: 0.55, height: 0.46), ellipse: true)
+        inner.reverse()
+        thinBowl.glyphs["O"] = FontLabGlyph(character: "O", strokes: [FontLabStroke(vectorPaths: [outer, inner])], contourDesignWidth: 0.65)
+        let bowlProposal = FontLabStarterAssist.propose(for: thinBowl)
+        let scaledBowl = bowlProposal.glyphs["o"]!, suggestedA = bowlProposal.glyphs["a"]!
+        let midline = thinBowl.metrics.baseline + (thinBowl.metrics.xHeight - thinBowl.metrics.baseline) * 0.5
+        let bowlSide = horizontalRuns(scaledBowl, y: midline).last ?? 0
+        let stemPoints = suggestedA.strokes.last?.vectorPaths?.flatMap { $0.nodes.map(\.point) } ?? []
+        let stemWidth = ((stemPoints.map(\.x).max() ?? 1) - (stemPoints.map(\.x).min() ?? 0)) * suggestedA.resolvedDesignWidth
+        try check(bowlProposal.details["a"]?.confidence == .adapted && bowlSide > 0.01 &&
+                  stemWidth <= bowlSide * 0.93,
+                  "The added a stem is heavier than the copied o bowl's local side stroke")
+
         let mixed = fixture(["H", "O", "n", "o", "p"])
         try check(mixed.isValid, "Mixed-case control fixture is not a valid project")
         let mixedBefore = mixed.glyphs
@@ -92,8 +139,38 @@ enum FontLabStarterAssistChecks {
         try check(proposal.glyphs.count == 47, "Mixed-case control letters must offer every missing Latin letter; missing: \(missing.map { "\($0): \(proposal.skipped[$0] ?? "unknown")" }.joined(separator: ", "))")
         try check(proposal.glyphs.keys.allSatisfy { mixed.glyphs[$0]?.hasArtwork != true }, "A proposal targeted existing artwork")
         try check(mixed.glyphs == mixedBefore, "Preparing proposals mutated the source project")
-        try check(proposal.details["P"]?.confidence == .template && proposal.details["C"]?.confidence == .template && proposal.details["S"]?.confidence == .template, "Unrelated letterforms were incorrectly labeled as drawn adaptations")
-        try check(proposal.details["c"]?.confidence == .template && proposal.details["x"]?.confidence == .template, "Template provenance was lost")
+        try check(proposal.details["P"]?.confidence == .template && proposal.details["S"]?.confidence == .template && proposal.details["x"]?.confidence == .template,
+                  "Unrelated letterforms were incorrectly labeled as drawn adaptations")
+        for character in ["C", "c", "Q", "a", "b", "d", "h", "m", "q", "u"] {
+            try check(proposal.details[character]?.confidence == .adapted,
+                      "Expected actual source contours in suggested \(character)")
+        }
+        try check(proposal.details["C"]?.sourceCharacters == ["O"] && proposal.details["q"]?.sourceCharacters == ["p"] &&
+                  proposal.details["m"]?.sourceCharacters == ["n"], "Source contour provenance was incorrect")
+        func anchors(_ glyph: FontLabGlyph) -> [FontLabPoint] {
+            FontLabVectorMath.paths(in: glyph).flatMap(\.nodes).map(\.point)
+        }
+        let sourceO = mixed.glyphs["O"]!, derivedQ = proposal.glyphs["Q"]!
+        try check(derivedQ.strokes.count == sourceO.strokes.count + 1 &&
+                  derivedQ.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) } == sourceO.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) },
+                  "Q did not retain the drawn O curves exactly")
+        let sourceo = mixed.glyphs["o"]!, derivedA = proposal.glyphs["a"]!
+        try check(derivedA.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) } == sourceo.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) },
+                  "a did not retain the drawn o curves exactly")
+        let sourceP = mixed.glyphs["p"]!, derivedq = proposal.glyphs["q"]!
+        let sourceX = anchors(sourceP).map(\.x), reflectedX = anchors(derivedq).map(\.x)
+        try check(sourceX.count == reflectedX.count && abs((reflectedX.min() ?? 0) - (1 - (sourceX.max() ?? 1))) < 0.0001 &&
+                  abs((reflectedX.max() ?? 1) - (1 - (sourceX.min() ?? 0))) < 0.0001,
+                  "q did not mirror the drawn p geometry")
+        let sourceN = mixed.glyphs["n"]!, derivedM = proposal.glyphs["m"]!
+        try check(FontLabVectorMath.paths(in: derivedM).count == FontLabVectorMath.paths(in: sourceN).count * 2 &&
+                  derivedM.resolvedDesignWidth > sourceN.resolvedDesignWidth,
+                  "m did not repeat the drawn n curves at their physical width")
+        let cPath = CGMutablePath()
+        FontLabVectorMath.paths(in: proposal.glyphs["C"]!).forEach { cPath.addPath($0.cgPath) }
+        try check(cPath.contains(CGPoint(x: 150, y: 480), using: .winding) &&
+                  !cPath.contains(CGPoint(x: 850, y: 480), using: .winding),
+                  "C did not open the drawn O bowl on the right")
         try check(proposal.skipped["H"] != nil && proposal.skipped["o"] != nil, "Existing artwork should have a clear skipped reason")
         var accepted = mixed
         for (character, glyph) in proposal.glyphs { accepted.glyphs[character] = glyph }
@@ -107,6 +184,20 @@ enum FontLabStarterAssistChecks {
         let lower = fixture(["n", "o", "p"])
         let lowerProposal = FontLabStarterAssist.propose(for: lower)
         try check(lowerProposal.glyphs["O"] != nil && lowerProposal.details["O"]?.confidence == .adapted, "Lowercase o should offer a directly adapted uppercase O")
+        let pSource = fixture(["P"])
+        let rSuggestion = FontLabStarterAssist.propose(for: pSource)
+        try check(rSuggestion.details["R"]?.confidence == .adapted && rSuggestion.glyphs["R"]?.strokes.count == 2,
+                  "R did not retain the drawn P with an editable leg")
+        var wide = fixture(["H"])
+        wide.glyphs["H"]?.contourDesignWidth = 1.10
+        wide.glyphs["H"]?.leftSideBearing = 0.025
+        wide.glyphs["H"]?.rightSideBearing = 0.13
+        let wideSuggestion = FontLabStarterAssist.propose(for: wide)
+        try check(abs((wideSuggestion.glyphs["A"]?.resolvedDesignWidth ?? 0) - 1.10) < 0.0001 &&
+                  wideSuggestion.glyphs["A"]?.leftSideBearing == 0.025 && wideSuggestion.glyphs["A"]?.rightSideBearing == 0.13,
+                  "Template letters did not inherit source width and side bearings")
+        try check(FontLabVectorMath.paths(in: wideSuggestion.glyphs["F"]!).flatMap(\.nodes).allSatisfy { $0.incoming == nil && $0.outgoing == nil },
+                  "Angular source terminals were rounded in fallback templates")
         var nonLatin = FontLabProject(name: "Out of scope", characters: ["H", "Ж", "&"])
         nonLatin.glyphs["H"] = oneBefore
         let nonLatinProposal = FontLabStarterAssist.propose(for: nonLatin)
