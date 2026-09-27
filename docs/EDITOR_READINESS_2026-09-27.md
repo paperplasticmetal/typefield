@@ -28,4 +28,4 @@ The comparison is based on Typefield's current implementation and the official G
 - **Spaces:** stress large layer lists and many canvases, preserve exact undo/save behavior, and make text overflow/export limits explicit. Accessible canvas actions should remain practical on large boards.
 - **Letterform Editor:** keep source fidelity separate from suggestion fidelity; show experimental status, preserve independent editing histories, and decline impossible operations with clear feedback. Large glyph sets and dense nodes need limits that preserve a responsive UI.
 
-See the separate adversarial audit for actual reproduced failures. Proposed improvements in this table are not implemented or verified features.
+See the [adversarial audit](STRESS_AUDIT_2026-09-27_0.54.md) for actual reproduced failures. Proposed improvements in this table are not implemented or verified features.
