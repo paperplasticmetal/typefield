@@ -566,12 +566,14 @@ struct FontPreview: NSViewRepresentable {
     var variations: [Int: Double] = [:]
     var features: [String: Int] = [:]
     var baseline: Double? = nil
+    var maximumLines: Int? = nil
     var previewFont: CGFont? = nil
     @AppStorage("customPreviewColors") var customColors = false
     @AppStorage("previewInkHex") var inkHex = "EEEEEE"
     @AppStorage("previewPaperHex") var paperHex = "202020"
     struct Configuration: Equatable {
         let text: String, name: String, ink: String, paper: String?, appearance: String, previewName: String?
+        let maximumLines: Int?
         let previewHash: UInt?
         let size: Double, wraps: Bool, baseline: Double?
         let variations: [Int: Double], features: [String: Int]
@@ -582,7 +584,7 @@ struct FontPreview: NSViewRepresentable {
     func updateNSView(_ view: BaselineTextView, context: Context) {
         let resolvedInk = ink ?? (customColors ? NSColor(hex: inkHex) : .labelColor)
         let resolvedPaper = ink == nil && customColors ? NSColor(hex: paperHex) : nil
-        let configuration = Configuration(text: text, name: name, ink: resolvedInk.rgbHex, paper: resolvedPaper?.rgbHex, appearance: NSApp.effectiveAppearance.name.rawValue, previewName: previewFont.map { $0.postScriptName as String? } ?? nil, previewHash: previewFont.map(CFHash), size: size, wraps: wraps, baseline: baseline, variations: variations, features: features)
+        let configuration = Configuration(text: text, name: name, ink: resolvedInk.rgbHex, paper: resolvedPaper?.rgbHex, appearance: NSApp.effectiveAppearance.name.rawValue, previewName: previewFont.map { $0.postScriptName as String? } ?? nil, maximumLines: maximumLines, previewHash: previewFont.map(CFHash), size: size, wraps: wraps, baseline: baseline, variations: variations, features: features)
         guard configuration != context.coordinator.configuration else { return }
         context.coordinator.configuration = configuration
         view.text = text
@@ -591,6 +593,7 @@ struct FontPreview: NSViewRepresentable {
         view.paper = resolvedPaper
         view.wraps = wraps
         view.baseline = baseline
+        view.maximumLines = maximumLines
         view.invalidateContent()
         view.setAccessibilityLabel(text)
     }
@@ -1035,10 +1038,11 @@ struct ContentView: View {
                 Menu { actions(family) } label: { Image(systemName: "ellipsis").font(.system(size: 17)) }.shelfIconMenu().help("Font actions")
             }
             if !library.overlayName.isEmpty {
-                OverlayPreview(text: preview == "{family}" ? family.name : preview, candidate: face.name, reference: library.overlayName, size: size, library: library, baseline: baseline).allowsHitTesting(false)
+                OverlayPreview(text: preview == "{family}" ? family.name : preview, candidate: face.name, reference: library.overlayName, size: size, library: library, baseline: baseline, maximumLines: 3).allowsHitTesting(false)
             } else {
-                FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: baseline).frame(minHeight: size * 1.5, alignment: .top).allowsHitTesting(false)
+                FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: baseline, maximumLines: 3).frame(minHeight: size * 1.5, alignment: .top).allowsHitTesting(false)
             }
+            Button("Expand preview…") { library.detail = family }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Open all preview text and font styles")
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.contextMenu { actions(family) }
     }
     @ViewBuilder func actions(_ family: Family) -> some View {
@@ -1473,6 +1477,9 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     PerformanceAudit.run()
 } else if CommandLine.arguments.contains("--starter-quality-audit") {
     exit(FontLabStarterQualityAudit.run() ? 0 : 1)
+} else if CommandLine.arguments.contains("--stress-regression-check") {
+    do { try StudioChecks.stress(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run() }
+    catch { fputs("Stress regression failed: \(error.localizedDescription)\n",stderr);exit(1) }
 } else if CommandLine.arguments.contains("--self-test") {
     for pointSize in [52.0, 131.0] {
         let views = ["Helvetica", "Times-Roman"].map { name -> BaselineTextView in
@@ -1493,7 +1500,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     }
 
     precondition(PreviewLayout.cardWidth(text: "h", size: 160, available: 1500) < PreviewLayout.cardWidth(text: "there is", size: 160, available: 1500))
-    precondition(PreviewLayout.cardWidth(text: String(repeating: "long sentence ", count: 20), size: 160, available: 800) == 800)
+    precondition(PreviewLayout.cardWidth(text: String(repeating: "long sentence ", count: 20), size: 160, available: 800) == 600)
     precondition(PreviewLayout.cardWidth(text: "there is", size: 32, available: 1500) < PreviewLayout.cardWidth(text: "there is", size: 160, available: 1500))
     let fonts = FontCatalog.scan()
     precondition(!fonts.isEmpty, "No installed fonts found")
@@ -1560,7 +1567,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

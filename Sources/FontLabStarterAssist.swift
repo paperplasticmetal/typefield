@@ -245,7 +245,9 @@ enum FontLabStarterAssist {
         let caps: [CGLineCap] = style.terminalCap == .round ? [.round] : [.square, .round]
         for cap in caps {
             for fraction in [1.0, 0.90, 0.80, 0.68, 0.55, 0.42] {
-                let fittedWeight = max(0.008, opticalWeight * fraction)
+                // Narrow, heavy A constructions otherwise overlap above the bar
+                // and close the counter. Reserve a useful aperture before stroking.
+                let fittedWeight = max(0.008, min(opticalWeight * fraction, character == "A" ? width * 0.24 : .infinity))
                 // The source width measures ink, whereas skeleton x values
                 // include margins. Solve the construction width before fitting
                 // the ink box; otherwise that fit thickens every vertical stem.
@@ -874,7 +876,7 @@ private struct FontLabStarterSkeleton {
         let stroked = centerlines.copy(strokingWithWidth: weight * 1_000, lineCap: terminalCap,
                                        lineJoin: terminalCap == .square ? .miter : .round, miterLimit: 4)
         let combined = CGMutablePath(); combined.addPath(stroked); combined.addPath(solids)
-        let normalized = CGMutablePath(); normalized.addPath(combined, transform: CGAffineTransform(scaleX: 1 / width, y: 1))
+        let normalized = CGMutablePath(); normalized.addPath(combined.normalized(using: .winding), transform: CGAffineTransform(scaleX: 1 / width, y: 1))
         let paths = FontLabVectorPath.from(normalized)
         // Construction margins are not the final glyph box. Wide caps and
         // diagonal joins can extend past x=0/1 before template() fits the ink.

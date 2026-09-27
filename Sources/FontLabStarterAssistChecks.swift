@@ -55,6 +55,30 @@ enum FontLabStarterAssistChecks {
             }
             return runs
         }
+        for example in [0,1] {
+            var practice=try FontLabExamples.make(example)
+            // Include narrower and shorter guide variants of the real examples.
+            for factor in [1.0,0.8] {
+                for character in practice.glyphs.keys where practice.glyphs[character]!.hasArtwork {
+                    practice.glyphs[character]!.contourDesignWidth = practice.glyphs[character]!.resolvedDesignWidth * factor
+                }
+                let source=practice
+                guard let a=FontLabStarterAssist.propose(for:practice).glyphs["A"] else {
+                    throw FontLabStore.SelfTestError.failed("Handwriting/bubble A suggestion missing")
+                }
+                let ink=CGMutablePath();FontLabVectorMath.paths(in:a).forEach { ink.addPath($0.cgPath) }
+                let bounds=ink.boundingBoxOfPath
+                let box=CGRect(x:bounds.minX/1000,y:bounds.minY/1000,width:bounds.width/1000,height:bounds.height/1000)
+                // A must have two separated stems through a meaningful upper
+                // counter region, not a single pinhole or a filled triangle.
+                let rows=(50...78).filter { horizontalRuns(a,y:box.minY+box.height*Double($0)/100).count==2 }
+                try check(rows.count>=8,"Heavy/narrow A lost its usable counter")
+                try check(ink.contains(CGPoint(x:box.midX*1000,y:(box.minY+box.height*0.4)*1000)),"A counter repair removed the crossbar")
+                try check(practice==source,"Counter correction mutated supplied artwork")
+                var export=practice;export.glyphs["A"]=a
+                _=try FontLabTrueTypeExporter.artifact(for:export)
+            }
+        }
         let one = fixture(["H"])
         let oneBefore = one.glyphs["H"]
         let partialFont = try FontLabTrueTypeExporter.artifact(for: one)

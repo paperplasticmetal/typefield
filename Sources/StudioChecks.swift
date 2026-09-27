@@ -3,6 +3,44 @@ import AppKit
 import CoreText
 
 enum StudioChecks {
+    static func stress() throws {
+        let font=NSFont(name:"Helvetica",size:24)!
+        let style=NSMutableParagraphStyle();style.firstLineHeadIndent=40
+        func width(_ text: String) -> Double {
+            CanvasBoardLayout.minimumTextFrameWidth(for:CanvasElement(rect:.zero,text:NSAttributedString(string:text,attributes:[.font:font,.paragraphStyle:style])))
+        }
+        func token(_ value: String) -> Double { CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string:value,attributes:[.font:font])),nil,nil,nil) }
+        try verify(width("   i abcdefghijklmnop") == ceil(max(token("i")+40,token("abcdefghijklmnop"))),"Only the first token receives paragraph indent")
+        try verify(width("i\r\n   abcdefghijklmnop") == ceil(token("abcdefghijklmnop")+40),"CRLF paragraphs must retain first-line indent")
+        try verify(width("i\u{2029}   abcdefghijklmnop") == ceil(token("abcdefghijklmnop")+40),"Unicode paragraph separators must retain indent")
+        let started=Date()
+        let measured=width(String(repeating:"Word ",count:40_000))
+        let elapsed=Date().timeIntervalSince(started)
+        try verify(measured == ceil(token("Word")+40),"Long paragraph sizing changed the first token width")
+        try verify(elapsed<5,"200,000-character width scan exceeded five seconds")
+        var direction=TypeDirection(name:"Long paragraph stress",fonts:["Helvetica"]);direction.canvas = .editorial
+        direction.styles[TypeRole.body.rawValue]!.text=String(repeating:"Word ",count:40_000)
+        CanvasPlanCache.removeAll()
+        let planStart=Date(),plan=CanvasPlanCache.plan(for:direction)
+        let planElapsed=Date().timeIntervalSince(planStart)
+        try verify(!plan.elements.isEmpty && plan.size.width.isFinite && plan.size.height.isFinite,"Long paragraph layout returned invalid geometry")
+        try verify(planElapsed<10,"Long paragraph board layout exceeded ten seconds")
+        let body=plan.elements.filter { $0.role == .body }
+        try verify(!body.isEmpty && body.allSatisfy { $0.text?.string == direction.style(.body).text },"Editorial template multiplied or truncated a long article")
+        try verify(CanvasPlan.editorialSample("Short copy",repetitions:4)==Array(repeating:"Short copy",count:4).joined(separator:"\n\n"),"Short editorial sample repetition changed")
+        let warmStart=Date()
+        for _ in 0..<20 { _ = CanvasPlanCache.plan(for:direction) }
+        let warmElapsed=Date().timeIntervalSince(warmStart)
+        try verify(warmElapsed<1,"Long paragraph layout was not cached across inspector updates")
+        print("STRESS TEXT: 200,000 characters, width scan \(String(format:"%.3f",elapsed))s, full board \(String(format:"%.3f",planElapsed))s, 20 cached reads \(String(format:"%.3f",warmElapsed))s")
+        let view=BaselineTextView();view.font=CTFontCreateWithName("Helvetica" as CFString,26,nil);view.wraps=true;view.maximumLines=3
+        view.text=String(repeating:"ABO ",count:2500)
+        let bounded=view.layout(width:280)
+        try verify(bounded.lines.count==3 && bounded.truncated && bounded.height<150,"Library preview did not bound its layout")
+        view.text="ABO"
+        try verify(view.layout(width:280).lines.count==1 && !view.layout(width:280).truncated,"Short preview retained stale overflow state")
+        try verify(PreviewLayout.cardWidth(text:String(repeating:"ABO ",count:2500),size:26,available:1800)==600,"Long preview monopolized the grid width")
+    }
     @discardableResult static func handoff(catalog: [Family], parent: URL) throws -> URL {
         var board = TypeBoard(); board.name = "Studio <handoff> & review"
         var canvas = TypeDirection(name: "Canvas 1")

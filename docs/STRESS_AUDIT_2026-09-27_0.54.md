@@ -1,6 +1,6 @@
 # Typefield 0.54 adversarial audit
 
-Audited 2026-09-27 on macOS 26.3, after the improvement phase. **These findings have not been fixed.** The user requested improvement first, then audit only for review before debugging.
+Audited 2026-09-27 on macOS 26.3, after the improvement phase. These findings were left unfixed at audit time as requested. **All six were subsequently addressed in 0.55 after the user authorized fixes; see the [resolution checks](QA_2026-09-27_0.55.md).** The reproduction details below preserve the original 0.54 observations.
 
 Tested release: **0.54.0 (74)**, code commit `1f26834`. The QA and canonical installed executable SHA-256 were both `6b2f5fc58d8aab1a5c9f58d81dda768235a1b4635258bb6a20dce999c8c3f545`. The full native suite, mocked Figma bridge and Xcode Release checks had already passed; those checks do not cover all the failures below.
 

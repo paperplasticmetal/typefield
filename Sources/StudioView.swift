@@ -583,15 +583,21 @@ enum CanvasBoardLayout {
         let source = text.string as NSString
         let tokenMatcher = try? NSRegularExpression(pattern: #"\S+"#)
         var required = Double(element.rect.width)
+        var paragraphEnd = 0
+        var tokenWidths: [NSAttributedString: Double] = [:]
         tokenMatcher?.enumerateMatches(in: text.string, range: NSRange(location: 0, length: source.length)) { match, _, _ in
             guard let range = match?.range, range.length > 0 else { return }
             let token = text.attributedSubstring(from: range)
-            let line = CTLineCreateWithAttributedString(token as CFAttributedString)
-            let tokenWidth = CTLineGetTypographicBounds(line, nil, nil, nil)
-            let paragraphRange = source.paragraphRange(for: NSRange(location: range.location, length: 0))
-            let prefix = source.substring(with: NSRange(location: paragraphRange.location,
-                                                        length: max(0, range.location - paragraphRange.location)))
-            let isFirstToken = prefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let tokenWidth: Double
+            if let cached = tokenWidths[token] { tokenWidth = cached }
+            else {
+                tokenWidth = CTLineGetTypographicBounds(CTLineCreateWithAttributedString(token as CFAttributedString),nil,nil,nil)
+                if tokenWidths.count < 512 { tokenWidths[token] = tokenWidth }
+            }
+            // Each paragraph is scanned once, rather than once per word.
+            // The first regex match in a paragraph is its first nonblank token.
+            let isFirstToken = range.location >= paragraphEnd
+            if isFirstToken { paragraphEnd = NSMaxRange(source.paragraphRange(for: NSRange(location:range.location,length:0))) }
             let paragraphStyle = token.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
             let indent = isFirstToken ? max(0, paragraphStyle?.firstLineHeadIndent ?? 0) : 0
             required = max(required, tokenWidth + Double(indent))
@@ -1242,13 +1248,23 @@ struct TypeBoardEditor: View {
         let zoom = scale
         let plan = CanvasPlanCache.plan(for: displayed)
         return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Button { selectCanvas(direction.id) } label: { HStack { Text(board.canvasName(direction)); if direction.id == self.direction.id { Text("Editing").foregroundStyle(Color.accentColor) } else { Text("Click to edit").foregroundStyle(.secondary) } }.contentShape(Rectangle()) }.font(.caption).buttonStyle(.plain)
-                Text("\(Int(plan.artboardSize.width)) × \(Int(plan.artboardSize.height))").font(.caption2).monospacedDigit().foregroundStyle(.secondary)
-                Spacer()
-                if direction.id != self.direction.id { Button { hideCanvas(direction.id) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.secondary).help("Hide " + board.canvasName(direction)).accessibilityLabel("Hide " + board.canvasName(direction)) }
-                else if visibleDirections.count > 1 { Button("Only this") { showOnlyCurrent() }.buttonStyle(.borderless).font(.caption).help("Hide the other canvases") }
-            }.frame(width: plan.artboardSize.width * zoom)
+            HStack(spacing: 6) {
+                Button { selectCanvas(direction.id) } label: {
+                    HStack(spacing: 4) {
+                        if direction.id == self.direction.id { Circle().fill(Color.accentColor).frame(width:5,height:5) }
+                        Text(board.canvasName(direction)).lineLimit(1).truncationMode(.tail)
+                    }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                }.font(.caption).buttonStyle(.plain)
+                 .help(board.canvasName(direction) + (direction.id == self.direction.id ? " · Editing" : " · Click to edit"))
+                 .accessibilityLabel(board.canvasName(direction) + (direction.id == self.direction.id ? ", Editing" : ", Click to edit"))
+                if plan.artboardSize.width * zoom >= 280 {
+                    Text("\(Int(plan.artboardSize.width)) × \(Int(plan.artboardSize.height))").font(.caption2).monospacedDigit().foregroundStyle(.secondary).fixedSize()
+                }
+                if plan.artboardSize.width * zoom >= 160 {
+                    if direction.id != self.direction.id { Button { hideCanvas(direction.id) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.secondary).help("Hide " + board.canvasName(direction)).accessibilityLabel("Hide " + board.canvasName(direction)) }
+                    else if visibleDirections.count > 1 { Button("Only this") { showOnlyCurrent() }.buttonStyle(.borderless).font(.caption).fixedSize().help("Hide the other canvases") }
+                }
+            }.frame(width: max(1,plan.artboardSize.width * zoom), height:24).clipped()
             CanvasPreview(plan: plan, zoom: zoom, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, selectedTextID: direction.id == self.direction.id ? selectedTextID : nil, onSelect: { id in frameCanvasID = nil; selectedSection = id; selectedTextID = nil; inspectorTab = "Arrangement" }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.id == self.direction.id && direction.canvas == .imported ? moveLayer : nil, onArtworkTranslate: direction.id == self.direction.id ? moveLayer : nil, onImportArtwork: { url, point in importArtwork(url, onto: direction.id, at: point) }, onTextSelect: { element in frameCanvasID = nil; selectText(element) }, onTextEdit: direction.id == self.direction.id ? { element, text in editText(element, text, directionID: direction.id) } : nil)
                 .frame(width: plan.size.width * zoom, height: plan.size.height * zoom)
                 .overlay(alignment: .topLeading) {
@@ -1872,7 +1888,7 @@ struct CanvasElement {
 }
 struct CanvasSection: Identifiable { var id: String; var title: String; var rect: CGRect }
 enum CanvasPlanCache {
-    private struct Entry { let direction: TypeDirection; let plan: CanvasPlan; var used: UInt64 }
+    private struct Entry { let direction: TypeDirection; let plan: CanvasPlan; let textLength: Int; var used: UInt64 }
     private static let lock = NSLock()
     private static var entries: [UUID: Entry] = [:]
     private static var clock: UInt64 = 0
@@ -1890,8 +1906,11 @@ enum CanvasPlanCache {
         let plan = CanvasPlan(direction: direction)
         lock.lock()
         let textLength = plan.elements.reduce(0) { $0 + ($1.text?.length ?? 0) }
-        if plan.elements.count <= 1_000 && textLength <= 200_000 { entries[direction.id] = Entry(direction: direction, plan: plan, used: used) }
-        if entries.count > 16, let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key { entries.removeValue(forKey: oldest) }
+        if plan.elements.count <= 1_000 && textLength <= 1_000_000 { entries[direction.id] = Entry(direction: direction, plan: plan, textLength:textLength, used: used) }
+        while entries.count > 16 || entries.values.reduce(0, { $0+$1.textLength }) > 2_000_000 {
+            guard let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key else { break }
+            entries.removeValue(forKey: oldest)
+        }
         lock.unlock()
         return plan
     }
@@ -1902,6 +1921,12 @@ enum CanvasPlanCache {
     }
 }
 struct CanvasPlan {
+    static func editorialSample(_ text: String, repetitions: Int) -> String {
+        // Repeat short sample copy to fill a template, but never multiply a
+        // user's long article. Keep the original text intact in every column.
+        let count = max(1, min(repetitions, 2_000 / max(1, text.utf16.count + 2)))
+        return Array(repeating: text, count: count).joined(separator: "\n\n")
+    }
     var elements: [CanvasElement] = []
     var sections: [CanvasSection] = []
     var size: CGSize = .zero
@@ -2076,11 +2101,11 @@ struct CanvasPlan {
             section("article", "Article and pull quote")
             if w >= 700 {
                 let articleY = y, columnGap = 28.0, bodyWidth = usable * 0.29
-                let first = text(.body, Array(repeating: d.style(.body).text, count: 4).joined(separator: "\n\n"), x: margin, at: articleY, width: bodyWidth)
+                let first = text(.body, Self.editorialSample(d.style(.body).text, repetitions: 4), x: margin, at: articleY, width: bodyWidth)
                 let quote = text(.heading, "“The useful things are often the most poetic.”", x: margin + bodyWidth + columnGap, at: articleY + 28, width: usable * 0.34)
-                let second = text(.body, Array(repeating: d.style(.body).text, count: 4).joined(separator: "\n\n"), x: margin + usable - bodyWidth, at: articleY, width: bodyWidth)
+                let second = text(.body, Self.editorialSample(d.style(.body).text, repetitions: 4), x: margin + usable - bodyWidth, at: articleY, width: bodyWidth)
                 y = articleY + max(first, quote + 28, second) + 36
-            } else { _ = text(.heading, "“The useful things are often the most poetic.”"); _ = text(.body, Array(repeating: d.style(.body).text, count: 5).joined(separator: "\n\n")) }
+            } else { _ = text(.heading, "“The useful things are often the most poetic.”"); _ = text(.body, Self.editorialSample(d.style(.body).text, repetitions: 5)) }
             rule(); section("folio", "Editorial folio"); let folioY = y; _ = text(.caption, "The Field Notes", x: margin, at: folioY, width: usable * 0.5); _ = text(.mono, "024", x: margin + usable * 0.8, at: folioY, width: usable * 0.2); y = folioY + 38
         case .poster:
             section("poster-code", "Poster index")

@@ -301,7 +301,57 @@ final class FontLabVectorEditor: ObservableObject {
         if apply(value) { selection = inserted; message = "Inserted \(inserted.count) midpoint(s); the original curve shape is unchanged." }
     }
 
+    /// Nested contours (including counters) move as one object. Node tools
+    /// retain their separate semantics when the user switches to Nodes.
+    private var selectedObjects: [[FontLabVectorPath]] {
+        let chosen = paths
+        let geometry = chosen.map { $0.cgPath }
+        let boxes = geometry.map(\.boundingBoxOfPath)
+        var groups: [Int: [FontLabVectorPath]] = [:]
+        for i in chosen.indices {
+            let parents = chosen.indices.filter { j in
+                guard j != i, chosen[j].closed, chosen[i].closed,
+                      boxes[j].width * boxes[j].height > boxes[i].width * boxes[i].height,
+                      boxes[j].contains(boxes[i]), let first = chosen[i].nodes.first else { return false }
+                return geometry[j].contains(CGPoint(x:first.point.x*1000,y:first.point.y*1000))
+            }
+            let root = parents.max { boxes[$0].width * boxes[$0].height < boxes[$1].width * boxes[$1].height } ?? i
+            groups[root, default: []].append(chosen[i])
+        }
+        return groups.keys.sorted().map { groups[$0]! }.filter { $0.contains { path in path.nodes.contains { selection.contains($0.id) } } }
+    }
+    var canAlign: Bool { objectSelection ? selectedObjects.count >= 2 : selection.count >= 2 }
+    var canDistribute: Bool { objectSelection ? selectedObjects.count >= 3 : selection.count >= 3 }
+    private func arrangeObjects(horizontal: Bool, distribute: Bool) {
+        let objects = selectedObjects.map { group -> (paths: [FontLabVectorPath], box: CGRect) in
+            (group, group.reduce(CGRect.null) { $0.union($1.cgPath.boundingBoxOfPath) })
+        }.sorted { a,b in horizontal ? a.box.midX < b.box.midX : a.box.midY < b.box.midY }
+        guard objects.count >= (distribute ? 3 : 2) else {
+            message = "Select at least \(distribute ? "three" : "two") objects. Counters move with their outer contour."
+            return
+        }
+        let box = objects.reduce(CGRect.null) { $0.union($1.box) }
+        let start = horizontal ? objects.first!.box.midX : objects.first!.box.midY
+        let end = horizontal ? objects.last!.box.midX : objects.last!.box.midY
+        var shifts: [UUID: (Double, Double)] = [:]
+        for (index, object) in objects.enumerated() {
+            let target = distribute ? start + (end-start)*Double(index)/Double(objects.count-1) : (horizontal ? box.midX : box.midY)
+            let dx = horizontal ? (target-object.box.midX)/1000 : 0
+            let dy = horizontal ? 0 : (target-object.box.midY)/1000
+            for path in object.paths { for node in path.nodes { shifts[node.id] = (dx,dy) } }
+        }
+        var value = paths
+        for p in value.indices { for n in value[p].nodes.indices {
+            guard let (dx,dy) = shifts[value[p].nodes[n].id] else { continue }
+            func shifted(_ point: FontLabPoint) -> FontLabPoint { .init(x:point.x+dx,y:point.y+dy) }
+            value[p].nodes[n].point = shifted(value[p].nodes[n].point)
+            value[p].nodes[n].incoming = value[p].nodes[n].incoming.map(shifted)
+            value[p].nodes[n].outgoing = value[p].nodes[n].outgoing.map(shifted)
+        } }
+        if apply(value) { message = "Objects \(distribute ? "distributed" : "aligned"); curves and counters preserved." }
+    }
     func distribute(horizontal: Bool) {
+        if objectSelection { arrangeObjects(horizontal: horizontal, distribute: true); return }
         let nodes = selectedNodes.sorted { a, b in
             let av = horizontal ? a.point.x : a.point.y, bv = horizontal ? b.point.x : b.point.y
             return av == bv ? a.id.uuidString < b.id.uuidString : av < bv
@@ -378,6 +428,7 @@ final class FontLabVectorEditor: ObservableObject {
         modifySelected {node,_,_ in node.point=convert(node.point);node.incoming=node.incoming.map(convert);node.outgoing=node.outgoing.map(convert)}
     }
     func align(horizontal:Bool) {
+        if objectSelection { arrangeObjects(horizontal: !horizontal, distribute: false); return }
         let b=selectedBounds
         modifySelected {node,_,_ in
             let dx=horizontal ? 0 : b.midX-node.point.x,dy=horizontal ? b.midY-node.point.y : 0
@@ -511,10 +562,10 @@ struct FontLabVectorEditorView: View {
                 Text("Y");TextField("Y",text:$y).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection Y above baseline in font units").onSubmit {if let v=Double(y) {editor.setCoordinate(v,x:false)}}
                 Spacer(minLength:0)
                 Menu("Transform") {
-                    Button("Align horizontally") {editor.align(horizontal:true)}
-                    Button("Align vertically") {editor.align(horizontal:false)}
-                    Button("Distribute nodes horizontally") {editor.distribute(horizontal:true)}.disabled(editor.selection.count<3)
-                    Button("Distribute nodes vertically") {editor.distribute(horizontal:false)}.disabled(editor.selection.count<3)
+                    Button(editor.objectSelection ? "Align objects horizontally" : "Align nodes horizontally") {editor.align(horizontal:true)}.disabled(!editor.canAlign)
+                    Button(editor.objectSelection ? "Align objects vertically" : "Align nodes vertically") {editor.align(horizontal:false)}.disabled(!editor.canAlign)
+                    Button(editor.objectSelection ? "Distribute objects horizontally" : "Distribute nodes horizontally") {editor.distribute(horizontal:true)}.disabled(!editor.canDistribute)
+                    Button(editor.objectSelection ? "Distribute objects vertically" : "Distribute nodes vertically") {editor.distribute(horizontal:false)}.disabled(!editor.canDistribute)
                     Button("Flip horizontally") {editor.transform(scaleX:-1)}
                     Button("Flip vertically") {editor.transform(scaleY:-1)}
                 }.disabled(editor.selection.isEmpty).fixedSize()

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.55.0 — 2026-09-27
+
+- Fixed Objects-mode alignment collapsing outlines. Alignment and distribution now move complete objects with their handles and counters; a single object cannot be aligned to itself.
+- Kept counters open in narrow, heavy bubble A suggestions and merged overlapping construction strokes into closed outlines. Suggestions remain experimental and require review.
+- Made eligible 30,000-anchor imports recoverable through Simplify outline, with bounded polygon reduction, cancellable fitting, and checks against the full original silhouette and contour topology.
+- Removed repeated paragraph scans and excessive template-copy repetition from long Spaces articles, and reused bounded layout plans across the canvas and inspector.
+- Kept canvas headings on one line at small Fit scales, with full names available in hover text, accessibility and canvas tabs.
+- Bounded Library card previews to three lines and added Expand preview for the full text, preserving stored preview content.
+
 ## 0.54.0 — 2026-09-27
 
 - Added contour splitting, endpoint joining, exact segment midpoints, and horizontal/vertical node distribution to the Letterform Editor.

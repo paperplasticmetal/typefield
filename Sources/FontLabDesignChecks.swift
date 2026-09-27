@@ -110,6 +110,40 @@ enum FontLabDesignChecks {
         let compactCurve=try FontLabTraceSmoothing.fit(denseGlyph,units:1,refitDenseCurves:true)
         try check(FontLabVectorMath.paths(in:compactCurve).flatMap(\.nodes).count < 16,
                   "Dense generated curves were not reduced to practical editing anchors")
+        let denseRing=(0..<30_000).map { i -> FontLabVectorNode in
+            let angle=Double(i)*2 * .pi/30_000
+            return .init(point:.init(x:0.5+0.38*cos(angle),y:0.5+0.30*sin(angle)))
+        }
+        let huge=FontLabGlyph(character:"A",strokes:[FontLabStroke(vectorPaths:[FontLabVectorPath(nodes:denseRing,closed:true)])],contourDesignWidth:0.62)
+        let started=Date(),reduced=try FontLabTraceSmoothing.fit(huge,units:5,refitDenseCurves:true)
+        let reducedPaths=FontLabVectorMath.paths(in:reduced)
+        try check(reducedPaths.flatMap(\.nodes).count<40 && reducedPaths.count==1 && reduced.isValid,"30,000-anchor cleanup failed")
+        let a=FontLabVectorMath.paths(in:huge)[0].cgPath,b=reducedPaths[0].cgPath
+        var intersection=0,union=0
+        for y in 0..<80 { for x in 0..<80 {
+            let p=CGPoint(x:Double(x)*12.5+6.25,y:Double(y)*12.5+6.25),aa=a.contains(p),bb=b.contains(p)
+            if aa && bb { intersection += 1 };if aa || bb { union += 1 }
+        } }
+        try check(Double(intersection)/Double(union)>0.98,"Dense cleanup distorted filled ink")
+        print("STRESS CURVE: 30,000 → \(reducedPaths.flatMap(\.nodes).count) anchors, \(String(format:"%.3f",Date().timeIntervalSince(started)))s, IoU \(Double(intersection)/Double(union))")
+        func stressRing(_ count:Int,_ radius:Double,_ reverse:Bool)->FontLabVectorPath {
+            var nodes=(0..<count).map { i -> FontLabVectorNode in
+                let t=Double(i)*2 * .pi/Double(count)
+                return .init(point:.init(x:0.5+radius*cos(t),y:0.5+radius*sin(t)))
+            }
+            if reverse {nodes.reverse()};return FontLabVectorPath(nodes:nodes,closed:true)
+        }
+        let compoundDense=FontLabGlyph(character:"O",strokes:[FontLabStroke(vectorPaths:[stressRing(20_000,0.35,false),stressRing(10_000,0.18,true)])])
+        let compoundFit=try FontLabTraceSmoothing.fit(compoundDense,units:5,refitDenseCurves:true),compoundInk=CGMutablePath()
+        FontLabVectorMath.paths(in:compoundFit).forEach {compoundInk.addPath($0.cgPath)}
+        try check(!compoundInk.contains(CGPoint(x:500,y:500)) && compoundInk.contains(CGPoint(x:240,y:500)),"Staged dense fitting lost its counter")
+        let spikes=(0..<30_000).map { i -> FontLabVectorNode in
+            let t=Double(i)*2 * .pi/30_000,r=i%2==0 ? 0.35:0.20
+            return .init(point:.init(x:0.5+r*cos(t),y:0.5+r*sin(t)))
+        }
+        let noisy=FontLabGlyph(character:"O",strokes:[FontLabStroke(vectorPaths:[FontLabVectorPath(nodes:spikes,closed:true)])])
+        do { _=try FontLabTraceSmoothing.fit(noisy,units:0.5);throw FontLabStore.SelfTestError.failed("Pathological outline bypassed bounded fitting") }
+        catch is FontLabTraceSmoothing.Failure { /* Controlled refusal preserves the source. */ }
         print("CURVE FIT: \(source.strokes[0].contours!.reduce(0) { $0+$1.count }) → \(paths.reduce(0) { $0+$1.nodes.count }) anchors; dense curve \(denseCurve.nodes.count) → \(FontLabVectorMath.paths(in:compactCurve).flatMap(\.nodes).count)")
         let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 100, pixelsHigh: 100,
                                       bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,

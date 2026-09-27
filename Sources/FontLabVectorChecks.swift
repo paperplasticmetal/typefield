@@ -54,10 +54,53 @@ enum FontLabVectorChecks {
             try check(hypot(before.x-after.x,before.y-after.y)<1e-10,"Inserted midpoint distorted a cubic")
         } }
         let distribution = FontLabVectorEditor(glyph:openGlyph,metrics:metrics)
-        distribution.selectAll(); distribution.distribute(horizontal:true)
+        distribution.objectSelection = false; distribution.selectAll(); distribution.distribute(horizontal:true)
         try check(abs(distribution.paths[0].nodes[1].point.x-0.45)<1e-10 &&
                   abs(distribution.paths[0].nodes[1].outgoing!.x-0.55)<1e-10,
                   "Node distribution failed to translate curve handles with the anchor")
+        let singleObject = FontLabVectorEditor(glyph:glyph,metrics:metrics)
+        singleObject.selectAll(); singleObject.align(horizontal:true); singleObject.align(horizontal:false)
+        singleObject.distribute(horizontal:true)
+        try check(singleObject.glyph == glyph && !singleObject.canAlign && !singleObject.canDistribute,
+                  "A single object with a counter must never collapse under alignment/distribution")
+        let extra = FontLabVectorMath.rectangle(CGRect(x:0.01,y:0.04,width:0.05,height:0.06),ellipse:true)
+        let arrangedGlyph = FontLabGlyph(character:"O",strokes:[FontLabStroke(vectorPaths:FontLabVectorMath.paths(in:glyph)+[extra])])
+        for horizontal in [true,false] {
+            let editor = FontLabVectorEditor(glyph:arrangedGlyph,metrics:metrics)
+            editor.selection = [editor.paths[1].nodes[0].id,extra.nodes[0].id]
+            let before = editor.paths; editor.align(horizontal:horizontal)
+            let after = editor.paths
+            try check(editor.canAlign && editor.glyph.isValid,"Compound object alignment failed")
+            var shifts: [FontLabPoint] = []
+            for (original,result) in zip(before,after) {
+                let dx=result.nodes[0].point.x-original.nodes[0].point.x,dy=result.nodes[0].point.y-original.nodes[0].point.y
+                shifts.append(.init(x:dx,y:dy))
+                for (a,b) in zip(original.nodes,result.nodes) {
+                    for (u,v) in zip([a.point,a.incoming!,a.outgoing!],[b.point,b.incoming!,b.outgoing!]) {
+                        try check(abs(v.x-u.x-dx)<1e-10 && abs(v.y-u.y-dy)<1e-10,"Object alignment distorted curves")
+                    }
+                }
+            }
+            try check(abs(shifts[0].x-shifts[1].x)<1e-10 && abs(shifts[0].y-shifts[1].y)<1e-10,"Alignment detached a counter")
+            let a=after[0].cgPath.boundingBoxOfPath,b=after[2].cgPath.boundingBoxOfPath
+            try check(abs(horizontal ? a.midY-b.midY : a.midX-b.midX)<1e-8,"Object centers were not aligned")
+        }
+        for horizontal in [true,false] {
+            let shapes = [CGRect(x:0.05,y:0.05,width:0.1,height:0.1),CGRect(x:0.2,y:0.2,width:0.1,height:0.1),CGRect(x:0.8,y:0.8,width:0.1,height:0.1)]
+                .map { FontLabVectorMath.rectangle($0,ellipse:true) }
+            let editor=FontLabVectorEditor(glyph:FontLabGlyph(character:"X",strokes:[FontLabStroke(vectorPaths:shapes)]),metrics:metrics)
+            editor.selectAll();editor.distribute(horizontal:horizontal)
+            try check(editor.canDistribute && editor.glyph.isValid,"Three objects could not be distributed")
+            let result=editor.paths, centers=result.map { horizontal ? $0.cgPath.boundingBoxOfPath.midX : $0.cgPath.boundingBoxOfPath.midY }
+            try check(abs((centers[1]-centers[0])-(centers[2]-centers[1]))<1e-8,"Object centers were not evenly distributed")
+            try check(result[0]==shapes[0] && result[2]==shapes[2],"Distribution moved the outermost objects")
+            let dx=result[1].nodes[0].point.x-shapes[1].nodes[0].point.x,dy=result[1].nodes[0].point.y-shapes[1].nodes[0].point.y
+            for (a,b) in zip(shapes[1].nodes,result[1].nodes) {
+                for (u,v) in zip([a.point,a.incoming!,a.outgoing!],[b.point,b.incoming!,b.outgoing!]) {
+                    try check(abs(v.x-u.x-dx)<1e-10 && abs(v.y-u.y-dy)<1e-10,"Object distribution distorted curves")
+                }
+            }
+        }
         let focusViewport=CGSize(width:600,height:520)
         let contourBounds=CGRect(x:0.1,y:0.18,width:0.8,height:0.6)
         guard let contourFocus=FontLabVectorEditor.focusTransform(selectionBounds:contourBounds,viewport:focusViewport,designWidth:glyph.resolvedDesignWidth) else {

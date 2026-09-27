@@ -272,7 +272,7 @@ struct CanvasTypographySummary {
     }
     init(canvas: String, direction: TypeDirection) {
         self.canvas = canvas; format = direction.canvasDisplayName
-        let plan = CanvasPlan(direction: direction)
+        let plan = CanvasPlanCache.plan(for: direction)
         var values: [Entry] = []
         for element in plan.elements {
             guard let style = element.style, element.text != nil else { continue }

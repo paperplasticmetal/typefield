@@ -8,7 +8,7 @@ enum FontLabTraceSmoothing {
         var errorDescription: String? {
             switch self {
             case .noPolygons: return "Select a glyph with closed polygon outlines or dense curves (more than 32 anchors per contour). Simple Bézier curves and pen strokes are kept intact."
-            case .tooDense: return "This outline is too dense for the smoothing preview (6,000 polygon points maximum)."
+            case .tooDense: return "This outline exceeds the safe curve-fitting work limit. Try a smaller contour or a looser tolerance; the original is unchanged."
             case .unsafe: return "No safe curve fit was found at this tolerance. The original outline is unchanged."
             }
         }
@@ -17,7 +17,7 @@ enum FontLabTraceSmoothing {
         let paths = FontLabVectorMath.paths(in: glyph)
         let eligible = paths.filter { $0.closed && ($0.nodes.allSatisfy { $0.incoming == nil && $0.outgoing == nil } || (refitDenseCurves && $0.nodes.count > 32)) }
         guard !eligible.isEmpty else { throw Failure.noPolygons }
-        guard eligible.reduce(0, { $0 + $1.nodes.count }) <= 6000 else { throw Failure.tooDense }
+        guard eligible.reduce(0, { $0 + $1.nodes.count }) <= 30_000 else { throw Failure.tooDense }
         let width = glyph.resolvedDesignWidth, tolerance = min(5, max(0.25, units)) / 1000
         func physical(_ p: FontLabPoint) -> FontLabPoint { .init(x: p.x * width, y: p.y) }
         func normalized(_ p: FontLabPoint) -> FontLabPoint { .init(x: p.x / width, y: p.y) }
@@ -25,13 +25,19 @@ enum FontLabTraceSmoothing {
         var changed = false
         for index in candidates.indices where eligible.contains(where: { $0.id == candidates[index].id }) {
             let original = candidates[index].flattened(tolerance: 0.000001).map(physical)
-            guard original.count <= 6000 else { continue }
+            try Task.checkCancellation()
+            guard original.count <= 60_000 else { throw Failure.tooDense }
             guard original.count > 4 else { continue }
             var accepted: FontLabVectorPath?
             // Retry more conservatively if the whole-contour distance check
             // rejects a locally fitted span (including the closing seam).
             for fraction in [0.8, 0.4, 0.2] {
-                var candidate = fittedRing(original, tolerance: tolerance * fraction)
+                try Task.checkCancellation()
+                // Reduce redundant polygon samples first, with a small part
+                // of the same error budget. Validate against the full source.
+                let reduced = try reducedRing(original, tolerance: tolerance * fraction * 0.1)
+                guard reduced.count <= 6000 else { throw Failure.tooDense }
+                var candidate = fittedRing(reduced, tolerance: tolerance * fraction)
                 candidate.id = paths[index].id
                 for i in candidate.nodes.indices {
                     candidate.nodes[i].point = normalized(candidate.nodes[i].point)
@@ -49,13 +55,40 @@ enum FontLabTraceSmoothing {
         let before = paths.filter(\.closed).map { $0.flattened(tolerance: 0.000001).map(physical) }
         let after = candidates.filter(\.closed).map { $0.flattened(tolerance: 0.000001).map(physical) }
         guard after.reduce(0, { $0 + $1.count }) <= 6000, !crossings(after) else { throw Failure.unsafe }
+        let beforePaths = before.map(polygonPath), afterPaths = after.map(polygonPath)
         for i in before.indices { for j in before.indices where i != j {
-            guard let p = before[i].first, let q = after[i].first, contains(before[j],p) == contains(after[j],q) else { throw Failure.unsafe }
+            guard let p = before[i].first, let q = after[i].first,
+                  beforePaths[j].contains(CGPoint(x:p.x,y:p.y)) == afterPaths[j].contains(CGPoint(x:q.x,y:q.y)) else { throw Failure.unsafe }
         } }
         // Near-touching boundaries can change a large filled region without
         // a proper segment crossing. Check filled ink as well as boundaries.
         guard silhouetteAgreement(paths, candidates) >= (units > 3 ? 0.96 : 0.975) else { throw Failure.unsafe }
         return FontLabVectorMath.replacingPaths(in: glyph, with: candidates)
+    }
+    /// Iterative RDP avoids recursion overflow on adversarial sawtooth paths.
+    /// The budget bounds pathological work without modifying the source.
+    private static func reducedRing(_ input: [FontLabPoint], tolerance: Double) throws -> [FontLabPoint] {
+        guard input.count > 6000 else { return input }
+        let points = input + [input[0]]
+        var keep: Set<Int> = [0,input.count], work = [(0,input.count)], budget = 2_000_000
+        while let (start,end) = work.popLast() {
+            try Task.checkCancellation()
+            guard end > start+1 else { continue }
+            let a=points[start],b=points[end],dx=b.x-a.x,dy=b.y-a.y,length=dx*dx+dy*dy
+            var distance=0.0,split=start
+            budget -= end-start
+            guard budget >= 0 else { throw Failure.tooDense }
+            for i in (start+1)..<end {
+                let p=points[i],t=length>0 ? min(1,max(0,((p.x-a.x)*dx+(p.y-a.y)*dy)/length)) : 0
+                let error=hypot(p.x-a.x-t*dx,p.y-a.y-t*dy)
+                if error>distance { distance=error;split=i }
+            }
+            if distance>tolerance { keep.insert(split);work.append((start,split));work.append((split,end)) }
+        }
+        return keep.sorted().filter { $0<input.count }.map { input[$0] }
+    }
+    private static func polygonPath(_ points: [FontLabPoint]) -> CGPath {
+        let path=CGMutablePath();path.addLines(between:points.map { CGPoint(x:$0.x,y:$0.y) });path.closeSubpath();return path
     }
     /// Least-squares cubic spans, split at maximum residual. Corners are
     /// retained as line joins; smooth split points share a tangent. Work in em
@@ -184,26 +217,31 @@ enum FontLabTraceSmoothing {
         // change must not move the sampling grid away from a damaged region.
         for box in [a.boundingBoxOfPath, a.boundingBoxOfPath.union(b.boundingBoxOfPath)] {
             guard box.width > 0,box.height > 0 else {return 0}
+            // Rasterize once per outline instead of performing 25,600
+            // point-in-path scans through every original polygon segment.
+            func mask(_ path: CGPath) -> [UInt8] {
+                var bytes=[UInt8](repeating:0,count:160*160)
+                bytes.withUnsafeMutableBytes { buffer in
+                    guard let context=CGContext(data:buffer.baseAddress,width:160,height:160,bitsPerComponent:8,bytesPerRow:160,space:CGColorSpaceCreateDeviceGray(),bitmapInfo:CGImageAlphaInfo.none.rawValue) else { return }
+                    context.setShouldAntialias(false);context.setAllowsAntialiasing(false)
+                    context.scaleBy(x:160/box.width,y:160/box.height);context.translateBy(x:-box.minX,y:-box.minY)
+                    context.setFillColor(gray:1,alpha:1);context.addPath(path);context.fillPath()
+                }
+                return bytes
+            }
+            let aa=mask(a),bb=mask(b)
             var intersection=0,union=0
-            for y in 0..<160 {for x in 0..<160 {
-                let p=CGPoint(x:box.minX+(Double(x)+0.5)/160*box.width,y:box.minY+(Double(y)+0.5)/160*box.height)
-                let aa=a.contains(p,using:.winding),bb=b.contains(p,using:.winding)
-                if aa && bb {intersection += 1};if aa || bb {union += 1}
-            }}
+            for i in aa.indices { if aa[i]>0 && bb[i]>0 {intersection += 1};if aa[i]>0 || bb[i]>0 {union += 1} }
             agreement=min(agreement,union == 0 ? 0 : Double(intersection)/Double(union))
         }
         return agreement
     }
 
     private static func area(_ p: [FontLabPoint]) -> Double { p.indices.reduce(0) { sum,i in let a=p[i],b=p[(i+1)%p.count];return sum+a.x*b.y-b.x*a.y } }
-    private static func contains(_ points: [FontLabPoint], _ p: FontLabPoint) -> Bool {
-        let path = CGMutablePath(); guard let first=points.first else { return false }
-        path.move(to:CGPoint(x:first.x*1000,y:first.y*1000));for point in points.dropFirst() {path.addLine(to:CGPoint(x:point.x*1000,y:point.y*1000))};path.closeSubpath()
-        return path.contains(CGPoint(x:p.x*1000,y:p.y*1000))
-    }
     private static func close(_ samples:[FontLabPoint],to polygon:[FontLabPoint],within limit:Double)->Bool {
         samples.allSatisfy { p in
-            polygon.indices.contains { i in
+            if Task.isCancelled { return false }
+            return polygon.indices.contains { i in
                 let a=polygon[i],b=polygon[(i+1)%polygon.count],dx=b.x-a.x,dy=b.y-a.y
                 let t=min(1,max(0,((p.x-a.x)*dx+(p.y-a.y)*dy)/max(1e-20,dx*dx+dy*dy)))
                 return hypot(p.x-a.x-dx*t,p.y-a.y-dy*t)<=limit
@@ -214,7 +252,9 @@ enum FontLabTraceSmoothing {
         struct Edge { let a:FontLabPoint;let b:FontLabPoint;let contour:Int;let index:Int;let count:Int }
         let edges=contours.enumerated().flatMap { c,p in p.indices.map { Edge(a:p[$0],b:p[($0+1)%p.count],contour:c,index:$0,count:p.count) } }
         func side(_ a:FontLabPoint,_ b:FontLabPoint,_ p:FontLabPoint)->Double {(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x)}
-        for i in edges.indices { for j in edges.indices where j>i {
+        for i in edges.indices {
+            if Task.isCancelled { return true }
+            for j in edges.indices where j>i {
             let a=edges[i],b=edges[j]
             if a.contour==b.contour && (abs(a.index-b.index)<=1 || abs(a.index-b.index)==a.count-1) {continue}
             if max(a.a.x,a.b.x)<min(b.a.x,b.b.x) || max(b.a.x,b.b.x)<min(a.a.x,a.b.x) || max(a.a.y,a.b.y)<min(b.a.y,b.b.y) || max(b.a.y,b.b.y)<min(a.a.y,a.b.y) {continue}

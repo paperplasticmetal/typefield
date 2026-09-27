@@ -228,6 +228,7 @@ struct FontLabSmoothingView: View {
     @State private var message = ""
     @State private var working = false
     @State private var revision = UUID()
+    @State private var worker: Task<Void, Never>?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Simplify outline · " + original.character).font(.title2.bold())
@@ -245,7 +246,7 @@ struct FontLabSmoothingView: View {
             HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Apply simplified outline") { if let candidate { onApply(candidate); dismiss() } }.keyboardShortcut(.defaultAction).disabled(candidate == nil || working) }
         }.padding(24).frame(width: 700)
         .onAppear { generate() }.onChange(of: tolerance) { _ in candidate = nil; generate() }
-        .onDisappear { revision = UUID() }
+        .onDisappear { revision = UUID(); worker?.cancel(); worker = nil }
     }
     private func sample(_ title: String, glyph: FontLabGlyph) -> some View {
         VStack { Text(title).font(.headline); FontLabPreviewCanvas(text: glyph.character, glyphs: [glyph.character:glyph], metrics: metrics, maximumEm: 220, centered: true).frame(height: 220).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10)); Text("\(FontLabVectorMath.paths(in: glyph).reduce(0) { $0 + $1.nodes.count }) nodes").font(.caption) }.frame(maxWidth: .infinity)
@@ -253,9 +254,12 @@ struct FontLabSmoothingView: View {
     private func generate() {
         let id = UUID(); revision = id; working = true; candidate = nil
         let source = original, units = tolerance
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try FontLabTraceSmoothing.fit(source, units: units, refitDenseCurves: true) }
-            DispatchQueue.main.async {
+        worker?.cancel()
+        worker = Task {
+            let fitting = Task.detached(priority:.userInitiated) { try FontLabTraceSmoothing.fit(source, units:units, refitDenseCurves:true) }
+            let result = await withTaskCancellationHandler(operation: { await fitting.result }, onCancel: { fitting.cancel() })
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
                 guard revision == id else { return }; working = false
                 switch result {
                 case .success(let glyph): candidate = glyph; message = "Review the curves before applying. Undo edit restores the original outline."
