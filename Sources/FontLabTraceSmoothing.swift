@@ -74,14 +74,22 @@ enum FontLabTraceSmoothing {
         func neighbor(_ i: Int, _ step: Int) -> FontLabPoint {
             var j = (i + step + count) % count
             for _ in 0..<count-1 {
-                if hypot(points[j].x-points[i].x,points[j].y-points[i].y) >= max(0.004,tolerance*8) { break }
+                if hypot(points[j].x-points[i].x,points[j].y-points[i].y) >= max(0.006,tolerance*3) { break }
                 j = (j + step + count) % count
             }
             return points[j]
         }
-        let corners = Set(points.indices.filter { i in
-            dot(unit(sub(points[i],neighbor(i,-1))), unit(sub(neighbor(i,1),points[i]))) < 0.5
-        })
+        let turns = points.indices.map { i in
+            dot(unit(sub(points[i],neighbor(i,-1))), unit(sub(neighbor(i,1),points[i])))
+        }
+        // A raster corner affects several neighboring samples. Keep its
+        // strongest turn once, instead of pinning a cluster of tiny segments.
+        var corners = Set<Int>()
+        for i in points.indices.filter({ turns[$0] < 0.5 }).sorted(by: { turns[$0] == turns[$1] ? $0 < $1 : turns[$0] < turns[$1] }) {
+            if !corners.contains(where: { hypot(points[$0].x-points[i].x, points[$0].y-points[i].y) < max(0.008,tolerance*3) }) {
+                corners.insert(i)
+            }
+        }
         var breaks = corners
         // Closed smooth rings need at least three anchors and noncoincident
         // span endpoints. Four distributed seams avoid a degenerate solve.
@@ -90,7 +98,13 @@ enum FontLabTraceSmoothing {
         var segments: [[FontLabPoint]] = []
         func fit(_ samples: [FontLabPoint], _ left: FontLabPoint, _ right: FontLabPoint, _ depth: Int) {
             let a = samples.first!, b = samples.last!
-            if samples.count == 2 { segments.append([a,a,b,b]); return }
+            // Long straight runs need two endpoints, not a chain of cubic handles.
+            let dx = b.x-a.x, dy = b.y-a.y, span = dx*dx+dy*dy
+            let straight = span > 1e-16 && samples.allSatisfy { p in
+                let t = min(1, max(0, ((p.x-a.x)*dx+(p.y-a.y)*dy)/span))
+                return hypot(p.x-a.x-t*dx,p.y-a.y-t*dy) <= tolerance
+            }
+            if samples.count == 2 || straight { segments.append([a,a,b,b]); return }
             var u = [0.0]
             for i in 1..<samples.count { u.append(u.last! + hypot(samples[i].x-samples[i-1].x,samples[i].y-samples[i-1].y)) }
             let length = max(u.last!,1e-12); u = u.map { $0/length }
@@ -134,8 +148,8 @@ enum FontLabTraceSmoothing {
             }
             if error <= tolerance || depth >= 18 { segments.append(curve);return }
             var before=split-1,after=split+1
-            while before > 0 && hypot(samples[split].x-samples[before].x,samples[split].y-samples[before].y) < max(0.004,tolerance*8) { before -= 1 }
-            while after < samples.count-1 && hypot(samples[split].x-samples[after].x,samples[split].y-samples[after].y) < max(0.004,tolerance*8) { after += 1 }
+            while before > 0 && hypot(samples[split].x-samples[before].x,samples[split].y-samples[before].y) < max(0.006,tolerance*3) { before -= 1 }
+            while after < samples.count-1 && hypot(samples[split].x-samples[after].x,samples[split].y-samples[after].y) < max(0.006,tolerance*3) { after += 1 }
             let tangent=unit(sub(samples[after],samples[before]))
             fit(Array(samples[...split]),left,.init(x:-tangent.x,y:-tangent.y),depth+1)
             fit(Array(samples[split...]),tangent,right,depth+1)

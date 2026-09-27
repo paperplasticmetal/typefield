@@ -28,9 +28,9 @@ Specific glyph pairs override group rules, including a zero-valued exception. On
 
 TrueType export expands rules into horizontal legacy `kern` format 0 pairs and validates the result through Core Text. It currently supports at most 10,000 expanded pairs and does not emit GPOS, contextual or vertical kerning. Applications that ignore legacy `kern` may not display these adjustments. SVG glyph exports contain outlines, not pair layout rules.
 
-## Smooth trace
+## Simplify outline
 
-Select a glyph containing imported closed polygons or dense closed curves (more than 32 anchors per contour) and choose **Smooth trace…**. The automatic fit offers Gentle (0.5), Balanced (1) Loose (2 font units), and Editable (5 font units), side-by-side previews and node counts. **Apply smoothing** saves compact editable cubic curves; **Undo edit** restores the source outlines. Fitting uses a physical font-unit tolerance, preserves corners, winding and counter containment, and rejects crossings, filled-area changes, or excess deviation. Simple existing curves stay intact. New artwork imports receive a fit of 1–3 font units automatically, based on 1.5 source pixels; failed fits retain the original traced polygons.
+Select a glyph containing imported closed polygons or dense closed curves (more than 32 anchors per contour) and choose **Simplify outline…**. The automatic fit offers Gentle (0.5), Balanced (1) Loose (2 font units), and Editable (5 font units), side-by-side previews and node counts. **Apply simplified outline** saves compact editable cubic curves; **Undo edit** restores the source outlines. Fitting uses a physical font-unit tolerance, preserves corners, winding and counter containment, and rejects crossings, filled-area changes, or excess deviation. Simple existing curves stay intact. New artwork imports receive a fit of 1–3 font units automatically, based on 1.5 source pixels; failed fits retain the original traced polygons.
 
 The fitter retains sharp corners, checks sampled deviation in both directions, preserves winding and contour containment, and rejects detected crossings. It leaves pen strokes and existing Bézier paths intact. Fitting is bounded to 6,000 polygon points and may decline complex outlines. Review the result at editing zoom: these conservative geometric checks do not replace optical judgment or provide a formal topology guarantee. Artwork is never silently smoothed during import.
 
@@ -39,3 +39,12 @@ The fitter retains sharp corners, checks sampled deviation in both directions, p
 `FontLabDesignChecks` covers nested source propagation, cycle/bounds rejection, independent decomposed identities, SVG/TrueType equivalence to resolved outlines, master switching/persistence, group exceptions, actual Core Text kerning and smoothing of a noisy two-contour ring. Native disposable-project checks exercise the design sheet separately from user projects.
 
 Workflow references: [Glyphs components](https://handbook.glyphsapp.com/components/) and [kerning](https://handbook.glyphsapp.com/kerning/). The binary pair table follows the [OpenType kern specification](https://learn.microsoft.com/en-us/typography/opentype/spec/kern). No Glyphs code or assets are included.
+
+
+## Practice examples and dense imports (0.53)
+
+Use **Try handwriting & bubble examples…** in the Letterform Editor sidebar. The gallery shows original practice imports and suggested letters separately. **Open editable example** creates a new practice project with the source artwork and suggestions; it does not modify another project. Examples cover slanted handwriting with detached dots, irregular bubble counters, and a rounded A.
+
+Existing projects keep their saved outlines when the app updates. A glyph with more than 100 anchors now shows a direct **Simplify outline…** action and its point count. The sheet starts with **Editable · 5 units** and compares the original with the proposed curve fit. Apply only after reviewing the preview; **Undo edit** restores the previous glyph. Straight spans become lines, clustered pixel corners are consolidated, and open pen paths remain unchanged.
+
+See [the shape-similarity plan](FONT_LAB_QUALITY_PLAN.md) for the separate missing-letter inference target. Import fidelity and prediction similarity are different measurements.

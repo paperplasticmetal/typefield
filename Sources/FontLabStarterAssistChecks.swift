@@ -154,6 +154,8 @@ enum FontLabStarterAssistChecks {
         try check(derivedQ.strokes.count == sourceO.strokes.count + 1 &&
                   derivedQ.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) } == sourceO.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) },
                   "Q did not retain the drawn O curves exactly")
+        try check(proposal.details["e"]?.sourceCharacters == ["o"] && proposal.details["e"]?.confidence == .adapted,
+                  "e did not reuse the source o bowl")
         let sourceo = mixed.glyphs["o"]!, derivedA = proposal.glyphs["a"]!
         try check(derivedA.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) } == sourceo.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) },
                   "a did not retain the drawn o curves exactly")

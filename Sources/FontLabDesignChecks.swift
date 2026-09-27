@@ -111,6 +111,21 @@ enum FontLabDesignChecks {
         try check(FontLabVectorMath.paths(in:compactCurve).flatMap(\.nodes).count < 16,
                   "Dense generated curves were not reduced to practical editing anchors")
         print("CURVE FIT: \(source.strokes[0].contours!.reduce(0) { $0+$1.count }) → \(paths.reduce(0) { $0+$1.nodes.count }) anchors; dense curve \(denseCurve.nodes.count) → \(FontLabVectorMath.paths(in:compactCurve).flatMap(\.nodes).count)")
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 100, pixelsHigh: 100,
+                                      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 100, height: 100).fill()
+        let overlapping = [CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.6), CGRect(x: 0.4, y: 0.2, width: 0.5, height: 0.6)].map {
+            FontLabStroke(vectorPaths: [FontLabVectorMath.rectangle($0, ellipse: false)])
+        }
+        fontLabDrawStrokes(overlapping, in: NSRect(x: 0, y: 0, width: 100, height: 100), color: NSColor.black.withAlphaComponent(0.6))
+        NSGraphicsContext.restoreGraphicsState()
+        let singleInk = bitmap.colorAt(x: 20, y: 50)!.redComponent
+        let joinedInk = bitmap.colorAt(x: 50, y: 50)!.redComponent
+        try check(abs(singleInk-joinedInk) < 0.01 && abs(singleInk-0.4) < 0.03,
+                  "Overlapping preview strokes accumulated opacity or changed the chosen ink color")
         print("PASS: linked/nested components, cycle/bounds rejection, master isolation, kerning groups/exceptions and Core Text export, smoothing counters and design persistence.")
     }
 }

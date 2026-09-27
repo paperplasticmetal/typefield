@@ -45,23 +45,8 @@ enum FontLabArtworkChecks {
 
     // Original uneven marker strokes, with a deliberately offset handwritten
     // i dot. These exercise import independently of installed typefaces/OCR.
-    static let handwritingSVG = """
-    <svg xmlns="http://www.w3.org/2000/svg" width="700" height="240" viewBox="0 0 700 240">
-    <g fill="none" stroke="black" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M30 173 Q35 130 45 91 M39 128 C67 67 105 80 92 128 L82 174"/>
-    <path d="M196 89 C142 64 132 171 168 177 C211 188 234 83 196 89 Z"/>
-    <path d="M270 218 L302 91 M294 124 C331 66 363 99 342 150 Q324 186 286 168"/>
-    <path d="M413 172 L438 91"/>
-    <path d="M557 88 L531 180 Q524 215 499 207"/>
-    </g><g fill="black"><ellipse cx="455" cy="54" rx="8" ry="9"/><ellipse cx="565" cy="51" rx="9" ry="8"/></g></svg>
-    """
-    static let bubbleSVG = """
-    <svg xmlns="http://www.w3.org/2000/svg" width="450" height="250" viewBox="0 0 450 250">
-    <g fill="black" fill-rule="evenodd">
-    <path d="M37 217 C10 198 15 63 36 34 C65 9 160 16 177 58 C191 85 174 111 159 119 C205 134 199 198 169 216 C135 241 60 235 37 217 Z M69 61 C88 47 133 52 132 78 C131 99 89 101 67 94 Z M64 146 C98 127 145 144 143 171 C140 196 87 200 63 184 Z"/>
-    <path d="M312 24 C225 25 216 214 298 228 C389 244 438 45 348 25 Q329 19 312 24 Z M309 76 C347 54 370 91 357 140 C345 187 306 194 283 166 C263 141 278 91 309 76 Z"/>
-    </g></svg>
-    """
+    static let handwritingSVG = FontLabExamples.handwritingSVG
+    static let bubbleSVG = FontLabExamples.bubbleSVG
 
     static func writeFixtures(to folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -160,7 +145,41 @@ enum FontLabArtworkChecks {
             _ = try FontLabTrueTypeExporter.artifact(for:edgeProject)
             let suggestions=FontLabStarterAssist.propose(for:edgeProject)
             try check(suggestions.glyphs.count == 52-letters.count,"Edge-case suggestions lost Latin coverage")
+            if filename == "handwriting-nopij", let h = suggestions.glyphs["h"] {
+                let svg = FontLabSVGExporter.data(projectName: "h join check", glyph: h, metrics: edgeProject.metrics)
+                let hSource = FontLabArtworkSource(image: try FontLabArtworkReader.svgImage(svg), filename: "h.svg", format: .svg, notices: [])
+                let hScan = try FontLabArtworkEngine.scan(hSource, options: FontLabArtworkOptions(), recognize: false)
+                try check(hScan.regions.count == 1 && hScan.regions[0].contours.count == 1,
+                          "Handwritten h extension detached from the n stem or introduced a hole")
+            }
             print("ARTWORK EDGE \(filename): \(beforeCount) → \(afterCount) anchors; counters, detached marks, >97.5% overlap, persistence and font export passed")
+        }
+        // A deliberately coarse raster reproduces stair-step corner clusters
+        // on diagonals. Keep an open pen edit alongside the closed letter.
+        let highResolutionA = try FontLabArtworkReader.svgImage(Data(FontLabExamples.roundedASVG.utf8))
+        let context = CGContext(data: nil, width: 240, height: 260, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(highResolutionA, in: CGRect(x: 0, y: 0, width: 240, height: 260))
+        let coarse = FontLabArtworkSource(image: context.makeImage()!, filename: "coarse-A.png", format: .png, notices: [])
+        var aScan = try FontLabArtworkEngine.scan(coarse, options: FontLabArtworkOptions(), recognize: false)
+        try check(aScan.regions.count == 1, "Coarse rounded A split into multiple letters")
+        aScan.regions[0].character = "A"
+        var rawA = try FontLabArtworkEngine.project(from: aScan, name: "Coarse A", fitCurves: false).glyphs["A"]!
+        let open = FontLabVectorPath(nodes: [.init(point: .init(x: 0.45, y: 0.5)), .init(point: .init(x: 0.55, y: 0.55))])
+        rawA.strokes.append(FontLabStroke(vectorPaths: [open]))
+        let simpleA = try FontLabTraceSmoothing.fit(rawA, units: 5, refitDenseCurves: true)
+        let aPaths = FontLabVectorMath.paths(in: simpleA)
+        try check(aPaths.contains(open), "Simplification changed the open pen edit")
+        try check(aPaths.filter(\.closed).count == 2 && aPaths.flatMap(\.nodes).count < 40,
+                  "Coarse rounded A retained too many pixel corners or lost its counter")
+        print("COARSE A: \(FontLabVectorMath.paths(in: rawA).flatMap(\.nodes).count) → \(aPaths.flatMap(\.nodes).count) anchors; open pen edit preserved")
+        for index in FontLabExamples.titles.indices {
+            let example = try FontLabExamples.make(index)
+            try check(example.isValid, "In-app practice example is invalid")
+            let suggested = FontLabStarterAssist.propose(for: example)
+            var complete = example
+            for (character, glyph) in suggested.glyphs { complete.glyphs[character] = glyph }
+            try check(complete.isValid && complete.completedCount == 52, "Practice project suggestions could not be opened for editing")
         }
         let source = try FontLabArtworkReader.load(folder.appendingPathComponent("alphabet-A-Z.png"))
         var sheet = try FontLabArtworkEngine.scan(source, options: FontLabArtworkOptions(), recognize: false)

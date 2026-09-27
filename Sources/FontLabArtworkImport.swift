@@ -99,7 +99,7 @@ enum FontLabArtworkReader {
         var valid = true
         var count = 0
         var depth = 0
-        private let allowed: Set<String> = ["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "defs", "use", "clipPath", "title", "desc"]
+        private let allowed: Set<String> = ["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "defs", "use", "clipPath", "title", "desc", "metadata"]
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
             count += 1; depth += 1
             if !allowed.contains(name) || count > 30_000 || depth > 128 { valid = false; parser.abortParsing(); return }

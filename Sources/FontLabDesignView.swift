@@ -223,14 +223,14 @@ struct FontLabSmoothingView: View {
     let metrics: FontLabMetrics
     let onApply: (FontLabGlyph) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var tolerance = 2.0
+    @State private var tolerance = 5.0
     @State private var candidate: FontLabGlyph?
     @State private var message = ""
     @State private var working = false
     @State private var revision = UUID()
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Smooth traced outline · " + original.character).font(.title2.bold())
+            Text("Simplify outline · " + original.character).font(.title2.bold())
             Text("Fit editable curves while keeping corners and counters. The original stays unchanged until you apply the preview.").foregroundStyle(.secondary)
             HStack {
                 Picker("Fit tolerance", selection: $tolerance) { Text("Gentle · 0.5 units").tag(0.5); Text("Balanced · 1 unit").tag(1.0); Text("Loose · 2 units").tag(2.0); Text("Editable · 5 units").tag(5.0) }.disabled(working)
@@ -242,7 +242,7 @@ struct FontLabSmoothingView: View {
                 sample("Smoothed", glyph: candidate ?? original)
             }
             Text(message).font(.caption).foregroundStyle(.secondary).frame(minHeight: 36)
-            HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Apply smoothing") { if let candidate { onApply(candidate); dismiss() } }.keyboardShortcut(.defaultAction).disabled(candidate == nil || working) }
+            HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Apply simplified outline") { if let candidate { onApply(candidate); dismiss() } }.keyboardShortcut(.defaultAction).disabled(candidate == nil || working) }
         }.padding(24).frame(width: 700)
         .onAppear { generate() }.onChange(of: tolerance) { _ in candidate = nil; generate() }
         .onDisappear { revision = UUID() }

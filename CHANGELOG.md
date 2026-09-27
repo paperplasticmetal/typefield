@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.53.0 — 2026-09-27
+
+- Fixed clustered pixel corners in traced outlines. Straight spans use endpoints instead of unnecessary cubic handles; rounded corners remain curves. **Simplify outline…** defaults to the editable preview, and dense existing glyphs show their point count with a direct simplification action. Applying remains undoable.
+- Fixed dark seams in glyph previews by compositing translucent ink once across overlapping strokes.
+- Fixed SVG reimport rejecting the metadata written by Typefield’s own glyph exporter.
+- Added an in-app **Try handwriting & bubble examples…** gallery with slanted handwriting, irregular bubble counters, and a rounded A. Source imports and suggestions are visible before opening a separate editable practice project.
+- Starter construction calibrates stroke-weight fitting against supplied control letters, uses letter-specific proportions and optical spacing, and distinguishes plain stems. Source-derived e reuses o curves; reflected bowls and stems compensate for the measured slant, and h extensions attach to the drawn n stem. All suggestions remain provisional and require review. The original five-face holdout improves from 48.0% to 54.7% mean overlap; the nine-face mean is 50.1%, with small handwriting regressions documented in QA.
+
 ## 0.52.0 — 2026-09-26
 
 - Replaced dense trace smoothing with compact cubic fitting that retains sharp corners and checks boundary deviation, winding, counters, crossings, and filled-ink agreement. New imports use a source-resolution-aware fit; dense existing curves can also be reduced in **Smooth trace…**, including a reviewed **Editable · 5 units** option. Unsafe fits keep the original artwork.

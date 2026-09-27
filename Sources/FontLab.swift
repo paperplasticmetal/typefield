@@ -1064,6 +1064,7 @@ struct FontLabView: View {
     @AppStorage("fontLabCharacterBrowserWidth") private var characterBrowserWidth = FontLabCharacterPanelLayout.defaultWidth
     @State private var showInputHelp = false
     @State private var showMetricsGuide = false
+    @State private var showExamples = false
     @State private var showArtworkImporter = false
     @State private var artworkUndo: (before: FontLabProject, after: FontLabProject)?
     @State private var isExportingFont = false
@@ -1213,6 +1214,14 @@ struct FontLabView: View {
                 }
             }
         }
+        .sheet(isPresented: $showExamples) {
+            FontLabExamplesView { project in
+                if store.addGeneratedProject(project) != nil {
+                    selectedCharacter = project.characters.first(where: { project.glyphs[$0]?.starterOrigin == nil && project.glyphs[$0]?.hasArtwork == true }) ?? "A"
+                    vectorEditing = true
+                }
+            }
+        }
         .onDisappear { store.flushPendingSave() }
         .accessibilityIdentifier("font-lab-workspace")
     }
@@ -1230,6 +1239,8 @@ struct FontLabView: View {
                     Button { _ = store.addProject(name: "") } label: { Image(systemName: "plus") }
                         .buttonStyle(.plain).help("New Letterform Editor project").disabled(store.readBlocked)
                 }
+                Button("Try handwriting & bubble examples…") { showExamples = true }
+                    .font(.caption).disabled(store.readBlocked)
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         ForEach(store.state.projects) { project in
@@ -1482,12 +1493,21 @@ struct FontLabView: View {
                         Text("Vector").tag(true)
                         Text("Sketch").tag(false).disabled(glyph.components?.isEmpty == false)
                     }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
-                    Button("Smooth trace…") { showSmoothing = true }
+                    Button("Simplify outline…") { showSmoothing = true }
                         .disabled(store.readBlocked || FontLabVectorMath.paths(in: glyph).allSatisfy { !$0.closed || ($0.nodes.count <= 32 && $0.nodes.contains { $0.incoming != nil || $0.outgoing != nil }) })
                     Button("Redo") { redoGlyph(projectID: project.id) }.disabled(glyphRedo.isEmpty || store.readBlocked)
                     Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled((glyphUndo.isEmpty && glyph.strokes.isEmpty) || store.readBlocked)
                     Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
                         .disabled(!glyph.hasArtwork || store.readBlocked)
+                }
+                let anchorCount = FontLabVectorMath.paths(in: glyph).reduce(0) { $0 + $1.nodes.count }
+                if anchorCount > 100 {
+                    HStack {
+                        Label("\(anchorCount) points — simplify this outline before editing individual nodes.", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                            .font(.callout)
+                        Spacer()
+                        Button("Simplify outline…") { showSmoothing = true }.disabled(store.readBlocked)
+                    }.padding(10).background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 }
                 if vectorEditing || glyph.components?.isEmpty == false {
                     FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex,
@@ -2477,6 +2497,15 @@ final class FontLabPreviewNSView: NSView {
 }
 
 func fontLabDrawStrokes(_ strokes: [FontLabStroke], in rect: NSRect, color: NSColor) {
+    // System label ink can be translucent. Composite a glyph once so reused
+    // or freehand strokes do not become darker wherever they overlap.
+    let context = NSGraphicsContext.current?.cgContext
+    let resolved = color.usingColorSpace(.deviceRGB) ?? color
+    context?.saveGState()
+    context?.setAlpha(resolved.alphaComponent)
+    context?.beginTransparencyLayer(auxiliaryInfo: nil)
+    defer { context?.endTransparencyLayer(); context?.restoreGState() }
+    let color = resolved.withAlphaComponent(1)
     color.setStroke()
     color.setFill()
     for stroke in strokes {

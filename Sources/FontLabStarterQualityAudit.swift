@@ -44,6 +44,9 @@ enum FontLabStarterQualityAudit {
                 anchors.append(Double(FontLabVectorMath.paths(in: candidate).reduce(0) { $0 + $1.nodes.count }))
                 let method = proposal.details[character]?.method ?? "Unknown"
                 let score = overlap(candidate, actual)
+                if CommandLine.arguments.contains("--starter-quality-details") {
+                    print("STARTER GLYPH \(name) \(character): \(percent(score)) [\(method)]")
+                }
                 byMethod[method, default: []].append(score)
                 allScores.append(score)
                 widthErrors.append(abs(candidate.resolvedDesignWidth - actual.resolvedDesignWidth))
