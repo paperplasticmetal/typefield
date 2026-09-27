@@ -1,6 +1,49 @@
 import SwiftUI
 import AppKit
 
+/// Session-local history follows a glyph while the user edits other letters.
+/// Limit retained geometry as well as steps so dense imports cannot retain
+/// dozens of unbounded full-outline copies.
+struct FontLabGlyphEditHistory {
+    private(set) var undoEntries: [String: [FontLabGlyph]] = [:]
+    private(set) var redoEntries: [String: [FontLabGlyph]] = [:]
+    private var recent: [String] = []
+    mutating func record(_ glyph: FontLabGlyph) {
+        undoEntries[glyph.character, default: []].append(glyph)
+        redoEntries[glyph.character] = []
+        trim(glyph.character)
+    }
+    mutating func undo(_ current: FontLabGlyph) -> FontLabGlyph? {
+        guard let previous = undoEntries[current.character]?.popLast() else { return nil }
+        redoEntries[current.character, default: []].append(current)
+        trim(current.character)
+        return previous
+    }
+    mutating func redo(_ current: FontLabGlyph) -> FontLabGlyph? {
+        guard let next = redoEntries[current.character]?.popLast() else { return nil }
+        undoEntries[current.character, default: []].append(current)
+        trim(current.character)
+        return next
+    }
+    private mutating func trim(_ character: String) {
+        recent.removeAll { $0 == character }; recent.append(character)
+        undoEntries[character] = Array((undoEntries[character] ?? []).suffix(60))
+        redoEntries[character] = Array((redoEntries[character] ?? []).suffix(60))
+        func cost(_ values: [String: [FontLabGlyph]]) -> Int {
+            values.values.flatMap { $0 }.reduce(0) { total, glyph in
+                total + glyph.strokes.reduce(0) { $0 + $1.points.count + ($1.contours?.reduce(0) { $0 + $1.count } ?? 0) + ($1.vectorPaths?.reduce(0) { $0 + $1.nodes.count } ?? 0) }
+            }
+        }
+        while recent.count > 20 || cost(undoEntries) + cost(redoEntries) > 200_000 {
+            guard let oldest = recent.first else { break }
+            if recent.count > 1 { undoEntries.removeValue(forKey: oldest); redoEntries.removeValue(forKey: oldest); recent.removeFirst() }
+            else if (undoEntries[oldest]?.count ?? 0) > 1 { undoEntries[oldest]?.removeFirst() }
+            else if (redoEntries[oldest]?.count ?? 0) > 1 { redoEntries[oldest]?.removeFirst() }
+            else { break } // Retain one usable undo/redo even for a large glyph.
+        }
+    }
+}
+
 enum FontLabVectorTool: String, CaseIterable, Identifiable {
     case select = "Select", pen = "Bézier", rectangle = "Rectangle", ellipse = "Ellipse", hand = "Hand"
     var id: String { rawValue }
@@ -172,6 +215,108 @@ final class FontLabVectorEditor: ObservableObject {
         } }
         _=apply(value)
     }
+
+    var canJoinEndpoints: Bool {
+        let chosen = paths.flatMap { path in path.nodes.enumerated().compactMap { index, node in
+            selection.contains(node.id) ? (!path.closed && (index == 0 || index == path.nodes.count - 1)) : nil
+        } }
+        return chosen.count == 2 && chosen.allSatisfy { $0 }
+    }
+
+    func joinEndpoints() {
+        guard canJoinEndpoints else { message = "Select exactly two endpoints of open contours."; return }
+        var value = paths
+        let indices = value.indices.filter { value[$0].nodes.contains { selection.contains($0.id) } }
+        if indices.count == 1, let index = indices.first {
+            guard value[index].nodes.count >= 3 else { message = "A closed contour needs at least three nodes."; return }
+            if value[index].nodes.count > 3,
+               value[index].nodes[0].point == value[index].nodes.last!.point {
+                value[index].nodes[0].incoming = value[index].nodes.last!.incoming
+                value[index].nodes.removeLast()
+            }
+            value[index].closed = true
+        } else if indices.count == 2 {
+            let a = indices[0], b = indices[1]
+            if selection.contains(value[a].nodes[0].id) { value[a].reverse() }
+            if selection.contains(value[b].nodes.last!.id) { value[b].reverse() }
+            // Keep every original segment and handle; the new bridge is straight.
+            if value[a].nodes.last!.point == value[b].nodes[0].point {
+                value[a].nodes[value[a].nodes.count - 1].outgoing = value[b].nodes[0].outgoing
+                value[b].nodes.removeFirst()
+            } else {
+                value[a].nodes[value[a].nodes.count - 1].outgoing = nil
+                value[b].nodes[0].incoming = nil
+                value[a].nodes[value[a].nodes.count - 1].smooth = false
+                value[b].nodes[0].smooth = false
+            }
+            value[a].nodes += value[b].nodes
+            value.remove(at: b)
+        }
+        if apply(value) { activePath = nil; message = "Endpoints joined. Existing curves are preserved; Undo restores the separate contours." }
+    }
+
+    var canSplitNode: Bool {
+        guard selection.count == 1 else { return false }
+        return paths.contains { path in path.nodes.enumerated().contains { index, node in
+            selection.contains(node.id) && (path.closed || (index > 0 && index < path.nodes.count - 1))
+        } }
+    }
+
+    func splitAtNode() {
+        guard canSplitNode else { message = "Select one closed-contour node or an interior node of an open contour."; return }
+        var value = paths
+        guard let p = value.firstIndex(where: { $0.nodes.contains { selection.contains($0.id) } }),
+              let n = value[p].nodes.firstIndex(where: { selection.contains($0.id) }) else { return }
+        var duplicate = value[p].nodes[n]
+        duplicate.id = UUID()
+        let originalID = value[p].nodes[n].id
+        if value[p].closed {
+            value[p].nodes = Array(value[p].nodes[n...]) + Array(value[p].nodes[..<n]) + [duplicate]
+            value[p].closed = false
+            value[p].nodes[0].incoming = nil
+            value[p].nodes[0].smooth = false
+            value[p].nodes[value[p].nodes.count - 1].outgoing = nil
+            value[p].nodes[value[p].nodes.count - 1].smooth = false
+        } else {
+            duplicate.incoming = nil; duplicate.smooth = false
+            let second = FontLabVectorPath(nodes: [duplicate] + Array(value[p].nodes[(n + 1)...]), closed: false)
+            value[p].nodes = Array(value[p].nodes[...n])
+            value[p].nodes[n].outgoing = nil; value[p].nodes[n].smooth = false
+            value.insert(second, at: p + 1)
+        }
+        if apply(value) { selection = [originalID, duplicate.id]; activePath = nil; message = "Split at the selected node without changing the curves. Move an endpoint to open the cut." }
+    }
+
+    func insertMidpoints() {
+        var value = paths, inserted = Set<UUID>()
+        for p in value.indices {
+            for n in (0..<value[p].segmentCount).reversed() {
+                let next = (n + 1) % value[p].nodes.count
+                guard selection.contains(value[p].nodes[n].id), selection.contains(value[p].nodes[next].id) else { continue }
+                value[p].insertNode(segment: n, t: 0.5)
+                inserted.insert(value[p].nodes[n + 1].id)
+            }
+        }
+        guard !inserted.isEmpty else { message = "Select both ends of a segment to insert a midpoint."; return }
+        if apply(value) { selection = inserted; message = "Inserted \(inserted.count) midpoint(s); the original curve shape is unchanged." }
+    }
+
+    func distribute(horizontal: Bool) {
+        let nodes = selectedNodes.sorted { a, b in
+            let av = horizontal ? a.point.x : a.point.y, bv = horizontal ? b.point.x : b.point.y
+            return av == bv ? a.id.uuidString < b.id.uuidString : av < bv
+        }
+        guard nodes.count >= 3, let first = nodes.first, let last = nodes.last else { return }
+        let start = horizontal ? first.point.x : first.point.y, end = horizontal ? last.point.x : last.point.y
+        let positions = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element.id, start + (end - start) * Double($0.offset) / Double(nodes.count - 1)) })
+        modifySelected { node, _, _ in
+            guard let target = positions[node.id] else { return }
+            let dx = horizontal ? target - node.point.x : 0, dy = horizontal ? 0 : target - node.point.y
+            node.point.x += dx; node.point.y += dy
+            if node.incoming != nil { node.incoming!.x += dx; node.incoming!.y += dy }
+            if node.outgoing != nil { node.outgoing!.x += dx; node.outgoing!.y += dy }
+        }
+    }
     func pathCommand(_ command: String) {
         var value=paths
         for p in value.indices where value[p].nodes.contains(where:{selection.contains($0.id)}) {
@@ -324,6 +469,9 @@ struct FontLabVectorEditorView: View {
                     Button("Corner nodes") {editor.smooth(false)}.disabled(editor.selection.isEmpty)
                     Button("Make selected segments straight") {editor.lines()}.disabled(editor.selection.count<2)
                     Button("Add curve handles") {editor.curves()}.disabled(editor.selection.count<2)
+                    Button("Insert segment midpoints") {editor.insertMidpoints()}.disabled(editor.selection.count<2)
+                    Button("Split at selected node") {editor.splitAtNode()}.disabled(!editor.canSplitNode)
+                    Button("Join selected endpoints") {editor.joinEndpoints()}.disabled(!editor.canJoinEndpoints)
                     Divider()
                     Button("Close contours") {editor.pathCommand("close")}.disabled(editor.selection.isEmpty)
                     Button("Open contours") {editor.pathCommand("open")}.disabled(editor.selection.isEmpty)
@@ -359,12 +507,14 @@ struct FontLabVectorEditorView: View {
             }.toggleStyle(.checkbox).font(.caption)
             HStack(spacing:6) {
                 Text("\(editor.selection.count) nodes").foregroundStyle(.secondary).frame(width:65,alignment:.leading)
-                Text("X");TextField("X",text:$x).frame(width:55).onSubmit {if let v=Double(x) {editor.setCoordinate(v,x:true)}}
-                Text("Y");TextField("Y",text:$y).frame(width:55).onSubmit {if let v=Double(y) {editor.setCoordinate(v,x:false)}}
+                Text("X");TextField("X",text:$x).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection X in font units").onSubmit {if let v=Double(x) {editor.setCoordinate(v,x:true)}}
+                Text("Y");TextField("Y",text:$y).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection Y above baseline in font units").onSubmit {if let v=Double(y) {editor.setCoordinate(v,x:false)}}
                 Spacer(minLength:0)
                 Menu("Transform") {
                     Button("Align horizontally") {editor.align(horizontal:true)}
                     Button("Align vertically") {editor.align(horizontal:false)}
+                    Button("Distribute nodes horizontally") {editor.distribute(horizontal:true)}.disabled(editor.selection.count<3)
+                    Button("Distribute nodes vertically") {editor.distribute(horizontal:false)}.disabled(editor.selection.count<3)
                     Button("Flip horizontally") {editor.transform(scaleX:-1)}
                     Button("Flip vertically") {editor.transform(scaleY:-1)}
                 }.disabled(editor.selection.isEmpty).fixedSize()
@@ -388,8 +538,9 @@ struct FontLabVectorEditorView: View {
                 }
                 Spacer(minLength: 0)
             }.font(.caption)
-            Text(editor.objectSelection && editor.tool == .select ? "Click a shape to move it. Drag a box corner to resize; hold Shift to keep proportions. Nodes edits individual points." : editor.openCount>0 ? "\(editor.openCount) open contour(s). Close them before exporting a font." : editor.message)
+            Text(editor.openCount>0 ? "\(editor.openCount) open contour(s). \(editor.message)" : editor.message)
                 .font(.caption2).foregroundStyle(editor.openCount>0 ? .orange : .secondary).fixedSize(horizontal:false,vertical:true)
+                .help("Objects: move a whole shape or drag a corner to resize (Shift keeps proportions). Nodes: edit points and handles. Paths contains split, join and midpoint tools. Arrow keys move one unit; Shift moves ten.")
         }
         .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
         .onAppear { editor.componentStrokes=componentStrokes }

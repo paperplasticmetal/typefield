@@ -1070,8 +1070,9 @@ struct FontLabView: View {
     @State private var isExportingFont = false
     @State private var clearRequest: ClearRequest?
     @State private var deleteRequest: FontLabProject?
-    @State private var glyphUndo: [FontLabGlyph] = []
-    @State private var glyphRedo: [FontLabGlyph] = []
+    @State private var editHistory = FontLabGlyphEditHistory()
+    private var glyphUndo: [FontLabGlyph] { editHistory.undoEntries[selectedCharacter] ?? [] }
+    private var glyphRedo: [FontLabGlyph] { editHistory.redoEntries[selectedCharacter] ?? [] }
     @State private var vectorEditing = true
     @State private var showFontDesign = false
     @State private var showSmoothing = false
@@ -1126,9 +1127,8 @@ struct FontLabView: View {
                 selectedCharacter = project.characters.first ?? "A"
             }
         }
-        .onChange(of: selectedCharacter) { _ in glyphUndo = []; glyphRedo = [] }
         .onChange(of: store.state.selectedProject) { _ in
-            glyphUndo = []; glyphRedo = []
+            editHistory = FontLabGlyphEditHistory()
             if let project = store.selectedProject, !project.characters.contains(selectedCharacter) {
                 selectedCharacter = project.characters.first ?? "A"
             }
@@ -1170,7 +1170,7 @@ struct FontLabView: View {
                     guard store.addGeneratedProject(result) != nil else { return false }
                     artworkUndo = nil
                 }
-                glyphUndo = []; glyphRedo = []; selectedCharacters.removeAll(); selectingCharacters = false
+                editHistory = FontLabGlyphEditHistory(); selectedCharacters.removeAll(); selectingCharacters = false
                 selectedCharacter = result.characters.first(where: { result.glyphs[$0]?.hasArtwork == true }) ?? "A"
                 store.status = "Imported artwork as editable outlines. Use Reshape to refine points, or export SVG / TrueType."
                 return true
@@ -1180,7 +1180,7 @@ struct FontLabView: View {
             if let original = store.selectedProject {
                 FontLabDesignView(project: original, character: selectedCharacter) { updated, openCharacter in
                     guard store.replaceArtworkProject(original, with: updated) else { return false }
-                    designUndo = (original, updated); glyphUndo = []; glyphRedo = []; vectorEditing = true
+                    designUndo = (original, updated); editHistory = FontLabGlyphEditHistory(); vectorEditing = true
                     if let openCharacter { selectedCharacter = openCharacter }
                     glyphEditRevision = UUID()
                     store.status = "Font design settings applied. Undo setup restores the previous project snapshot."
@@ -1201,7 +1201,7 @@ struct FontLabView: View {
                         return false
                     }
                     starterUndo = (before: original, after: updated)
-                    glyphUndo = []; glyphRedo = []; glyphEditRevision = UUID()
+                    editHistory = FontLabGlyphEditHistory(); glyphEditRevision = UUID()
                     vectorEditing = true
                     if let firstAdded = updated.characters.first(where: {
                         original.glyphs[$0]?.hasArtwork != true && updated.glyphs[$0]?.hasArtwork == true
@@ -1305,14 +1305,14 @@ struct FontLabView: View {
                 if let undo = designUndo, undo.after == project {
                     Button("Undo setup") {
                         if store.replaceArtworkProject(undo.after, with: undo.before) {
-                            designUndo = nil; glyphUndo = []; glyphRedo = []; glyphEditRevision = UUID()
+                            designUndo = nil; editHistory = FontLabGlyphEditHistory(); glyphEditRevision = UUID()
                             if !undo.before.characters.contains(selectedCharacter) { selectedCharacter = undo.before.characters.first ?? "A" }
                         }
                     }.disabled(store.readBlocked)
                 }
                 if let undo = artworkUndo, undo.after == project {
                     Button("Undo import", systemImage: "arrow.uturn.backward") {
-                        if store.replaceArtworkProject(undo.after, with: undo.before) { artworkUndo = nil; glyphUndo = []; glyphRedo = [] }
+                        if store.replaceArtworkProject(undo.after, with: undo.before) { artworkUndo = nil; editHistory = FontLabGlyphEditHistory() }
                     }.disabled(store.readBlocked)
                 }
                 Menu {
@@ -1345,7 +1345,7 @@ struct FontLabView: View {
             if let undo = starterUndo, undo.after == project {
                 Button("Undo suggestions") {
                     if store.replaceArtworkProject(undo.after, with: undo.before) {
-                        starterUndo = nil; glyphUndo = []; glyphRedo = []; glyphEditRevision = UUID()
+                        starterUndo = nil; editHistory = FontLabGlyphEditHistory(); glyphEditRevision = UUID()
                         store.status = "Suggestions removed. Your original drawings are unchanged."
                         if !undo.before.characters.contains(selectedCharacter) { selectedCharacter = undo.before.characters.first ?? "A" }
                     }
@@ -1496,7 +1496,7 @@ struct FontLabView: View {
                     Button("Simplify outline…") { showSmoothing = true }
                         .disabled(store.readBlocked || FontLabVectorMath.paths(in: glyph).allSatisfy { !$0.closed || ($0.nodes.count <= 32 && $0.nodes.contains { $0.incoming != nil || $0.outgoing != nil }) })
                     Button("Redo") { redoGlyph(projectID: project.id) }.disabled(glyphRedo.isEmpty || store.readBlocked)
-                    Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled((glyphUndo.isEmpty && glyph.strokes.isEmpty) || store.readBlocked)
+                    Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled(glyphUndo.isEmpty || store.readBlocked)
                     Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
                         .disabled(!glyph.hasArtwork || store.readBlocked)
                 }
@@ -1722,8 +1722,7 @@ struct FontLabView: View {
         }, set: { value in
             var glyph = store.state.projects.first(where: { $0.id == projectID })?.glyphs[fallback.character] ?? fallback
             if left { glyph.leftSideBearing = value } else { glyph.rightSideBearing = value }
-            store.setGlyph(glyph, in: projectID, save: false)
-            store.scheduleSave()
+            recordGlyphEdit(glyph, projectID: projectID)
         })
     }
 
@@ -1734,31 +1733,35 @@ struct FontLabView: View {
             candidate.glyphs[edited.character] = edited
             guard candidate.isValid else { store.error = "This edit would move a linked component outside its glyph. Adjust or decompose the component first."; glyphEditRevision = UUID(); return }
         }
-        glyphUndo.append(previous); if glyphUndo.count > 60 { glyphUndo.removeFirst() }
-        glyphRedo = []
+        editHistory.record(previous)
         store.setGlyph(edited, in: projectID, save: false)
         store.scheduleSave(after: 0.4)
     }
 
     private func undoStroke(_ glyph: FontLabGlyph, projectID: UUID) {
         let current = store.selectedProject?.glyphs[glyph.character] ?? glyph
-        var edited = current
-        if let previous = glyphUndo.popLast() { edited = previous }
-        else if !edited.strokes.isEmpty { edited.strokes.removeLast() }
-        guard edited != current else { return }
-        glyphRedo.append(current)
+        var history = editHistory
+        guard let edited = history.undo(current), edited != current,
+              var candidate = store.selectedProject, candidate.id == projectID else { return }
+        candidate.glyphs[edited.character] = edited
+        guard candidate.isValid else { store.error = "Undo would invalidate a linked component. Adjust its placement first."; return }
         store.setGlyph(edited, in: projectID, save: true)
+        if store.selectedProject?.glyphs[edited.character] == edited { editHistory = history }
     }
 
     private func redoGlyph(projectID: UUID) {
-        guard let next = glyphRedo.popLast(), let current = store.selectedProject?.glyphs[next.character] else { return }
-        glyphUndo.append(current)
+        var history = editHistory
+        guard let current = store.selectedProject?.glyphs[selectedCharacter], let next = history.redo(current),
+              var candidate = store.selectedProject, candidate.id == projectID else { return }
+        candidate.glyphs[next.character] = next
+        guard candidate.isValid else { store.error = "Redo would invalidate a linked component. Adjust its placement first."; return }
         store.setGlyph(next, in: projectID, save: true)
+        if store.selectedProject?.glyphs[next.character] == next { editHistory = history }
     }
 
     private func clearGlyph(_ glyph: FontLabGlyph, projectID: UUID) {
         var edited = glyph
-        glyphUndo.append(glyph); glyphRedo = []
+        editHistory.record(glyph)
         edited.strokes = []
         edited.components = nil
         edited.importedFrom = nil

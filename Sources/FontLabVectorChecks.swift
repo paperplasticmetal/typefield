@@ -10,6 +10,54 @@ enum FontLabVectorChecks {
     static func run() throws {
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
+        var history = FontLabGlyphEditHistory()
+        var editedO = glyph; editedO.leftSideBearing += 0.01
+        var a = glyph; a.character = "A"
+        var editedA = a; editedA.rightSideBearing += 0.02
+        history.record(glyph); history.record(a)
+        try check(history.undo(editedO) == glyph && history.undo(editedA) == a,
+                  "Changing the active letter lost its independent undo history")
+        try check(history.redo(glyph) == editedO && history.undo(a) == nil,
+                  "Undo without history must not remove saved artwork; redo must restore the matching glyph")
+
+        let surgery = FontLabVectorEditor(glyph: glyph, metrics: metrics)
+        var surgeryCommits = 0; surgery.onCommit = { _ in surgeryCommits += 1 }
+        let contour = surgery.paths[0]
+        surgery.selection = [contour.nodes[1].id]
+        surgery.splitAtNode()
+        try check(!surgery.paths[0].closed && surgery.paths[0].nodes.count == 5 && surgeryCommits == 1,
+                  "Splitting a closed curve must create two independent endpoints in one edit")
+        for i in 0..<contour.segmentCount { for sample in 0...20 {
+            let before = FontLabVectorMath.evaluate(contour.controls((i+1)%contour.segmentCount),Double(sample)/20)
+            let after = FontLabVectorMath.evaluate(surgery.paths[0].controls(i),Double(sample)/20)
+            try check(hypot(before.x-after.x,before.y-after.y)<1e-10,"Splitting changed the original curve")
+        } }
+        surgery.joinEndpoints()
+        try check(surgery.paths[0].closed && surgery.glyph.isValid && surgeryCommits == 2,"Joining split endpoints failed")
+        let open = FontLabVectorPath(nodes: [
+            FontLabVectorNode(point: .init(x:0.1,y:0.2),outgoing:.init(x:0.2,y:0.6)),
+            FontLabVectorNode(point: .init(x:0.4,y:0.4),incoming:.init(x:0.3,y:0.7),outgoing:.init(x:0.5,y:0.3)),
+            FontLabVectorNode(point: .init(x:0.8,y:0.2),incoming:.init(x:0.7,y:0.5))])
+        let openGlyph = FontLabGlyph(character:"S",strokes:[FontLabStroke(vectorPaths:[open])])
+        let splitOpen = FontLabVectorEditor(glyph:openGlyph,metrics:metrics)
+        splitOpen.selection = [open.nodes[1].id]; splitOpen.splitAtNode()
+        try check(splitOpen.paths.count == 2 && splitOpen.paths.allSatisfy { !$0.closed && $0.nodes.count == 2 },"Open-curve split lost a segment")
+        splitOpen.joinEndpoints()
+        try check(splitOpen.paths.count == 1 && splitOpen.paths[0].segmentCount == 2 && splitOpen.glyph.isValid,"Joining two open contours lost geometry")
+        let midpoint = FontLabVectorEditor(glyph:openGlyph,metrics:metrics)
+        midpoint.selectAll(); midpoint.insertMidpoints()
+        try check(midpoint.paths[0].nodes.count == 5 && midpoint.selection.count == 2,"Midpoint insertion failed for adjacent cubic segments")
+        for segment in 0..<2 { for sample in 0...40 {
+            let t = Double(sample)/40
+            let before = FontLabVectorMath.evaluate(open.controls(segment),t)
+            let after = FontLabVectorMath.evaluate(midpoint.paths[0].controls(segment*2+(t>0.5 ? 1:0)),t>0.5 ? (t-0.5)*2:t*2)
+            try check(hypot(before.x-after.x,before.y-after.y)<1e-10,"Inserted midpoint distorted a cubic")
+        } }
+        let distribution = FontLabVectorEditor(glyph:openGlyph,metrics:metrics)
+        distribution.selectAll(); distribution.distribute(horizontal:true)
+        try check(abs(distribution.paths[0].nodes[1].point.x-0.45)<1e-10 &&
+                  abs(distribution.paths[0].nodes[1].outgoing!.x-0.55)<1e-10,
+                  "Node distribution failed to translate curve handles with the anchor")
         let focusViewport=CGSize(width:600,height:520)
         let contourBounds=CGRect(x:0.1,y:0.18,width:0.8,height:0.6)
         guard let contourFocus=FontLabVectorEditor.focusTransform(selectionBounds:contourBounds,viewport:focusViewport,designWidth:glyph.resolvedDesignWidth) else {

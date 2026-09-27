@@ -105,8 +105,8 @@ struct FontLabStarterAssistView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Suggest missing letters").font(.title2.weight(.semibold))
-                Text("Build editable starting points from the letters already in this project. Every suggestion needs a shape and spacing review.")
+                Text("Experimental letter suggestions").font(.title2.weight(.semibold))
+                Text("Build editable starting points from the letters already in this project. Shape matching is still in development. Review each letter before selecting it.")
                     .font(.callout).foregroundStyle(.secondary)
             }
 
@@ -182,9 +182,9 @@ struct FontLabStarterAssistView: View {
         }
         .padding(18)
         .frame(width: 880, height: 620)
-        .onAppear(perform: prepare)
+        .task { await prepare() }
         .onChange(of: scope) { _ in
-            selected = Set(availableCharacters)
+            selected.formIntersection(availableCharacters)
             focusedCharacter = availableCharacters.first
             failure = ""
         }
@@ -349,13 +349,16 @@ struct FontLabStarterAssistView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func prepare() {
+    @MainActor private func prepare() async {
         guard proposal == nil else { return }
-        let generated = FontLabStarterAssist.propose(for: original)
+        let source = original
+        let work = Task.detached(priority: .userInitiated) {
+            FontLabStarterAssist.propose(for: source)
+        }
+        let generated = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
+        guard !Task.isCancelled else { return }
         proposal = generated
-        selected = Set(original.characters.filter {
-            original.resolvedGlyph($0)?.hasArtwork != true && generated.glyphs[$0]?.hasArtwork == true
-        })
+        selected = []
         focusedCharacter = original.characters.first { generated.glyphs[$0]?.hasArtwork == true }
     }
 

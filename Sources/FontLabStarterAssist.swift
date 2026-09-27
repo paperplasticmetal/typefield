@@ -80,6 +80,7 @@ enum FontLabStarterAssist {
         var glyphs: [String: FontLabGlyph] = [:]
         var details: [String: FontLabStarterDetail] = [:]
         for character in targets {
+            if Task.isCancelled { break }
             if project.resolvedGlyph(character)?.hasArtwork == true {
                 skipped[character] = "Already drawn; your letter is kept unchanged."
                 continue
@@ -545,6 +546,25 @@ private extension FontLabStarterAssist {
                              explanation: "The drawn \(origin) provides the e curves and counter. A crossbar and lower-right opening were added; review the aperture and crossbar angle.")
             }
         }
+        if character == "G", sources["C"] == nil, let (source, origin) = bowl(true), let opened = openedBowl(source, to: character),
+           let box = inkBounds(opened), let outline = closedOutline(opened) {
+            let localWeight = sideStrokeWeight(source, at: box.midY, right: true) ?? style.safeWeight
+            let bar = CGPath(rect: CGRect(x: (box.midX + box.width * 0.04) * 1000,
+                                         y: (box.midY - localWeight * 0.5) * 1000,
+                                         width: box.width * 0.46 * 1000, height: localWeight * 1000), transform: nil)
+            let vertical = CGPath(rect: CGRect(x: (box.maxX - localWeight / source.resolvedDesignWidth) * 1000,
+                                              y: (box.minY + box.height * 0.22) * 1000,
+                                              width: localWeight / source.resolvedDesignWidth * 1000,
+                                              height: (box.height * 0.28 + localWeight * 0.5) * 1000), transform: nil)
+            let paths = FontLabVectorPath.from(outline.union(bar, using: .winding).union(vertical, using: .winding))
+            let glyph = FontLabGlyph(character: character, strokes: [FontLabStroke(vectorPaths: paths)],
+                                     leftSideBearing: source.leftSideBearing, rightSideBearing: source.rightSideBearing,
+                                     contourDesignWidth: source.resolvedDesignWidth)
+            if glyph.isValid && glyph.hasArtwork {
+                return .init(glyph: glyph, sources: [origin], method: "Reused bowl with crossbar",
+                             explanation: "The drawn \(origin) supplies the G curves. An aperture and crossbar were added; review the spur and terminals.")
+            }
+        }
         if character == "Q", let (source, origin) = bowl(true),
            let box = inkBounds(source),
            let glyph = appending(source, to: character, style: style,
@@ -753,15 +773,14 @@ private extension FontLabStarterAssist {
         let normalized = CGMutablePath()
         normalized.addPath(filled, transform: CGAffineTransform(scaleX: 1 / width, y: 1))
         let converted = FontLabVectorPath.from(normalized)
-        let paths = !converted.isEmpty && converted.allSatisfy({ $0.closed && $0.isValid })
-            ? converted : (filledStrip(points: points, glyphWidth: width, strokeWidth: addedWidth).map { [$0] } ?? [])
-        guard !paths.isEmpty && paths.allSatisfy({ $0.closed && $0.isValid }) else { return nil }
+        let paths = converted.isEmpty ? (filledStrip(points: points, glyphWidth: width, strokeWidth: addedWidth).map { [$0] } ?? []) : converted
+        guard !paths.isEmpty && paths.allSatisfy(\.closed) else { return nil }
         var strokes = FontLabDesign.detachedStrokes(source.strokes)
         strokes.append(FontLabStroke(vectorPaths: paths))
         let glyph = FontLabGlyph(character: character, strokes: strokes,
                                  leftSideBearing: source.leftSideBearing, rightSideBearing: source.rightSideBearing,
                                  contourDesignWidth: width)
-        return glyph.isValid && glyph.hasArtwork ? glyph : nil
+        return transformed(glyph, to: character, width: width, x: { $0 }, y: { $0 })
     }
 
     /// A four-anchor outline is a safe fallback for a straight feature when
@@ -857,7 +876,15 @@ private struct FontLabStarterSkeleton {
         let combined = CGMutablePath(); combined.addPath(stroked); combined.addPath(solids)
         let normalized = CGMutablePath(); normalized.addPath(combined, transform: CGAffineTransform(scaleX: 1 / width, y: 1))
         let paths = FontLabVectorPath.from(normalized)
-        guard !paths.isEmpty, paths.allSatisfy(\.isValid), paths.allSatisfy(\.closed),
+        // Construction margins are not the final glyph box. Wide caps and
+        // diagonal joins can extend past x=0/1 before template() fits the ink.
+        // Rejecting them here silently retried at a much thinner weight.
+        guard !paths.isEmpty, paths.allSatisfy({ path in
+            path.closed && path.nodes.count >= 3 && path.nodes.allSatisfy { node in
+                node.point.x.isFinite && node.point.y.isFinite && (0...1).contains(node.point.y) &&
+                [node.incoming, node.outgoing].compactMap { $0 }.allSatisfy { $0.x.isFinite && $0.y.isFinite }
+            }
+        }),
               paths.reduce(0, { $0 + $1.nodes.count }) <= 30_000 else { return nil }
         return paths
     }
@@ -941,10 +968,10 @@ private struct FontLabStarterSkeleton {
             stroke([(0.18,0),(0.18,1),(0.18,h*0.53)])
             move(0.18,h*0.53); curve(0.19,h*1.13,0.82,h*1.13,0.82,h*0.51); line(0.82,0)
         case "i":
-            stroke([(0.50,0),(0.50,h*0.78)]); dot(0.50,h*1.23)
+            stroke([(0.50,0),(0.50,h)]); dot(0.50,min(0.97,h+0.22))
         case "j":
-            move(0.56,h*0.78); line(0.56,-d*0.58)
-            curve(0.55,-d*1.04,0.28,-d*1.16,0.17,-d*0.82); dot(0.56,h*1.23)
+            move(0.68,h); line(0.68,-d*0.58)
+            curve(0.68,-d*1.04,0.36,-d*1.10,0.18,-d*0.84); dot(0.68,min(0.97,h+0.22))
         case "k":
             stroke([(0.18,0),(0.18,1)]); stroke([(0.81,h),(0.18,h*0.37),(0.83,0)])
         case "l": stroke([(0.50,0),(0.50,1)])

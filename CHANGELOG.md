@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.54.0 — 2026-09-27
+
+- Added contour splitting, endpoint joining, exact segment midpoints, and horizontal/vertical node distribution to the Letterform Editor.
+- Preserved bounded undo/redo histories while switching glyphs, included side-bearing edits, and removed the unsafe fallback that deleted saved strokes when no undo history existed.
+- Improved source-bowl reuse for G/Q, i/j proportions, and validation of temporary construction geometry. The unchanged five-face/nine-face means rise to 56.1%/51.5%. Suggestions remain experimental, run off the UI thread, and require explicit selection before applying.
+- Added common-target 5/8/12-reference measurements and an optional HTML overlay report. More references alone produce little gain; the current procedural approach is not ready for automatic font completion.
+
 ## 0.53.0 — 2026-09-27
 
 - Fixed clustered pixel corners in traced outlines. Straight spans use endpoints instead of unnecessary cubic handles; rounded corners remain curves. **Simplify outline…** defaults to the editable preview, and dense existing glyphs show their point count with a direct simplification action. Applying remains undoable.

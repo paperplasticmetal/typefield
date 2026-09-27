@@ -151,11 +151,27 @@ enum FontLabStarterAssistChecks {
             FontLabVectorMath.paths(in: glyph).flatMap(\.nodes).map(\.point)
         }
         let sourceO = mixed.glyphs["O"]!, derivedQ = proposal.glyphs["Q"]!
+        let oPoints = sourceO.strokes[0].vectorPaths!.flatMap { $0.nodes.map(\.point) }
+        let qPoints = derivedQ.strokes[0].vectorPaths!.flatMap { $0.nodes.map(\.point) }
         try check(derivedQ.strokes.count == sourceO.strokes.count + 1 &&
-                  derivedQ.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) } == sourceO.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) },
-                  "Q did not retain the drawn O curves exactly")
+                  oPoints.count == qPoints.count && zip(oPoints,qPoints).allSatisfy {
+                      abs($0.x * sourceO.resolvedDesignWidth - $1.x * derivedQ.resolvedDesignWidth) < 1e-10 && abs($0.y-$1.y) < 1e-10
+                  }, "Q did not retain the drawn O geometry when expanding its box for the tail")
         try check(proposal.details["e"]?.sourceCharacters == ["o"] && proposal.details["e"]?.confidence == .adapted,
                   "e did not reuse the source o bowl")
+        try check(proposal.details["G"]?.sourceCharacters == ["O"], "G discarded the available drawn bowl")
+        var fullBox = mixed
+        var fullPaths = FontLabVectorMath.paths(in: sourceO)
+        for p in fullPaths.indices { for n in fullPaths[p].nodes.indices {
+            func expand(_ point: FontLabPoint) -> FontLabPoint { .init(x:(point.x-0.13)/0.74,y:point.y) }
+            fullPaths[p].nodes[n].point = expand(fullPaths[p].nodes[n].point)
+            fullPaths[p].nodes[n].incoming = fullPaths[p].nodes[n].incoming.map(expand)
+            fullPaths[p].nodes[n].outgoing = fullPaths[p].nodes[n].outgoing.map(expand)
+        } }
+        fullBox.glyphs["O"]!.strokes = [FontLabStroke(vectorPaths:fullPaths)]
+        let fullProposal = FontLabStarterAssist.propose(for:fullBox)
+        try check(fullProposal.details["Q"]?.confidence == .adapted && fullProposal.glyphs["Q"]?.isValid == true,
+                  "A feature near the source box edge discarded Q's drawn bowl instead of expanding the box")
         let sourceo = mixed.glyphs["o"]!, derivedA = proposal.glyphs["a"]!
         try check(derivedA.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) } == sourceo.strokes[0].vectorPaths?.map { $0.nodes.map(\.point) },
                   "a did not retain the drawn o curves exactly")

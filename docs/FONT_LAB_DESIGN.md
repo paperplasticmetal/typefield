@@ -48,3 +48,9 @@ Use **Try handwriting & bubble examples…** in the Letterform Editor sidebar. T
 Existing projects keep their saved outlines when the app updates. A glyph with more than 100 anchors now shows a direct **Simplify outline…** action and its point count. The sheet starts with **Editable · 5 units** and compares the original with the proposed curve fit. Apply only after reviewing the preview; **Undo edit** restores the previous glyph. Straight spans become lines, clustered pixel corners are consolidated, and open pen paths remain unchanged.
 
 See [the shape-similarity plan](FONT_LAB_QUALITY_PLAN.md) for the separate missing-letter inference target. Import fidelity and prediction similarity are different measurements.
+
+## Contour editing and undo (0.54)
+
+In **Nodes** mode, select a point and choose **Paths → Split at selected node** to open a closed contour or cut an open one. Select two open endpoints and choose **Join selected endpoints**; coincident points merge, while separated points connect with a straight segment. Select both ends of a segment and choose **Insert segment midpoints** to add exact editing points without changing its shape. **Transform → Distribute nodes horizontally/vertically** evenly spaces at least three anchors, carrying their handles with them.
+
+Undo and redo remain attached to each glyph while switching letters in a project session, and include side bearings. They reset on project/setup/import changes and are bounded to avoid retaining unlimited dense outlines. Undo without history is disabled. Suggestions now open as an **Experimental letter suggestions** review with nothing preselected; select the letters you have inspected before applying.

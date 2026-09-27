@@ -6,9 +6,19 @@ import CoreText
 /// as ground truth for a raster silhouette comparison. No project is saved.
 enum FontLabStarterQualityAudit {
     private static let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz").map(String.init)
-    private static let seeds = ["H", "O", "n", "o", "p"]
+    private static let references = Array("HOnopagSNRit").map(String.init)
 
     @discardableResult static func run() -> Bool {
+        func argument(_ flag: String) -> String? {
+            guard let i = CommandLine.arguments.firstIndex(of: flag), i + 1 < CommandLine.arguments.count else { return nil }
+            return CommandLine.arguments[i + 1]
+        }
+        let count = Int(argument("--starter-reference-count") ?? "5") ?? 5
+        guard [5, 8, 12].contains(count) else { print("Use 5, 8 or 12 reference letters."); return false }
+        let seeds = Array(references.prefix(count))
+        let excluded = CommandLine.arguments.contains("--starter-common-targets") ? references : seeds
+        let reportURL = argument("--starter-report").map { URL(fileURLWithPath: $0) }
+        var report = "<html><meta charset='utf-8'><title>Typefield shape audit</title><style>body{font:16px system-ui;margin:32px;background:#faf8f2;color:#222}.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.tile{background:white;border:1px solid #ddd;padding:8px}svg{width:100%;height:140px}.score{font-size:12px;color:#555}h2{margin-top:40px}</style><h1>Missing-letter shape audit</h1><p>References: \(seeds.joined(separator: " ")). Black = source truth; blue = suggestion. Both use identical coordinates including side bearings. These development faces are not an untouched evaluation set.</p>"
         var complete = true
         var audited = 0
         for name in ["Helvetica", "Times-Roman", "Courier", "Menlo-Regular", "Avenir-Book", "ChalkboardSE-Regular", "Noteworthy-Light", "MarkerFelt-Wide", "SnellRoundhand"] {
@@ -34,7 +44,8 @@ enum FontLabStarterQualityAudit {
             var allScores: [Double] = []
             var missing: [String] = []
             var anchors: [Double] = []
-            for character in alphabet where !seeds.contains(character) {
+            report += "<h2>\(name)</h2><div class='grid'>"
+            for character in alphabet where !excluded.contains(character) {
                 guard let actual = truth[character] else { continue }
                 guard let candidate = proposal.glyphs[character] else {
                     missing.append(character)
@@ -44,6 +55,13 @@ enum FontLabStarterQualityAudit {
                 anchors.append(Double(FontLabVectorMath.paths(in: candidate).reduce(0) { $0 + $1.nodes.count }))
                 let method = proposal.details[character]?.method ?? "Unknown"
                 let score = overlap(candidate, actual)
+                if reportURL != nil {
+                    func drawing(_ glyph: FontLabGlyph, color: String) -> String {
+                        let paths = FontLabVectorMath.paths(in: glyph).filter(\.closed).map { $0.svg(xScale: glyph.resolvedDesignWidth) }.joined(separator: " ")
+                        return "<path fill='\(color)' fill-opacity='.55' transform='translate(\(glyph.leftSideBearing * 1000),0)' d='\(paths)'/>"
+                    }
+                    report += "<div class='tile'><b>\(character)</b><svg viewBox='0 0 1400 1000'>\(drawing(actual,color:"#111"))\(drawing(candidate,color:"#1681db"))</svg><div class='score'>\(percent(score)) · \(Int(anchors.last ?? 0)) anchors<br>\(method)</div></div>"
+                }
                 if CommandLine.arguments.contains("--starter-quality-details") {
                     print("STARTER GLYPH \(name) \(character): \(percent(score)) [\(method)]")
                 }
@@ -51,6 +69,7 @@ enum FontLabStarterQualityAudit {
                 allScores.append(score)
                 widthErrors.append(abs(candidate.resolvedDesignWidth - actual.resolvedDesignWidth))
             }
+            report += "</div>"
             guard !allScores.isEmpty else { continue }
             audited += 1
             if !missing.isEmpty { complete = false }
@@ -59,6 +78,10 @@ enum FontLabStarterQualityAudit {
             }.joined(separator: "; ")
             print("STARTER ANCHORS \(name): mean \(String(format: "%.1f", mean(anchors))), max \(Int(anchors.max() ?? 0))")
             print("STARTER HOLDOUT \(name): \(allScores.count - missing.count)/\(allScores.count) glyphs, silhouette overlap \(percent(mean(allScores))), mean design-width error \(String(format: "%.3f", mean(widthErrors))) em [\(breakdown)]\(missing.isEmpty ? "" : "; missing \(missing.joined(separator: ""))")")
+        }
+        if let reportURL {
+            do { try (report + "</html>").write(to: reportURL, atomically: true, encoding: .utf8) }
+            catch { print("Cannot write shape report: \(error.localizedDescription)"); return false }
         }
         return complete && audited > 0
     }
