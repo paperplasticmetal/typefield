@@ -71,8 +71,30 @@ An expanded temporary corpus adds directly loaded OFL fixtures from the [Google 
 
 The later low-learning-rate and reference-only latent trial reached 67.7% / 64.3% against the research rasters, but only **59.8% / 56.0%** after conversion to editable vectors and comparison with native outlines. The gap was investigated before any product integration. Core Graphics' no-antialias raster coverage differed substantially from the native point sampler: a source-only Helvetica round trip scored 79.4% before prediction. Antialiased rendering thresholded at 128 restored that round trip to **99.7%**. This is a conversion diagnostic, not model accuracy.
 
-After regenerating the same 1,343-face corpus and retraining, held-family validation selected the checkpoint and 20 reference-only latent steps. Corrected raster scores were **62.3% / 58.8%**; native editable-vector scores were **62.2% / 58.7%**. Every one of the 846 outputs passed glyph validation and TrueType export. Curve fitting retained 98.6% mean / 96.9% minimum overlap against its unfitted prediction on the finer fixed grid, with 35.7 mean / 354 maximum anchors. This does not establish uniformly easy editing, and the target-overlap score has not yet been repeated on the finer grid. Handwriting and script remain weak.
+After regenerating the same 1,343-face corpus and retraining, held-family validation selected the checkpoint and 20 reference-only latent steps. Corrected raster scores were **62.3% / 58.8%**; native editable-vector scores were **62.2% / 58.7%**. Every one of the 846 outputs passed glyph validation and TrueType export. Curve fitting retained 98.6% mean / 96.9% minimum overlap against its unfitted prediction on the finer fixed grid, with 35.7 mean / 354 maximum anchors. This does not establish uniformly easy editing, and the finer 368 × 288 target-overlap check scores 61.6% / 58.0%. Handwriting and script remain weak.
 
 A fixed hybrid that retained all existing `adapted` suggestions and used the learned model for the other letters regressed to **61.2% / 57.4%**. It was rejected; no per-target winner was selected against hidden truth. These models are private research artifacts, not shipped functionality. The installed 0.58 generator remains at **53.6% / 48.3%**, with the separate ten-face check at 50.4%.
 
 The [official DeepVecFont-v2 implementation](https://github.com/yizhiwang96/deepvecfont-v2) was inspected at revision `de5f6e290a570ac5fd0a5858d0e2df48ccc6c51c`. Its public English checkpoint folder was accessible anonymously through the browser, but the download failed in browser tooling; checkpoint inference was not completed or scored. Do not describe that model as evaluated. The 85% objective remains unmet.
+
+
+## Reproducible frozen-vector audit
+
+`build-prediction-auditor.py` builds an isolated source snapshot with the research-only `--audit-frozen-predictions` entry point. The shipped app is unchanged. Its JSON input is an array of `{ "name": "Helvetica", "glyphs": [{ "character": "A", "contours": [[[x, y], ...], ...] }, ...] }` records. Coordinates are physical em units in the fixed x=0...1.4, y=0...1 frame, baseline 0.22 and cap height 0.82. They must come from frozen predictions; this evaluator performs no inference.
+
+All original and additional 18 named faces must appear exactly once. Duplicate or unexpected characters and incomplete face sets are rejected. Missing, invalid or unsupported predictions count as zero across the full 846-target denominator. Valid contours pass through the existing three-unit curve fitter, preserving unfittable outlines, then through TrueType export. The report includes both set means, worst face, ≥85% coverage, invalid counts, anchor counts and finer-grid fit retention. A successful exit means measurement completed, not that quality passed 85%.
+
+```sh
+python3 scripts/starter-research/build-prediction-auditor.py --output /tmp/typefield-prediction-auditor
+/tmp/typefield-prediction-auditor --audit-frozen-predictions /tmp/frozen-predictions.json
+/tmp/typefield-prediction-auditor --audit-frozen-predictions /tmp/frozen-predictions.json --prediction-grid-scale 4
+```
+
+Keep prediction files and font-derived artifacts private. Do not recenter, rescale or choose individual predictions against the withheld target before invoking this audit.
+
+
+### Higher-resolution trial
+
+A 184 × 144 output trial reused the same 1,343-face / 466-family cohort and selected its checkpoint and reference-only latent refinement on the same 92 held-out families. Frozen editable predictions reached **62.6% / 58.2%** on the native 92 × 72 grid and **62.2% / 57.8%** on the 368 × 288 grid. All 846 letters validated and all 18 temporary faces exported. Mean anchors increased to **38.9**, with **892** in the worst glyph; mean/minimum fit retention was 98.7% / 96.2%. This is not a consistent accuracy improvement and worsens worst-case editability, so it is not retained for the application.
+
+The reusable auditor reproduced the earlier corrected model's **62.2% / 58.7%**, including all 846 targets and 77 above 85% overlap. Its seven input/denominator regression cases pass. Run them with `python3 scripts/starter-research/test-prediction-auditor.py --binary /tmp/typefield-prediction-auditor`. Research-only compilation uses the current app sources with warnings as errors; it does not alter or install the app. The 85% objective remains unmet.
