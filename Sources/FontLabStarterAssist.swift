@@ -478,11 +478,19 @@ private struct FontLabStarterDerivation {
 
 private extension FontLabStarterAssist {
     static func sourceDerived(_ character: String, sources: [String: FontLabGlyph], style: FontLabStarterStyle, reuseCapStems: Bool) -> FontLabStarterDerivation? {
-        if reuseCapStems, ["D", "E", "F", "I", "L"].contains(character), abs(style.slant) < 0.12,
-           character != "I" || style.fixedAdvance == nil,
+        if reuseCapStems, ["D", "E", "F", "I", "K", "L", "M", "N"].contains(character), abs(style.slant) < 0.12,
+           (character != "I" && character != "M") || style.fixedAdvance == nil,
            let source = sources["H"], let glyph = reusingCapStem(source, bowl: sources["O"], character: character, style: style) {
+            let explanation: String
+            if character == "D" {
+                explanation = "The drawn H supplies the stem and terminals; the O supplies the right-hand curve. Review the joins and spacing."
+            } else if ["K", "M", "N"].contains(character) {
+                explanation = "The drawn H supplies the vertical stems and their terminals. New diagonals use its measured weight; review their joins, angles and spacing."
+            } else {
+                explanation = "The drawn H supplies the stem and its terminals. Any new horizontal arms use its crossbar thickness; review their lengths and ends."
+            }
             return .init(glyph: glyph, sources: character == "D" ? ["H", "O"] : ["H"], method: "Reused cap stem",
-                         explanation: character == "D" ? "The drawn H supplies the stem and terminals; the O supplies the right-hand curve. Review the joins and spacing." : "The drawn H supplies the stem and its terminals. Any new horizontal arms use its crossbar thickness; review their lengths and ends.")
+                         explanation: explanation)
         }
         let horizontalPairs = ["p":"q", "q":"p", "b":"d", "d":"b"]
         if let sourceCharacter = horizontalPairs[character], let source = sources[sourceCharacter], exportable(source),
@@ -690,7 +698,40 @@ private extension FontLabStarterAssist {
         var result = ink.intersection(clip, using: .winding).subtracting(removal, using: .winding)
         let stemBox = result.boundingBoxOfPath
         guard stemBox.width > 0, stemBox.width < box.width * 0.48 else { return nil }
-        if character == "D" {
+        if ["K", "M", "N"].contains(character) {
+            // K and N follow the actual H ink width. The broader O must not
+            // widen their diagonals. Move M's stems apart without stretching
+            // their weight or terminals; monospaced M keeps its old construction.
+            let width = character == "N" || character == "K" ? box.width : style.width(character == "M" ? 0.84 : 0.65, character: character)*box.width/source.resolvedDesignWidth
+            let thickness=(low[0].1-low[0].0+high[0].1-high[0].0)/2
+            let left=(low[0].0+low[0].1)/2,right=stemBox.minX+width-thickness/2
+            func diagonal(_ points:[CGPoint]) -> CGPath {
+                let line=CGMutablePath();line.addLines(between:points)
+                return line.copy(strokingWithWidth:thickness,lineCap:.butt,lineJoin:.round,miterLimit:4)
+            }
+            if character == "K" {
+                result=result.union(diagonal([CGPoint(x:left,y:box.minY+box.height*0.43),CGPoint(x:right,y:box.maxY)]),using:.winding)
+                    .union(diagonal([CGPoint(x:left+width*0.25,y:box.minY+box.height*0.61),CGPoint(x:right,y:box.minY)]),using:.winding)
+            } else {
+                let rightStemLeft=(low[1].0+high[1].0)/2
+                let rightClip=CGPath(rect:CGRect(x:gapX,y:box.minY-1,width:box.maxX-gapX+1,height:box.height+2),transform:nil)
+                let rightRemoval=CGPath(rect:CGRect(x:gapX-1,y:barBottom-0.05,width:rightStemLeft-gapX+1,height:barTop-barBottom+0.1),transform:nil)
+                let rightStem=ink.intersection(rightClip,using:.winding).subtracting(rightRemoval,using:.winding)
+                var shift=CGAffineTransform(translationX:width-box.width,y:0)
+                guard let moved=rightStem.copy(using:&shift) else{return nil}
+                result=result.union(moved,using:.winding)
+                let rightCenter=(low[1].0+low[1].1)/2+width-box.width
+                if character == "N" {
+                    result=result.union(diagonal([CGPoint(x:left,y:box.maxY),CGPoint(x:rightCenter,y:box.minY)]),using:.winding)
+                } else {
+                    result=result.union(diagonal([CGPoint(x:left,y:box.maxY),CGPoint(x:(left+rightCenter)/2,y:box.minY+thickness*0.2),CGPoint(x:rightCenter,y:box.maxY)]),using:.winding)
+                }
+            }
+            // Clip only the added diagonal ends to the source cap/baseline.
+            // The copied stems already occupy this exact vertical interval.
+            let bounds=CGPath(rect:CGRect(x:stemBox.minX,y:box.minY,width:width,height:box.height),transform:nil)
+            result=result.intersection(bounds,using:.winding)
+        } else if character == "D" {
             guard let bowl, let rawBowl = closedOutline(bowl) else { return nil }
             var physicalBowl = CGAffineTransform(scaleX: bowl.resolvedDesignWidth, y: 1)
             guard let round = rawBowl.copy(using: &physicalBowl) else { return nil }

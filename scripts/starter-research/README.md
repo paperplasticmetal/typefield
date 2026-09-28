@@ -31,3 +31,15 @@ Verification on 72 references at 384 × 384 samples per outline found a minimum 
 The DesigNet experiment used these compact references with strict pretrained-weight loading, canonical path ordering, and the model's documented **even-odd fill rule**. Input positional capacity was extended analytically; decoder capacity and learned weights were unchanged. Reference-only size/weight calibration reached **36.0%** across its 44 withheld letters per face. Its official continuity/alignment refinement regressed to **33.9%**. This eight-reference experiment is not comparable to the production five-reference task and is not included in the application. See the [official model implementation](https://github.com/TomasGuija/DesigNet).
 
 A separate smooth deformation of the distance-field mixture, selected by leave-one-supplied-reference-out validation, reached **65.6%** versus the same-raster mixture's **65.3%**. It still has no validated editable-vector output. Neither experiment reaches the requested 85% target.
+
+## Local learned-prior trials
+
+Further local experiments used installed faces whose font metadata explicitly names the Open Font License. All 18 development/additional benchmark family lineages were excluded. Exact duplicate alphabet masks were removed, at most six styles per family were retained, and a deterministic family hash reserved roughly one fifth of the families for model selection. Only H O n o p entered test-time prediction; test targets were scored after predictions were frozen.
+
+| Research variant | Original nine faces | Additional nine faces |
+| --- | ---: | ---: |
+| Signed-distance kernel predictor, 1,036 faces / 289 families | 62.8% | 61.4% |
+| Separate normalized-shape and bounding-box prediction, same corpus | 59.9% | 60.2% |
+| Expanded predictor including overflow ascenders/descenders, 1,213 faces / 360 families | 62.3% | 61.6% |
+
+These trials used direct Core Text rasterization at 92 × 72, not the app's point-in-path sampler and validated editable geometry. The normalized experiment's raster-coordinate convention was checked by a source-only round trip and corrected before reporting results. Entire-family separation and exact-mask deduplication do not eliminate related designs or near clones across families. The models still failed badly on cursive and did not replace the application generator. No trained weights, font masks or font outlines are distributed here; private experiment scripts, logs and proofs are retained with local QA evidence.

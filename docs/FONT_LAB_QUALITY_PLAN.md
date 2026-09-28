@@ -27,3 +27,7 @@ Further construction/bowl corrections reach 56.1% on the original five faces and
 ## 0.56 measured outcome
 
 Source-stem reuse raises the unchanged nine-face development mean to 52.3% (52.4% at a finer grid), with a separate nine-face check improving 45.0% → 46.7%. The outline and stronger-prior experiments, rejected variants, and reproducible protocol are recorded in [0.56 QA](QA_2026-09-27_0.56.md). A research font-prior route reaches 60.9% on the audit grid; a different-resolution raster mixture reaches 65.3%, pending vector validation. The first pretrained vector-model adapter performs poorly and is not integrated. None establishes 85% confidence. The major remaining work is a style-diverse, licensed training/evaluation pipeline and reliable script/handwriting generation; isolated high-overlap letters do not resolve that gap.
+
+## 0.57 measured outcome
+
+H-stem reuse for K/M/N reaches 52.9% across the original nine faces (53.0% at the finer grid) and 47.3% on the additional nine. The source-curve and learned-prior experiments are documented in [0.57 QA](QA_2026-09-28_0.57.md). A local training trial now covers up to 1,213 distinct open-licensed faces across 360 families, but the resulting raster predictor remains around 62% and fails badly on connected script. The 85% target remains active and unachieved; no weaker metric, favorable subset or raster-only result is substituted for it.

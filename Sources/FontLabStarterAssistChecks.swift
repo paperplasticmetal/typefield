@@ -94,6 +94,32 @@ enum FontLabStarterAssistChecks {
             var exported = stemProject; exported.glyphs[character] = glyph
             _ = try FontLabTrueTypeExporter.artifact(for: exported)
         }
+        for character in ["K", "M", "N"] {
+            guard let glyph = stemProposal.glyphs[character] else {
+                throw FontLabStore.SelfTestError.failed("Missing stem-and-diagonal suggestion")
+            }
+            try check(stemProposal.details[character]?.sourceCharacters == ["H"] &&
+                      stemProposal.details[character]?.confidence == .adapted,
+                      "Stem-and-diagonal suggestion lost its actual source provenance")
+            let paths = FontLabVectorMath.paths(in: glyph)
+            try check(paths.allSatisfy(\.closed) && paths.reduce(0, { $0+$1.nodes.count }) < 60,
+                      "Stem-and-diagonal suggestions must remain compact closed outlines")
+            let expectedWidth = 0.695*0.65*(character == "M" ? 1.3 : 1)
+            // K's diagonal caps can finish slightly inside the H width.
+            let widthMatches = character == "K"
+                ? glyph.resolvedDesignWidth <= expectedWidth+0.004 && glyph.resolvedDesignWidth >= expectedWidth*0.9
+                : abs(glyph.resolvedDesignWidth-expectedWidth) < 0.004
+            try check(widthMatches &&
+                      abs(glyph.leftSideBearing-(stemProject.glyphs["H"]!.leftSideBearing+0.15*0.65)) < 0.004,
+                      "Reused stems changed their physical position or width")
+            var exported = stemProject; exported.glyphs[character] = glyph
+            _ = try FontLabTrueTypeExporter.artifact(for: exported)
+        }
+        var broadBowl = stemProject
+        broadBowl.glyphs["O"]!.contourDesignWidth = 1.2
+        let broadBowlProposal = FontLabStarterAssist.propose(for: broadBowl)
+        try check(abs((broadBowlProposal.glyphs["K"]?.resolvedDesignWidth ?? 0)-stemProposal.glyphs["K"]!.resolvedDesignWidth) < 0.001,
+                  "A broad O incorrectly widened the H-based K")
         try check(stemProject == stemBefore, "Stem extraction changed source artwork")
         var monospaced = fixture(["H", "O", "n", "o", "p"])
         for character in monospaced.glyphs.keys where monospaced.glyphs[character]!.hasArtwork {
@@ -103,6 +129,14 @@ enum FontLabStarterAssistChecks {
         }
         let stemMonoProposal = FontLabStarterAssist.propose(for: monospaced)
         try check(stemMonoProposal.details["I"]?.method != "Reused cap stem", "Monospaced I lost its identifying bars")
+        try check(stemMonoProposal.details["M"]?.method == "Constructed outline", "Monospaced M lost its fitted internal diagonal height")
+        for character in ["K", "N"] {
+            guard let glyph = stemMonoProposal.glyphs[character] else {
+                throw FontLabStore.SelfTestError.failed("Missing monospaced diagonal suggestion")
+            }
+            try check(abs(glyph.resolvedDesignWidth+glyph.leftSideBearing+glyph.rightSideBearing-0.70) < 0.001,
+                      "A reused stem changed the monospaced advance")
+        }
         var deeplyInset = stemProject
         deeplyInset.glyphs["H"]!.leftSideBearing = 0.39
         let insetProposal = FontLabStarterAssist.propose(for: deeplyInset)
@@ -119,6 +153,8 @@ enum FontLabStarterAssistChecks {
         try check(wideMonoProposal.details["E"]?.method == "Constructed outline" && abs(wideE.resolvedDesignWidth+wideE.leftSideBearing+wideE.rightSideBearing-2.4) < 0.001, "Reboxing changed a wide monospaced advance")
         let noStem = FontLabStarterAssist.propose(for: stemProject, reuseCapStems: false)
         try check(noStem.details["E"]?.method == "Constructed outline", "Stem ablation did not restore the original construction")
+        try check(["K", "M", "N"].allSatisfy { noStem.details[$0]?.method == "Constructed outline" },
+                  "Stem ablation did not restore the diagonal constructions")
         let one = fixture(["H"])
         let oneBefore = one.glyphs["H"]
         let partialFont = try FontLabTrueTypeExporter.artifact(for: one)

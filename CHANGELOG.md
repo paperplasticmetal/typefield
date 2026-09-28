@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.57.0 — 2026-09-28
+
+- Reuse supplied H stems for eligible K/M/N suggestions, adding compact editable diagonals without stretching the copied stems. K follows H's ink width instead of inheriting a wider O; monospaced M retains its previous construction.
+- Raised the original nine-style development mean from 52.3% to 52.9% (53.0% at the finer grid), and the additional nine-style mean from 46.7% to 47.3%. Handwriting and script remain unresolved; the requested 85% target has not been reached.
+- Kept unsuccessful bowl-reuse, learned-vector and locally trained raster experiments out of production. Added regression checks for diagonal provenance, physical stem placement, compact contours, monospaced spacing and export.
+
 ## 0.56.0 — 2026-09-27
 
 - Reuse eligible H stems and terminals for D/E/F/I/L, preserving physical stroke weight and source ink placement. D combines the H stem with the supplied O curve; rounded/irregular stems and monospaced I retain the previous construction. Suggestions remain experimental.
