@@ -26,7 +26,9 @@ enum FontLabStarterQualityAudit {
         var aggregate: [Double] = []
         var faceMeans: [Double] = []
         let validation = CommandLine.arguments.contains("--starter-validation-set")
-        let names = validation ? ["Georgia", "Verdana", "TrebuchetMS", "Baskerville", "Cochin", "AmericanTypewriter", "ComicSansMS", "BradleyHandITCTT-Bold", "Zapfino"] : ["Helvetica", "Times-Roman", "Courier", "Menlo-Regular", "Avenir-Book", "ChalkboardSE-Regular", "Noteworthy-Light", "MarkerFelt-Wide", "SnellRoundhand"]
+        let challenge = CommandLine.arguments.contains("--starter-challenge-set")
+        guard !validation || !challenge else { print("Choose one starter audit font set."); return false }
+        let names = challenge ? ["Palatino-Roman", "GillSans", "Optima-Regular", "Rockwell-Regular", "BodoniSvtyTwoITCTT-Book", "Didot", "Futura-Medium", "Copperplate", "BrushScriptMT", "Chalkduster"] : validation ? ["Georgia", "Verdana", "TrebuchetMS", "Baskerville", "Cochin", "AmericanTypewriter", "ComicSansMS", "BradleyHandITCTT-Bold", "Zapfino"] : ["Helvetica", "Times-Roman", "Courier", "Menlo-Regular", "Avenir-Book", "ChalkboardSE-Regular", "Noteworthy-Light", "MarkerFelt-Wide", "SnellRoundhand"]
         print("STARTER PROTOCOL: \(seeds.count) references, \(92*gridScale) × \(72*gridScale) fixed grid; silhouette overlap is not confidence")
         for name in names {
             guard let font = exactFont(named: name) else {
@@ -49,7 +51,9 @@ enum FontLabStarterQualityAudit {
             guard seeds.allSatisfy({ truth[$0] != nil }) else { continue }
             for character in seeds { project.glyphs[character] = truth[character] }
             guard project.isValid else { continue }
-            let proposal = FontLabStarterAssist.propose(for: project, reuseCapStems: !CommandLine.arguments.contains("--starter-disable-stem-reuse"))
+            let proposal = FontLabStarterAssist.propose(for: project,
+                                                       reuseCapStems: !CommandLine.arguments.contains("--starter-disable-stem-reuse"),
+                                                       useWidthPrior: !CommandLine.arguments.contains("--starter-disable-width-prior"))
             var byMethod: [String: [Double]] = [:]
             var widthErrors: [Double] = []
             var allScores: [Double] = []

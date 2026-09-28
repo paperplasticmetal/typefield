@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.58.0 — 2026-09-28
+
+- Estimate proportional suggestion widths from H/O/n/o/p with a small local width prior trained on open-licensed font measurements. Keep compact procedural curves, source padding, monospaced spacing and safe fallback behavior. No model download or artwork upload is needed.
+- Improve the nine-face development mean from 52.9% to 53.6%, the additional set from 47.3% to 48.3%, and a ten-face prospective check from 48.5% to 50.4%. Some individual styles regress; handwriting and script remain weak. These are silhouette-overlap scores, not confidence, and the 85% target remains unmet.
+- Add reproducible numeric-only width training tools, a third audit set and a width-prior ablation option.
+
 ## 0.57.0 — 2026-09-28
 
 - Reuse supplied H stems for eligible K/M/N suggestions, adding compact editable diagonals without stretching the copied stems. K follows H's ink width instead of inheriting a wider O; monospaced M retains its previous construction.

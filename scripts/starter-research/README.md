@@ -42,4 +42,26 @@ Further local experiments used installed faces whose font metadata explicitly na
 | Separate normalized-shape and bounding-box prediction, same corpus | 59.9% | 60.2% |
 | Expanded predictor including overflow ascenders/descenders, 1,213 faces / 360 families | 62.3% | 61.6% |
 
-These trials used direct Core Text rasterization at 92 × 72, not the app's point-in-path sampler and validated editable geometry. The normalized experiment's raster-coordinate convention was checked by a source-only round trip and corrected before reporting results. Entire-family separation and exact-mask deduplication do not eliminate related designs or near clones across families. The models still failed badly on cursive and did not replace the application generator. No trained weights, font masks or font outlines are distributed here; private experiment scripts, logs and proofs are retained with local QA evidence.
+These trials used direct Core Text rasterization at 92 × 72, not the app's point-in-path sampler and validated editable geometry. The normalized experiment's raster-coordinate convention was checked by a source-only round trip and corrected before reporting results. Entire-family separation and exact-mask deduplication do not eliminate related designs or near clones across families. The models still failed badly on cursive and did not replace the application generator. No raster/vector-generator weights, font masks or font outlines are distributed here; private experiment scripts, logs and proofs are retained with local QA evidence.
+
+
+## Production width prior (0.58)
+
+`export-width-training.swift` exports only numeric width features and targets, plus family names and exact-alphabet raster hashes. It reads installed fonts whose metadata explicitly names the Open Font License, excludes the 18 benchmark family lineages, caps each family at six faces and deduplicates exact alphabet masks. It does not save outlines or raster masks. The original supported-frame cohort contains 1,036 faces / 289 families.
+
+`train-width-prior.py` needs NumPy. It uses eight dimensionless log ratios from H O n o p to predict log widths for 47 other letters. A deterministic family split (822 selection-training faces, 214 validation faces from 59 families) selects ridge regularization; frozen normalization and ridge 0.1 are then used to refit all 1,036 faces. Held-family log-width MSE is 0.015688125. The generated constants reproduce the research coefficients within floating-point roundoff. The dataset SHA-256 is recorded in the model and generated source. Catalog-dependent regeneration may produce a different cohort and must be reevaluated.
+
+```sh
+swiftc -O -warnings-as-errors -module-cache-path /tmp/typefield-study-cache scripts/starter-research/export-width-training.swift -o /tmp/typefield-width-export
+/tmp/typefield-width-export /tmp/typefield-width-training.json
+python3 scripts/starter-research/train-width-prior.py --dataset /tmp/typefield-width-training.json --output /tmp/typefield-width-prior.json --swift-constants /tmp/typefield-width-constants.swift
+```
+
+The app embeds only the small numeric model in `FontLabWidthPrior.swift`. There is no Python dependency, downloaded checkpoint, font lookup or source-outline retrieval at runtime. Missing references, out-of-range standardized features, monospaced projects and unsupported output geometry keep the previous construction. Full predicted ink widths are not reduced again by H's stem-row insets; real drawing padding is retained in the side bearing. The four-standard-deviation fallback is a domain guard, not confidence calibration. Exact family exclusions do not rule out related designs in other families.
+
+Frozen width parameters were also checked prospectively on Palatino, Gill Sans, Optima, Rockwell, Bodoni 72, Didot, Futura, Copperplate, Brush Script and Chalkduster: 48.5% → 50.4%. None of those family names occurs in the width-training cohort. These faces have now been observed and are no longer an untouched final evaluation set. Use `--starter-challenge-set` for this set, `--starter-validation-set` for the earlier additional nine and `--starter-disable-width-prior` to reproduce the 0.57 construction. To disable both width adaptation and all cap-stem reuse, pass both ablation flags.
+
+A subsequent DesigNet convention check made every contour, including holes, positive-winding before even-odd filling, matching the upstream demo. Reference-only calibration reached 38.9%, still unsuitable. A local conditional convolutional pilot reached 60.8% / 57.9% on the two raster sets; its held-family validation selected the checkpoint before target scoring. It also remains research-only.
+
+
+An expanded temporary corpus adds directly loaded OFL fixtures from the [Google Fonts repository](https://github.com/google/fonts), pinned at `23e54b51ddffbc7713c583748e3bd86f62b1fa4a`. Downloaded file hashes and per-family licenses were checked; no fonts were registered or installed. After exact alphabet-mask deduplication the combined corpus contains 1,343 faces / 466 families. A family-balanced convolutional trial, selected on 92 held-out families, reached **65.7% / 62.6%** on the existing raster sets. Reference-only latent adaptation, whose step count was also selected using those validation families, reached **66.6% / 63.6%**. An expanded kernel trial reached **63.6% / 62.3%**. None is a production-vector result or an 85% achievement; all test-time adaptation uses supplied H O n o p only.

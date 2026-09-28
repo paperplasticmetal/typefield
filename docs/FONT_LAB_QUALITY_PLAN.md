@@ -1,6 +1,6 @@
 # Missing-letter fidelity: the path toward 90% shape overlap
 
-The current assist is a deterministic outline generator, not a trained model. Its nine-face audit supplies only H O n o p and compares the 47 hidden letters against their original outlines. The 0.52 mean was 46.5% sampled silhouette intersection-over-union (IoU). This is neither recognition accuracy nor a probability that a user will accept a suggestion.
+The current assist constructs editable outlines procedurally. Version 0.58 adds a small trained width prior; it does not generate learned curves or calibrated confidence. Its nine-face audit supplies only H O n o p and compares the 47 hidden letters against their original outlines. The 0.52 mean was 46.5% sampled silhouette intersection-over-union (IoU). This is neither recognition accuracy nor a probability that a user will accept a suggestion.
 
 ## What 90% should mean
 
@@ -31,3 +31,8 @@ Source-stem reuse raises the unchanged nine-face development mean to 52.3% (52.4
 ## 0.57 measured outcome
 
 H-stem reuse for K/M/N reaches 52.9% across the original nine faces (53.0% at the finer grid) and 47.3% on the additional nine. The source-curve and learned-prior experiments are documented in [0.57 QA](QA_2026-09-28_0.57.md). A local training trial now covers up to 1,213 distinct open-licensed faces across 360 families, but the resulting raster predictor remains around 62% and fails badly on connected script. The 85% target remains active and unachieved; no weaker metric, favorable subset or raster-only result is substituted for it.
+
+
+## Width prior result (0.58)
+
+A small learned width model improves native overlap to 53.6% / 48.3% across the existing two sets and 50.4% on ten additional faces. It preserves procedural curves, compact construction and source-only inference. It does not solve script anatomy, serif contrast or target-specific spacing. The 85% request remains open; see [0.58 QA](QA_2026-09-28_0.58.md).

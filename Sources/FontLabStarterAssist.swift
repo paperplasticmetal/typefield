@@ -39,7 +39,7 @@ enum FontLabStarterAssist {
         project.characters.contains { alphabet.contains($0) && project.resolvedGlyph($0)?.hasArtwork == true }
     }
 
-    static func propose(for project: FontLabProject, reuseCapStems: Bool = true) -> FontLabStarterProposal {
+    static func propose(for project: FontLabProject, reuseCapStems: Bool = true, useWidthPrior: Bool = true) -> FontLabStarterProposal {
         let targets = project.characters.filter { alphabet.contains($0) }
         var skipped: [String: String] = [:]
         guard project.isValid else {
@@ -62,7 +62,7 @@ enum FontLabStarterAssist {
             guard let glyph = project.resolvedGlyph(character), glyph.hasArtwork else { return nil }
             return (character, compact(glyph))
         })
-        let style = FontLabStarterStyle(project: project, sources: sources, weight: weight)
+        let style = FontLabStarterStyle(project: project, sources: sources, weight: weight, useWidthPrior: useWidthPrior)
         // Select the construction that best reproduces the supplied controls.
         // Hidden target letters never participate in this calibration.
         func preservesWeight(_ uppercase: Bool) -> Bool {
@@ -104,7 +104,7 @@ enum FontLabStarterAssist {
                 candidate = template(character, style: style, preserveWeight: character == character.uppercased() ? preserveUpperWeight : preserveLowerWeight)
                 if candidate != nil {
                     let sources = sampled.isEmpty ? "the project guides" : "the project guides and \(sampled.joined(separator: ", "))"
-                    detail = FontLabStarterDetail(sourceCharacters: sampled, method: "Constructed outline", explanation: "A distinct Latin letterform was constructed using proportions, spacing, and stroke weight measured from \(sources). Its contours were not copied from those drawings; refine its curves and spacing.", confidence: .template)
+                    detail = FontLabStarterDetail(sourceCharacters: sampled, method: "Constructed outline", explanation: "A distinct Latin letterform was constructed using proportions, spacing, and stroke weight estimated from \(sources). Its contours were not copied from those drawings; refine its curves and spacing.", confidence: .template)
                 }
             }
             guard var candidate, let detail else {
@@ -124,7 +124,7 @@ enum FontLabStarterAssist {
         }
         return FontLabStarterProposal(
             glyphs: glyphs, details: details, skipped: skipped,
-            note: "Starter letters are editable suggestions. Adapted letters reuse your outlines; templates use measured proportions and spacing. A few examples cannot determine every curve or serif. Review each letter before export."
+            note: "Starter letters are editable suggestions. Adapted letters reuse your outlines; templates estimate proportions and spacing. A few examples cannot determine every curve or serif. Review each letter before export."
         )
     }
 
@@ -221,7 +221,7 @@ enum FontLabStarterAssist {
         return glyph.isValid ? glyph : nil
     }
 
-    private static func template(_ character: String, style: FontLabStarterStyle, preserveWeight: Bool = false) -> FontLabGlyph? {
+    private static func template(_ character: String, style: FontLabStarterStyle, preserveWeight: Bool = false, useWidthPrior: Bool = true) -> FontLabGlyph? {
         let baseWidth: Double
         switch character {
         case "M", "W": baseWidth = 0.84
@@ -234,7 +234,10 @@ enum FontLabStarterAssist {
         default: baseWidth = character == character.uppercased() ? 0.65 : 0.57
         }
         let isUpper = character == character.uppercased()
-        let width = style.width(baseWidth, character: character)
+        let priorWidth = useWidthPrior ? style.widthPrior?.widths[character] : nil
+        let priorBearing = style.bearing(character, left: true)+(style.widthPrior?.origin(for: character) ?? 0)
+        let learned = priorWidth != nil && (0...0.4).contains(priorBearing)
+        let width = learned ? priorWidth! : style.width(baseWidth, character: character)
         // A very short x-height cannot fit a stroke measured from a tall cap.
         // Keep the proposed outline inside the user's guides in that case.
         // The editable box has strict anchor bounds. Heavy strokes and square
@@ -251,7 +254,10 @@ enum FontLabStarterAssist {
                 // The source width measures ink, whereas skeleton x values
                 // include margins. Solve the construction width before fitting
                 // the ink box; otherwise that fit thickens every vertical stem.
-                let inset = isUpper ? style.upperInsets : style.lowerInsets
+                // The prior predicts the complete ink width. Reapplying H's
+                // stem-row inset would mistake serifs for blank margins.
+                // Actual source padding is retained in the bearing instead.
+                let inset: (Double, Double) = learned ? (0, 0) : (isUpper ? style.upperInsets : style.lowerInsets)
                 let targetInkWidth = width * (abs(style.slant) < 0.12 ? 1-inset.0-inset.1 : 1)
                 var constructionWidth = width
                 var outlines: [FontLabVectorPath]?
@@ -296,17 +302,21 @@ enum FontLabStarterAssist {
                     paths[p].nodes[n].outgoing = paths[p].nodes[n].outgoing.map(handle)
                 } }
                 let glyph = FontLabGlyph(character: character, strokes: [FontLabStroke(vectorPaths: paths)],
-                                         leftSideBearing: style.bearing(character, left: true),
+                                         leftSideBearing: learned ? priorBearing : style.bearing(character, left: true),
                                          rightSideBearing: style.bearing(character, left: false),
                                          contourDesignWidth: width)
                 if glyph.isValid && glyph.hasArtwork { return glyph }
             }
+        }
+        if learned {
+            return template(character, style: style, preserveWeight: preserveWeight, useWidthPrior: false)
         }
         return nil
     }
 }
 
 private struct FontLabStarterStyle {
+    var widthPrior: FontLabWidthPrior.Prediction? = nil
     let metrics: FontLabMetrics
     let weight: Double
     let uppercaseWidth: Double
@@ -329,7 +339,7 @@ private struct FontLabStarterStyle {
 
     var safeWeight: Double { min(weight, (metrics.xHeight - metrics.baseline) * 0.65) }
 
-    init(project: FontLabProject, sources: [String: FontLabGlyph], weight: Double) {
+    init(project: FontLabProject, sources: [String: FontLabGlyph], weight: Double, useWidthPrior: Bool) {
         metrics = project.metrics
         self.weight = weight
         capStemWidth = sources["H"]?.resolvedDesignWidth
@@ -412,6 +422,9 @@ private struct FontLabStarterStyle {
         }.filter { $0 < project.metrics.baseline }
         let observed = descenders.map { (project.metrics.baseline - $0) / (project.metrics.capHeight - project.metrics.baseline) }
         descenderDepth = min(0.38, max(0.015, median(observed) ?? min(0.25, max(0.015, (project.metrics.baseline - 0.012) / (project.metrics.capHeight - project.metrics.baseline)))))
+        if useWidthPrior && fixedAdvance == nil {
+            widthPrior = FontLabWidthPrior.predict(sources)
+        }
     }
 
     func width(_ base: Double, uppercase: Bool) -> Double {

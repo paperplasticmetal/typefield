@@ -79,6 +79,37 @@ enum FontLabStarterAssistChecks {
                 _=try FontLabTrueTypeExporter.artifact(for:export)
             }
         }
+        let widthProject = fixture(["H", "O", "n", "o", "p"])
+        let widthBefore = widthProject
+        guard let widths = FontLabWidthPrior.predict(widthProject.glyphs) else {
+            throw FontLabStore.SelfTestError.failed("Complete width references were rejected")
+        }
+        try check(widths.widths.count == 47 && widths.widths.values.allSatisfy { $0.isFinite && (0.02...2.5).contains($0) },
+                  "Width prior produced missing or invalid dimensions")
+        try check(abs(widths.upperOrigin-0.15*0.65) < 0.00001 && abs(widths.lowerOrigin-0.17*0.57) < 0.00001,
+                  "Width prior discarded source artwork padding")
+        try check(FontLabWidthPrior.predict(fixture(["H", "O"]).glyphs) == nil,
+                  "Width prior guessed missing reference measurements")
+        var outlier = widthProject
+        outlier.glyphs["H"]!.contourDesignWidth = 2.4
+        try check(FontLabWidthPrior.predict(outlier.glyphs) == nil, "Unsupported width proportions did not fall back")
+        let widthProposal = FontLabStarterAssist.propose(for: widthProject)
+        let widthDisabled = FontLabStarterAssist.propose(for: widthProject, useWidthPrior: false)
+        try check(widthProposal.glyphs.count == 47 && widthProposal.glyphs.values.allSatisfy { $0.isValid && $0.hasArtwork },
+                  "Width adaptation lost valid missing-letter coverage")
+        try check(widthProposal.glyphs["S"]?.resolvedDesignWidth != widthDisabled.glyphs["S"]?.resolvedDesignWidth,
+                  "Width prior ablation did not change a constructed outline")
+        try check(widthProposal.details["S"]?.confidence == .template,
+                  "Estimated widths were presented as confident contour predictions")
+        var widthExport = widthProject
+        for (character, glyph) in widthProposal.glyphs { widthExport.glyphs[character] = glyph }
+        _ = try FontLabTrueTypeExporter.artifact(for: widthExport)
+        try check(widthProject == widthBefore, "Width prediction modified supplied artwork")
+        var largeBearing = widthProject
+        for character in ["H", "O", "n", "o", "p"] { largeBearing.glyphs[character]!.leftSideBearing = 0.39 }
+        let bearingProposal = FontLabStarterAssist.propose(for: largeBearing)
+        try check(bearingProposal.glyphs.count == 47 && bearingProposal.glyphs.values.allSatisfy(\.isValid),
+                  "Width reboxing failed to fall back for large side bearings")
         let stemProject = fixture(["H", "O"])
         let stemBefore = stemProject
         let stemProposal = FontLabStarterAssist.propose(for: stemProject)
@@ -128,6 +159,9 @@ enum FontLabStarterAssistChecks {
             monospaced.glyphs[character]!.rightSideBearing = 0.05
         }
         let stemMonoProposal = FontLabStarterAssist.propose(for: monospaced)
+        let monoWithoutPrior = FontLabStarterAssist.propose(for: monospaced, useWidthPrior: false)
+        try check(stemMonoProposal.glyphs["S"]?.resolvedDesignWidth == monoWithoutPrior.glyphs["S"]?.resolvedDesignWidth,
+                  "Width prior overrode monospaced proportions")
         try check(stemMonoProposal.details["I"]?.method != "Reused cap stem", "Monospaced I lost its identifying bars")
         try check(stemMonoProposal.details["M"]?.method == "Constructed outline", "Monospaced M lost its fitted internal diagonal height")
         for character in ["K", "N"] {
