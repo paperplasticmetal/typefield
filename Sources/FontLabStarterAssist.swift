@@ -39,7 +39,7 @@ enum FontLabStarterAssist {
         project.characters.contains { alphabet.contains($0) && project.resolvedGlyph($0)?.hasArtwork == true }
     }
 
-    static func propose(for project: FontLabProject) -> FontLabStarterProposal {
+    static func propose(for project: FontLabProject, reuseCapStems: Bool = true) -> FontLabStarterProposal {
         let targets = project.characters.filter { alphabet.contains($0) }
         var skipped: [String: String] = [:]
         guard project.isValid else {
@@ -95,7 +95,7 @@ enum FontLabStarterAssist {
                     detail = FontLabStarterDetail(sourceCharacters: [counterpart], method: "Scaled outline", explanation: "The drawn \(counterpart) outline was scaled to the \(character == character.uppercased() ? "cap" : "x") height. Review its weight, spacing, and curve balance.", confidence: .adapted)
                 }
             }
-            if candidate == nil, let derived = sourceDerived(character, sources: sources, style: style) {
+            if candidate == nil, let derived = sourceDerived(character, sources: sources, style: style, reuseCapStems: reuseCapStems) {
                 candidate = derived.glyph
                 detail = FontLabStarterDetail(sourceCharacters: derived.sources, method: derived.method,
                                               explanation: derived.explanation, confidence: .adapted)
@@ -477,7 +477,13 @@ private struct FontLabStarterDerivation {
 }
 
 private extension FontLabStarterAssist {
-    static func sourceDerived(_ character: String, sources: [String: FontLabGlyph], style: FontLabStarterStyle) -> FontLabStarterDerivation? {
+    static func sourceDerived(_ character: String, sources: [String: FontLabGlyph], style: FontLabStarterStyle, reuseCapStems: Bool) -> FontLabStarterDerivation? {
+        if reuseCapStems, ["D", "E", "F", "I", "L"].contains(character), abs(style.slant) < 0.12,
+           character != "I" || style.fixedAdvance == nil,
+           let source = sources["H"], let glyph = reusingCapStem(source, bowl: sources["O"], character: character, style: style) {
+            return .init(glyph: glyph, sources: character == "D" ? ["H", "O"] : ["H"], method: "Reused cap stem",
+                         explanation: character == "D" ? "The drawn H supplies the stem and terminals; the O supplies the right-hand curve. Review the joins and spacing." : "The drawn H supplies the stem and its terminals. Any new horizontal arms use its crossbar thickness; review their lengths and ends.")
+        }
         let horizontalPairs = ["p":"q", "q":"p", "b":"d", "d":"b"]
         if let sourceCharacter = horizontalPairs[character], let source = sources[sourceCharacter], exportable(source),
            let glyph = transformed(source, to: character, width: source.resolvedDesignWidth,
@@ -639,6 +645,105 @@ private extension FontLabStarterAssist {
             }
         }
         return nil
+    }
+
+    /// Work in physical coordinates so extracting a narrow stem never stretches
+    /// its weight or serif. Only the supplied H is inspected.
+    static func reusingCapStem(_ source: FontLabGlyph, bowl: FontLabGlyph?, character: String, style: FontLabStarterStyle) -> FontLabGlyph? {
+        guard let outline = closedOutline(source) else { return nil }
+        var physical = CGAffineTransform(scaleX: source.resolvedDesignWidth, y: 1)
+        guard let ink = outline.copy(using: &physical) else { return nil }
+        let box = ink.boundingBoxOfPath
+        guard box.height > 100, box.width > 40 else { return nil }
+        func runs(_ fraction: Double) -> [(Double, Double)] {
+            var result: [(Double, Double)] = [], start: Double?
+            for i in 0...600 {
+                let x = box.minX + box.width * Double(i) / 600
+                let inside = i < 600 && ink.contains(CGPoint(x: x, y: box.minY + box.height * fraction))
+                if inside && start == nil { start = x }
+                if !inside, let first = start { result.append((first, x)); start = nil }
+            }
+            return result
+        }
+        let low = runs(0.25), high = runs(0.75), foot = runs(0.025)
+        guard low.count == 2, high.count == 2, foot.count == 2,
+              foot[0].1-foot[0].0 >= (low[0].1-low[0].0)*0.75 else { return nil }
+        let stemRight = (low[0].1 + high[0].1) / 2
+        let gapX = (max(low[0].1, high[0].1) + min(low[1].0, high[1].0)) / 2
+        guard gapX > stemRight, abs(low[0].1-high[0].1) < box.width * 0.04 else { return nil }
+        let rows = (20...80).filter { ink.contains(CGPoint(x: gapX, y: box.minY + box.height * Double($0)/100)) }
+        guard let first = rows.first, let last = rows.last, rows.count == last-first+1,
+              rows.count >= 2, rows.count <= 25 else { return nil }
+        func edge(_ a: Double, _ b: Double, entering: Bool) -> Double {
+            var low = a, high = b
+            for _ in 0..<24 {
+                let middle = (low+high)/2
+                if ink.contains(CGPoint(x: gapX, y: middle)) == entering { high = middle }
+                else { low = middle }
+            }
+            return (low+high)/2
+        }
+        let barBottom = edge(box.minY+box.height*Double(first-1)/100, box.minY+box.height*Double(first)/100, entering: true)
+        let barTop = edge(box.minY+box.height*Double(last)/100, box.minY+box.height*Double(last+1)/100, entering: false)
+        let clip = CGPath(rect: CGRect(x: box.minX-1, y: box.minY-1, width: gapX-box.minX+1, height: box.height+2), transform: nil)
+        let removal = CGPath(rect: CGRect(x: stemRight, y: barBottom-0.05, width: gapX-stemRight+1, height: barTop-barBottom+0.1), transform: nil)
+        var result = ink.intersection(clip, using: .winding).subtracting(removal, using: .winding)
+        let stemBox = result.boundingBoxOfPath
+        guard stemBox.width > 0, stemBox.width < box.width * 0.48 else { return nil }
+        if character == "D" {
+            guard let bowl, let rawBowl = closedOutline(bowl) else { return nil }
+            var physicalBowl = CGAffineTransform(scaleX: bowl.resolvedDesignWidth, y: 1)
+            guard let round = rawBowl.copy(using: &physicalBowl) else { return nil }
+            let roundBox = round.boundingBoxOfPath
+            guard roundBox.width > 20, roundBox.height > 100 else { return nil }
+            let width = style.plainStem && style.fixedAdvance == nil ? roundBox.width*0.85 : style.width(0.65, character: character)*roundBox.width/bowl.resolvedDesignWidth
+            let sx = width/roundBox.width, sy = box.height/roundBox.height
+            var transform = CGAffineTransform(a: sx, b: 0, c: 0, d: sy,
+                                               tx: stemBox.minX+width-roundBox.maxX*sx, ty: box.minY-roundBox.minY*sy)
+            let half = CGPath(rect: CGRect(x: roundBox.midX, y: roundBox.minY-1, width: roundBox.width, height: roundBox.height+2), transform: nil)
+            guard let arc = round.intersection(half, using: .winding).copy(using: &transform) else { return nil }
+            let samples = Set((0...1000).filter { round.contains(CGPoint(x: roundBox.midX, y: roundBox.minY+roundBox.height*Double($0)/1000)) })
+            let lowerEnd = (1..<500).first { !samples.contains($0) } ?? 0
+            let upperStart = (501..<1000).first { samples.contains($0) } ?? 1000
+            let bottom = roundBox.height*Double(lowerEnd)/1000*sy
+            let top = roundBox.height*Double(1000-upperStart)/1000*sy
+            guard bottom > 2, top > 2, bottom < box.height*0.25, top < box.height*0.25 else { return nil }
+            let left = (low[0].0+low[0].1)/2, right = roundBox.midX*sx+transform.tx
+            guard right > left else { return nil }
+            result = result.union(arc, using: .winding)
+                .union(CGPath(rect: CGRect(x: left, y: box.minY, width: right-left+0.1, height: bottom), transform: nil), using: .winding)
+                .union(CGPath(rect: CGRect(x: left, y: box.maxY-top, width: right-left+0.1, height: top), transform: nil), using: .winding)
+        } else if character != "I" {
+            let width = style.width(0.65, character: character)*box.width/source.resolvedDesignWidth
+            let thickness = barTop-barBottom
+            let left = (low[0].0+low[0].1)/2
+            let right = stemBox.minX + width
+            func arm(_ y: Double, _ length: Double) -> CGPath {
+                CGPath(rect: CGRect(x: left, y: y, width: (right-left)*length, height: thickness), transform: nil)
+            }
+            if character == "E" || character == "F" {
+                result = result.union(arm(box.maxY-thickness, 1), using: .winding)
+                result = result.union(arm(barBottom, 0.80), using: .winding)
+            }
+            if character == "E" || character == "L" {
+                result = result.union(arm(box.minY, 1), using: .winding)
+            }
+        }
+        let bounds = result.boundingBoxOfPath
+        guard bounds.width > 0 else { return nil }
+        var normalized = CGAffineTransform(a: 1000/bounds.width, b: 0, c: 0, d: 1, tx: -bounds.minX*1000/bounds.width, ty: 0)
+        guard let path = result.copy(using: &normalized) else { return nil }
+        let paths = FontLabVectorPath.from(path)
+        let bearing: Double
+        if let advance = style.fixedAdvance { bearing = max(0, (advance-bounds.width/1000)/2) }
+        else { bearing = source.leftSideBearing + max(0, bounds.minX/1000) }
+        // Clamping a reboxed bearing would silently translate the copied ink
+        // or shrink a monospaced advance. Keep the original construction instead.
+        guard bearing <= 0.4 else { return nil }
+        let glyph = FontLabGlyph(character: character, strokes: [FontLabStroke(vectorPaths: paths)],
+                                 leftSideBearing: bearing, rightSideBearing: bearing,
+                                 contourDesignWidth: bounds.width/1000)
+        return glyph.isValid && glyph.hasArtwork ? glyph : nil
     }
 
     static func exportable(_ glyph: FontLabGlyph) -> Bool {

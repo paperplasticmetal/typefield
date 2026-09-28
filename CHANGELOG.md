@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.56.0 — 2026-09-27
+
+- Reuse eligible H stems and terminals for D/E/F/I/L, preserving physical stroke weight and source ink placement. D combines the H stem with the supplied O curve; rounded/irregular stems and monospaced I retain the previous construction. Suggestions remain experimental.
+- Improved the unchanged nine-face development mean from 51.5% to 52.3% overlap (52.4% at the finer grid). Nine additional faces improve from 45.0% to 46.7%; script and handwriting still need substantial work. These are silhouette comparisons, not confidence estimates.
+- Added finer-grid, additional-font and source-stem ablation audits, explicit incomplete-font reporting, and aggregate/worst-style/85%-threshold coverage. Kept font-retrieval research separate from the app; no borrowed font outlines or model dependencies are added to production.
+
 ## 0.55.0 — 2026-09-27
 
 - Fixed Objects-mode alignment collapsing outlines. Alignment and distribution now move complete objects with their handles and counters; a single object cannot be aligned to itself.

@@ -79,6 +79,46 @@ enum FontLabStarterAssistChecks {
                 _=try FontLabTrueTypeExporter.artifact(for:export)
             }
         }
+        let stemProject = fixture(["H", "O"])
+        let stemBefore = stemProject
+        let stemProposal = FontLabStarterAssist.propose(for: stemProject)
+        for character in ["D", "E", "F", "L"] {
+            guard let glyph = stemProposal.glyphs[character] else {
+                throw FontLabStore.SelfTestError.failed("Missing source-stem suggestion")
+            }
+            try check(stemProposal.details[character]?.method == "Reused cap stem", "Cap stem was not reused")
+            try check(FontLabVectorMath.paths(in: glyph).reduce(0, { $0+$1.nodes.count }) < 60, "Source-stem reuse created excessive editing anchors")
+            let expectedWidth = (character == "D" ? 0.85*0.74 : (character == "L" ? 0.80 : 0.88)*0.695)*0.65
+            try check(abs(glyph.resolvedDesignWidth-expectedWidth) < 0.004, "Source-stem arms discarded the source ink insets")
+            try check(abs(glyph.leftSideBearing-(stemProject.glyphs["H"]!.leftSideBearing+0.15*0.65)) < 0.004, "Source-stem reboxing moved the supplied ink origin")
+            var exported = stemProject; exported.glyphs[character] = glyph
+            _ = try FontLabTrueTypeExporter.artifact(for: exported)
+        }
+        try check(stemProject == stemBefore, "Stem extraction changed source artwork")
+        var monospaced = fixture(["H", "O", "n", "o", "p"])
+        for character in monospaced.glyphs.keys where monospaced.glyphs[character]!.hasArtwork {
+            monospaced.glyphs[character]!.contourDesignWidth = 0.60
+            monospaced.glyphs[character]!.leftSideBearing = 0.05
+            monospaced.glyphs[character]!.rightSideBearing = 0.05
+        }
+        let stemMonoProposal = FontLabStarterAssist.propose(for: monospaced)
+        try check(stemMonoProposal.details["I"]?.method != "Reused cap stem", "Monospaced I lost its identifying bars")
+        var deeplyInset = stemProject
+        deeplyInset.glyphs["H"]!.leftSideBearing = 0.39
+        let insetProposal = FontLabStarterAssist.propose(for: deeplyInset)
+        try check(insetProposal.glyphs["E"]?.isValid == true && insetProposal.details["E"]?.method == "Constructed outline", "Reboxing clamped a copied stem beyond the side-bearing limit")
+        for character in monospaced.glyphs.keys where monospaced.glyphs[character]!.hasArtwork {
+            monospaced.glyphs[character]!.contourDesignWidth = 1.6
+            monospaced.glyphs[character]!.leftSideBearing = 0.4
+            monospaced.glyphs[character]!.rightSideBearing = 0.4
+        }
+        let wideMonoProposal = FontLabStarterAssist.propose(for: monospaced)
+        guard let wideE = wideMonoProposal.glyphs["E"] else {
+            throw FontLabStore.SelfTestError.failed("Wide monospaced E disappeared during reboxing")
+        }
+        try check(wideMonoProposal.details["E"]?.method == "Constructed outline" && abs(wideE.resolvedDesignWidth+wideE.leftSideBearing+wideE.rightSideBearing-2.4) < 0.001, "Reboxing changed a wide monospaced advance")
+        let noStem = FontLabStarterAssist.propose(for: stemProject, reuseCapStems: false)
+        try check(noStem.details["E"]?.method == "Constructed outline", "Stem ablation did not restore the original construction")
         let one = fixture(["H"])
         let oneBefore = one.glyphs["H"]
         let partialFont = try FontLabTrueTypeExporter.artifact(for: one)

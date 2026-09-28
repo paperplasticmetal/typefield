@@ -23,3 +23,7 @@ Primary research implementations: [DeepVecFont-v2](https://github.com/yizhiwang9
 ## 0.54 measured outcome
 
 Further construction/bowl corrections reach 56.1% on the original five faces and 51.5% across nine. On a shared 40-letter target set, 5/8/12 references score 52.8%/52.9%/53.2%; supplying more drawings does not make the existing templates sufficiently style-aware. A source-calibrated stroke-contrast experiment was rejected after failing to improve the mean. These results strengthen the need for the vector-model and held-out-family experiments above; they do not establish that 90% is achievable with the present architecture. Suggestions are explicitly experimental and opt-in per letter. See [0.54 QA](QA_2026-09-27_0.54.md).
+
+## 0.56 measured outcome
+
+Source-stem reuse raises the unchanged nine-face development mean to 52.3% (52.4% at a finer grid), with a separate nine-face check improving 45.0% → 46.7%. The outline and stronger-prior experiments, rejected variants, and reproducible protocol are recorded in [0.56 QA](QA_2026-09-27_0.56.md). A research font-prior route reaches 60.9% on the audit grid; a different-resolution raster mixture reaches 65.3%, pending vector validation. The first pretrained vector-model adapter performs poorly and is not integrated. None establishes 85% confidence. The major remaining work is a style-diverse, licensed training/evaluation pipeline and reliable script/handwriting generation; isolated high-overlap letters do not resolve that gap.
