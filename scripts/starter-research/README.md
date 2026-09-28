@@ -98,3 +98,18 @@ Keep prediction files and font-derived artifacts private. Do not recenter, resca
 A 184 × 144 output trial reused the same 1,343-face / 466-family cohort and selected its checkpoint and reference-only latent refinement on the same 92 held-out families. Frozen editable predictions reached **62.6% / 58.2%** on the native 92 × 72 grid and **62.2% / 57.8%** on the 368 × 288 grid. All 846 letters validated and all 18 temporary faces exported. Mean anchors increased to **38.9**, with **892** in the worst glyph; mean/minimum fit retention was 98.7% / 96.2%. This is not a consistent accuracy improvement and worsens worst-case editability, so it is not retained for the application.
 
 The reusable auditor reproduced the earlier corrected model's **62.2% / 58.7%**, including all 846 targets and 77 above 85% overlap. Its seven input/denominator regression cases pass. Run them with `python3 scripts/starter-research/test-prediction-auditor.py --binary /tmp/typefield-prediction-auditor`. Research-only compilation uses the current app sources with warnings as errors; it does not alter or install the app. The 85% objective remains unmet.
+
+
+### Overlap loss, decoder conditioning and reference stroke calibration
+
+Three subsequent trials used the same corpus and 92-family selection set. All benchmark predictions were frozen before native scoring. These repeatedly observed development sets are not a new untouched generalization test.
+
+| Editable-vector variant | Original nine | Additional nine | Fine-grid original / additional | Mean / maximum anchors |
+| --- | ---: | ---: | ---: | ---: |
+| Overlap-focused training loss, 20 reference-only latent steps | 62.8% | 58.6% | 62.2% / 58.1% | 41.2 / 310 |
+| Style modulation at every decoder stage, 20 reference-only latent steps | 62.5% | 58.8% | Not measured | 38.1 / 296 |
+| Same decoder, stroke threshold fitted to supplied references | 62.4% | 58.9% | 61.9% / 58.2% | 37.5 / 318 |
+
+Every row contains all 846 targets, zero rejected predictions and 18 successful temporary TrueType exports. The first variant has 77/846 glyphs above 85% overlap; the other two have 78/846. Stroke calibration selected its shared strength on the family-held-out set, while each face's threshold came only from H O n o p. No benchmark target selected a threshold, checkpoint, latent step count or per-letter winner. The overlap-loss selection score reached 63.4% before latent adaptation; stage-wise style modulation reached 64.1% after adaptation and 64.3% with stroke calibration. These selection scores are not benchmark results or confidence estimates.
+
+The remaining errors include missing thin strokes, misplaced script connections and incorrect counters. None of these experiments meets 85%, and no learned-outline model was integrated or installed. The application remains 0.58.0; user project and library hashes remain unchanged.
