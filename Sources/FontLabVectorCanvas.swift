@@ -243,19 +243,48 @@ final class FontLabVectorNSView: NSView {
         }}
         return nil
     }
+    /// Finds the nearest point on one canvas-space segment. The cubic control
+    /// hull contains the whole curve, so segments whose expanded hull misses
+    /// the pointer cannot be hit and need no curve sampling.
+    static func hitTestSegment(_ controls: [CGPoint], isCurve: Bool, at point: CGPoint,
+                               within maxDistance: CGFloat, sampledIntervals: inout Int) -> (parameter: Double, distance: CGFloat)? {
+        guard controls.count == 4 else { return nil }
+        let hull = controls.dropFirst().reduce(CGRect(origin: controls[0], size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+        guard hull.insetBy(dx: -maxDistance, dy: -maxDistance).contains(point) else { return nil }
+
+        func evaluate(_ t: Double) -> CGPoint {
+            let u = 1 - t
+            return CGPoint(x: u*u*u*controls[0].x + 3*u*u*t*controls[1].x + 3*u*t*t*controls[2].x + t*t*t*controls[3].x,
+                           y: u*u*u*controls[0].y + 3*u*u*t*controls[1].y + 3*u*t*t*controls[2].y + t*t*t*controls[3].y)
+        }
+        let intervals = isCurve ? 50 : 1
+        var best: (parameter: Double, distance: CGFloat)?, bestDistance = maxDistance
+        for i in 0..<intervals {
+            let t0 = Double(i) / Double(intervals), t1 = Double(i + 1) / Double(intervals)
+            let q = isCurve ? evaluate(t0) : controls[0]
+            let r = isCurve ? evaluate(t1) : controls[3]
+            sampledIntervals += 1
+            let dx = r.x - q.x, dy = r.y - q.y
+            let projection = min(CGFloat(1), max(CGFloat(0), ((point.x - q.x)*dx + (point.y - q.y)*dy) / max(1e-12, dx*dx + dy*dy)))
+            let candidateDistance = hypot(q.x + dx*projection - point.x, q.y + dy*projection - point.y)
+            if candidateDistance < bestDistance {
+                bestDistance = candidateDistance
+                best = (t0 + (t1 - t0)*Double(projection), candidateDistance)
+            }
+        }
+        return best
+    }
+
     private func hitSegment(_ p:CGPoint)->(Int,Int,Double)? {
-        var best:(Int,Int,Double)?,distance=7.0
+        var best:(Int,Int,Double)?,distance:CGFloat=7
         let paths=editor.paths
         for a in paths.indices {for b in 0..<paths[a].segmentCount {
-            let c=paths[a].controls(b),samples=paths[a].isCurve(b) ? 50:1
-            for i in 0..<samples {
-                let t0=Double(i)/Double(samples),t1=Double(i+1)/Double(samples)
-                let q=screen(paths[a].isCurve(b) ? FontLabVectorMath.evaluate(c,t0):c[0])
-                let r=screen(paths[a].isCurve(b) ? FontLabVectorMath.evaluate(c,t1):c[3])
-                let dx=r.x-q.x,dy=r.y-q.y
-                let t=min(1,max(0,((p.x-q.x)*dx+(p.y-q.y)*dy)/max(1e-12,dx*dx+dy*dy)))
-                let d=hypot(q.x+dx*t-p.x,q.y+dy*t-p.y)
-                if d<distance {distance=d;best=(a,b,t0+(t1-t0)*t)}
+            let controls=paths[a].controls(b).map(screen)
+            var sampledIntervals = 0
+            if let hit = Self.hitTestSegment(controls, isCurve: paths[a].isCurve(b), at: p,
+                                             within: distance, sampledIntervals: &sampledIntervals) {
+                distance=hit.distance
+                best=(a,b,hit.parameter)
             }
         }}
         return best

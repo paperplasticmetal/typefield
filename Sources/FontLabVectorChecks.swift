@@ -10,6 +10,30 @@ enum FontLabVectorChecks {
     static func run() throws {
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
+        let offscreenCurve = [CGPoint(x:20,y:200), CGPoint(x:20,y:260), CGPoint(x:80,y:260), CGPoint(x:80,y:200)]
+        var skippedSamples = 0
+        let denseSegments = 2_048
+        for _ in 0..<denseSegments {
+            let hit = FontLabVectorNSView.hitTestSegment(offscreenCurve, isCurve:true, at:CGPoint(x:0,y:0), within:7, sampledIntervals:&skippedSamples)
+            try check(hit == nil,"A distant dense-path segment was selectable")
+        }
+        try check(skippedSamples == 0 && denseSegments * 50 == 102_400,
+                  "Dense-path broad-phase rejection still sampled distant curves")
+        var nearbySamples = 0
+        let nearbyCurve = [CGPoint(x:20,y:10), CGPoint(x:20,y:90), CGPoint(x:80,y:90), CGPoint(x:80,y:10)]
+        let nearbyHit = FontLabVectorNSView.hitTestSegment(nearbyCurve, isCurve:true, at:CGPoint(x:50,y:70), within:7, sampledIntervals:&nearbySamples)
+        try check(nearbyHit != nil && abs((nearbyHit?.parameter ?? 0)-0.5)<0.02 && nearbySamples == 50,
+                  "Broad-phase rejection changed nearby cubic selection")
+        var toleranceSamples = 0
+        let toleranceHit = FontLabVectorNSView.hitTestSegment([.init(x:0,y:0),.init(x:0,y:0),.init(x:100,y:0),.init(x:100,y:0)],
+                                                               isCurve:false, at:.init(x:106,y:0), within:7, sampledIntervals:&toleranceSamples)
+        try check(toleranceHit?.distance == 6 && toleranceSamples == 1,
+                  "Broad-phase rejection dropped a segment inside the existing 7-point hit tolerance")
+        var outsideToleranceSamples = 0
+        let outsideToleranceHit = FontLabVectorNSView.hitTestSegment([.init(x:0,y:0),.init(x:0,y:0),.init(x:100,y:0),.init(x:100,y:0)],
+                                                                      isCurve:false, at:.init(x:108,y:0), within:7, sampledIntervals:&outsideToleranceSamples)
+        try check(outsideToleranceHit == nil && outsideToleranceSamples == 0,
+                  "A segment outside the hit tolerance was sampled or selected")
         var history = FontLabGlyphEditHistory()
         var editedO = glyph; editedO.leftSideBearing += 0.01
         var a = glyph; a.character = "A"
