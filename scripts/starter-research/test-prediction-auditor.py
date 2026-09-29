@@ -40,4 +40,8 @@ with tempfile.TemporaryDirectory(prefix='typefield-audit-tests-') as directory:
     invalid[0]['glyphs'] = [{'character': 'A', 'contours': [[[99, 0], [100, .1], [99, .2]]]}]
     run('invalid geometry counts as zero', invalid, 0,
         contains='846 targets; 846 rejected at zero; 0 exported faces')
+    late_ink = copy.deepcopy(empty)
+    late_ink[0]['glyphs'] = [{'character': 'A', 'contours': [[[1.1, .3], [1.2, .3], [1.15, .4]]]}]
+    run('late ink remains representable within the fixed frame', late_ink, 0,
+        contains='846 targets; 845 rejected at zero; 1 exported faces')
 print('PASS: frozen prediction audit guards and denominator')

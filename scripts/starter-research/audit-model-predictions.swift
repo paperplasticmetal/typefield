@@ -68,14 +68,18 @@ extension FontLabStarterQualityAudit {
                           }
                       }) else { scores.append(0); failed.append(character); continue }
                 let xs = record.contours.flatMap { $0.map { $0[0] } }
-                guard let left = xs.min(), let right = xs.max(), right > left, left <= 0.4 else {
+                guard let left = xs.min(), let right = xs.max(), right > left else {
                     scores.append(0); failed.append(character); continue
                 }
+                // Ink may begin beyond the editable side-bearing range. Keep
+                // that extra space inside the contour frame; never recenter it.
+                let bearing = min(0.4, left)
+                let designWidth = right-bearing
                 let contours = record.contours.map { ring in
-                    ring.map { FontLabPoint(x: ($0[0]-left)/(right-left), y: $0[1]) }
+                    ring.map { FontLabPoint(x: ($0[0]-bearing)/designWidth, y: $0[1]) }
                 }
                 let raw = FontLabGlyph(character: character, strokes: [FontLabStroke(contours: contours)],
-                                       leftSideBearing: left, rightSideBearing: 0, contourDesignWidth: right-left)
+                                       leftSideBearing: bearing, rightSideBearing: 0, contourDesignWidth: designWidth)
                 guard raw.isValid, raw.hasArtwork else { scores.append(0); failed.append(character); continue }
                 // Preserve the complete prediction if a compact fit is unsafe.
                 let fitted = (try? FontLabTraceSmoothing.fit(raw, units: 3)) ?? raw
