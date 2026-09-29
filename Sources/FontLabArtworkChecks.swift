@@ -164,7 +164,50 @@ enum FontLabArtworkChecks {
         var aScan = try FontLabArtworkEngine.scan(coarse, options: FontLabArtworkOptions(), recognize: false)
         try check(aScan.regions.count == 1, "Coarse rounded A split into multiple letters")
         aScan.regions[0].character = "A"
-        var rawA = try FontLabArtworkEngine.project(from: aScan, name: "Coarse A", fitCurves: false).glyphs["A"]!
+        let rawImportProject = try FontLabArtworkEngine.project(from: aScan, name: "Coarse A", fitCurves: false)
+        var rawA = rawImportProject.glyphs["A"]!
+        // Exercise the production import default as well as the five-unit
+        // manual preview below. A successful optional fit must actually make
+        // it into the persisted glyph, with the counter and source-frame ink
+        // retained; a silently declined fit would otherwise leave a dense A.
+        let importedProject = try FontLabArtworkEngine.project(from: aScan, name: "Coarse A")
+        let importedA = importedProject.glyphs["A"]!
+        let rawClosed = FontLabVectorMath.paths(in: rawA).filter(\.closed)
+        let importedPaths = FontLabVectorMath.paths(in: importedA)
+        let importedClosed = importedPaths.filter(\.closed)
+        let rawABox = rawClosed.reduce(CGRect.null) { $0.union($1.cgPath.boundingBoxOfPath) }
+        let importedABox = importedClosed.reduce(CGRect.null) { $0.union($1.cgPath.boundingBoxOfPath) }
+        // Sample a shared frame large enough to include fitted ink even when
+        // the fit extends beyond the raw source bounds.
+        let sampleBox = rawABox.union(importedABox)
+        let rawPath = CGMutablePath(), importedPath = CGMutablePath()
+        rawClosed.forEach { rawPath.addPath($0.cgPath) }
+        importedClosed.forEach { importedPath.addPath($0.cgPath) }
+        var sourceIntersection = 0, sourceUnion = 0
+        for y in 0..<192 { for x in 0..<192 {
+            let point = CGPoint(x: sampleBox.minX + (Double(x) + 0.5) / 192 * sampleBox.width,
+                                y: sampleBox.minY + (Double(y) + 0.5) / 192 * sampleBox.height)
+            let sourceInk = rawPath.contains(point), importedInk = importedPath.contains(point)
+            if sourceInk && importedInk { sourceIntersection += 1 }
+            if sourceInk || importedInk { sourceUnion += 1 }
+        } }
+        let importRetention = Double(sourceIntersection) / Double(max(1, sourceUnion))
+        let importedAnchorCount = importedPaths.reduce(0) { $0 + $1.nodes.count }
+        try check(importedClosed.count == 2, "Default A import changed the counter topology")
+        try check(importedA.leftSideBearing == rawA.leftSideBearing &&
+                  importedA.rightSideBearing == rawA.rightSideBearing &&
+                  importedA.resolvedDesignWidth == rawA.resolvedDesignWidth,
+                  "Default A fit changed physical glyph metrics")
+        try check(importedProject.metrics == rawImportProject.metrics,
+                  "Default A fit changed the project's baseline, x-height, or cap height")
+        try check(importedAnchorCount < FontLabVectorMath.paths(in: rawA).reduce(0, { $0 + $1.nodes.count }),
+                  "Default A import silently bypassed a safe curve fit")
+        try check(importedAnchorCount <= 100,
+                  "Default A import exceeded the 100-node editability budget: \(importedAnchorCount)")
+        try check(importRetention >= 0.975, "Default A import changed source-frame filled ink: \(importRetention)")
+        let persistedA = try JSONDecoder().decode(FontLabProject.self, from: JSONEncoder().encode(importedProject)).glyphs["A"]!
+        try check(persistedA == importedA, "Compact imported A geometry changed during project persistence")
+        print("AUTO A IMPORT: \(FontLabVectorMath.paths(in: rawA).reduce(0, { $0 + $1.nodes.count })) → \(importedAnchorCount) anchors; source-frame IoU \(String(format: "%.4f", importRetention)); counter and persistence retained")
         let open = FontLabVectorPath(nodes: [.init(point: .init(x: 0.45, y: 0.5)), .init(point: .init(x: 0.55, y: 0.55))])
         rawA.strokes.append(FontLabStroke(vectorPaths: [open]))
         let simpleA = try FontLabTraceSmoothing.fit(rawA, units: 5, refitDenseCurves: true)
