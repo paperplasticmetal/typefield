@@ -4,7 +4,7 @@
 - [x] Sandbox and hardened-runtime configuration.
 - [x] Icon asset catalog and privacy manifest.
 - [x] Local build and regression checks for previous development releases.
-- [x] Run the 0.59.0 native suite and mocked Figma bridge, a read-only current-version UI pass, canonical install, ad hoc signature and installed-binary verification. See [0.59 QA](QA_2026-09-29_0.59.md).
+- [x] Run the 0.59.1 native suite and mocked Figma bridge, canonical install, ad hoc signature and installed-binary verification. The 980-point compact-window UI pass is complete; see [0.59.1 QA](QA_2026-09-30_0.59.1.md).
 - [ ] Finish signed-build UI and permission testing with disposable projects and font fixtures.
 - [ ] Active paid Apple Developer team and registered production bundle identifier.
 - [ ] Final public version, distribution-signed archive, Organizer validation and App Store Connect upload.

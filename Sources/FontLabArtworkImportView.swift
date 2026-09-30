@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct FontLabArtworkImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     let currentProject: FontLabProject?
     let selectedCharacter: String
     let onImport: (FontLabProject, FontLabProject?) -> Bool
@@ -198,7 +199,9 @@ struct FontLabArtworkImportSheet: View {
             Button { scan?.regions.removeAll { $0.id == region.id }; reviewed = false } label: { Image(systemName: "xmark") }
                 .buttonStyle(.plain).help("Remove region \(index + 1)").accessibilityLabel("Remove region \(index + 1)")
         }
-        .padding(7).background(selectedRegion == region.id ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+        .padding(7)
+        .background(selectedRegion == region.id ? ShelfPalette.ink.opacity(colorSchemeContrast == .increased ? 0.2 : 0.12) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selectedRegion == region.id ? ShelfPalette.ink : .clear, lineWidth: selectedRegion == region.id ? (colorSchemeContrast == .increased ? 2 : 1.5) : 0))
     }
 
     private func mutate(_ id: UUID, _ change: (inout FontLabArtworkRegion) -> Void) {

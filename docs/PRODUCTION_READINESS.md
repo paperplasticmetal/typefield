@@ -1,6 +1,10 @@
 # Typefield production readiness audit
 
-Updated 2026-09-29 for the installed 0.59.0 local build. Native fixtures, the mocked Figma bridge, an unsigned Xcode Release build and a read-only installed-app pass succeeded; [0.59 QA](QA_2026-09-29_0.59.md) records the exact evidence and remaining limits. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the current interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+Updated 2026-09-30 for the installed 0.59.1 local build. Native fixtures, the mocked Figma bridge, canonical installation, installed-binary identity and saved-state hashes passed; [0.59.1 QA](QA_2026-09-30_0.59.1.md) records the final 980-point visual replay and remaining limits. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the prior interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+
+## 0.59.1 compact visual work
+
+Library cards spend less vertical space on short previews and keep full style counts. Spaces leaves a visible margin around Fit-width canvases and strengthens selected/scope states. Letterform Editor compacts empty proofing, exposes metrics in a disclosure at narrow widths and keeps its controls aligned from the top. The [0.59.1 QA note](QA_2026-09-30_0.59.1.md) records the installed compact layouts and public-release gates.
 
 ## 0.59.0 candidate interaction work
 

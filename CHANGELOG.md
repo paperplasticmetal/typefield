@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.1 — 2026-09-30
+
+- Tighten Library cards for short previews, keep style counts readable, center empty-state guidance, and clarify compact search and icon-only controls.
+- Improve Spaces at narrow window widths with clearer selection outlines, a responsive toolbar, a contrast-aware work area, and breathing room around canvases in Fit width.
+- Make Letterform Editor usable at the 980-point window minimum: compact the empty word proof, arrange drawing and selection controls in two rows without horizontal scrolling, keep Clear and Simplify visible, and place metrics in an expandable panel. Strengthen selected glyph and artwork-import outlines for increased contrast.
+
 ## 0.59.0 — 2026-09-29
 
 - Refine Library selection and filtering: saved searches restore their preview text, the metadata table respects style and tag filters, batch actions show the families and styles affected, and Replace selection with visible makes its scope explicit. Empty collections and unavailable recent imports have distinct next steps; clearing filters keeps the current Library section.

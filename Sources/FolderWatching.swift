@@ -327,7 +327,8 @@ struct LibrarySearchView: View {
     var body: some View {
         HStack {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search fonts or #tags", text: $library.search).textFieldStyle(.plain).onSubmit { suggestions = false }
+            TextField("Search fonts", text: $library.search).textFieldStyle(.plain).onSubmit { suggestions = false }
+                .accessibilityLabel("Search fonts or tags")
             if !library.search.isEmpty { Button { library.search = "" } label: { Image(systemName: "xmark.circle.fill").frame(minWidth: 28, minHeight: 28) }.buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear font search") }
             Button { suggestions.toggle() } label: { Image(systemName: "tag").frame(minWidth: 28, minHeight: 28) }.buttonStyle(.plain).help("Search tags and font properties")
                 .accessibilityLabel("Search tags and font properties")

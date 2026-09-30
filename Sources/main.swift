@@ -788,7 +788,7 @@ struct ContentView: View {
                         Button("Alphabet & numbers") { preview = "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789" }
                         ForEach(WritingSystem.allCases, id: \.self) { writing in Button(writing.rawValue) { preview = writing.sample } }
                         Button("Family names") { preview = "{family}" }
-                    } label: { Image(systemName: "text.quote") }.shelfIconMenu().help("Preview text presets")
+                    } label: { Image(systemName: "text.quote") }.shelfIconMenu().help("Preview text presets").accessibilityLabel("Preview text presets")
                     Divider().frame(height: 20)
                     Text("Aa").font(.system(size: 12))
                     Slider(value: $size, in: 16...160, step: 1)
@@ -869,10 +869,13 @@ struct ContentView: View {
                 if library.loading && library.families.isEmpty { ProgressView("Reading your fonts…").frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else if metadataView { MetadataTable(library: library) }
                 else if visibleFamilies.isEmpty {
-                    VStack(spacing: 12) { Image(systemName: "text.magnifyingglass").font(.system(size: 38)).foregroundStyle(.secondary); Text(emptyLibraryTitle).font(.title2); Text(emptyLibraryHint).foregroundStyle(.secondary)
+                    VStack(spacing: 12) {
+                        Image(systemName: "text.magnifyingglass").font(.system(size: 38)).foregroundStyle(.secondary)
+                        Text(emptyLibraryTitle).font(.title2)
+                        Text(emptyLibraryHint).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 440)
                         if library.hasActiveFilters { Button("Clear filters") { library.clearFiltersPreservingSection() } }
                         if library.selection != "All Fonts" { Button("Browse all fonts") { library.selection = "All Fonts" } }
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     GeometryReader { geometry in
                         let width = max(1, geometry.size.width - 32)
@@ -988,7 +991,7 @@ struct ContentView: View {
             Spacer(minLength: 4)
             Button { library.addFolder() } label: { Label("Add font folder", systemImage: "folder.badge.plus").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(systemScheme == .dark ? Color.black : Color.white).padding(10).background(ShelfPalette.ink, in: RoundedRectangle(cornerRadius: 12)).padding(12)
             Button { library.openTools("Folders") } label: { Label("Live folders · \(library.saved.folders.count)", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.horizontal, 22).padding(.bottom, 8).help("Manage folders that update automatically, including subfolders")
-            HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
+            HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").accessibilityLabel("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
         }
     }
     private var tagFilterControl: some View {
@@ -1094,8 +1097,8 @@ struct ContentView: View {
                     Button { createContextualTypeboard() } label: { Image(systemName: "text.badge.plus") }.help("New typeboard").accessibilityLabel("New typeboard")
                 }
             }
-            Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").popover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
-            Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").popover(isPresented: $showColors) { PreviewColorsView() }
+            Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").accessibilityLabel("Advanced filters").accessibilityValue(library.showAdvanced ? "Open" : "Closed").popover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
+            Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").accessibilityLabel("Preview colors").popover(isPresented: $showColors) { PreviewColorsView() }
             Menu("Tools") {
                 Menu("Organization") {
                     Button("Tags…") { library.openTools("Tags") }
@@ -1138,7 +1141,7 @@ struct ContentView: View {
     func card(_ family: Family, face: Face, baseline: Double) -> some View {
         let shortPreview = preview != "{family}" && preview.trimmingCharacters(in: .whitespacesAndNewlines).count <= 3 && !preview.contains("\n")
         let previewHeight = shortPreview ? max(44, size * 1.18) : size * 1.5
-        return VStack(alignment: .leading, spacing: shortPreview ? 9 : 14) {
+        return VStack(alignment: .leading, spacing: shortPreview ? 6 : 14) {
             HStack(spacing: 8) {
                 Button { if library.selectedFamilies.contains(family.name) { library.selectedFamilies.remove(family.name) } else { library.selectedFamilies.insert(family.name) } } label: { Image(systemName: library.selectedFamilies.contains(family.name) ? "checkmark.circle.fill" : "circle").font(.system(size: 16)).frame(width: 28, height: 28) }.buttonStyle(.plain).help("Select family for batch actions")
                     .accessibilityLabel("Select \(family.name) for batch actions")
@@ -1150,11 +1153,11 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 0)
             }.frame(height: 42, alignment: .top)
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 if grid {
                     Button { library.detail = family } label: {
-                        Text("\(family.faces.count) \(family.faces.count == 1 ? "style" : "styles")").font(.system(size: 13, weight: .semibold)).padding(.horizontal, 10).frame(height: 30).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                    }.buttonStyle(.plain).help("View all styles").accessibilityLabel("Inspect \(family.name), \(family.faces.count) styles")
+                        Text("\(family.faces.count) \(family.faces.count == 1 ? "style" : "styles")").font(.system(size: 12, weight: .semibold)).fixedSize(horizontal: true, vertical: false).padding(.horizontal, 8).frame(height: 28).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    }.buttonStyle(.plain).help("View all styles").accessibilityLabel("Inspect \(family.name), \(family.faces.count) \(family.faces.count == 1 ? "style" : "styles")")
                 } else {
                     Text("\(family.faces.count) \(family.faces.count == 1 ? "style" : "styles")").font(.caption).foregroundStyle(.secondary)
                     Button("Inspect \(family.name)") { library.detail = family }.buttonStyle(.bordered)
@@ -1183,7 +1186,7 @@ struct ContentView: View {
             } else {
                 FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: baseline, maximumLines: 3).frame(minHeight: previewHeight, alignment: .top).allowsHitTesting(false)
             }
-            if grid { Button("Expand preview…") { library.detail = family }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Open all preview text and font styles").accessibilityLabel("Expand \(family.name) preview") }
+            if grid && !shortPreview { Button("Expand preview…") { library.detail = family }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Open all preview text and font styles").accessibilityLabel("Expand \(family.name) preview") }
         }.frame(maxWidth: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.contextMenu { actions(family) }
     }
     @ViewBuilder func actions(_ family: Family) -> some View {

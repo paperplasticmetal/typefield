@@ -999,6 +999,7 @@ enum FontLabProofStripLayout {
     static let minimumHeight = 126.0
     static let defaultHeight = 166.0
     static let maximumHeight = 340.0
+    static let emptyHeight = 88.0
 
     static func clamped(_ height: Double) -> Double {
         min(max(height, minimumHeight), maximumHeight)
@@ -1162,6 +1163,7 @@ private struct FontLabCharacterPanelDivider: View {
 }
 
 struct FontLabView: View {
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @ObservedObject private var library: Library
     @ObservedObject private var store: FontLabStore
     @Binding private var sidebarCollapsed: Bool
@@ -1197,6 +1199,7 @@ struct FontLabView: View {
     @State private var designUndo: (before: FontLabProject, after: FontLabProject)?
     @State private var glyphEditRevision = UUID()
     @State private var exportRequest: ExportRequest?
+    @State private var compactMetricsExpanded = false
 
     private struct ExportRequest {
         enum Kind { case glyphSVG, selectedSVGs, allSVGs, trueType }
@@ -1424,21 +1427,23 @@ struct FontLabView: View {
         let allDrawnCharacters = project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true }
         let trueTypeScope = FontLabTrueTypeExporter.exportScope(for: project)
         return VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                TextField("Project name", text: projectNameBinding(project.id))
-                    .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold)).textFieldStyle(.plain)
-                    .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
-                    .onSubmit { store.flushPendingSave() }
-                    .disabled(store.readBlocked)
-                Spacer()
-                Text("\(project.completedCount)/\(project.characters.count) glyphs")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Delete", systemImage: "trash", role: .destructive) { deleteRequest = project }
-                    .disabled(store.readBlocked || isExportingFont).help("Delete this Letterform Editor project")
-                Button("Components & masters", systemImage: "square.stack.3d.up") { showFontDesign = true }.help("Components, masters, kerning groups and glyph set").disabled(store.readBlocked || isExportingFont)
-                Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
-                    .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
-                if designUndo?.after == project || artworkUndo?.after == project {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    TextField("Project name", text: projectNameBinding(project.id))
+                        .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold)).textFieldStyle(.plain)
+                        .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
+                        .onSubmit { store.flushPendingSave() }
+                        .disabled(store.readBlocked)
+                        .layoutPriority(1)
+                    Text("\(project.completedCount)/\(project.characters.count) glyphs")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: true, vertical: false)
+                }
+                HStack(spacing: 10) {
+                    Button("Components & masters", systemImage: "square.stack.3d.up") { showFontDesign = true }
+                        .help("Components, masters, kerning groups and glyph set")
+                        .disabled(store.readBlocked || isExportingFont)
+                    Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
+                        .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
                     Menu {
                         if let undo = designUndo, undo.after == project {
                             Button("Undo project setup") {
@@ -1458,24 +1463,27 @@ struct FontLabView: View {
                                 }
                             }
                         }
-                    } label: { Label("Project history", systemImage: "clock.arrow.circlepath") }
-                        .help("Restore a whole-project snapshot. This is separate from the current glyph's edit history.")
+                        if designUndo?.after == project || artworkUndo?.after == project { Divider() }
+                        Button("Delete project…", role: .destructive) { deleteRequest = project }
+                            .disabled(store.readBlocked || isExportingFont)
+                    } label: { Label("Project", systemImage: "ellipsis.circle") }
+                        .help("Project history and deletion")
+                    Spacer(minLength: 0)
+                    Menu {
+                        Button("Export \(selectedCharacter) as SVG…") { prepareExport(.glyphSVG, characters: [selectedCharacter], project: project) }
+                            .disabled(project.resolvedGlyph(selectedCharacter)?.hasArtwork != true)
+                        Divider()
+                        Button("Export selected as SVGs…") { prepareExport(.selectedSVGs, characters: selectedDrawnCharacters, project: project) }
+                            .disabled(selectedDrawnCharacters.isEmpty)
+                        Button("Export all drawn glyphs as SVGs…") { prepareExport(.allSVGs, characters: allDrawnCharacters, project: project) }
+                            .disabled(allDrawnCharacters.isEmpty)
+                        Divider()
+                        Button("Export installable TrueType (.ttf)…") { prepareExport(.trueType, characters: trueTypeScope.mappedArtworkCharacters, project: project) }
+                            .disabled(trueTypeScope.mappedArtworkCharacters.isEmpty || isExportingFont)
+                            .help(trueTypeScope.mappedArtworkCharacters.isEmpty ? "Draw a supported, single-scalar character before exporting a TrueType font." : "Export the outlined characters that TrueType can map.")
+                    } label: { Label("Export", systemImage: "square.and.arrow.up") }
                         .disabled(store.readBlocked)
                 }
-                Menu {
-                    Button("Export \(selectedCharacter) as SVG…") { prepareExport(.glyphSVG, characters: [selectedCharacter], project: project) }
-                        .disabled(project.resolvedGlyph(selectedCharacter)?.hasArtwork != true)
-                    Divider()
-                    Button("Export selected as SVGs…") { prepareExport(.selectedSVGs, characters: selectedDrawnCharacters, project: project) }
-                        .disabled(selectedDrawnCharacters.isEmpty)
-                    Button("Export all drawn glyphs as SVGs…") { prepareExport(.allSVGs, characters: allDrawnCharacters, project: project) }
-                        .disabled(allDrawnCharacters.isEmpty)
-                    Divider()
-                    Button("Export installable TrueType (.ttf)…") { prepareExport(.trueType, characters: trueTypeScope.mappedArtworkCharacters, project: project) }
-                        .disabled(trueTypeScope.mappedArtworkCharacters.isEmpty || isExportingFont)
-                        .help(trueTypeScope.mappedArtworkCharacters.isEmpty ? "Draw a supported, single-scalar character before exporting a TrueType font." : "Export the outlined characters that TrueType can map.")
-                } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                    .disabled(store.readBlocked)
             }
             .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
             .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
@@ -1506,20 +1514,29 @@ struct FontLabView: View {
             }
             Divider()
             GeometryReader { proxy in
-                let proofHeight = proofStripExpanded ? FontLabProofStripLayout.clamped(proofStripHeight) : 44.0
+                let hasProofText = !project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let proofHeight = proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(proofStripHeight) : FontLabProofStripLayout.emptyHeight) : 44.0
+                let compactEditor = proxy.size.width < 1_200
+                let availableBrowserWidth = max(152, Double(proxy.size.width) - 644)
+                let displayedBrowserWidth = min(characterBrowserWidth, availableBrowserWidth)
                 VStack(spacing: 0) {
                     preview(project).frame(height: proofHeight)
-                    if proofStripExpanded { FontLabProofStripDivider(height: $proofStripHeight) }
+                    if proofStripExpanded && hasProofText { FontLabProofStripDivider(height: $proofStripHeight) }
                     Divider()
-                    ScrollView([.horizontal, .vertical]) {
+                    ScrollView(compactEditor ? .vertical : [.horizontal, .vertical]) {
                         HStack(spacing: 0) {
                             characterBrowser(project)
-                                .frame(width: characterBrowserWidth)
-                            FontLabCharacterPanelDivider(width: $characterBrowserWidth)
-                            glyphEditor(project)
+                                .frame(width: displayedBrowserWidth)
+                            if displayedBrowserWidth < characterBrowserWidth {
+                                Divider()
+                            } else {
+                                FontLabCharacterPanelDivider(width: $characterBrowserWidth)
+                            }
+                            glyphEditor(project, compact: compactEditor)
                         }
-                        .frame(minWidth: max(930, proxy.size.width), alignment: .topLeading)
-                        .frame(height: max(520, proxy.size.height - proofHeight - (proofStripExpanded ? 13 : 1)))
+                        .frame(width: compactEditor ? max(0, proxy.size.width - 16) : nil, alignment: .topLeading)
+                        .frame(minWidth: compactEditor ? nil : max(720, proxy.size.width), alignment: .topLeading)
+                        .frame(minHeight: max(compactEditor ? 440 : 520, proxy.size.height - proofHeight - (proofStripExpanded && hasProofText ? 13 : 1)), alignment: .topLeading)
                     }
                 }
             }
@@ -1539,11 +1556,12 @@ struct FontLabView: View {
                 .help(selectingCharacters ? "Finish selecting glyphs" : "Select several glyphs for SVG export")
             }
             HStack(spacing: 6) {
-                Picker("Show characters", selection: $characterFilter) {
+                Picker("Filter", selection: $characterFilter) {
                     ForEach(FontLabCharacterFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
                 }
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity)
+                .accessibilityLabel("Show characters")
                 .accessibilityIdentifier("font-lab-character-filter")
                 Text("\(visibleCharacters.count)")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -1603,12 +1621,13 @@ struct FontLabView: View {
                                         .padding(4)
                                 }
                             }
-                            .background(selectedForExport ? ShelfPalette.indiaYellow.opacity(0.32) : selectedCharacter == character ? ShelfPalette.indiaYellow.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
-                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selectedForExport || selectedCharacter == character ? ShelfPalette.indiaYellow : Color.primary.opacity(0.08)))
+                            .background(selectedForExport ? ShelfPalette.ink.opacity(colorSchemeContrast == .increased ? 0.28 : 0.18) : selectedCharacter == character ? ShelfPalette.ink.opacity(colorSchemeContrast == .increased ? 0.2 : 0.11) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selectedForExport || selectedCharacter == character ? ShelfPalette.ink : Color.primary.opacity(colorSchemeContrast == .increased ? 0.45 : 0.08), lineWidth: selectedForExport || selectedCharacter == character ? (colorSchemeContrast == .increased ? 2 : 1.5) : 1))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("\(character), \(complete ? "artwork present" : "empty")")
                         .accessibilityValue(selectingCharacters ? (selectedForExport ? "Selected for export" : "Not selected for export") : (selectedCharacter == character ? "Current glyph" : ""))
+                        .accessibilityAddTraits(selectedCharacter == character ? .isSelected : [])
                         .help(complete ? "Artwork present" : "No artwork yet")
                         .id(character)
                     }
@@ -1644,40 +1663,32 @@ struct FontLabView: View {
         characterJumpMessage = ""
     }
 
-    private func glyphEditor(_ project: FontLabProject) -> some View {
+    private func glyphEditor(_ project: FontLabProject, compact: Bool) -> some View {
         let glyph = project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
         let paths = FontLabVectorMath.paths(in: glyph)
         let anchorCount = paths.reduce(0) { $0 + $1.nodes.count }
         let canSimplify = paths.contains { $0.closed && ($0.nodes.allSatisfy { $0.incoming == nil && $0.outgoing == nil } || $0.nodes.count > 32) }
         return HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Edit \(selectedCharacter)").font(.title3.weight(.semibold))
-                    Button { selectAdjacentCharacter(in: project, offset: -1) } label: {
-                        Image(systemName: "chevron.left").frame(width: 24, height: 24)
+                if compact {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            glyphNavigation(in: project)
+                            Spacer(minLength: 0)
+                            glyphModePicker(glyph)
+                        }
+                        HStack {
+                            Spacer(minLength: 0)
+                            glyphHeaderActions(project, glyph: glyph, anchorCount: anchorCount, canSimplify: canSimplify)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!hasAdjacentCharacter(in: project, offset: -1))
-                    .help(characterFilter == .all ? "Previous glyph (⌘[)" : "Previous \(characterFilter.rawValue.lowercased()) glyph (⌘[)")
-                    .accessibilityLabel("Previous glyph")
-                    Button { selectAdjacentCharacter(in: project, offset: 1) } label: {
-                        Image(systemName: "chevron.right").frame(width: 24, height: 24)
+                } else {
+                    HStack {
+                        glyphNavigation(in: project)
+                        Spacer(minLength: 0)
+                        glyphModePicker(glyph)
+                        glyphHeaderActions(project, glyph: glyph, anchorCount: anchorCount, canSimplify: canSimplify)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!hasAdjacentCharacter(in: project, offset: 1))
-                    .help(characterFilter == .all ? "Next glyph (⌘])" : "Next \(characterFilter.rawValue.lowercased()) glyph (⌘])")
-                    .accessibilityLabel("Next glyph")
-                    Spacer()
-                    Picker("Editor", selection: $vectorEditing) {
-                        Text("Vector").tag(true)
-                        Text("Sketch").tag(false).disabled(glyph.components?.isEmpty == false)
-                    }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
-                    if anchorCount <= 100 {
-                        Button("Simplify outline…") { showSmoothing = true }
-                            .disabled(store.readBlocked || !canSimplify)
-                    }
-                    Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
-                        .disabled(!glyph.hasArtwork || store.readBlocked)
                 }
                 HStack(spacing: 8) {
                     Text("History: \(selectedCharacter) artwork & spacing · this session")
@@ -1690,15 +1701,23 @@ struct FontLabView: View {
                         .disabled(glyphRedo.isEmpty || store.readBlocked)
                 }
                 if anchorCount > 100 && canSimplify {
-                    HStack {
+                    VStack(alignment: .leading, spacing: 8) {
                         Label("\(anchorCount) points — simplify this outline before editing individual nodes.", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                            .font(.callout)
-                        Spacer()
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
                         Button("Simplify outline…") { showSmoothing = true }.disabled(store.readBlocked)
                     }.padding(10).background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 }
+                if compact {
+                    DisclosureGroup(isExpanded: $compactMetricsExpanded) {
+                        metricsPanel(project, glyph: glyph).padding(.top, 8)
+                    } label: {
+                        Label("Metrics & spacing", systemImage: "ruler")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .accessibilityIdentifier("font-lab-compact-metrics")
+                }
                 if vectorEditing || glyph.components?.isEmpty == false {
-                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex,
+                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex, compact: compact,
                         onChange: { edited in recordGlyphEdit(edited, projectID: project.id) },
                         onUndo: { undoStroke(glyph, projectID: project.id) },
                         onRedo: { redoGlyph(projectID: project.id) },
@@ -1780,9 +1799,47 @@ struct FontLabView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                 }
             }
-            metricsPanel(project, glyph: glyph)
+            if !compact { metricsPanel(project, glyph: glyph) }
         }
-        .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(compact ? 6 : 20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func glyphNavigation(in project: FontLabProject) -> some View {
+        HStack(spacing: 8) {
+            Text("Edit \(selectedCharacter)").font(.title3.weight(.semibold))
+            Button { selectAdjacentCharacter(in: project, offset: -1) } label: {
+                Image(systemName: "chevron.left").frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasAdjacentCharacter(in: project, offset: -1))
+            .help(characterFilter == .all ? "Previous glyph (⌘[)" : "Previous \(characterFilter.rawValue.lowercased()) glyph (⌘[)")
+            .accessibilityLabel("Previous glyph")
+            Button { selectAdjacentCharacter(in: project, offset: 1) } label: {
+                Image(systemName: "chevron.right").frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasAdjacentCharacter(in: project, offset: 1))
+            .help(characterFilter == .all ? "Next glyph (⌘])" : "Next \(characterFilter.rawValue.lowercased()) glyph (⌘])")
+            .accessibilityLabel("Next glyph")
+        }
+    }
+
+    private func glyphModePicker(_ glyph: FontLabGlyph) -> some View {
+        Picker("Editor", selection: $vectorEditing) {
+            Text("Vector").tag(true)
+            Text("Sketch").tag(false).disabled(glyph.components?.isEmpty == false)
+        }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
+    }
+
+    private func glyphHeaderActions(_ project: FontLabProject, glyph: FontLabGlyph, anchorCount: Int, canSimplify: Bool) -> some View {
+        HStack {
+            if anchorCount <= 100 {
+                Button("Simplify outline…") { showSmoothing = true }
+                    .disabled(store.readBlocked || !canSimplify)
+            }
+            Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
+                .disabled(!glyph.hasArtwork || store.readBlocked)
+        }
     }
 
     private func hasAdjacentCharacter(in project: FontLabProject, offset: Int) -> Bool {
@@ -1841,7 +1898,7 @@ struct FontLabView: View {
                 Text("Word proof").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 if proofStripExpanded {
-                    Text("Click a letter to edit it; outlines mark missing characters.")
+                    Text(project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Enter text to preview your letterforms together." : "Click a letter to edit it; outlines mark missing characters.")
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -1857,13 +1914,15 @@ struct FontLabView: View {
             if proofStripExpanded {
                 TextField("Proof text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
                     .onSubmit { store.flushPendingSave() }.disabled(store.readBlocked)
-                FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: { character in
-                    if project.characters.contains(character) { selectedCharacter = character }
-                })
-                    .frame(minHeight: 50, maxHeight: .infinity)
-                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.1)))
+                if !project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: { character in
+                        if project.characters.contains(character) { selectedCharacter = character }
+                    })
+                        .frame(minHeight: 50, maxHeight: .infinity)
+                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(colorSchemeContrast == .increased ? 0.4 : 0.1)))
+                }
             }
         }
         .padding(.horizontal, 20).padding(.vertical, 10)

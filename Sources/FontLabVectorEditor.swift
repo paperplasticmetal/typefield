@@ -490,6 +490,7 @@ struct FontLabVectorEditorView: View {
     let glyph: FontLabGlyph
     let metrics: FontLabMetrics
     let componentStrokes: [FontLabStroke]
+    let compact: Bool
     let onChange: (FontLabGlyph)->Void
     let onUndo: ()->Void
     let onRedo: ()->Void
@@ -499,63 +500,48 @@ struct FontLabVectorEditorView: View {
     @State private var y = ""
     @State private var scale = "100"
     @State private var angle = "0"
-    init(glyph:FontLabGlyph,metrics:FontLabMetrics,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
-        self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo;self.onPreviewInkChange=onPreviewInkChange
+    init(glyph:FontLabGlyph,metrics:FontLabMetrics,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,compact:Bool=false,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
+        self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.compact=compact;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo;self.onPreviewInkChange=onPreviewInkChange
         let value=FontLabVectorEditor(glyph:glyph,metrics:metrics)
         if let previewInkHex { value.inkColor=Color(nsColor:NSColor(hex:previewInkHex)) }
         _editor=StateObject(wrappedValue:value)
     }
     var body: some View {
         VStack(alignment:.leading,spacing:8) {
-            HStack(spacing:6) {
-                ForEach(FontLabVectorTool.allCases) { tool in
-                    Button {editor.tool=tool;editor.activePath=nil} label: { Image(systemName:tool.icon).frame(width:28,height:24) }
-                        .buttonStyle(.bordered).tint(editor.tool == tool ? .accentColor : .secondary).help(tool.rawValue).accessibilityLabel(tool.rawValue)
+            if compact {
+                VStack(alignment:.leading,spacing:6) {
+                    vectorToolButtons
+                    HStack(spacing:6) {
+                        selectionPicker
+                        Spacer(minLength:0)
+                        pathsMenu
+                    }
                 }
-                Picker("Selection", selection: $editor.objectSelection) { Text("Objects").tag(true); Text("Nodes").tag(false) }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 140)
-                Spacer(minLength:0)
-                Menu("Paths") {
-                    Button("Smooth nodes") {editor.smooth(true)}.disabled(editor.selection.isEmpty)
-                    Button("Corner nodes") {editor.smooth(false)}.disabled(editor.selection.isEmpty)
-                    Button("Make selected segments straight") {editor.lines()}.disabled(editor.selection.count<2)
-                    Button("Add curve handles") {editor.curves()}.disabled(editor.selection.count<2)
-                    Button("Insert segment midpoints") {editor.insertMidpoints()}.disabled(editor.selection.count<2)
-                    Button("Split at selected node") {editor.splitAtNode()}.disabled(!editor.canSplitNode)
-                    Button("Join selected endpoints") {editor.joinEndpoints()}.disabled(!editor.canJoinEndpoints)
-                    Divider()
-                    Button("Close contours") {editor.pathCommand("close")}.disabled(editor.selection.isEmpty)
-                    Button("Open contours") {editor.pathCommand("open")}.disabled(editor.selection.isEmpty)
-                    Button("Make counter") {editor.pathCommand("counter")}.disabled(editor.selection.isEmpty)
-                    Button("Reverse contours") {editor.pathCommand("reverse")}.disabled(editor.selection.isEmpty)
-                    Button("Remove overlaps") {editor.boolean("overlap")}.disabled(editor.paths.isEmpty)
-                    Button("Subtract later contours") {editor.boolean("subtract")}.disabled(editor.selection.isEmpty)
-                    Button("Intersect contours") {editor.boolean("intersect")}.disabled(editor.selection.isEmpty)
-                    Button("Add extrema") {editor.addExtrema()}.disabled(editor.paths.isEmpty)
-                    Divider()
-                    Button("Duplicate contours") {editor.duplicate()}.disabled(editor.selection.isEmpty)
-                    Button("Copy contours") {editor.copyPaths()}.disabled(editor.selection.isEmpty)
-                    Button("Paste contours") {editor.pastePaths()}
-                    Button("Delete nodes",role:.destructive) {editor.deleteSelection()}.disabled(editor.selection.isEmpty)
-                }.fixedSize()
+            } else {
+                HStack(spacing:6) {
+                    vectorToolButtons
+                    selectionPicker
+                    Spacer(minLength:0)
+                    pathsMenu
+                }
             }
             FontLabVectorCanvas(editor:editor,onChange:onChange,onUndo:onUndo,onRedo:onRedo)
                 .frame(minWidth:340,maxWidth:.infinity,minHeight:340,maxHeight:.infinity)
                 .background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:12))
                 .clipShape(RoundedRectangle(cornerRadius:12))
                 .overlay(RoundedRectangle(cornerRadius:12).strokeBorder(Color.primary.opacity(0.15)))
-            HStack(spacing:10) {
-                Toggle("Grid",isOn:$editor.grid);Toggle("Snap",isOn:$editor.snap);Toggle("Fill",isOn:$editor.fill)
-                Spacer(minLength:0)
-                Button("−") {editor.zoom=max(0.1,editor.zoom/1.25)}.help("Zoom out")
-                Text("\(Int(editor.zoom*100))%").monospacedDigit().frame(width:42)
-                Button("+") {editor.zoom=min(8,editor.zoom*1.25)}.help("Zoom in")
-                Button("Fit") {editor.fit()}
-                Button("Focus") {editor.requestFocusSelection()}
-                    .disabled(editor.selection.isEmpty)
-                    .help("Zoom and center the selected contour or nodes")
-                    .accessibilityLabel("Focus selection")
-            }.toggleStyle(.checkbox).font(.caption)
+            if compact {
+                VStack(alignment:.leading,spacing:6) {
+                    HStack(spacing:10) { vectorDisplayToggles; Spacer(minLength:0) }
+                    HStack(spacing:10) { Spacer(minLength:0); vectorZoomControls }
+                }.font(.caption)
+            } else {
+                HStack(spacing:10) {
+                    vectorDisplayToggles
+                    Spacer(minLength:0)
+                    vectorZoomControls
+                }.font(.caption)
+            }
             HStack(spacing:6) {
                 Text("\(editor.selection.count) nodes").foregroundStyle(.secondary).frame(width:65,alignment:.leading)
                 Text("X");TextField("X",text:$x).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection X in font units").onSubmit {if let v=Double(x) {editor.setCoordinate(v,x:true)}}
@@ -600,6 +586,62 @@ struct FontLabVectorEditorView: View {
         .onChange(of:editor.selection) {_ in updateCoordinates()}
         .onChange(of:editor.glyph) {_ in updateCoordinates()}
         .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
+    }
+    private var vectorToolButtons: some View {
+        HStack(spacing:6) {
+            ForEach(FontLabVectorTool.allCases) { tool in
+                Button {editor.tool=tool;editor.activePath=nil} label: { Image(systemName:tool.icon).frame(width:28,height:24) }
+                    .buttonStyle(.bordered).tint(editor.tool == tool ? .accentColor : .secondary).help(tool.rawValue).accessibilityLabel(tool.rawValue)
+            }
+        }
+    }
+    private var selectionPicker: some View {
+        Picker("Selection", selection: $editor.objectSelection) { Text("Objects").tag(true); Text("Nodes").tag(false) }
+            .pickerStyle(.segmented).labelsHidden().frame(width:140)
+    }
+    private var pathsMenu: some View {
+        Menu("Paths") {
+                    Button("Smooth nodes") {editor.smooth(true)}.disabled(editor.selection.isEmpty)
+                    Button("Corner nodes") {editor.smooth(false)}.disabled(editor.selection.isEmpty)
+                    Button("Make selected segments straight") {editor.lines()}.disabled(editor.selection.count<2)
+                    Button("Add curve handles") {editor.curves()}.disabled(editor.selection.count<2)
+                    Button("Insert segment midpoints") {editor.insertMidpoints()}.disabled(editor.selection.count<2)
+                    Button("Split at selected node") {editor.splitAtNode()}.disabled(!editor.canSplitNode)
+                    Button("Join selected endpoints") {editor.joinEndpoints()}.disabled(!editor.canJoinEndpoints)
+                    Divider()
+                    Button("Close contours") {editor.pathCommand("close")}.disabled(editor.selection.isEmpty)
+                    Button("Open contours") {editor.pathCommand("open")}.disabled(editor.selection.isEmpty)
+                    Button("Make counter") {editor.pathCommand("counter")}.disabled(editor.selection.isEmpty)
+                    Button("Reverse contours") {editor.pathCommand("reverse")}.disabled(editor.selection.isEmpty)
+                    Button("Remove overlaps") {editor.boolean("overlap")}.disabled(editor.paths.isEmpty)
+                    Button("Subtract later contours") {editor.boolean("subtract")}.disabled(editor.selection.isEmpty)
+                    Button("Intersect contours") {editor.boolean("intersect")}.disabled(editor.selection.isEmpty)
+                    Button("Add extrema") {editor.addExtrema()}.disabled(editor.paths.isEmpty)
+                    Divider()
+                    Button("Duplicate contours") {editor.duplicate()}.disabled(editor.selection.isEmpty)
+                    Button("Copy contours") {editor.copyPaths()}.disabled(editor.selection.isEmpty)
+                    Button("Paste contours") {editor.pastePaths()}
+                    Button("Delete nodes",role:.destructive) {editor.deleteSelection()}.disabled(editor.selection.isEmpty)
+        }.fixedSize()
+    }
+    private var vectorDisplayToggles: some View {
+        HStack(spacing:10) {
+            Toggle("Grid",isOn:$editor.grid)
+            Toggle("Snap",isOn:$editor.snap)
+            Toggle("Fill",isOn:$editor.fill)
+        }.toggleStyle(.checkbox)
+    }
+    private var vectorZoomControls: some View {
+        HStack(spacing:10) {
+            Button("−") {editor.zoom=max(0.1,editor.zoom/1.25)}.help("Zoom out")
+            Text("\(Int(editor.zoom*100))%").monospacedDigit().frame(width:42)
+            Button("+") {editor.zoom=min(8,editor.zoom*1.25)}.help("Zoom in")
+            Button("Fit") {editor.fit()}
+            Button("Focus") {editor.requestFocusSelection()}
+                .disabled(editor.selection.isEmpty)
+                .help("Zoom and center the selected contour or nodes")
+                .accessibilityLabel("Focus selection")
+        }
     }
     private func updateCoordinates() {
         guard !editor.selection.isEmpty else {x="";y="";return}

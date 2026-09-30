@@ -332,14 +332,17 @@ struct ActivationView: View {
     private var selectedFileCount: Int { Set(library.selectedFaces.compactMap(\.url)).count }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("\(manager.records.count) files temporarily activated").font(.headline); Spacer()
-                Button("Activate \(selectedFileCount) files for \(library.selectedFaces.count) selected styles") {
-                    var messages: [String] = []
-                    for url in Set(library.selectedFaces.compactMap(\.url)) { do { messages.append(url.lastPathComponent + ": " + (try manager.activate(url))) } catch { messages.append(url.lastPathComponent + ": " + error.localizedDescription) } }
-                    status = "Processed \(messages.count) font files for \(library.selectedFamilies.count) families.\n" + messages.joined(separator: "\n")
-                }.disabled(selectedFileCount == 0)
-                Button("Clear temporary activations") { let errors = manager.clear(); status = errors.isEmpty ? "Temporary activations cleared." : errors.joined(separator: "\n") }.disabled(manager.records.isEmpty)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(manager.records.count) files temporarily activated").font(.headline)
+                HStack(spacing: 10) {
+                    Button("Activate \(selectedFileCount) selected files") {
+                        var messages: [String] = []
+                        for url in Set(library.selectedFaces.compactMap(\.url)) { do { messages.append(url.lastPathComponent + ": " + (try manager.activate(url))) } catch { messages.append(url.lastPathComponent + ": " + error.localizedDescription) } }
+                        status = "Processed \(messages.count) font files for \(library.selectedFamilies.count) families.\n" + messages.joined(separator: "\n")
+                    }.disabled(selectedFileCount == 0)
+                    Button("Clear temporary activations") { let errors = manager.clear(); status = errors.isEmpty ? "Temporary activations cleared." : errors.joined(separator: "\n") }.disabled(manager.records.isEmpty)
+                    Spacer(minLength: 0)
+                }
             }
             Text(library.selectedScopeLabel + " · \(library.selectedFaces.count) styles affected").font(.caption).foregroundStyle(.secondary)
             if !library.selectedFaces.isEmpty && selectedFileCount == 0 {

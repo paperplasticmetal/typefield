@@ -4,7 +4,7 @@
 
 Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
 
-**Current local build: 0.59.0 (build 80).** The native suite, Figma bridge fixtures and canonical installation pass on Apple Silicon. App Store submission is in preparation; this is not a distribution-signed, notarized or App Store-approved release. See [current QA](docs/QA_2026-09-29_0.59.md).
+**Current local build: 0.59.1 (build 81).** The native suite, Figma bridge fixtures and canonical installation pass on Apple Silicon. The visual pass tightens Library previews and improves Spaces and Letterform Editor at the 980-point window minimum. App Store submission is in preparation; this is not a distribution-signed, notarized or App Store-approved release. See [current QA](docs/QA_2026-09-30_0.59.1.md).
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 

@@ -318,7 +318,10 @@ struct StudioView: View {
                         HStack(spacing: 8) {
                             Button { selectSpace(item.id) } label: { Image(systemName: "rectangle.3.group") }.buttonStyle(.plain).accessibilityLabel("Open " + item.displayName)
                             ShelfEditableName(name: item.displayName, selected: space?.id == item.id, onSelect: { selectSpace(item.id) }, onRename: { setSpaceName(item.id, $0) })
-                        }.fontWeight(.medium).padding(10).background(space?.id == item.id ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8)).contextMenu { Button("Rename space…") { renameSpace(item) } }
+                        }.fontWeight(.medium).padding(10)
+                            .background(space?.id == item.id ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(space?.id == item.id ? Color.accentColor.opacity(0.75) : .clear, lineWidth: 1))
+                            .contextMenu { Button("Rename space…") { renameSpace(item) } }
                         ForEach(item.boards) { child in
                             StudioBoardRow(name: child.name, selected: board?.id == child.id, onSelect: { if store.select(space: item.id, board: child.id) { spaceID = item.id; boardID = child.id } }, onRename: {
                                 if let name = ShelfRename.prompt("Rename typeboard", current: child.name) { var renamed = child; renamed.name = name; store.update(space: item.id, board: renamed, action: "Rename Typeboard") }
@@ -720,6 +723,7 @@ extension TypeDirection {
 
 struct TypeBoardEditor: View {
     @ObservedObject var library: Library
+    @Environment(\.colorSchemeContrast) private var contrast
     @StateObject var editorSession: StudioEditorSession
     let savedBoard: TypeBoard
     let projectName: String
@@ -841,19 +845,27 @@ struct TypeBoardEditor: View {
     }
     func directionBinding<T>(_ key: WritableKeyPath<TypeDirection, T>) -> Binding<T> { Binding(get: { direction[keyPath: key] }, set: { board.directions[directionIndex][keyPath: key] = $0; save() }) }
     func styleBinding<T>(_ key: WritableKeyPath<TypeStyle, T>) -> Binding<T> { Binding(get: { style[keyPath: key] }, set: { var updated = style; updated[keyPath: key] = $0; setStyle(updated); save(key == \TypeStyle.size ? "Change Size" : key == \TypeStyle.tracking ? "Change Letter Spacing" : key == \TypeStyle.text ? "Change Sample Text" : "Edit Typography") }) }
-    var body: some View {
-        VStack(spacing: 0) {
-            if !focusCanvas {
-            HStack(spacing: 12) {
-                ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") }).font(.headline).frame(minWidth: 110)
-                Spacer(minLength: 12)
+    func typeboardToolbar(compact: Bool) -> some View {
+        HStack(spacing: compact ? 7 : 12) {
+                ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") })
+                    .font(.headline).lineLimit(1).frame(minWidth: compact ? 90 : 110, maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: compact ? 4 : 12)
                 Menu {
                     Button("Blank canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; summaryCanvasIDs.insert(canvas.id); save("Add Canvas") }
                     Button("Duplicate current canvas") { let copy = direction.copy(name: board.nextCanvasName); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save("Duplicate Canvas") }
                 } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add a canvas").accessibilityLabel("Add a canvas")
-                Button { chooseArtwork() } label: { Label("Artwork…", systemImage: "photo.on.rectangle") }
+                Button { chooseArtwork() } label: {
+                    if compact { Image(systemName: "photo.on.rectangle") }
+                    else { Label("Artwork…", systemImage: "photo.on.rectangle") }
+                }
                     .fixedSize().help("Import SVG, PNG, JPEG, TIFF, HEIC, BMP, or GIF artwork onto this canvas. You can also drop a file directly onto a canvas.")
-                Button { openFontSummary() } label: { Label("\(visibleFontCount) fonts · \(visibleDirections.count) shown", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
+                    .accessibilityLabel("Import artwork onto this canvas")
+                Button { openFontSummary() } label: {
+                    if compact { Label("\(visibleFontCount)", systemImage: "textformat") }
+                    else { Label("\(visibleFontCount) fonts · \(visibleDirections.count) shown", systemImage: "textformat") }
+                }
+                    .fixedSize().accessibilityLabel("Typography summary: \(visibleFontCount) fonts across \(visibleDirections.count) shown canvases")
+                    .popover(isPresented: $showFontSummary) { fontSummaryPopover }
                 Menu("Export") {
                     Button("Typography summary · shown canvases…") { openFontSummary() }
                     Button("Web-font performance · shown canvases…") { summaryCanvasIDs = Set(visibleDirections.map(\.id)); showWebFontAudit = true }
@@ -880,6 +892,14 @@ struct TypeBoardEditor: View {
                     Button("Delete typeboard…", role: .destructive) { showDelete = true }
                 } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Typeboard actions").accessibilityLabel("Typeboard actions")
             }.padding(.horizontal, 12).padding(.vertical, 8).fixedSize(horizontal: false, vertical: true)
+    }
+    var body: some View {
+        VStack(spacing: 0) {
+            if !focusCanvas {
+            ViewThatFits(in: .horizontal) {
+                typeboardToolbar(compact: false)
+                typeboardToolbar(compact: true)
+            }
             HStack(spacing: 8) {
                 inspectorLayoutMenu
                 Divider().frame(height: 20)
@@ -893,7 +913,9 @@ struct TypeBoardEditor: View {
                             .font(.subheadline)
                             .padding(.horizontal, 9).padding(.vertical, 5)
                             .background(canvas.id == direction.id ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
+                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(canvas.id == direction.id ? Color.accentColor : Color.primary.opacity(contrast == .increased ? 0.35 : 0.08), lineWidth: canvas.id == direction.id && contrast == .increased ? 1.5 : 1))
                         }.buttonStyle(.plain).help("Edit and show " + board.canvasName(canvas))
+                            .accessibilityValue(canvas.id == direction.id ? "Editing" : shownCanvasIDs.contains(canvas.id) ? "Shown" : "Hidden")
                     } }
                 }
                 Divider().frame(height: 20)
@@ -1015,7 +1037,9 @@ struct TypeBoardEditor: View {
                     let committedWidth = visible.count == 1 ? (CanvasPlanCache.plan(for: visible[0]).size.width + 48) : visible.reduce(48.0) { current, item in
                         max(current, (positions[item.id]?.x ?? 24) + visibleOffset.width + CanvasPlanCache.plan(for: item).size.width + 24)
                     }
-                    let scale = interactionZoom ?? (zoom == 0 ? min(1, max(0.1, geometry.size.width / max(1, committedWidth))) : zoom)
+                    // Leave space for the vertical scroller and the right-hand resize handle.
+                    let fittingWidth = max(1, geometry.size.width - 32)
+                    let scale = interactionZoom ?? (zoom == 0 ? min(1, max(0.1, fittingWidth / max(1, committedWidth))) : zoom)
                     let extent = canvasWorkspaceExtent(visible, positions: positions, visibleOffset: visibleOffset, zoom: scale)
                     ScrollView([.horizontal, .vertical]) {
                         ZStack(alignment: .topLeading) {
@@ -1026,9 +1050,9 @@ struct TypeBoardEditor: View {
                                             y: (display.position.y + visibleOffset.height) * scale)
                             }
                         }
-                        .frame(width: max(geometry.size.width, extent.width * scale),
+                        .frame(width: max(fittingWidth, extent.width * scale),
                                height: max(geometry.size.height, extent.height * scale), alignment: .topLeading)
-                    }.background(Color.black.opacity(0.09)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
+                    }.background(Color.primary.opacity(0.07)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
                     }
                     if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.plan(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.plan(for: direction).artboardSize.height)) \(direction.canvasUnitLabel) · " + (zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
         }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
@@ -1472,6 +1496,7 @@ struct TypeBoardEditor: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
                     .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.accentColor.opacity(contrast == .increased ? 0.8 : 0.2)))
                     .accessibilityIdentifier("spaces-editing-scope")
                 if let warnings = direction.importWarnings, !warnings.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
