@@ -63,6 +63,33 @@ struct FontInspection: Identifiable {
     var needsReview: Bool { issues.contains { $0.severity >= .warning } }
 }
 
+enum FontRepairOriginalEligibility {
+    static func disabledReason(for item: FontInspection, actions: Set<FontRepairAction>, watchedRoots: [String]) -> String? {
+        guard item.canRepair else { return "This font's format or findings cannot be repaired safely. You can still inspect it." }
+        guard !item.recommendedFixes.isEmpty else { return "No repair is proposed for this font." }
+        guard !actions.isEmpty else { return "Select at least one proposed fix first." }
+        guard actions.isSubset(of: item.recommendedFixes) else { return "The proposed fixes changed. Inspect this font again before repairing it." }
+        guard let values = try? item.url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
+            return "Repair original requires a regular font file. Export a repaired copy instead."
+        }
+        guard values.isSymbolicLink != true else {
+            return "This font path is a symbolic link. Open the actual file to repair its original safely."
+        }
+        guard values.isRegularFile == true else { return "Repair original requires a regular font file. Export a repaired copy instead." }
+        let withinWatchedFolder = watchedRoots.contains { FontFolderSnapshot.contains(item.url.path, root: $0) }
+        guard FontRepairEngine.isUserFont(item.url) || withinWatchedFolder else {
+            return "Repair original is available for fonts in your Fonts folder or an accessible Live folder. Choose the Live folder again if its access was paused."
+        }
+        guard FileManager.default.isWritableFile(atPath: item.url.path) else {
+            return "The font file is read-only or Typefield lacks write access. Regrant its folder in Live folders or export a repaired copy."
+        }
+        guard FileManager.default.isWritableFile(atPath: item.url.deletingLastPathComponent().path) else {
+            return "The containing folder must be writable so Typefield can save a backup beside the original."
+        }
+        return nil
+    }
+}
+
 enum FontRepairError: LocalizedError {
     case invalid(String)
     var errorDescription: String? { if case .invalid(let message) = self { return message }; return nil }
@@ -86,9 +113,8 @@ enum FontRepairEngine {
     }
 
     static func isUserFont(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let userFonts = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Fonts").standardizedFileURL.path + "/"
-        return path.hasPrefix(userFonts) || path.hasPrefix("/Library/Fonts/")
+        let userFonts = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Fonts").path
+        return FontFolderSnapshot.contains(url.path, root: userFonts) || FontFolderSnapshot.contains(url.path, root: "/Library/Fonts")
     }
 
     static func inspect(_ url: URL) -> FontInspection {
@@ -193,8 +219,12 @@ enum FontRepairEngine {
     }
 
     static func repairedData(for url: URL, actions: Set<FontRepairAction>, validateWithCoreText: Bool = true) throws -> Data {
-        guard !actions.isEmpty else { throw FontRepairError.invalid("Select at least one proposed fix.") }
         let source = try Data(contentsOf: url, options: .mappedIfSafe)
+        return try repairedData(source: source, actions: actions, validateWithCoreText: validateWithCoreText)
+    }
+
+    static func repairedData(source: Data, actions: Set<FontRepairAction>, validateWithCoreText: Bool = true) throws -> Data {
+        guard !actions.isEmpty else { throw FontRepairError.invalid("Select at least one proposed fix.") }
         var issues: [FontHealthIssue] = []
         guard let parsed = parse(source, issues: &issues) else { throw FontRepairError.invalid("This font cannot be rebuilt safely.") }
         guard parsed.nameFormat == 0 else { throw FontRepairError.invalid("Only format 0 name tables can currently be rebuilt. No file was changed.") }
@@ -398,9 +428,13 @@ struct FontHealthView: View {
             }
             HStack {
                 Button("Export repaired copy…") { exportCopy(item) }.disabled(!item.canRepair || selectedFixes.isEmpty)
-                Button("Repair original…") { repairOriginal(item) }.disabled(!canRepairOriginal(item) || selectedFixes.isEmpty)
+                Button("Repair original…") { repairOriginal(item) }
+                    .disabled(repairOriginalDisabledReason(item) != nil)
+                    .help(repairOriginalDisabledReason(item) ?? "Create a backup beside this font, then atomically replace it after confirmation.")
                 Spacer()
-                if !item.canRepair && !item.issues.isEmpty { Text("Inspection only").font(.caption).foregroundStyle(.secondary) }
+            }
+            if let reason = repairOriginalDisabledReason(item) {
+                Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.padding(.leading, 18)
     }
@@ -440,19 +474,43 @@ struct FontHealthView: View {
         do { let data = try FontRepairEngine.repairedData(for: item.url, actions: selectedFixes); try data.write(to: destination, options: .atomic); status = "Repaired copy saved as " + destination.lastPathComponent; NSWorkspace.shared.activateFileViewerSelecting([destination]) }
         catch { status = "Repair failed: " + error.localizedDescription }
     }
-    func canRepairOriginal(_ item: FontInspection) -> Bool {
-        let watched = (library.resolvedFolders + library.saved.folders).contains { FontFolderSnapshot.contains(item.url.path, root: $0) }
-        return item.canRepair && (FontRepairEngine.isUserFont(item.url) || watched) && FileManager.default.isWritableFile(atPath: item.url.path)
+    func repairOriginalDisabledReason(_ item: FontInspection) -> String? {
+        FontRepairOriginalEligibility.disabledReason(for: item, actions: selectedFixes, watchedRoots: library.resolvedFolders)
     }
     func repairOriginal(_ item: FontInspection) {
+        let actions = selectedFixes
+        let watchedRoots = library.resolvedFolders
+        let current = FontRepairEngine.inspect(item.url)
+        if let reason = FontRepairOriginalEligibility.disabledReason(for: current, actions: actions, watchedRoots: watchedRoots) {
+            status = "Original was not repaired: " + reason
+            return
+        }
+        guard let sourceBefore = try? Data(contentsOf: item.url), let stampBefore = FontFileStamp.read(item.url) else {
+            status = "Original was not repaired: The font could not be read again."
+            return
+        }
         let alert = NSAlert(); alert.messageText = "Repair the original font file?"
         alert.informativeText = "Typefield will first create a .typefield-backup beside the original, then atomically replace the original with the reviewed repair. This can affect every app using this font."
         alert.alertStyle = .warning; alert.addButton(withTitle: "Repair & Keep Backup"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
-            let repaired = try FontRepairEngine.repairedData(for: item.url, actions: selectedFixes)
+            let updatedInspection = FontRepairEngine.inspect(item.url)
+            if let reason = FontRepairOriginalEligibility.disabledReason(for: updatedInspection, actions: actions, watchedRoots: library.resolvedFolders) {
+                throw FontRepairError.invalid(reason)
+            }
+            guard FontFileStamp.read(item.url) == stampBefore,
+                  try Data(contentsOf: item.url) == sourceBefore else {
+                throw FontRepairError.invalid("The source file changed while the confirmation was open. Inspect it again before repairing.")
+            }
+            let repaired = try FontRepairEngine.repairedData(source: sourceBefore, actions: actions)
             let backup = uniqueBackupURL(item.url)
             try FileManager.default.copyItem(at: item.url, to: backup)
+            guard try Data(contentsOf: backup) == sourceBefore,
+                  FontFileStamp.read(item.url) == stampBefore,
+                  try Data(contentsOf: item.url) == sourceBefore else {
+                try? FileManager.default.removeItem(at: backup)
+                throw FontRepairError.invalid("The source file changed while its backup was being made. Inspect it again before repairing.")
+            }
             do { try repaired.write(to: item.url, options: .atomic) }
             catch { try? FileManager.default.removeItem(at: backup); throw error }
             let refreshed = FontRepairEngine.inspect(item.url)
@@ -482,8 +540,27 @@ enum FontRepairChecks {
         let source = root.appendingPathComponent("BudNull.ttf"); try fixture.write(to: source)
         let before = FontRepairEngine.inspect(source)
         try verify(before.canRepair, "Fixture should be repairable")
+        try verify(FontRepairOriginalEligibility.disabledReason(for: before, actions: before.recommendedFixes, watchedRoots: [root.path]) == nil, "Writable watched fixture should allow original repair")
+        try verify(FontRepairOriginalEligibility.disabledReason(for: before, actions: [], watchedRoots: [root.path]) != nil, "Original repair should explain an empty fix selection")
+        try verify(FontRepairOriginalEligibility.disabledReason(for: before, actions: before.recommendedFixes, watchedRoots: []) != nil, "Unwatched fixture should explain its scope")
+        let sameFolderAlias = root.appendingPathComponent("BudNull-alias.ttf")
+        try FileManager.default.createSymbolicLink(at: sameFolderAlias, withDestinationURL: source)
+        let aliasInspection = FontRepairEngine.inspect(data: fixture, url: sameFolderAlias)
+        try verify(FontRepairOriginalEligibility.disabledReason(for: aliasInspection, actions: aliasInspection.recommendedFixes, watchedRoots: [root.path]) != nil, "A font symlink cannot be repaired in place")
+        let linkedRoot = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-repair-link-" + UUID().uuidString)
+        try FileManager.default.createSymbolicLink(at: linkedRoot, withDestinationURL: root)
+        defer { try? FileManager.default.removeItem(at: linkedRoot) }
+        try verify(FontFolderSnapshot.contains(source.path, root: linkedRoot.path), "Watched symlink root should contain its real font path")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-repair-outside-" + UUID().uuidString + ".ttf")
+        try Data([0]).write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let escapedAlias = root.appendingPathComponent("linked-outside.ttf")
+        try FileManager.default.createSymbolicLink(at: escapedAlias, withDestinationURL: outside)
+        try verify(!FontFolderSnapshot.contains(escapedAlias.path, root: root.path), "A link outside a watched folder must not be treated as in scope")
         try verify(before.recommendedFixes.contains(.removeInvalidNames) && before.recommendedFixes.contains(.removeDuplicateNames) && before.recommendedFixes.contains(.normalizeLegacySubfamily) && before.recommendedFixes.contains(.normalizeVersion), "Expected name-table proposals")
         let repaired = try FontRepairEngine.repairedData(for: source, actions: before.recommendedFixes, validateWithCoreText: false)
+        let repairedFromConfirmedSource = try FontRepairEngine.repairedData(source: fixture, actions: before.recommendedFixes, validateWithCoreText: false)
+        try verify(repairedFromConfirmedSource == repaired, "Confirmed source bytes should produce the same repair")
         try verify(FontRepairEngine.checksum(repaired) == 0xB1B0AFBA, "Whole-font checksum adjustment")
         let output = root.appendingPathComponent("BudNull-repaired.ttf"); try repaired.write(to: output)
         let after = FontRepairEngine.inspect(output)

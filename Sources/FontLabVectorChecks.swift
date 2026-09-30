@@ -20,6 +20,48 @@ enum FontLabVectorChecks {
         try check(history.redo(glyph) == editedO && history.undo(a) == nil,
                   "Undo without history must not remove saved artwork; redo must restore the matching glyph")
 
+        var navigationProject = FontLabProject(name: "Navigation fixture", characters: ["A", "B", "C"])
+        var drawnB = glyph; drawnB.character = "B"
+        navigationProject.glyphs["B"] = drawnB
+        try check(FontLabCharacterFilter.all.characters(in: navigationProject) == ["A", "B", "C"] &&
+                  FontLabCharacterFilter.drawn.characters(in: navigationProject) == ["B"] &&
+                  FontLabCharacterFilter.empty.characters(in: navigationProject) == ["A", "C"],
+                  "Drawn and Empty navigation must preserve project character order and source glyphs")
+        try check(FontLabCharacterNavigation.match(" B ", in: navigationProject.characters) == "B" &&
+                  FontLabCharacterNavigation.match("b", in: navigationProject.characters) == "B" &&
+                  FontLabCharacterNavigation.match("BC", in: navigationProject.characters) == nil &&
+                  FontLabCharacterNavigation.match("Q", in: navigationProject.characters) == nil,
+                  "Jump to character must select only one available project character")
+        var filteredProject = FontLabProject(name: "Filtered navigation", characters: ["A", "B", "C", "D", "E"])
+        filteredProject.glyphs["B"] = drawnB
+        var drawnD = glyph; drawnD.character = "D"
+        filteredProject.glyphs["D"] = drawnD
+        var orphanQ = glyph; orphanQ.character = "Q"
+        filteredProject.glyphs["Q"] = orphanQ
+        try check(filteredProject.completedCount == 2 &&
+                  FontLabCharacterNavigation.sequence(selectedCharacter: "B", in: filteredProject, filter: .drawn) == ["B", "D"] &&
+                  FontLabCharacterNavigation.sequence(selectedCharacter: "C", in: filteredProject, filter: .drawn) == ["B", "C", "D"] &&
+                  FontLabCharacterNavigation.sequence(selectedCharacter: "C", in: filteredProject, filter: .empty) == ["A", "C", "E"],
+                  "Filtered navigation must skip hidden glyphs, retain a hidden current glyph, and ignore orphan artwork in completion counts")
+        try check(FontLabProofStripLayout.clamped(0) == FontLabProofStripLayout.minimumHeight &&
+                  FontLabProofStripLayout.clamped(9_999) == FontLabProofStripLayout.maximumHeight,
+                  "Resizable proof strip must stay within usable height limits")
+        let bridge = FontLabEditMenuBridge.shared
+        let fixtureID = UUID()
+        final class CommandRecorder { var received: [String] = [] }
+        let recorder = CommandRecorder()
+        let observer = NotificationCenter.default.addObserver(forName: FontLabEditMenuBridge.commandNotification, object: nil, queue: nil) { event in
+            if let command = event.object as? String { recorder.received.append(command) }
+        }
+        bridge.update(projectID: fixtureID, character: "B", canUndo: true, canRedo: false)
+        bridge.requestUndo(); bridge.requestRedo()
+        try check(bridge.canUndo && !bridge.canRedo && bridge.undoTitle == "Undo B edit" && recorder.received == ["undo"],
+                  "Edit-menu bridge must route only available glyph history actions")
+        bridge.clear(); bridge.requestUndo()
+        NotificationCenter.default.removeObserver(observer)
+        try check(bridge.projectID == nil && !bridge.canUndo && recorder.received == ["undo"],
+                  "Edit-menu bridge must clear when the Letterform Editor closes")
+
         let surgery = FontLabVectorEditor(glyph: glyph, metrics: metrics)
         var surgeryCommits = 0; surgery.onCommit = { _ in surgeryCommits += 1 }
         let contour = surgery.paths[0]

@@ -42,7 +42,12 @@ enum FontFolderSnapshot {
         }
         return (files, errors, failedProtectedRoots)
     }
-    static func contains(_ path: String, root: String) -> Bool { path.hasPrefix(URL(fileURLWithPath: root).standardizedFileURL.path + "/") }
+    static func contains(_ path: String, root: String) -> Bool {
+        let file = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+        let folder = URL(fileURLWithPath: root).standardizedFileURL.resolvingSymlinksInPath().path
+        guard file != folder else { return false }
+        return file.hasPrefix(folder == "/" ? "/" : folder + "/")
+    }
 }
 /// Poll recursively on a private queue. This also handles removable and cloud-backed folders.
 final class FolderWatcher {

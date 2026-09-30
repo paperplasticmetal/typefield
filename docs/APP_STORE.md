@@ -3,7 +3,9 @@
 - [x] Native macOS app and shared Xcode scheme.
 - [x] Sandbox and hardened-runtime configuration.
 - [x] Icon asset catalog and privacy manifest.
-- [x] Local build and regression checks.
+- [x] Local build and regression checks for previous development releases.
+- [x] Run the 0.59.0 native suite and mocked Figma bridge, a read-only current-version UI pass, canonical install, ad hoc signature and installed-binary verification. See [0.59 QA](QA_2026-09-29_0.59.md).
+- [ ] Finish signed-build UI and permission testing with disposable projects and font fixtures.
 - [ ] Active paid Apple Developer team and registered production bundle identifier.
 - [ ] Final public version, distribution-signed archive, Organizer validation and App Store Connect upload.
 - [ ] TestFlight/second-Mac testing and verification of the declared macOS 13 minimum (or a justified deployment-target change).
@@ -14,8 +16,9 @@
 - [ ] Applicable agreements/tax/banking setup if selling the app.
 - [x] User-selected migration path and disposable regression fixtures for Library, Spaces, Letterform Editor and app-managed Google Fonts.
 - [ ] Run the migration and external-folder reauthorization on a distribution-signed Store/TestFlight build, including a clean second-Mac install and recovery drill.
+- [ ] Exercise exported Figma and Adobe packages in the actual host applications; local bridge fixtures alone do not establish host fidelity.
 
-The screenshot set and privacy review are described in [SCREENSHOTS.md](SCREENSHOTS.md). Local tour and About-sheet screenshots were visually checked; final listing captures require a clean fixture account and signed build.
+The screenshot set and privacy review are described in [SCREENSHOTS.md](SCREENSHOTS.md). Local tour and About-sheet screenshots were visually checked in an earlier build; final 0.59 captures require a clean fixture account and signed build. Do not show or promise the paused missing-letter suggestion workflow. Capture the current Library selection, Spaces handoff and Letterform Editor proofing UI only after candidate review.
 
 The production bundle identifier must replace `local.typefield.app`. Never commit signing credentials or provisioning profiles. `archive-store.sh` takes `TEAM_ID` and `APP_BUNDLE_ID` from environment variables and runs `verify-store-archive.sh` on the team-signed archive. Xcode Organizer applies distribution signing during validation/upload; Xcode may use cloud-managed certificates. The script does not upload. Keep the production bundle ID stable after the first TestFlight upload.
 
@@ -39,6 +42,6 @@ Session activation and font export should be checked with representative install
 
 ## Review notes draft
 
-Typefield previews and organizes fonts available on the Mac and in user-selected folders. It does not modify original font files. Google font browsing retrieves public preview font files from GitHub; explicit downloads store font files and their license locally. Preview text and the user's library are not uploaded. Temporary activation uses Core Text session registration and is cleared on normal quit. Export copies originals to a user-selected destination. Adobe support exports static JSX scripts for users to run manually; Typefield sends no Apple events. There are no accounts, in-app purchases, ads or analytics.
+Typefield previews and organizes fonts available on the Mac and in user-selected folders. Browsing, organizing, exporting and backup import leave original font files in place. Font Health can repair an eligible original only after a separate confirmation and makes a sibling backup first. Google font browsing retrieves public preview font files from GitHub; explicit downloads store font files and their license locally. Preview text and the user's library are not uploaded. Temporary activation uses Core Text session registration and is cleared on normal quit. Export copies originals to a user-selected destination. Adobe support exports static JSX scripts for users to run manually; Typefield sends no Apple events. There are no accounts, in-app purchases, ads or analytics.
 
 See [Apple's App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) and [submission guidance](https://developer.apple.com/app-store/submitting/). Successful local checks do not establish App Store approval.

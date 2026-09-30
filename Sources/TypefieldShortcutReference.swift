@@ -36,7 +36,7 @@ struct TypefieldShortcutReference: View {
         ]),
         .init(title: "Spaces", symbol: "square.stack.3d.up", shortcuts: [
             .init(action: "Previous or next canvas", keys: "⌥⌘← / ⌥⌘→"),
-            .init(action: "Fit canvases", keys: "⌘0"),
+            .init(action: "Fit canvas width", keys: "⌘0"),
             .init(action: "Show or hide inspector", keys: "⌥⌘I"),
             .init(action: "Typography or Arrangement controls", keys: "⌥⌘T / ⌥⌘A"),
             .init(action: "Full / slim / hidden / floating inspector", keys: "⌥⌘1 / 2 / 3 / 4"),
@@ -56,10 +56,11 @@ struct TypefieldShortcutReference: View {
             .init(action: "Select previous or next contour or node", keys: "⌥← / ⌥→"),
             .init(action: "Extend contour or node selection", keys: "⇧⌥← / ⇧⌥→"),
             .init(action: "Duplicate selected vector paths", keys: "⌘D"),
-            .init(action: "Fit vector canvas", keys: "⌘0")
+            .init(action: "Fit vector canvas", keys: "⌘0"),
+            .init(action: "Undo or redo the current glyph's artwork and spacing", keys: "⌘Z / ⇧⌘Z")
         ]),
         .init(title: "Common", symbol: "keyboard", shortcuts: [
-            .init(action: "Undo or redo", keys: "⌘Z / ⇧⌘Z"),
+            .init(action: "Undo or redo text or the active workspace", keys: "⌘Z / ⇧⌘Z"),
             .init(action: "Cut / Copy / Paste text", keys: "⌘X / ⌘C / ⌘V"),
             .init(action: "Close window", keys: "⌘W"),
             .init(action: "Open Settings", keys: "⌘,")

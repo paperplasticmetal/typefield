@@ -291,6 +291,14 @@ enum StudioChecks {
         let afterInsert = CanvasPlan(direction: inserted)
         try verify(afterInsert.sections.map(\.id).firstIndex(of: insertedID) == 1, "Dragged type role was not inserted at its drop position")
         try verify(afterInsert.elements.contains { $0.sectionID == insertedID && $0.role == .heading && $0.text?.string == inserted.style(.heading).text }, "Dragged role must carry its saved style and sample text")
+        try verify(StudioRoleScope.affectedTextCount(role: .heading, direction: inserted) == afterInsert.elements.filter { $0.role == .heading && $0.text != nil }.count,
+                   "Role scope must count the actual text objects affected by a shared style")
+        var addTileCanvas = TypeDirection(); addTileCanvas.canvas = .custom; addTileCanvas.blocks = [.body]
+        let beforeAddTile = CanvasPlan(direction: addTileCanvas)
+        try verify(StudioRoleScope.affectedTextCount(role: .display, direction: addTileCanvas) == 0, "Missing role must show zero uses")
+        let addTileID = addTileCanvas.insert(.display, target: nil, before: false, visible: beforeAddTile.sections.map(\.id))
+        try verify(CanvasPlan(direction: addTileCanvas).sections.last?.id == addTileID && StudioRoleScope.affectedTextCount(role: .display, direction: addTileCanvas) == 1,
+                   "Clicking Add must place the missing role at the end of the canvas")
         let rolePayload = inserted.id.uuidString + "|role|" + TypeRole.heading.rawValue
         let sectionPayload = inserted.id.uuidString + "|section|" + afterInsert.sections[0].id
         try verify(CanvasDragPayload.parse(rolePayload, directionID: inserted.id, sectionIDs: Set(afterInsert.sections.map(\.id)), acceptsRoles: true) == .role(.heading), "Role drag payload")
@@ -455,9 +463,19 @@ enum StudioChecks {
         try verify(restored.state.spaces[0].boards.first == edited && restored.focusedBoard == edited.id, "Deleted typeboard was not recovered")
         restored.undoManager.redo()
         try verify(restored.state.spaces[0].boards.isEmpty, "Redo deletion did not remove the typeboard")
-        restored.focusedSpace = space; restored.focusedBoard = edited.id
-        restored.state.spaces.removeAll { $0.id == space }
-        try verify(restored.save(), "Deleting a space should save a normalized selection")
+        let laterSpace = restored.addSpace("Later space")!
+        let laterBoard = restored.addBoard(space: laterSpace)!
+        restored.undoManager.removeAllActions()
+        try verify(restored.removeSpace(laterSpace) && restored.state.spaces.count == 1 && restored.undoManager.undoActionName == "Delete Space", "Space deletion must be undoable")
+        restored.undoManager.undo()
+        try verify(restored.state.spaces.count == 2 && restored.state.spaces[1].id == laterSpace && restored.state.spaces[1].boards.first?.id == laterBoard
+                   && restored.focusedSpace == laterSpace && restored.focusedBoard == laterBoard,
+                   "Undo must restore a non-first Space, its board and its selection")
+        try verify(StudioStore(url: restored.url).state.spaces[1].boards.first?.id == laterBoard, "Restored Space must be persisted")
+        restored.undoManager.redo()
+        try verify(restored.state.spaces.count == 1 && restored.state.spaces[0].id == space && restored.focusedSpace == nil,
+                   "Redo must delete the restored Space without shifting focus to another Space")
+        try verify(restored.select(space: space) && restored.removeSpace(space), "Deleting a space should save a normalized selection")
         let normalized = StudioStore(url: restored.url)
         try verify(normalized.focusedSpace == nil && normalized.focusedBoard == nil, "Deleted space focus must not persist")
         let corruptURL = root.appendingPathComponent("corrupt.json"), corrupt = Data("broken".utf8)
@@ -512,6 +530,14 @@ enum StudioChecks {
         try verify(artworkPlan.elements.filter { $0.image != nil }.count == 2
                    && artworkPlan.sections.contains { $0.id == rasterArtwork.id },
                    "Every Spaces canvas must render embedded artwork as selectable image layers")
+        let figmaPreflight = StudioTransferReport(format: .figma, scope: "Typeboard fixture · one canvas", directions: [restoredArtworkCanvas], availableFonts: [])
+        let pdfPreflight = StudioTransferReport(format: .previewPDF, scope: "Canvas fixture", directions: [restoredArtworkCanvas], availableFonts: [])
+        try verify(figmaPreflight.omittedArtworkCount == 2 && figmaPreflight.detail.contains("Scope: Typeboard fixture")
+                   && figmaPreflight.detail.contains("Image layers omitted: 2") && pdfPreflight.omittedArtworkCount == 0,
+                   "Export preflight must disclose exact scope and artwork omitted by editable bridges")
+        let importReport = StudioImportReport(source: "Figma", boards: [importedBoard], availableFonts: [])
+        try verify(importReport.canvasCount == importedBoard.directions.count && !importReport.missingFonts.isEmpty
+                   && importReport.detail.contains("Unavailable fonts:"), "Import summary must surface unavailable fonts across all canvases")
         let artworkView = CanvasNativeView(plan: artworkPlan)
         let artworkPDF = artworkView.dataWithPDF(inside: artworkView.bounds)
         guard let pdfProvider = CGDataProvider(data: artworkPDF as CFData),
@@ -1046,6 +1072,15 @@ enum StudioChecks {
             return store.state.spaces[0].boards[0]
         }
         try verify(successfulCheckpoint.saved && successfulCheckpoint.board.checkpoints?.count == 1 && store.state.spaces[0].boards[0] == successfulCheckpoint.board, "A checkpoint is successful only after it appears in persisted typeboard state")
+        var retentionBoard = initialBoard
+        var oldestRetentionID: UUID?
+        for index in 0...StudioCheckpointSave.maximumCount {
+            retentionBoard = StudioCheckpointSave.save(direction: initialBoard.directions[0], board: retentionBoard) { $0 }.board
+            if index == 0 { oldestRetentionID = retentionBoard.checkpoints?.first?.id }
+        }
+        try verify(retentionBoard.checkpoints?.count == StudioCheckpointSave.maximumCount
+                   && retentionBoard.checkpoints?.first?.id != oldestRetentionID,
+                   "Checkpoint retention must keep only the latest 50 copies")
         store.undoManager.removeAllActions()
         let original = try Data(contentsOf: store.url)
         let originalBoard = store.state.spaces[0].boards[0]

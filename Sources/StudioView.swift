@@ -59,6 +59,25 @@ enum WorkspaceHeaderLayout {
     static let titleHeight = 30.0
     static let rowHeight = 40.0
 }
+enum StudioTransferDialog {
+    static func confirm(_ report: StudioTransferReport) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = report.blockingReason == nil ? "Export " + report.format.title + "?" : "Export is unavailable"
+        alert.informativeText = report.detail
+        alert.alertStyle = report.blockingReason == nil ? .informational : .warning
+        alert.addButton(withTitle: report.blockingReason == nil ? "Continue to Export" : "OK")
+        if report.blockingReason == nil { alert.addButton(withTitle: "Cancel") }
+        return alert.runModal() == .alertFirstButtonReturn && report.blockingReason == nil
+    }
+    static func showImport(_ report: StudioImportReport, name: String) {
+        let alert = NSAlert()
+        alert.messageText = "Imported “" + name + "”"
+        alert.informativeText = report.detail
+        alert.alertStyle = report.warnings.isEmpty && report.missingFonts.isEmpty ? .informational : .warning
+        alert.addButton(withTitle: "Done")
+        alert.runModal()
+    }
+}
 struct WorkspaceSwitcher: View {
     @ObservedObject var library: Library
     var body: some View {
@@ -174,6 +193,8 @@ struct StudioView: View {
     @State private var showNewSpace = false
     @State private var confirmDelete = false
     @State private var deletingBoard: (space: UUID, board: TypeBoard)?
+    @State private var operationStatus = ""
+    @State private var lastDeletedSpace: (id: UUID, name: String, boards: Int)?
     var space: DesignSpace? { store.state.spaces.first { $0.id == spaceID } ?? store.state.spaces.first }
     var board: TypeBoard? { space?.boards.first { $0.id == boardID } ?? space?.boards.first }
     var body: some View {
@@ -181,6 +202,19 @@ struct StudioView: View {
         if !sidebarCollapsed && !focusCanvas { WorkspaceSidebarShell { navigation }.transition(.move(edge: .leading).combined(with: .opacity)) }
         VStack(spacing: 0) {
             if !store.error.isEmpty { Text(store.error).foregroundStyle(.orange).textSelection(.enabled).padding(.horizontal, 20) }
+            if store.error.isEmpty && !operationStatus.isEmpty {
+                HStack {
+                    Text(operationStatus).lineLimit(2)
+                    Spacer()
+                    if store.undoManager.canUndo && store.undoManager.undoActionName == "Delete Space" {
+                        Button("Undo") {
+                            store.undoManager.undo()
+                            spaceID = store.focusedSpace; boardID = store.focusedBoard
+                            operationStatus = store.focusedSpace == nil ? "Space could not be restored" : "Space restored"
+                        }
+                    }
+                }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 4)
+            }
             if let space {
                 if !focusCanvas { HStack(spacing: 12) {
                     ShelfEditableName(name: space.displayName, onRename: { setSpaceName(space.id, $0) })
@@ -201,8 +235,8 @@ struct StudioView: View {
                             Button("InDesign (.jsx)…") { exportAdobeReturnBridge(.indesign) }
                         }
                         Button("Create font collection…") { createCollection(from: space) }.disabled(space.boards.isEmpty)
-                        Button("Developer handoff…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
-                        Button("Export space…") { exportSpace(space) }
+                        Button("Developer handoff · this space (\(space.boards.count) typeboards)…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
+                        Button("Export Space JSON · “\(space.displayName)”…") { exportSpace(space) }
                         Button("Import space…") { importSpace() }.disabled(store.readBlocked)
                         Divider()
                         Button("Delete space…", role: .destructive) { confirmDelete = true }
@@ -234,7 +268,15 @@ struct StudioView: View {
             }
         }.accessibilityIdentifier("spaces-workspace") }
         .onAppear { if let id = store.focusedSpace { spaceID = id }; if let id = store.focusedBoard { boardID = id } }
-        .onChange(of: store.focusedSpace) { id in spaceID = id; boardID = store.focusedBoard }
+        .onChange(of: store.focusedSpace) { id in
+            spaceID = id; boardID = store.focusedBoard
+            if let deleted = lastDeletedSpace {
+                if id == deleted.id { operationStatus = "Restored “\(deleted.name)” and \(deleted.boards) \(deleted.boards == 1 ? "typeboard" : "typeboards")" }
+                else if id == nil && !store.state.spaces.contains(where: { $0.id == deleted.id }) {
+                    operationStatus = "Deleted “\(deleted.name)” and \(deleted.boards) \(deleted.boards == 1 ? "typeboard" : "typeboards")."
+                }
+            }
+        }
         .onChange(of: store.focusedBoard) { id in spaceID = store.focusedSpace; boardID = id }
         .alert("New space", isPresented: $showNewSpace) {
             TextField("Project or client name", text: $newName)
@@ -250,10 +292,16 @@ struct StudioView: View {
             }
             Button("Cancel", role: .cancel) { newName = "" }
         }
-        .alert("Delete this space and its typeboards?", isPresented: $confirmDelete) {
-            Button("Delete", role: .destructive) { if let space, store.removeSpace(space.id) { spaceID = nil; boardID = nil } }
+        .alert("Delete “\(space?.displayName ?? "space")”?", isPresented: $confirmDelete) {
+            Button("Delete", role: .destructive) {
+                if let target = space, store.removeSpace(target.id) {
+                    spaceID = nil; boardID = nil
+                    lastDeletedSpace = (target.id, target.displayName, target.boards.count)
+                    operationStatus = "Deleted “\(target.displayName)” and \(target.boards.count) \(target.boards.count == 1 ? "typeboard" : "typeboards")."
+                }
+            }
             Button("Cancel", role: .cancel) {}
-        }
+        } message: { Text("This removes all \(space?.boards.count ?? 0) typeboards in the space. You can restore the space with Undo (⌘Z).") }
         .alert("Delete “\(deletingBoard?.board.name ?? "typeboard")”?", isPresented: Binding(get: { deletingBoard != nil }, set: { if !$0 { deletingBoard = nil } })) {
             Button("Delete", role: .destructive) { if let target = deletingBoard, store.removeBoard(space: target.space, id: target.board.id), boardID == target.board.id { boardID = store.focusedBoard }; deletingBoard = nil }
             Button("Cancel", role: .cancel) { deletingBoard = nil }
@@ -298,8 +346,16 @@ struct StudioView: View {
     }
     func selectSpace(_ id: UUID) { if store.select(space: id) { spaceID = id; boardID = nil } }
     func setSpaceName(_ id: UUID, _ name: String) -> Bool { store.renameSpace(id, to: name) }
+    func transferReport(_ format: StudioTransferReport.Format, space: DesignSpace) -> StudioTransferReport {
+        let canvasCount = space.boards.reduce(0) { $0 + $1.directions.count }
+        return StudioTransferReport(format: format,
+                                    scope: "Space “\(space.displayName)” · \(space.boards.count) typeboards · \(canvasCount) canvases",
+                                    directions: space.boards.flatMap(\.directions),
+                                    availableFonts: Set(library.allFaces.map(\.name)))
+    }
     func exportHandoff(_ space: DesignSpace) {
-        do { if let folder = try DeveloperHandoff.selectFolder(title: space.displayName, boards: space.boards, catalog: library.families) { store.error = ""; NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
+        guard StudioTransferDialog.confirm(transferReport(.developerHandoff, space: space)) else { return }
+        do { if let folder = try DeveloperHandoff.selectFolder(title: space.displayName, boards: space.boards, catalog: library.families) { store.error = ""; operationStatus = "Exported developer handoff for “\(space.displayName)”"; NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
         catch { store.error = "Handoff export failed: " + error.localizedDescription }
     }
     func createCollection(from space: DesignSpace) {
@@ -317,9 +373,10 @@ struct StudioView: View {
         }
     }
     func exportSpace(_ space: DesignSpace) {
+        guard StudioTransferDialog.confirm(transferReport(.spaceJSON, space: space)) else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "\(space.name).typefield.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try JSONEncoder().encode(space).write(to: url, options: .atomic) } catch { store.error = error.localizedDescription }
+        do { try JSONEncoder().encode(space).write(to: url, options: .atomic); operationStatus = "Exported “\(space.displayName)” Space JSON" } catch { store.error = error.localizedDescription }
     }
     func importSpace() {
         guard !store.readBlocked else { return }
@@ -330,7 +387,11 @@ struct StudioView: View {
             guard space.boards.allSatisfy(\.isValid) else { throw CocoaError(.fileReadCorruptFile) }
             space.id = UUID()
             for i in space.boards.indices { space.boards[i].id = UUID(); space.boards[i].directions = space.boards[i].directions.map { $0.copy(name: $0.name) }; space.boards[i].selectedDirection = nil }
-            if store.importSpace(space) { spaceID = space.id; boardID = nil }
+            if store.importSpace(space) {
+                spaceID = space.id; boardID = nil
+                operationStatus = "Imported “\(space.displayName)” from Space JSON"
+                StudioTransferDialog.showImport(StudioImportReport(source: "Space JSON", boards: space.boards, availableFonts: Set(library.allFaces.map(\.name))), name: space.displayName)
+            }
         } catch { store.error = "Space could not be imported: " + error.localizedDescription }
     }
     func importFigma() {
@@ -340,7 +401,11 @@ struct StudioView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let imported = try FigmaLayoutImporter.board(data: TypefieldInputFile.read(url, maximumBytes: 20_000_000), fonts: library.allFaces)
-            if store.importBoard(imported, into: space?.id, defaultSpaceName: "Figma imports") { spaceID = store.focusedSpace; boardID = imported.id }
+            if store.importBoard(imported, into: space?.id, defaultSpaceName: "Figma imports") {
+                spaceID = store.focusedSpace; boardID = imported.id
+                operationStatus = "Imported “\(imported.name)” from Figma"
+                StudioTransferDialog.showImport(StudioImportReport(source: "Figma", boards: [imported], availableFonts: Set(library.allFaces.map(\.name))), name: imported.name)
+            }
         } catch { store.error = "Figma layout could not be imported: " + error.localizedDescription }
     }
     func importAdobe() {
@@ -350,7 +415,11 @@ struct StudioView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let imported = try AdobeTypeSystemReturnBridge.board(data: TypefieldInputFile.read(url, maximumBytes: 20_000_000), fonts: library.allFaces)
-            if store.importBoard(imported, into: space?.id, defaultSpaceName: "Adobe imports") { spaceID = store.focusedSpace; boardID = imported.id }
+            if store.importBoard(imported, into: space?.id, defaultSpaceName: "Adobe imports") {
+                spaceID = store.focusedSpace; boardID = imported.id
+                operationStatus = "Imported “\(imported.name)” from Adobe"
+                StudioTransferDialog.showImport(StudioImportReport(source: "Adobe return JSON", boards: [imported], availableFonts: Set(library.allFaces.map(\.name))), name: imported.name)
+            }
         } catch {
             store.error = "Adobe layout could not be imported: " + error.localizedDescription
         }
@@ -665,7 +734,7 @@ struct TypeBoardEditor: View {
         _inspectorMode = State(initialValue: StudioInspectorPreference.mode())
         let initialCanvasIDs = Set([savedBoard.selectedDirection ?? savedBoard.directions.first?.id].compactMap { $0 })
         _shownCanvasIDs = State(initialValue: initialCanvasIDs)
-        _summaryCanvasIDs = State(initialValue: Set(savedBoard.directions.map(\.id)))
+        _summaryCanvasIDs = State(initialValue: initialCanvasIDs)
     }
     @State private var shownCanvasIDs: Set<UUID>
     @State private var zoom = 0.0
@@ -727,7 +796,21 @@ struct TypeBoardEditor: View {
     var selectedSummaryDirections: [TypeDirection] { board.directions.filter { summaryCanvasIDs.contains($0.id) } }
     var fontSummary: TypographySummaryDocument { TypographySummaryDocument(summaries: selectedSummaryDirections.map { CanvasTypographySummary(canvas: board.canvasName($0), direction: $0) }) }
     var visibleFontCount: Int { TypographySummaryDocument(summaries: visibleDirections.map { CanvasTypographySummary(canvas: board.canvasName($0), direction: $0) }).fonts.count }
+    func confirmExport(_ format: StudioTransferReport.Format, directions: [TypeDirection], scope: String) -> Bool {
+        StudioTransferDialog.confirm(StudioTransferReport(format: format, scope: scope, directions: directions,
+                                                          availableFonts: Set(library.allFaces.map(\.name))))
+    }
     var editingTitle: String { if let index = importedLayerIndex { return direction.importedLayout?.layers[index].name ?? "Text layer" }; return role.rawValue }
+    var editingScopeLabel: String {
+        if let shape = selectedImportedShape { return "Editing object: “\(shape.name)” · affects 1 shape" }
+        if let artwork = selectedArtwork { return "Editing object: “\(artwork.name)” · affects 1 image" }
+        if direction.canvas == .imported {
+            if importedLayerIndex != nil { return "Editing layer: “\(editingTitle)” · affects 1 text object" }
+            return "Select an imported text layer or object"
+        }
+        let count = StudioRoleScope.affectedTextCount(role: role, direction: direction)
+        return "Editing role: \(role.rawValue) · affects \(count) text \(count == 1 ? "object" : "objects")"
+    }
     func setStyle(_ style: TypeStyle) {
         if direction.canvas == .imported && importedLayerIndex == nil { return }
         if let index = importedLayerIndex { board.directions[directionIndex].importedLayout?.layers[index].style = style }
@@ -770,20 +853,19 @@ struct TypeBoardEditor: View {
                 } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add a canvas").accessibilityLabel("Add a canvas")
                 Button { chooseArtwork() } label: { Label("Artwork…", systemImage: "photo.on.rectangle") }
                     .fixedSize().help("Import SVG, PNG, JPEG, TIFF, HEIC, BMP, or GIF artwork onto this canvas. You can also drop a file directly onto a canvas.")
-                Button { openFontSummary() } label: { Label("\(visibleFontCount) fonts", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
+                Button { openFontSummary() } label: { Label("\(visibleFontCount) fonts · \(visibleDirections.count) shown", systemImage: "textformat") }.fixedSize().popover(isPresented: $showFontSummary) { fontSummaryPopover }
                 Menu("Export") {
-                    Button("Typography summary…") { openFontSummary() }
-                    Button("Web-font performance…") { showWebFontAudit = true }
-                    Button("Developer handoff…") {
-                        do { if let folder = try DeveloperHandoff.selectFolder(title: board.name, boards: [board], catalog: library.families) { status = "Developer handoff exported. Open index.html for the specimen; README explains font setup."; NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
-                        catch { status = "Handoff export failed: " + error.localizedDescription }
-                    }
+                    Button("Typography summary · shown canvases…") { openFontSummary() }
+                    Button("Web-font performance · shown canvases…") { summaryCanvasIDs = Set(visibleDirections.map(\.id)); showWebFontAudit = true }
+                    Button("Developer handoff · this typeboard (\(board.directions.count) canvases)…") { exportDeveloperHandoff() }
                     Divider()
-                    Button("Preview PDF…") { exportPDF() }
-                    Button("Editable Figma layout…") { exportFigma() }
+                    Button("Preview PDF · \(board.canvasName(direction))…") { exportPDF() }
+                    Button("Editable Figma layout · this typeboard (\(board.directions.count) canvases)…") { exportFigma() }
                 }.fixedSize()
                 Menu {
                     Button("Save checkpoint") { saveCheckpoint() }
+                    Text("\((board.checkpoints ?? []).count) of \(StudioCheckpointSave.maximumCount) checkpoints saved")
+                    Text("After 50, the oldest is replaced")
                     Menu("Restore checkpoint as canvas") {
                         ForEach((board.checkpoints ?? []).reversed()) { checkpoint in Button(checkpoint.direction.name + " · " + checkpoint.date.formatted(date: .abbreviated, time: .shortened)) { let copy = checkpoint.direction.copy(name: checkpoint.direction.name + " restored"); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save() } }
                     }.disabled((board.checkpoints ?? []).isEmpty)
@@ -852,7 +934,7 @@ struct TypeBoardEditor: View {
                     }.disabled(board.directions.count < 2)
                 } label: { Label(abID != nil ? "A/B" : "\(visibleDirections.count) shown", systemImage: "eye") }.fixedSize().help("Choose exactly which canvases are visible")
                 if abID != nil { Button { swapAB() } label: { Image(systemName: "arrow.left.arrow.right") }.keyboardShortcut("\\", modifiers: [.command]).help("Swap A/B (⌘\\)").accessibilityLabel("Swap A/B") }
-                Menu(zoom == 0 ? "Fit" : "\(Int(zoom * 100))%") { Button("Fit all visible canvases") { zoom = 0 }; ForEach([0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0], id: \.self) { value in Button("\(Int(value * 100))%") { zoom = value } } }.fixedSize().help("Pinch to zoom, or hold ⌘ while scrolling with a mouse. Scroll normally to pan.")
+                Menu(zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%") { Button("Fit width of visible canvases") { zoom = 0 }; ForEach([0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0], id: \.self) { value in Button("\(Int(value * 100))%") { zoom = value } } }.fixedSize().help("Pinch to zoom, or hold ⌘ while scrolling with a mouse. Scroll normally to pan.")
             }.padding(.horizontal, 12).padding(.bottom, 7).fixedSize(horizontal: false, vertical: true)
             Divider()
             }
@@ -948,7 +1030,7 @@ struct TypeBoardEditor: View {
                                height: max(geometry.size.height, extent.height * scale), alignment: .topLeading)
                     }.background(Color.black.opacity(0.09)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
                     }
-                    if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.plan(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.plan(for: direction).artboardSize.height)) \(direction.canvasUnitLabel) · " + (zoom == 0 ? "Fit" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
+                    if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.plan(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.plan(for: direction).artboardSize.height)) \(direction.canvasUnitLabel) · " + (zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
         }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topTrailing) { if focusCanvas { focusControls.padding(12) } }
     }
@@ -1371,7 +1453,6 @@ struct TypeBoardEditor: View {
         save("Edit Canvas Text")
     }
     var inspector: some View {
-        let plan = CanvasPlanCache.plan(for: direction)
         return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
@@ -1380,6 +1461,31 @@ struct TypeBoardEditor: View {
                         .textFieldStyle(.roundedBorder)
                 }
                 Picker("Inspector", selection: $editorSession.inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(editingScopeLabel).font(.caption.weight(.semibold))
+                    if direction.canvas != .imported {
+                        Text("Font, size and spacing change every use of this role. Text color changes canvas text; selected text content changes only that object.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else if importedLayerIndex != nil {
+                        Text("Typography, color and text content change only this imported layer.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
+                    .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
+                    .accessibilityIdentifier("spaces-editing-scope")
+                if let warnings = direction.importWarnings, !warnings.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Import result · \(warnings.count) \(warnings.count == 1 ? "note" : "notes")", systemImage: "exclamationmark.triangle")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                        Text(warnings[0]).font(.caption).foregroundStyle(.secondary)
+                        if warnings.count > 1 {
+                            DisclosureGroup("Show all import notes") {
+                                Text(warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            }.font(.caption)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                }
                 if selectedImportedShapeIndex != nil { selectedShapeAppearance; Divider() }
                 if selectedArtworkIndex != nil { selectedArtworkAppearance; Divider() }
                 if inspectorTab == "Arrangement" { layoutSections }
@@ -1401,14 +1507,16 @@ struct TypeBoardEditor: View {
                 DisclosureGroup("Browse and add roles") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
                 ForEach(TypeRole.allCases) { item in
-                    let count = plan.elements.filter { $0.role == item && $0.text != nil }.count
-                    Button { selectRole(item) } label: {
+                    let count = StudioRoleScope.affectedTextCount(role: item, direction: direction)
+                    Button { if count == 0 { addRole(item, target: nil, before: false) } else { selectRole(item) } } label: {
                         HStack { Text(item.rawValue).font(.caption).fontWeight(.medium); Spacer(); Text(count == 0 ? "Add" : "\(count)× · \(Int(direction.style(item).size))").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(9).background(role == item ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 7)).contentShape(Rectangle())
-                    }.buttonStyle(.plain).onDrag { NSItemProvider(object: (direction.id.uuidString + "|role|" + item.rawValue) as NSString) }.help(count == 0 ? "Drag onto the canvas to add this role" : "Click to locate this role; drag to add another")
+                    }.buttonStyle(.plain).onDrag { NSItemProvider(object: (direction.id.uuidString + "|role|" + item.rawValue) as NSString) }
+                        .help(count == 0 ? "Click to add this role at the end of the canvas, or drag to place it" : "Click to locate this role; drag to add another")
+                        .accessibilityLabel(count == 0 ? "Add \(item.rawValue) to canvas" : "Select \(item.rawValue), \(count) text objects")
                 }
                 Text("Double-click text on the canvas to edit it in place. Press ⌘Return to finish or Escape to cancel.").font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Click a role to select its first use. Drag it onto the canvas to add another.").font(.caption2).foregroundStyle(.secondary)
+                Text("Click Add to place a missing role at the end. Click an existing role to select it; drag a role to choose its position.").font(.caption2).foregroundStyle(.secondary)
                 }
                 }
                 Divider()
@@ -1416,12 +1524,11 @@ struct TypeBoardEditor: View {
                     if selectedImportedShapeIndex == nil && selectedArtworkIndex == nil { Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary) }
                 } else {
                 if direction.canvas == .imported { Text(editingTitle).font(.headline) }
-                if selectedTextID != nil && direction.canvas != .imported { Text("Editing the selected text. Font and spacing changes apply to its shared type role.").font(.caption).foregroundStyle(.secondary) }
                 characterPanel
                 colorPicker("Text", key: \.ink)
-                paragraphPanel
-                DisclosureGroup("Advanced type") {
+                DisclosureGroup("Type") {
                     VStack(alignment: .leading, spacing: 10) {
+                        paragraphPanel
                         if direction.canvas != .imported {
                             Menu {
                                 ForEach(TypeRole.allCases.filter { $0 != role }) { target in
@@ -1447,6 +1554,10 @@ struct TypeBoardEditor: View {
                                 }
                             }
                         }
+                    }.padding(.top, 8)
+                }
+                DisclosureGroup("Object") {
+                    VStack(alignment: .leading, spacing: 10) {
                         Text(selectedTextID == nil ? "Sample text" : "Selected text").font(.caption).fontWeight(.semibold)
                         TextEditor(text: styleBinding(\.text)).frame(height: 100)
                             .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
@@ -1475,19 +1586,19 @@ struct TypeBoardEditor: View {
                             Text("Longest entered line: \(SpacesProofing.longestLine(style.text)) characters").font(.caption).foregroundStyle(.secondary)
                             Text("Select text on the canvas to see rendered line and background measurements.").font(.caption).foregroundStyle(.secondary)
                         }
+                        Divider()
+                        canvasAlignmentPanel
                     }
                     .padding(.top, 8)
                 }
                 }
                 }
                 Divider()
-                if inspectorTab == "Arrangement" { canvasAlignmentPanel; Divider() }
-                if let warnings = direction.importWarnings, !warnings.isEmpty { DisclosureGroup("Import notes (\(warnings.count))") { Text(warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) } }
-                DisclosureGroup("Canvas settings") {
+                if inspectorTab == "Arrangement" { DisclosureGroup("Object") { canvasAlignmentPanel.padding(.top, 8) } }
+                DisclosureGroup("Canvas") {
                     VStack(alignment: .leading, spacing: 10) {
-                        if inspectorTab != "Arrangement" { canvasAlignmentPanel; Divider() }
                         Text("Colors").font(.caption).fontWeight(.semibold)
-                        if !importedNonTextSelected { colorPicker("Text", key: \.ink) }
+                        if inspectorTab == "Arrangement" && !importedNonTextSelected { colorPicker("Text", key: \.ink) }
                         colorPicker("Background", key: \.paper)
                         if direction.canvas != .imported { colorPicker("Accent", key: \.accent) }
                         Divider()
@@ -1571,13 +1682,14 @@ struct TypeBoardEditor: View {
         if let preferred { chooseFont(preferred.face.name); fontSearch = ""; status = "Trying \(preferred.family.name) · \(preferred.face.style) from your local library" }
     }
     func openFontSummary() {
+        summaryCanvasIDs = Set(visibleDirections.map(\.id))
         showFontSummary = true
     }
     func saveCheckpoint() {
         let outcome = StudioCheckpointSave.save(direction: direction, board: board) { onSave($0, "Save Checkpoint") }
         board = outcome.board
         if outcome.saved {
-            status = "Checkpoint saved"
+            status = "Checkpoint saved · \((board.checkpoints ?? []).count) of \(StudioCheckpointSave.maximumCount) kept"
         } else {
             status = library.studio.error.isEmpty ? "Checkpoint could not be saved" : "Checkpoint could not be saved: " + library.studio.error
         }
@@ -1606,20 +1718,25 @@ struct TypeBoardEditor: View {
                 Button("Web cost…") { showFontSummary = false; DispatchQueue.main.async { showWebFontAudit = true } }
                 Spacer()
                 Menu { Button("From this canvas…") { createCollection(.canvas) }; Button("From this typeboard…") { createCollection(.typeboard) }; Button("From this project…") { createCollection(.project) } } label: { Label("Collection", systemImage: "folder.badge.plus") }.fixedSize()
-                Menu("Export") {
-                    Button("Plain text…") { exportFontSummary(markdown: false) }
-                    Button("Markdown…") { exportFontSummary(markdown: true) }
+                Menu("Export selected canvases") {
+                    Button("Plain text · \(selectedSummaryDirections.count) selected…") { exportFontSummary(markdown: false) }
+                    Button("Markdown · \(selectedSummaryDirections.count) selected…") { exportFontSummary(markdown: true) }
                     Divider()
-                    Button("Type system PDF…") { exportTypeSystemPDF() }
+                    Button("Type system PDF · \(selectedSummaryDirections.count) selected…") { exportTypeSystemPDF() }
                     Divider()
-                    Button("Illustrator builder (.jsx)…") { exportAdobeTypeSystem(.illustrator) }
-                    Button("InDesign builder (.jsx)…") { exportAdobeTypeSystem(.indesign) }
+                    Button("Illustrator builder · \(selectedSummaryDirections.count) selected (.jsx)…") { exportAdobeTypeSystem(.illustrator) }
+                    Button("InDesign builder · \(selectedSummaryDirections.count) selected (.jsx)…") { exportAdobeTypeSystem(.indesign) }
                 }.fixedSize()
             }
             Text("Each selected canvas contributes its visible text styles. Type system PDF creates one specimen page per canvas; imported Figma and Adobe canvases are not supported yet. Use Preview PDF for their visual layout. Adobe builders create editable native documents when you run the saved script inside Illustrator or InDesign; fonts are referenced, never bundled.").font(.caption).foregroundStyle(.secondary)
         }.padding(18).frame(width: 540)
     }
     enum CollectionScope { case canvas, typeboard, project }
+    var summaryExportScope: String {
+        let selected = selectedSummaryDirections
+        if selected.count == 1, let canvas = selected.first { return "Canvas “\(board.canvasName(canvas))” in typeboard “\(board.name)”" }
+        return "\(selected.count) of \(board.directions.count) selected canvases in typeboard “\(board.name)”"
+    }
     func createCollection(_ scope: CollectionScope) {
         let names: Set<String>, source: String, suggested: String
         switch scope {
@@ -1644,15 +1761,17 @@ struct TypeBoardEditor: View {
         }
     }
     func exportFontSummary(markdown: Bool) {
+        guard confirmExport(.typographySummary, directions: selectedSummaryDirections, scope: summaryExportScope) else { return }
         let panel = NSSavePanel(), suffix = markdown ? "md" : "txt"
         panel.allowedContentTypes = [UTType(filenameExtension: suffix) ?? .plainText]
         let scope = selectedSummaryDirections.count == 1 ? board.canvasName(selectedSummaryDirections[0]) : "\(selectedSummaryDirections.count) canvases"
         panel.nameFieldStringValue = board.name + " — " + scope + " typography." + suffix
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try fontSummary.text(fontSummaryDetail, markdown: markdown).write(to: url, atomically: true, encoding: .utf8); status = "Typography summary exported" }
+        do { try fontSummary.text(fontSummaryDetail, markdown: markdown).write(to: url, atomically: true, encoding: .utf8); status = "Typography summary exported · \(selectedSummaryDirections.count) selected canvases" }
         catch { status = "Typography summary export failed: " + error.localizedDescription }
     }
     func exportTypeSystemPDF() {
+        guard confirmExport(.typeSystemPDF, directions: selectedSummaryDirections, scope: summaryExportScope) else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — type systems.pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -1661,15 +1780,18 @@ struct TypeBoardEditor: View {
         } catch { status = "Type system PDF export failed: " + error.localizedDescription }
     }
     func exportAdobeTypeSystem(_ target: AdobeTypeSystemTarget) {
+        guard confirmExport(.adobeBuilder, directions: selectedSummaryDirections, scope: summaryExportScope) else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: target.scriptExtension) ?? .plainText]
         panel.nameFieldStringValue = AdobeTypeSystemExporter.suggestedScriptFilename(title: board.name, target: target)
-        let omitsArtwork = selectedSummaryDirections.contains { !($0.artworkLayers ?? []).isEmpty }
-        panel.message = "Run this builder inside Adobe " + target.displayName + ". It creates a new editable ." + target.documentExtension + " document and asks where to save it." + (omitsArtwork ? " Image artwork is omitted; use Preview PDF for a visual handoff." : "")
+        let omittedArtwork = StudioTransferReport(format: .adobeBuilder, scope: summaryExportScope,
+                                                   directions: selectedSummaryDirections,
+                                                   availableFonts: Set(library.allFaces.map(\.name))).omittedArtworkCount
+        panel.message = "Run this builder inside Adobe " + target.displayName + ". It creates a new editable ." + target.documentExtension + " document and asks where to save it." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers are omitted; use Preview PDF for a visual handoff." : "")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try AdobeTypeSystemExporter.data(directions: selectedSummaryDirections, title: board.name, target: target).write(to: url, options: .atomic)
-            status = "Adobe " + target.displayName + " builder exported — run the .jsx file inside " + target.displayName + " to create the native document" + (omitsArtwork ? ". Image artwork was omitted." : "")
+            status = "Adobe " + target.displayName + " builder exported · \(selectedSummaryDirections.count) selected canvases. Run the .jsx file inside " + target.displayName + "." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : "")
         } catch {
             status = "Adobe " + target.displayName + " export failed: " + error.localizedDescription
         }
@@ -1826,17 +1948,32 @@ struct TypeBoardEditor: View {
             }
         ))
     }
+    func exportDeveloperHandoff() {
+        guard confirmExport(.developerHandoff, directions: board.directions,
+                            scope: "Typeboard “\(board.name)” · all \(board.directions.count) canvases") else { return }
+        do {
+            if let folder = try DeveloperHandoff.selectFolder(title: board.name, boards: [board], catalog: library.families) {
+                status = "Developer handoff exported · all \(board.directions.count) canvases. Open index.html for the specimen."
+                NSWorkspace.shared.activateFileViewerSelecting([folder])
+            }
+        } catch { status = "Handoff export failed: " + error.localizedDescription }
+    }
     func exportPDF() {
+        guard confirmExport(.previewPDF, directions: [direction],
+                            scope: "Canvas “\(board.canvasName(direction))” in typeboard “\(board.name)”") else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — " + direction.name + ".pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let plan = CanvasPlanCache.plan(for: direction); let view = CanvasNativeView(plan: plan); try view.dataWithPDF(inside: view.bounds).write(to: url, options: .atomic); status = "PDF exported" } catch { status = "Export failed: " + error.localizedDescription }
+        do { let plan = CanvasPlanCache.plan(for: direction); let view = CanvasNativeView(plan: plan); try view.dataWithPDF(inside: view.bounds).write(to: url, options: .atomic); status = "Preview PDF exported · “\(board.canvasName(direction))”" } catch { status = "Export failed: " + error.localizedDescription }
     }
     func exportFigma() {
+        guard confirmExport(.figma, directions: board.directions,
+                            scope: "Typeboard “\(board.name)” · all \(board.directions.count) canvases") else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
-        let omitsArtwork = board.directions.contains { !($0.artworkLayers ?? []).isEmpty }
-        panel.message = "Choose where to save the editable Figma layout and local importer. No fonts are bundled." + (omitsArtwork ? " Image artwork is omitted; use Preview PDF for a visual handoff." : "")
+        let omittedArtwork = StudioTransferReport(format: .figma, scope: board.name, directions: board.directions,
+                                                   availableFonts: Set(library.allFaces.map(\.name))).omittedArtworkCount
+        panel.message = "Choose where to save the editable Figma layout and local importer. No fonts are bundled." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers are omitted; use Preview PDF for a visual handoff." : "")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let folder = try FigmaLayoutExporter.write(board: board, parent: url); status = "Figma package exported. See README in the package for import steps." + (omitsArtwork ? " Image artwork was omitted." : ""); NSWorkspace.shared.activateFileViewerSelecting([folder]) } catch { status = "Figma export failed: " + error.localizedDescription }
+        do { let folder = try FigmaLayoutExporter.write(board: board, parent: url); status = "Figma package exported · all \(board.directions.count) canvases. See README for import steps." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : ""); NSWorkspace.shared.activateFileViewerSelecting([folder]) } catch { status = "Figma export failed: " + error.localizedDescription }
     }
 }
 

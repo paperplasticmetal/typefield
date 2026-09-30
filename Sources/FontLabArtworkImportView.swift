@@ -103,6 +103,15 @@ struct FontLabArtworkImportSheet: View {
                 if let notice = scan?.notices.joined(separator: " "), !notice.isEmpty {
                     Text(notice).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
+                if source.format == .svg {
+                    Label("SVG import renders the artwork and traces new editable outlines. Original control points, groups and transforms are not retained; inspect curves, counters and small marks before importing.", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(9)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                        .accessibilityIdentifier("font-lab-svg-trace-limit")
+                }
                 HStack {
                     Text("Import into")
                     Picker("Destination", selection: $useCurrentProject) {
@@ -123,7 +132,7 @@ struct FontLabArtworkImportSheet: View {
                     Text("PNG · JPEG · TIFF · HEIC · SVG · Procreate").font(.subheadline)
                     Text("Use clear, separated letters on a plain or transparent background. Sheets may contain multiple rows. Grid mode handles regular worksheets; you can also draw your own letter boxes.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 500)
-                    Text("Procreate files use their embedded flattened preview. Export PNG from Procreate for full resolution. SVG text and effects should be converted to outlines first.")
+                    Text("Procreate files use their embedded flattened preview; export PNG from Procreate for full resolution. SVG is rendered and traced into new outlines, so original control points are not retained. Convert SVG text and effects to outlines first.")
                         .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 500)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }

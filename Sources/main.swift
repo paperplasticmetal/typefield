@@ -40,6 +40,8 @@ struct SavedSearch: Codable, Equatable {
     var advanced: AdvancedFilter
     var requireCoverage: Bool
     var requiredText: String
+    /// Added after saved searches were introduced; nil keeps older files readable.
+    var previewText: String? = nil
 }
 struct SavedLibrary: Codable {
     var favorites: Set<String> = []
@@ -319,6 +321,7 @@ final class Library: ObservableObject {
     @Published var saved: SavedLibrary
     @Published var loading = false
     @Published var message = ""
+    @Published var resultNotice = ""
     @Published var selection = "All Fonts"
     @Published var search = ""
     @Published var sort = "Name A–Z"
@@ -332,11 +335,22 @@ final class Library: ObservableObject {
     @Published var overlayName = ""
     @Published var showCompare = false
     func toggleOverlay(_ postScriptName: String) { overlayName = overlayName == postScriptName ? "" : postScriptName }
-    func chosenFace(_ family: Family) -> Face {
+    private func faceMatches(_ face: Face, in family: Family, query: FontSearchQuery) -> Bool {
+        (writing == nil || face.writingSystems.contains(writing!)) &&
+        tagQuery.matches(pro.tags[face.name] ?? []) &&
+        (selection != "Last Import" || saved.lastImportNames?.contains(face.name) == true) &&
+        (!selection.hasPrefix("tag:") || TagQuery.contains(String(selection.dropFirst(4)), in: pro.tags[face.name] ?? [])) &&
+        (!requireCoverage || FontCoverage.missing(requiredText, in: face.coverage).isEmpty) &&
+        advanced.matches(face, tags: pro.tags[face.name] ?? []) &&
+        query.matches(face, tags: pro.tags[face.name] ?? []) &&
+        (query.text.isEmpty || family.name.localizedCaseInsensitiveContains(query.text) || face.name.localizedCaseInsensitiveContains(query.text) || face.style.localizedCaseInsensitiveContains(query.text))
+    }
+    func matchingFaces(in family: Family) -> [Face] {
         let query = FontSearchQuery(search)
-        let matching = family.faces.filter { face in
-            (writing == nil || face.writingSystems.contains(writing!)) && (!requireCoverage || FontCoverage.missing(requiredText, in: face.coverage).isEmpty) && advanced.matches(face, tags: pro.tags[face.name] ?? []) && query.matches(face, tags: pro.tags[face.name] ?? []) && (query.text.isEmpty || family.name.localizedCaseInsensitiveContains(query.text) || face.name.localizedCaseInsensitiveContains(query.text) || face.style.localizedCaseInsensitiveContains(query.text))
-        }
+        return family.faces.filter { faceMatches($0, in: family, query: query) }
+    }
+    func chosenFace(_ family: Family) -> Face {
+        let matching = matchingFaces(in: family)
         return matching.first(where: { $0.name == pro.mainPreviews[family.name] }) ?? matching.first(where: { $0.name == family.representative.name }) ?? matching.first ?? family.representative
     }
     func compare(_ family: Family) {
@@ -450,10 +464,13 @@ final class Library: ObservableObject {
     }
     @discardableResult func toggleCollectionMembership(_ familyName: String, in name: String) -> Bool {
         guard saved.collections[name] != nil else { message = "That collection is no longer available."; return false }
-        return updateSaved { saved in
+        let wasMember = saved.collections[name]?.contains(familyName) == true
+        let changed = updateSaved { saved in
             if saved.collections[name, default: []].contains(familyName) { saved.collections[name]?.remove(familyName) }
             else { saved.collections[name]?.insert(familyName) }
         }
+        if changed { resultNotice = "\(familyName) \(wasMember ? "removed from" : "added to") collection “\(name)”." }
+        return changed
     }
     @discardableResult func createEmptyCollection(_ name: String) -> Bool {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -462,6 +479,7 @@ final class Library: ObservableObject {
             guard updateSaved({ $0.collections[name] = [] }) else { return false }
         }
         selection = "collection:" + name
+        resultNotice = "Collection “\(name)” is ready. Add families from their More menu."
         return true
     }
     @discardableResult func deleteCollection(_ name: String) -> Bool {
@@ -478,25 +496,27 @@ final class Library: ObservableObject {
         if section.hasPrefix("collection:") { return saved.collections[String(section.dropFirst(11))]?.contains(f.name) ?? false }
         return category(f).rawValue == section
     }
-    @discardableResult func saveCurrentSearch(as name: String) -> Bool {
+    @discardableResult func saveCurrentSearch(as name: String, previewText: String? = nil) -> Bool {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, saved.savedSearches?[name] == nil else { return false }
         let snapshot = SavedSearch(section: selection, query: search, sort: sort, source: source,
                                    writing: writing?.rawValue, variableOnly: variableOnly, tagQuery: tagQuery,
-                                   advanced: advanced, requireCoverage: requireCoverage, requiredText: requiredText)
+                                   advanced: advanced, requireCoverage: requireCoverage, requiredText: requiredText,
+                                   previewText: previewText)
         let previous = saved.savedSearches
         saved.savedSearches?[name] = snapshot
         if saved.savedSearches == nil { saved.savedSearches = [name: snapshot] }
         guard save() else { saved.savedSearches = previous; return false }
         return true
     }
-    func applySavedSearch(_ name: String) {
-        guard let snapshot = saved.savedSearches?[name] else { return }
+    @discardableResult func applySavedSearch(_ name: String) -> String? {
+        guard let snapshot = saved.savedSearches?[name] else { return nil }
         selection = snapshot.section; search = snapshot.query; sort = snapshot.sort; source = snapshot.source
         writing = snapshot.writing.flatMap(WritingSystem.init(rawValue:))
         variableOnly = snapshot.variableOnly; tagQuery = snapshot.tagQuery; advanced = snapshot.advanced
         requireCoverage = snapshot.requireCoverage; requiredText = snapshot.requiredText
         workspace = .library
+        return snapshot.previewText ?? (snapshot.requireCoverage ? snapshot.requiredText : nil)
     }
     @discardableResult func deleteSavedSearch(_ name: String) -> Bool {
         guard saved.savedSearches?[name] != nil else { return false }
@@ -506,16 +526,29 @@ final class Library: ObservableObject {
         return true
     }
     var filtered: [Family] {
-        let parsed = FontSearchQuery(search)
-        let query = parsed.text
+        let query = FontSearchQuery(search)
         let result = families.filter { f in
-            matchesSection(f, selection) && tagQuery.matches(tags(f)) && f.faces.contains { face in (writing == nil || face.writingSystems.contains(writing!)) && (!requireCoverage || FontCoverage.missing(requiredText, in: face.coverage).isEmpty) && advanced.matches(face, tags: pro.tags[face.name] ?? []) && parsed.matches(face, tags: pro.tags[face.name] ?? []) && (query.isEmpty || f.name.localizedCaseInsensitiveContains(query) || face.name.localizedCaseInsensitiveContains(query) || face.style.localizedCaseInsensitiveContains(query)) } && (!variableOnly || f.variable) && (source == "All sources" || (source == "User / third-party" ? f.userFont : !f.userFont))
+            matchesSection(f, selection) && f.faces.contains { faceMatches($0, in: f, query: query) } && (!variableOnly || f.variable) && (source == "All sources" || (source == "User / third-party" ? f.userFont : !f.userFont))
         }
         return result.sorted { a,b in
             if sort == "Most styles", a.faces.count != b.faces.count { return a.faces.count > b.faces.count }
             if sort == "Category", category(a) != category(b) { return category(a).rawValue < category(b).rawValue }
             return a.name.localizedStandardCompare(b.name) == (sort == "Name Z–A" ? .orderedDescending : .orderedAscending)
         }
+    }
+    var filteredFaces: [Face] { filtered.flatMap { matchingFaces(in: $0) } }
+    var selectedOutsideViewCount: Int { selectedFamilies.subtracting(Set(filtered.map(\.name))).count }
+    var selectedScopeLabel: String {
+        let outside = selectedOutsideViewCount
+        return "\(selectedFamilies.count) selected · \(outside) outside this view"
+    }
+    func selectVisibleFamilies() { selectedFamilies = Set(filtered.map(\.name)) }
+    var hasActiveFilters: Bool {
+        !search.isEmpty || source != "All sources" || variableOnly || advanced.active || tagQuery.active || writing != nil || requireCoverage
+    }
+    func clearFiltersPreservingSection() {
+        search = ""; source = "All sources"; variableOnly = false; advanced = AdvancedFilter()
+        tagQuery = TagQuery(); writing = nil; requireCoverage = false
     }
     func addFolder(replacing oldPath: String? = nil) {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
@@ -669,7 +702,7 @@ struct ContentView: View {
                 topControls
                 libraryContent(visibleFamilies)
                 Divider()
-                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families")"); Text("·"); Text("\(library.styleCount) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
+                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families") · \(library.filteredFaces.count) matching styles"); Text("·"); Text("\(library.styleCount) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
                 }.accessibilityIdentifier("library-workspace")
             }
         }
@@ -718,7 +751,9 @@ struct ContentView: View {
         .sheet(item: $library.detail) { family in DetailView(library: library, family: family, preview: preview == "{family}" ? family.name : preview, size: size) }
         .sheet(item: $guide) { destination in
             switch destination {
-            case .tour: TypefieldTour { onboardingComplete = true; guide = nil }
+            case .tour: TypefieldTour(dismiss: { onboardingComplete = true; guide = nil }, open: { destination in
+                onboardingComplete = true; library.workspace = destination; guide = nil
+            })
             case .about: TypefieldAbout(dismiss: { guide = nil }, showTour: { guide = .tour }, showShortcuts: { guide = .shortcuts })
             case .shortcuts: TypefieldShortcutReference { guide = nil }
             }
@@ -733,6 +768,16 @@ struct ContentView: View {
     var topControls: some View {
         VStack(spacing: 0) {
                 header
+                if !library.resultNotice.isEmpty {
+                    HStack(spacing: 8) {
+                        Label(library.resultNotice, systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                        Button("Dismiss") { library.resultNotice = "" }
+                    }.font(.caption).padding(.horizontal, 20).padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.08))
+                        .accessibilityElement(children: .combine)
+                }
                 SearchTokenChips(library: library).padding(.horizontal, 20)
                 VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -801,14 +846,17 @@ struct ContentView: View {
                     }.font(.caption).padding(.horizontal, 16).padding(.bottom, 10)
                 }
                 if !library.selectedFamilies.isEmpty {
-                    HStack {
-                        Text("\(library.selectedFamilies.count) selected")
-                        Button("Tag…") { library.openTools("Tags") }
-                        Button("Create typeboard") { library.pairSelection(library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }, source: "Selected Library fonts") }
-                        Button("PDF…") { SpecimenExporter.export(faces: library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0) }, library: library, sample: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
-                        Button("Edit families…") { library.openTools("Families") }
-                        Button("Export fonts…") { if let result = FontExporter.export(library.selectedFaces) { library.message = result } }
-                        Button("Select visible") { library.selectedFamilies.formUnion(library.filtered.map(\.name)) }
+                    HStack(spacing: 10) {
+                        Text(library.selectedScopeLabel)
+                        Text("\(library.selectedFaces.count) styles affected").foregroundStyle(.secondary)
+                        Menu("Batch actions") {
+                            Button("Tag \(library.selectedFaces.count) styles…") { library.openTools("Tags") }
+                            Button("Create typeboard with \(library.selectedFamilies.count) families") { library.pairSelection(library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0).name }, source: "Selected Library fonts") }
+                            Button("Export specimen PDF for \(library.selectedFamilies.count) families…") { SpecimenExporter.export(faces: library.families.filter { library.selectedFamilies.contains($0.name) }.map { library.chosenFace($0) }, library: library, sample: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
+                            Button("Edit \(library.selectedFaces.count) styles…") { library.openTools("Families") }
+                            Button("Export \(library.selectedFaces.count) font styles…") { reportFontExport(library.selectedFaces) }
+                        }
+                        Button("Replace selection with visible") { library.selectVisibleFamilies() }
                         Button("Clear selection") { library.selectedFamilies = [] }
                         Spacer()
                     }.font(.caption).padding(.horizontal, 16).padding(.bottom, 10)
@@ -821,8 +869,9 @@ struct ContentView: View {
                 if library.loading && library.families.isEmpty { ProgressView("Reading your fonts…").frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else if metadataView { MetadataTable(library: library) }
                 else if visibleFamilies.isEmpty {
-                    VStack(spacing: 12) { Image(systemName: "text.magnifyingglass").font(.system(size: 38)).foregroundStyle(.secondary); Text(library.selection == "Last Import" && library.saved.lastImportNames == nil ? "No imports yet" : "No matching fonts").font(.title2); Text(library.selection == "Last Import" && library.saved.lastImportNames == nil ? "Your next font-folder import or Google Fonts download will appear here." : "Try a different search or filter, or add fonts to this collection.").foregroundStyle(.secondary)
-                        Button("Clear filters") { library.search = ""; library.source = "All sources"; library.variableOnly = false; library.advanced = AdvancedFilter(); library.tagQuery = TagQuery(); library.writing = nil; library.requireCoverage = false; library.selection = "All Fonts" }
+                    VStack(spacing: 12) { Image(systemName: "text.magnifyingglass").font(.system(size: 38)).foregroundStyle(.secondary); Text(emptyLibraryTitle).font(.title2); Text(emptyLibraryHint).foregroundStyle(.secondary)
+                        if library.hasActiveFilters { Button("Clear filters") { library.clearFiltersPreservingSection() } }
+                        if library.selection != "All Fonts" { Button("Browse all fonts") { library.selection = "All Fonts" } }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     GeometryReader { geometry in
@@ -839,7 +888,7 @@ struct ContentView: View {
                                     HStack(alignment: .top, spacing: 10) {
                                         ForEach(0..<columns, id: \.self) { column in
                                             if start + column < families.count {
-                                                card(families[start + column], face: faces[column], baseline: baseline).frame(maxWidth: .infinity, maxHeight: .infinity)
+                                                card(families[start + column], face: faces[column], baseline: baseline).frame(maxWidth: .infinity)
                                             } else {
                                                 Color.clear.frame(maxWidth: .infinity)
                                             }
@@ -850,6 +899,24 @@ struct ContentView: View {
                         }
                     }
                 }
+    }
+    var emptyLibraryTitle: String {
+        if library.selection == "Last Import" && !library.hasActiveFilters {
+            return library.saved.lastImportNames?.isEmpty == false ? "Recent import unavailable" : "No imports yet"
+        }
+        if library.selection.hasPrefix("collection:") && library.saved.collections[String(library.selection.dropFirst(11))]?.isEmpty == true {
+            return "This collection is empty"
+        }
+        return library.hasActiveFilters ? "No matching fonts" : "No fonts in this section yet"
+    }
+    var emptyLibraryHint: String {
+        if library.selection == "Last Import" && !library.hasActiveFilters {
+            return library.saved.lastImportNames?.isEmpty == false ? "The last import has no fonts available in the current catalog. Choose its folder again in Live folders or import it again." : "Your next font-folder import or Google Fonts download will appear here."
+        }
+        if library.selection.hasPrefix("collection:") && library.saved.collections[String(library.selection.dropFirst(11))]?.isEmpty == true {
+            return "Browse fonts, then add families through their More menu."
+        }
+        return library.hasActiveFilters ? "Try a different search or filter. Your current collection or Library section will stay selected." : "Browse all fonts or add a font folder."
     }
     var sidebar: some View {
         let snapshot = LibrarySidebarSnapshot(library: library)
@@ -885,7 +952,7 @@ struct ContentView: View {
             }
             SidebarSection(title: "Saved searches", key: "sidebar.saved-searches", addLabel: "Save current search", onAdd: { saveSearch() }) {
                 ForEach((library.saved.savedSearches ?? [:]).keys.sorted(), id: \.self) { name in
-                    Button { library.applySavedSearch(name) } label: {
+                    Button { if let restoredPreview = library.applySavedSearch(name) { preview = restoredPreview } } label: {
                         HStack { Image(systemName: "magnifyingglass").frame(width: 20); Text(name).lineLimit(1); Spacer() }
                             .padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
                     }
@@ -906,9 +973,14 @@ struct ContentView: View {
                             ShelfEditableName(name: name, selected: library.selection == "collection:" + name, onSelect: { library.workspace = .library; library.selection = "collection:" + name }, onRename: { library.renameCollection(name, to: $0) })
                                 .accessibilityAddTraits(library.workspace == .library && library.selection == "collection:" + name ? .isSelected : [])
                             Text("\(snapshot.count(section: "collection:" + name))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                        }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection", role: .destructive) { _ = library.deleteCollection(name) } }
+                            Menu {
+                                Button("Rename collection…") { renameCollection(name) }
+                                Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) }
+                            } label: { Image(systemName: "ellipsis").frame(width: 28, height: 28) }
+                                .shelfIconMenu().accessibilityLabel("Actions for collection \(name)")
+                        }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) } }
                     }
-                    if library.saved.collections.isEmpty { Text("No collections").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 5) }
+                    if library.saved.collections.isEmpty { Text("No collections yet · use + to create one").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 5) }
                 }
             }
             }
@@ -965,12 +1037,31 @@ struct ContentView: View {
             .accessibilityAddTraits(library.workspace == .library && library.selection == key ? .isSelected : [])
     }
     func renameCollection(_ name: String) {
-        if let renamed = ShelfRename.prompt("Rename collection", current: name, validate: { candidate in candidate != name && library.saved.collections[candidate] != nil ? "A collection with this name already exists. Choose another name." : nil }) { _ = library.renameCollection(name, to: renamed) }
+        if let renamed = ShelfRename.prompt("Rename collection", current: name, validate: { candidate in candidate != name && library.saved.collections[candidate] != nil ? "A collection with this name already exists. Choose another name." : nil }) {
+            if library.renameCollection(name, to: renamed) { library.resultNotice = "Collection “\(name)” renamed to “\(renamed)”." }
+            else if library.message.isEmpty { library.message = "The collection could not be renamed." }
+        }
+    }
+    func confirmDeleteCollection(_ name: String) {
+        let count = library.saved.collections[name]?.count ?? 0
+        let alert = NSAlert()
+        alert.messageText = "Delete collection “\(name)”?"
+        alert.informativeText = "Remove this collection and its \(count) saved \(count == 1 ? "family" : "families")? The font files and other collections stay in place."
+        alert.addButton(withTitle: "Delete Collection")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if library.deleteCollection(name) { library.resultNotice = "Collection “\(name)” deleted. Font files were not changed." }
+        else if library.message.isEmpty { library.message = "The collection could not be deleted." }
     }
     func saveSearch() {
         if let name = ShelfRename.prompt("Save current Library search", current: "My search", actionTitle: "Save", validate: { candidate in library.saved.savedSearches?[candidate] != nil ? "A saved search with this name already exists." : nil }) {
-            if !library.saveCurrentSearch(as: name) { library.message = "Could not save this search. " + library.message }
+            if library.saveCurrentSearch(as: name, previewText: preview) { library.resultNotice = "Saved search “\(name)” with its preview text and filters." }
+            else { library.message = "Could not save this search. " + library.message }
         }
+    }
+    func createContextualTypeboard() {
+        let seed = library.contextualTypeboardSeed()
+        library.pairSelection(seed.fonts, source: seed.source)
     }
     var header: some View {
         HStack(spacing: 12) {
@@ -978,33 +1069,57 @@ struct ContentView: View {
                 let name = String(library.selection.dropFirst(11))
                 ShelfEditableName(name: name, onRename: { library.renameCollection(name, to: $0) })
                     .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
-                    .frame(minWidth: 110, minHeight: WorkspaceHeaderLayout.titleHeight)
+                    .frame(minWidth: 110, maxWidth: 165, minHeight: WorkspaceHeaderLayout.titleHeight)
+                    .help(name)
+                Text("\(library.saved.collections[name]?.count ?? 0) families").font(.caption).foregroundStyle(.secondary)
+                Menu {
+                    Button("Rename collection…") { renameCollection(name) }
+                    Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) }
+                } label: { Image(systemName: "ellipsis.circle") }
+                    .shelfIconMenu().accessibilityLabel("Actions for collection \(name)")
             } else {
                 Text(library.selection.replacingOccurrences(of: "tag:", with: ""))
                     .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
-                    .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
+                    .lineLimit(1).truncationMode(.middle)
+                    .frame(maxWidth: 170, minHeight: WorkspaceHeaderLayout.titleHeight)
             }
             Spacer()
-            Button("Rediscover", systemImage: "shuffle") { showDiscovery = true }.help("Find local fonts you have not applied recently")
-            Button("New typeboard", systemImage: "text.badge.plus") {
-                let seed = library.contextualTypeboardSeed()
-                library.pairSelection(seed.fonts, source: seed.source)
-            }.help("Create a typeboard and choose the initial font for every role")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    Button("Rediscover", systemImage: "shuffle") { showDiscovery = true }.help("Find local fonts you have not applied recently")
+                    Button("New typeboard", systemImage: "text.badge.plus") { createContextualTypeboard() }.help("Create a typeboard and choose the initial font for every role")
+                }
+                HStack(spacing: 8) {
+                    Button { showDiscovery = true } label: { Image(systemName: "shuffle") }.help("Rediscover local fonts").accessibilityLabel("Rediscover local fonts")
+                    Button { createContextualTypeboard() } label: { Image(systemName: "text.badge.plus") }.help("New typeboard").accessibilityLabel("New typeboard")
+                }
+            }
             Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").popover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
             Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").popover(isPresented: $showColors) { PreviewColorsView() }
             Menu("Tools") {
-                ForEach(["Tags", "Families", "Duplicates", "Font Health", "Google Fonts", "Activation", "Folders"], id: \.self) { tab in Button(tab) { library.openTools(tab) } }
-                Divider()
-                Toggle("Metadata table", isOn: $metadataView)
-                Button("Export library backup…") { LibraryBackupTools.export(library) }
-                Button("Import library backup…") { LibraryBackupTools.restore(library) }
-                Button("Save current search…") { saveSearch() }
-                Button("Migrate FontShelf data to Typefield…") { StoreMigration.chooseSource(for: library) }
-                Button("Import earlier preferences…") { StoreMigration.choosePreferences(for: library) }
-                Button("Show automatic backups") { NSWorkspace.shared.open(library.saveURL.deletingLastPathComponent().appendingPathComponent("Backups")) }
-                Button("Select visible families") { library.selectedFamilies.formUnion(library.filtered.map(\.name)) }
+                Menu("Organization") {
+                    Button("Tags…") { library.openTools("Tags") }
+                    Button("Families…") { library.openTools("Families") }
+                    Toggle("Metadata table", isOn: $metadataView)
+                    Button("Save current search…") { saveSearch() }
+                    Button("Replace selection with visible") { library.selectVisibleFamilies() }
+                }
+                Menu("Font files") {
+                    Button("Duplicates…") { library.openTools("Duplicates") }
+                    Button("Font Health…") { library.openTools("Font Health") }
+                    Button("Google Fonts…") { library.openTools("Google Fonts") }
+                    Button("Activation…") { library.openTools("Activation") }
+                    Button("Folders…") { library.openTools("Folders") }
+                }
+                Menu("Backup & migration") {
+                    Button("Export library backup…") { LibraryBackupTools.export(library) }
+                    Button("Import library backup…") { LibraryBackupTools.restore(library) }
+                    Button("Migrate FontShelf data to Typefield…") { StoreMigration.chooseSource(for: library) }
+                    Button("Import earlier preferences…") { StoreMigration.choosePreferences(for: library) }
+                    Button("Show automatic backups") { NSWorkspace.shared.open(library.saveURL.deletingLastPathComponent().appendingPathComponent("Backups")) }
+                }
             }.menuStyle(.borderlessButton).foregroundStyle(Color.primary).padding(8).shelfGlass(radius: 16).frame(width: 85)
-            LibrarySearchView(library: library).focused($searchFocused).frame(minWidth: 220, idealWidth: 290, maxWidth: 350)
+            LibrarySearchView(library: library).focused($searchFocused).frame(minWidth: 165, idealWidth: 250, maxWidth: 350)
         }
         .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
         .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
@@ -1015,10 +1130,20 @@ struct ContentView: View {
         let names = faces.map(\.name) + (library.overlayName.isEmpty ? [] : [library.overlayName])
         return ceil(names.map { CTFontGetAscent(OpenType.font(name: $0, size: size, axes: library.pro.axes[$0] ?? [:], features: library.pro.features[$0] ?? [:])) }.max() ?? size) + 4
     }
+    func reportFontExport(_ faces: [Face]) {
+        guard let result = FontExporter.export(faces) else { return }
+        if result.hasPrefix("Export failed:") || result.contains("\n") { library.message = result }
+        else { library.resultNotice = result + " See the export folder in Finder." }
+    }
     func card(_ family: Family, face: Face, baseline: Double) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let shortPreview = preview != "{family}" && preview.trimmingCharacters(in: .whitespacesAndNewlines).count <= 3 && !preview.contains("\n")
+        let previewHeight = shortPreview ? max(44, size * 1.18) : size * 1.5
+        return VStack(alignment: .leading, spacing: shortPreview ? 9 : 14) {
             HStack(spacing: 8) {
                 Button { if library.selectedFamilies.contains(family.name) { library.selectedFamilies.remove(family.name) } else { library.selectedFamilies.insert(family.name) } } label: { Image(systemName: library.selectedFamilies.contains(family.name) ? "checkmark.circle.fill" : "circle").font(.system(size: 16)).frame(width: 28, height: 28) }.buttonStyle(.plain).help("Select family for batch actions")
+                    .accessibilityLabel("Select \(family.name) for batch actions")
+                    .accessibilityValue(library.selectedFamilies.contains(family.name) ? "Selected" : "Not selected")
+                    .accessibilityAddTraits(library.selectedFamilies.contains(family.name) ? .isSelected : [])
                 VStack(alignment: .leading, spacing: 3) {
                     Text(family.name).font(.system(size: 14, weight: .medium)).lineLimit(2)
                     Text(library.category(family).rawValue + (family.variable ? " · Variable" : "")).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -1026,24 +1151,40 @@ struct ContentView: View {
                 Spacer(minLength: 0)
             }.frame(height: 42, alignment: .top)
             HStack(spacing: 8) {
-                Button { library.detail = family } label: {
-                    Text("\(family.faces.count) \(family.faces.count == 1 ? "style" : "styles")").font(.system(size: 13, weight: .semibold)).padding(.horizontal, 10).frame(height: 30).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                }.buttonStyle(.plain).help("View all styles")
+                if grid {
+                    Button { library.detail = family } label: {
+                        Text("\(family.faces.count) \(family.faces.count == 1 ? "style" : "styles")").font(.system(size: 13, weight: .semibold)).padding(.horizontal, 10).frame(height: 30).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    }.buttonStyle(.plain).help("View all styles").accessibilityLabel("Inspect \(family.name), \(family.faces.count) styles")
+                } else {
+                    Text("\(family.faces.count) \(family.faces.count == 1 ? "style" : "styles")").font(.caption).foregroundStyle(.secondary)
+                    Button("Inspect \(family.name)") { library.detail = family }.buttonStyle(.bordered)
+                }
                 Spacer(minLength: 0)
-                Button { library.favorite(family) } label: { Image(systemName: library.saved.favorites.contains(family.name) ? "star.fill" : "star").foregroundStyle(library.saved.favorites.contains(family.name) ? ShelfPalette.ink : Color.primary).font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Toggle favorite")
-                Button { library.compare(family) } label: { Image(systemName: library.comparison.contains(family.name) ? "checkmark.square.fill" : "plus.square").font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Add or remove from shortlist — open Shortlist in the sidebar")
-                Button { library.toggleOverlay(face.name) } label: {
-                    Text("AB").font(.system(size: 13, weight: .bold)).foregroundStyle(library.overlayName == face.name ? Color.cyan : Color.primary).frame(width: 30, height: 30)
-                }.buttonStyle(.plain).help(library.overlayName == face.name ? "Turn off the library overlay" : "Compare this font over every preview in the library").accessibilityLabel(library.overlayName == face.name ? "Turn off \(family.name) library overlay" : "Use \(family.name) as library overlay")
-                Menu { actions(family) } label: { Image(systemName: "ellipsis").font(.system(size: 17)) }.shelfIconMenu().help("Font actions")
+                if grid {
+                    Button { library.favorite(family) } label: { Image(systemName: library.saved.favorites.contains(family.name) ? "star.fill" : "star").foregroundStyle(library.saved.favorites.contains(family.name) ? ShelfPalette.ink : Color.primary).font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Toggle favorite")
+                        .accessibilityLabel(library.saved.favorites.contains(family.name) ? "Remove \(family.name) from favorites" : "Add \(family.name) to favorites")
+                        .accessibilityValue(library.saved.favorites.contains(family.name) ? "Favorite" : "Not favorite")
+                        .accessibilityAddTraits(library.saved.favorites.contains(family.name) ? .isSelected : [])
+                    Button { library.compare(family) } label: { Image(systemName: library.comparison.contains(family.name) ? "checkmark.square.fill" : "plus.square").font(.system(size: 17)).frame(width: 30, height: 30) }.buttonStyle(.plain).help("Add or remove from shortlist — open Shortlist in the sidebar")
+                        .accessibilityLabel(library.comparison.contains(family.name) ? "Remove \(family.name) from shortlist" : "Add \(family.name) to shortlist")
+                        .accessibilityValue(library.comparison.contains(family.name) ? "Shortlisted" : "Not shortlisted")
+                        .accessibilityAddTraits(library.comparison.contains(family.name) ? .isSelected : [])
+                    Button { library.toggleOverlay(face.name) } label: {
+                        Text("AB").font(.system(size: 13, weight: .bold)).foregroundStyle(library.overlayName == face.name ? Color.cyan : Color.primary).frame(width: 30, height: 30)
+                    }.buttonStyle(.plain).help(library.overlayName == face.name ? "Turn off the library overlay" : "Compare this font over every preview in the library")
+                        .accessibilityLabel(library.overlayName == face.name ? "Turn off \(family.name) library overlay" : "Use \(family.name) as library overlay")
+                        .accessibilityValue(library.overlayName == face.name ? "Active overlay" : "Inactive overlay")
+                        .accessibilityAddTraits(library.overlayName == face.name ? .isSelected : [])
+                }
+                Menu { actions(family) } label: { Image(systemName: "ellipsis").font(.system(size: 17)) }.shelfIconMenu().help("More actions for \(family.name)").accessibilityLabel("More actions for \(family.name)")
             }
             if !library.overlayName.isEmpty {
                 OverlayPreview(text: preview == "{family}" ? family.name : preview, candidate: face.name, reference: library.overlayName, size: size, library: library, baseline: baseline, maximumLines: 3).allowsHitTesting(false)
             } else {
-                FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: baseline, maximumLines: 3).frame(minHeight: size * 1.5, alignment: .top).allowsHitTesting(false)
+                FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: baseline, maximumLines: 3).frame(minHeight: previewHeight, alignment: .top).allowsHitTesting(false)
             }
-            Button("Expand preview…") { library.detail = family }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Open all preview text and font styles")
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.contextMenu { actions(family) }
+            if grid { Button("Expand preview…") { library.detail = family }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Open all preview text and font styles").accessibilityLabel("Expand \(family.name) preview") }
+        }.frame(maxWidth: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.contextMenu { actions(family) }
     }
     @ViewBuilder func actions(_ family: Family) -> some View {
         Button("New typeboard with this font") { library.pairSelection([library.chosenFace(family).name], source: family.name) }
@@ -1061,7 +1202,7 @@ struct ContentView: View {
                 Button((library.saved.collections[name]!.contains(family.name) ? "✓ " : "") + name) { _ = library.toggleCollectionMembership(family.name, in: name) }
             }
         }
-        Button("Export font family…") { if let result = FontExporter.export(family.faces) { library.message = result } }
+        Button("Export font family…") { reportFontExport(family.faces) }
         Button("Edit tags…") { library.selectedFamilies = [family.name]; library.openTools("Tags") }
         Button("Edit family…") { library.selectedFamilies = [family.name]; library.openTools("Families") }
         if let url = family.representative.url { Button("Inspect font file…") { library.repairURL = url; library.openTools("Font Health") } }
@@ -1099,6 +1240,7 @@ private struct TourPage {
 
 private struct TypefieldTour: View {
     let dismiss: () -> Void
+    let open: (WorkspaceMode) -> Void
     @State private var index = 0
     private var page: TourPage { TourPage.all[index] }
     var body: some View {
@@ -1132,9 +1274,13 @@ private struct TypefieldTour: View {
                 }
                 Spacer()
                 if index > 0 { Button("Back") { index -= 1 }.buttonStyle(.bordered) }
-                Button(index == TourPage.all.count - 1 ? "Open Typefield" : "Next") {
-                    if index == TourPage.all.count - 1 { dismiss() } else { index += 1 }
-                }.buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
+                if index == TourPage.all.count - 1 {
+                    Button("Browse fonts") { open(.library) }.buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
+                    Button("Open Spaces") { open(.spaces) }.buttonStyle(.bordered)
+                    Button("Draw a letter") { open(.fontLab) }.buttonStyle(.bordered)
+                } else {
+                    Button("Next") { index += 1 }.buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(32)
@@ -1236,7 +1382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         editMenu.item(at: 0)?.target = self; redo.target = self
         editMenu.addItem(.separator())
         addCommand("Find Fonts…", "find", to: editMenu, key: "f")
-        addCommand("Select Visible Families", "select", to: editMenu)
+        addCommand("Replace Selection with Visible", "select", to: editMenu)
         addCommand("Deselect Families", "deselect", to: editMenu)
         let fontMenu = addMenu("Font", to: menu)
         addCommand("Inspect Selected Family…", "inspect", to: fontMenu, key: "i")
@@ -1273,7 +1419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Floating", "studio.inspector.floating", to: inspectorMenu, key: "4", modifiers: [.command, .option])
         let canvasMenu = addMenu("Canvas", to: viewMenu)
         addCommand("Focus Canvas", "studio.canvasFocus", to: canvasMenu, key: ".")
-        addCommand("Fit Canvases", "studio.canvas.fit", to: canvasMenu, key: "0")
+        addCommand("Fit Canvas Width", "studio.canvas.fit", to: canvasMenu, key: "0")
         canvasMenu.addItem(.separator())
         addCommand("Previous Canvas", "studio.previousCanvas", to: canvasMenu, key: "\u{F702}", modifiers: [.command, .option])
         addCommand("Next Canvas", "studio.nextCanvas", to: canvasMenu, key: "\u{F703}", modifiers: [.command, .option])
@@ -1322,8 +1468,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return item
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(undo(_:)) { item.title = activeUndoManager?.undoMenuItemTitle ?? "Undo"; return activeUndoManager?.canUndo == true }
-        if item.action == #selector(redo(_:)) { item.title = activeUndoManager?.redoMenuItemTitle ?? "Redo"; return activeUndoManager?.canRedo == true }
+        if item.action == #selector(undo(_:)) {
+            if let manager = activeUndoManager { item.title = manager.undoMenuItemTitle; return manager.canUndo }
+            let editorOwnsHistory = library.workspace == .fontLab && NSApp.keyWindow === window && window.attachedSheet == nil && !(window.firstResponder is NSTextView)
+            item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.undoTitle : "Undo"
+            return editorOwnsHistory && FontLabEditMenuBridge.shared.canUndo
+        }
+        if item.action == #selector(redo(_:)) {
+            if let manager = activeUndoManager { item.title = manager.redoMenuItemTitle; return manager.canRedo }
+            let editorOwnsHistory = library.workspace == .fontLab && NSApp.keyWindow === window && window.attachedSheet == nil && !(window.firstResponder is NSTextView)
+            item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.redoTitle : "Redo"
+            return editorOwnsHistory && FontLabEditMenuBridge.shared.canRedo
+        }
         if item.action == #selector(toggleMainFullScreen(_:)) {
             item.title = window.styleMask.contains(.fullScreen) ? "Exit Full Screen" : "Enter Full Screen"
             return NSApp.isActive && window.attachedSheet == nil
@@ -1361,8 +1517,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard NSApp.keyWindow === window || NSApp.keyWindow?.title == "Typefield · Inspector" else { return nil }
         return library.workspace == .spaces ? library.studio.undoManager : nil
     }
-    @objc func undo(_ sender: Any?) { let manager = activeUndoManager; if manager === library.studio.undoManager { window.makeFirstResponder(window) }; manager?.undo() }
-    @objc func redo(_ sender: Any?) { let manager = activeUndoManager; if manager === library.studio.undoManager { window.makeFirstResponder(window) }; manager?.redo() }
+    @objc func undo(_ sender: Any?) {
+        if let manager = activeUndoManager {
+            if manager === library.studio.undoManager { window.makeFirstResponder(window) }
+            manager.undo()
+        } else if library.workspace == .fontLab && window.isKeyWindow && window.attachedSheet == nil && !(window.firstResponder is NSTextView) {
+            FontLabEditMenuBridge.shared.requestUndo()
+        }
+    }
+    @objc func redo(_ sender: Any?) {
+        if let manager = activeUndoManager {
+            if manager === library.studio.undoManager { window.makeFirstResponder(window) }
+            manager.redo()
+        } else if library.workspace == .fontLab && window.isKeyWindow && window.attachedSheet == nil && !(window.firstResponder is NSTextView) {
+            FontLabEditMenuBridge.shared.requestRedo()
+        }
+    }
     @objc func toggleMainFullScreen(_ sender: Any?) { window.toggleFullScreen(sender) }
     @objc func runMenuCommand(_ sender: NSMenuItem) {
         guard validateMenuItem(sender), let command = sender.representedObject as? String else { return }
@@ -1393,8 +1563,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "Tags", "Families", "Duplicates", "Font Health", "Google Fonts", "Activation": library.openTools(command)
         case "tagSelected": library.openTools("Tags")
         case "familySelected": library.openTools("Families")
-        case "export": if let result = FontExporter.export(library.selectedFaces) { library.message = result }
-        case "select": library.selectedFamilies.formUnion(library.filtered.map(\.name))
+        case "export": if let result = FontExporter.export(library.selectedFaces) { if result.hasPrefix("Export failed:") || result.contains("\n") { library.message = result } else { library.resultNotice = result + " See the export folder in Finder." } }
+        case "select": library.selectVisibleFamilies()
         case "deselect": library.selectedFamilies = []
         case "inspect": library.detail = selected.first
         case "favorite": for family in selected { library.favorite(family) }
@@ -1402,7 +1572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "comparison": library.showCompare = true
         case "copyNames": NSPasteboard.general.clearContents(); NSPasteboard.general.setString(selected.map(\.name).joined(separator: "\n"), forType: .string)
         case "filters": library.showAdvanced.toggle()
-        case "clearFilters": library.search = ""; library.source = "All sources"; library.variableOnly = false; library.advanced = AdvancedFilter(); library.tagQuery = TagQuery(); library.writing = nil; library.requireCoverage = false; library.selection = "All Fonts"
+        case "clearFilters": library.clearFiltersPreservingSection()
         case "refresh": library.reload(register: true)
         default: NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: command)
         }
@@ -1561,6 +1731,33 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     precondition(testLibrary.filtered.allSatisfy { $0.writingSystems.contains(.devanagari) })
     testLibrary.writing = nil; testLibrary.requireCoverage = true; testLibrary.requiredText = "हिन्दी"
     precondition(testLibrary.filtered.allSatisfy { family in family.faces.contains { FontCoverage.missing("हिन्दी", in: $0.coverage).isEmpty } })
+    testLibrary.requireCoverage = false; testLibrary.requiredText = ""
+    testLibrary.advanced.slant = "Italic"
+    precondition(!testLibrary.filteredFaces.isEmpty && testLibrary.filteredFaces.allSatisfy { $0.facts.italic }, "Style filter must apply to metadata rows")
+    precondition(testLibrary.filteredFaces.count == testLibrary.filtered.reduce(0) { $0 + testLibrary.matchingFaces(in: $1).count }, "Metadata and grid must share face counts")
+    testLibrary.advanced = AdvancedFilter()
+    if let multiStyleFamily = fonts.first(where: { $0.faces.count > 1 }) {
+        let taggedFace = multiStyleFamily.faces[0]
+        testLibrary.pro.tags[taggedFace.name, default: []].insert("qa/face-only")
+        testLibrary.tagQuery.included.insert("qa/face-only")
+        precondition(testLibrary.filtered.map(\.name) == [multiStyleFamily.name] && testLibrary.filteredFaces.map(\.name) == [taggedFace.name], "Tag filters must not include untagged sibling styles")
+        testLibrary.tagQuery = TagQuery()
+        testLibrary.selection = "tag:qa/face-only"
+        precondition(testLibrary.filteredFaces.map(\.name) == [taggedFace.name], "Tag sections must count only matching styles")
+        testLibrary.selection = "All Fonts"
+    }
+    testLibrary.search = "Helvetica"; testLibrary.requiredText = "Hello"; testLibrary.requireCoverage = true
+    precondition(testLibrary.saveCurrentSearch(as: "Preview round trip", previewText: "Hello"))
+    let savedSearchData = try JSONEncoder().encode(testLibrary.saved.savedSearches!["Preview round trip"]!)
+    let restoredSavedSearch = try JSONDecoder().decode(SavedSearch.self, from: savedSearchData)
+    testLibrary.saved.savedSearches = ["Preview round trip": restoredSavedSearch]
+    testLibrary.search = ""; testLibrary.requiredText = "Different"; testLibrary.requireCoverage = false
+    precondition(testLibrary.applySavedSearch("Preview round trip") == "Hello" && testLibrary.requiredText == "Hello" && testLibrary.requireCoverage, "Saved search must restore its visible preview and coverage text")
+    var legacySearchObject = try JSONSerialization.jsonObject(with: savedSearchData) as! [String: Any]
+    legacySearchObject.removeValue(forKey: "previewText")
+    let legacySearch = try JSONDecoder().decode(SavedSearch.self, from: JSONSerialization.data(withJSONObject: legacySearchObject))
+    precondition(legacySearch.previewText == nil, "Earlier saved searches must remain readable")
+    testLibrary.search = ""; testLibrary.requireCoverage = false; testLibrary.requiredText = ""
     testLibrary.requireCoverage = false; testLibrary.compare(fonts[0]); precondition(testLibrary.compared.count == 1)
     testLibrary.compare(fonts[0]); precondition(testLibrary.compared.isEmpty)
     AdobeBridge.selfTest()

@@ -289,8 +289,44 @@ enum LibraryBackupTools {
             let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Typefield-library.json"
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try JSONEncoder().encode(backup).write(to: url, options: .atomic)
-            library.message = "Library, Spaces, and Letterform Editor backup exported. Font files are not included."
+            library.message = "Backup saved to \(url.lastPathComponent): Library, Spaces, and Letterform Editor. Font files are not included."
         } catch { library.message = error.localizedDescription }
+    }
+    struct MergePreview: Equatable {
+        let newCollections: Int
+        let existingCollections: Int
+        let addedMemberships: Int
+        let addedFavorites: Int
+        let spaces: Int
+        let typeboards: Int
+        let editorProjects: Int
+        var description: String {
+            "Collections: \(newCollections) new; \(existingCollections) existing collections receive memberships (\(addedMemberships) memberships added).\n" +
+            "Favorites: \(addedFavorites) added.\n" +
+            "Spaces: \(spaces) copies with \(typeboards) typeboards.\n" +
+            "Letterform Editor: \(editorProjects) project copies.\n\n" +
+            "Existing settings stay in place. Font files and watched-folder access are not included. Typefield keeps recovery copies while merging."
+        }
+    }
+    static func previewMerge(_ backup: LibraryBackup, into library: Library) throws -> MergePreview {
+        guard backup.version == 1, backup.spaces.version == 1,
+              backup.spaces.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }),
+              backup.fontLab?.isValid ?? true,
+              !library.librarySaveBlocked, !library.proSaveBlocked, !library.studio.readBlocked,
+              backup.fontLab == nil || !library.fontLab.readBlocked else {
+            throw backupError("This backup is invalid or current saved data needs recovery before a merge.")
+        }
+        let newCollections = backup.library.collections.keys.filter { library.saved.collections[$0] == nil }.count
+        let existingCollections = backup.library.collections.keys.filter { library.saved.collections[$0] != nil }.count
+        let memberships = backup.library.collections.reduce(0) { count, entry in
+            count + entry.value.subtracting(library.saved.collections[entry.key] ?? []).count
+        }
+        return MergePreview(newCollections: newCollections, existingCollections: existingCollections,
+                            addedMemberships: memberships,
+                            addedFavorites: backup.library.favorites.subtracting(library.saved.favorites).count,
+                            spaces: backup.spaces.spaces.count,
+                            typeboards: backup.spaces.spaces.reduce(0) { $0 + $1.boards.count },
+                            editorProjects: backup.fontLab?.projects.count ?? 0)
     }
     static func merge(_ backup: LibraryBackup, into library: Library,
                       writeFile: (Data, URL) throws -> Void = { data, url in try data.write(to: url, options: .atomic) }) throws {
@@ -445,8 +481,16 @@ enum LibraryBackupTools {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.message = "Merge a Typefield backup. Existing settings are kept; spaces and Letterform Editor projects are imported as copies."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try merge(JSONDecoder().decode(LibraryBackup.self, from: TypefieldInputFile.read(url, maximumBytes: 512_000_000)), into: library)
-            library.message = "Backup merged. Add font folders separately to grant access on this Mac."
+            let backup = try JSONDecoder().decode(LibraryBackup.self, from: TypefieldInputFile.read(url, maximumBytes: 512_000_000))
+            let summary = try previewMerge(backup, into: library)
+            let alert = NSAlert()
+            alert.messageText = "Merge backup “\(url.lastPathComponent)”?"
+            alert.informativeText = summary.description
+            alert.addButton(withTitle: "Merge Backup")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            try merge(backup, into: library)
+            library.message = "Backup merged: \(summary.newCollections) new collections, \(summary.spaces) Spaces copies, \(summary.editorProjects) Letterform Editor project copies. Regrant external font folders if needed."
         } catch { library.message = "Backup could not be imported: " + error.localizedDescription }
     }
 }
@@ -592,7 +636,7 @@ enum StoreMigration {
 struct MetadataTable: View {
     @ObservedObject var library: Library
     var body: some View {
-        Table(library.filtered.flatMap(\.faces)) {
+        Table(library.filteredFaces) {
             TableColumn("Family") { Text($0.originalFamily) }
             TableColumn("Style") { Text($0.style) }
             TableColumn("Foundry") { Text($0.facts.foundry) }
@@ -650,7 +694,8 @@ enum SpecimenExporter {
     static func export(faces: [Face], library: Library, sample: String) {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = "Typefield specimens.pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try data(faces: faces, library: library, sample: sample).write(to: url, options: .atomic); library.message = "Specimen PDF exported." } catch { library.message = error.localizedDescription }
+        do { try data(faces: faces, library: library, sample: sample).write(to: url, options: .atomic); library.resultNotice = "Specimen PDF saved to \(url.lastPathComponent) for \(faces.count) font styles." }
+        catch { library.message = "Specimen PDF could not be exported: " + error.localizedDescription }
     }
 }
 

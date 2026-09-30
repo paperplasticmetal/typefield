@@ -1,6 +1,16 @@
 # Typefield production readiness audit
 
-Updated 2026-09-23 for the 0.47.0 development build. The earlier 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [roadmap](ROADMAP.md) tracks product depth separately from the release checks below.
+Updated 2026-09-29 for the installed 0.59.0 local build. Native fixtures, the mocked Figma bridge, an unsigned Xcode Release build and a read-only installed-app pass succeeded; [0.59 QA](QA_2026-09-29_0.59.md) records the exact evidence and remaining limits. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the current interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+
+## 0.59.0 candidate interaction work
+
+| Area | Source change | Verification still needed |
+| --- | --- | --- |
+| Library | Saved-search preview and coverage text stay together; metadata rows use matching styles; batch scope and hidden selection are explicit; collection deletion is discoverable and confirmed. Backup merge shows a contents summary; Notes saving uses rollback on failure. | Reopen a saved coverage search after changing preview text; inspect style-filtered cards and table; perform batch selection and collection create/delete with disposable data; force a Notes write failure. |
+| Spaces | Edit scope, export omissions and unavailable fonts are explained before handoff; imports summarize contents and warnings; Space deletion registers Undo; the 50-checkpoint limit is visible. | Exercise each export format and imported/native canvas mix, an unavailable font, image omission, import warnings, Delete/Undo/Redo and checkpoint rollover in a disposable project. |
+| Letterform Editor | Drawn/empty character filtering and jump, a resizable proof strip, current-glyph Edit-menu history, and export scope are exposed. SVG import states its tracing limit. | Check selection/focus, keyboard Undo/Redo, short-window proofing, partial TrueType export, SVG import and actual exported glyphs in other apps with disposable projects. |
+
+Missing-letter generation remains hidden while its research implementation is retained. The 85% native-vector objective was not reached and is not a release claim.
 
 ## Changes in 0.47.0
 
@@ -29,11 +39,12 @@ Backup import now includes next-launch recovery. The recovery checks protect loc
 ## Open release validation
 
 1. **Clean and upgrade installs.** Use disposable macOS accounts on another Mac, including macOS 13. Exercise a new Library, old FontShelf-to-Typefield upgrade, Store-container migration, external-folder permission renewal, managed font licenses, backup restore, and recovery from an unavailable or relocated volume. Current same-machine fixtures do not prove these flows.
-2. **Hands-on workflow matrix.** The [0.47 focused QA record](QA_2026-09-23_0.47.md) covers shape stroke and a local watched folder. Continue with small-window layout, VoiceOver, keyboard-only navigation, object selection and dragging, Shift resizing, Undo, numeric and color controls, pinch/scroll, and actual drag/drop. Focus on Spaces and Letterform Editor.
-3. **Real integration fidelity.** Run the generated Illustrator/InDesign builders and return bridge in supported Adobe versions. Compare Figma and Adobe round trips for wrapping, leading, variable axes, OpenType settings, shape appearance, unsupported effects, and missing-font behavior. The current JSON/JSX checks are narrower.
+2. **Current-version hands-on workflow matrix.** The [0.47 focused QA record](QA_2026-09-23_0.47.md) covers an earlier shape-stroke and local watched-folder path. Review the 0.59 changes above in the installed candidate, then test small-window layout, VoiceOver, keyboard-only navigation, object selection and dragging, Shift resizing, Undo, numeric and color controls, pinch/scroll, and actual drag/drop. Use disposable Library and project data.
+3. **Real host-application bridge fidelity.** Run the generated Illustrator/InDesign builders and return bridge in supported Adobe versions, and exercise Figma package import/export in Figma. Compare wrapping, leading, variable axes, OpenType settings, shape appearance, unsupported effects and missing-font behavior. JSON/JSX fixtures and local bridge tests are narrower.
 4. **Artwork and font proofing.** Test actual Procreate-produced documents, diverse alphabet sheets, and exported fonts in other apps. Current synthetic fixtures cover format safety and common geometry, not broad real-artwork quality.
 5. **Public product details.** Complete independent Typefield name clearance, set final public support/privacy destinations, and capture current storefront screenshots and feature copy. The [rebrand plan](REBRAND_PLAN.md), [privacy copy](PRIVACY.md), and historical [screenshots log](SCREENSHOTS.md) are starting points, not clearance evidence.
-6. **Library permission and activation behavior.** The local false-renewal path is covered by a disposable fixture. Test actual bookmark revocation, relocation, offline volumes, sleep/wake, and session activation under final sandbox entitlements. Track as [LB-01](ROADMAP.md).
+6. **Library permission and activation behavior.** The local false-renewal path is covered by a disposable fixture. Test actual bookmark revocation, relocation, offline volumes, sleep/wake, session activation and guarded original-file repair under final sandbox entitlements. Track as [LB-01](ROADMAP.md).
+7. **Distribution identity and public access.** Verify the final team-signed archive, production bundle ID, App Store Connect/TestFlight installation, support/privacy URLs and storefront listing. The local 0.59 candidate does not establish distribution readiness.
 
 ## Product gaps to decide deliberately
 
@@ -41,8 +52,8 @@ These are meaningful capability limits, but the existing feature should be descr
 
 | Area | Highest-priority gap | Current honest scope |
 | --- | --- | --- |
-| Letterform Editor | [FL-01](ROADMAP.md) whole-object/group editing; [FL-02](ROADMAP.md) previewed vector weight; [FL-03](ROADMAP.md) direct outlined-SVG path import | Complete-outline selection and resizing exist. Pen width affects freehand strokes; SVG artwork is rendered and traced. |
-| Spaces | [SP-02](ROADMAP.md) local text override and reset; [SP-03](ROADMAP.md) consistent selection and transforms | Imported shapes now have fill, opacity, corners and stroke. Canvases move and resize proportionally. Template role styles remain shared; imported text is individually editable. |
+| Letterform Editor | [FL-03](ROADMAP.md) direct outlined-SVG path import; production master interpolation and variable-font export | Drawn and imported outlines are editable. SVG artwork is rendered and traced into new curves, so source control points and groups are not retained. Missing-letter generation is hidden. |
+| Spaces | [SP-02](ROADMAP.md) local typography override and reset for native template text; remaining [SP-03](ROADMAP.md) selection and transform consistency | Native role typography is shared across its uses; imported text layers are individually editable. The 0.59 source candidate labels this scope. |
 | Library | [LB-01](ROADMAP.md) signed-sandbox permission and activation QA; later [LB-02](ROADMAP.md) document-triggered activation and [LB-03](ROADMAP.md) collection migration | Local watched-folder recovery is improved, and manual session activation exists; other apps do not trigger activation automatically. |
 
 The rest of the roadmap includes optional professional/editor depth, research items, and strategic cloud/team features. Those should not be advertised as shipping capabilities.

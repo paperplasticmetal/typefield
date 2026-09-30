@@ -403,6 +403,7 @@ struct DirectionCheckpoint: Codable, Identifiable, Equatable {
     var direction: TypeDirection
 }
 enum StudioCheckpointSave {
+    static let maximumCount = 50
     struct Outcome {
         var board: TypeBoard
         var saved: Bool
@@ -413,7 +414,7 @@ enum StudioCheckpointSave {
         var checkpoints = proposed.checkpoints ?? []
         let checkpoint = DirectionCheckpoint(direction: direction)
         checkpoints.append(checkpoint)
-        proposed.checkpoints = Array(checkpoints.suffix(50))
+        proposed.checkpoints = Array(checkpoints.suffix(maximumCount))
         let persisted = persist(proposed)
         return Outcome(board: persisted, saved: persisted.checkpoints?.contains(where: { $0.id == checkpoint.id }) == true)
     }
@@ -423,6 +424,104 @@ struct DesignSpace: Codable, Identifiable {
     var name = "Untitled space"
     var boards: [TypeBoard] = []
     var displayName: String { name == "Pairing Studio" ? "My projects" : name }
+}
+
+/// Describes what crossed a Spaces import/export boundary. Keep this based on
+/// the saved layout and the current font catalog, not on a preview fallback.
+struct StudioTransferReport {
+    enum Format {
+        case spaceJSON, developerHandoff, previewPDF, figma, typographySummary,
+             typeSystemPDF, adobeBuilder
+
+        var title: String {
+            switch self {
+            case .spaceJSON: return "Space JSON"
+            case .developerHandoff: return "Developer handoff"
+            case .previewPDF: return "Preview PDF"
+            case .figma: return "Editable Figma layout"
+            case .typographySummary: return "Typography summary"
+            case .typeSystemPDF: return "Type system PDF"
+            case .adobeBuilder: return "Adobe builder"
+            }
+        }
+        var omitsArtwork: Bool {
+            switch self {
+            case .developerHandoff, .figma, .adobeBuilder, .typographySummary: return true
+            default: return false
+            }
+        }
+        var limitation: String {
+            switch self {
+            case .spaceJSON: return "Saved layout data and embedded artwork are included. Font files are not bundled."
+            case .developerHandoff: return "Exports CSS, tokens, and a specimen. Font files and canvas artwork are not bundled."
+            case .previewPDF: return "Exports the current canvas as a visual PDF. Text and images are not editable as Spaces objects in the PDF."
+            case .figma: return "Exports editable text and shapes. Images are omitted, font files are not bundled, and Figma may reflow text."
+            case .typographySummary: return "Exports typography settings for the selected canvases. Canvas layout and artwork are not included."
+            case .typeSystemPDF: return "Builds one specimen page per selected canvas. Imported Figma and Adobe canvases are not supported."
+            case .adobeBuilder: return "Creates an editable document inside Adobe. Images are omitted; fonts must be installed there. Text may reflow, and variable axes and OpenType features remain metadata."
+            }
+        }
+    }
+
+    let format: Format
+    let scope: String
+    let directions: [TypeDirection]
+    let availableFonts: Set<String>
+
+    var referencedFonts: Set<String> {
+        directions.reduce(into: Set<String>()) { names, direction in
+            names.formUnion(StudioFontCollection.fontNames(in: direction))
+            if format == .developerHandoff && direction.canvas != .imported { names.formUnion(direction.styles.values.map(\.fontName)) }
+        }
+    }
+    var missingFonts: [String] { referencedFonts.subtracting(availableFonts).sorted() }
+    var artworkCount: Int {
+        directions.reduce(0) { $0 + CanvasPlanCache.plan(for: $1).elements.filter { $0.image != nil }.count }
+    }
+    var omittedArtworkCount: Int { format.omitsArtwork ? artworkCount : 0 }
+    var blockingReason: String? {
+        if format == .typeSystemPDF && directions.contains(where: { $0.canvas == .imported }) {
+            return "The selection includes an imported Figma or Adobe canvas. Choose only native canvases or use Preview PDF for the imported layout."
+        }
+        if format == .adobeBuilder && directions.count > 100 { return "Adobe builders support up to 100 selected canvases." }
+        return nil
+    }
+    var detail: String {
+        var lines = ["Scope: " + scope, "Referenced fonts: \(referencedFonts.count)"]
+        if missingFonts.isEmpty { lines.append("Unavailable here: none") }
+        else {
+            lines.append("Unavailable here (fallback in preview): " + missingFonts.prefix(8).joined(separator: ", ")
+                         + (missingFonts.count > 8 ? " and \(missingFonts.count - 8) more" : ""))
+        }
+        if format.omitsArtwork { lines.append("Image layers omitted: \(omittedArtworkCount)") }
+        lines.append(format.limitation)
+        if let blockingReason { lines.append("Cannot export: " + blockingReason) }
+        return lines.joined(separator: "\n")
+    }
+}
+
+struct StudioImportReport {
+    let source: String
+    let boards: [TypeBoard]
+    let availableFonts: Set<String>
+    var canvasCount: Int { boards.reduce(0) { $0 + $1.directions.count } }
+    var textLayerCount: Int { boards.flatMap(\.directions).reduce(0) { $0 + CanvasPlanCache.plan(for: $1).elements.filter { $0.text != nil }.count } }
+    var warnings: [String] { Array(Set(boards.flatMap(\.directions).flatMap { $0.importWarnings ?? [] })).sorted() }
+    var missingFonts: [String] { StudioFontCollection.fontNames(in: boards).subtracting(availableFonts).sorted() }
+    var detail: String {
+        var lines = ["Source: " + source,
+                     "Imported: \(boards.count) \(boards.count == 1 ? "typeboard" : "typeboards"), \(canvasCount) \(canvasCount == 1 ? "canvas" : "canvases"), \(textLayerCount) text \(textLayerCount == 1 ? "layer" : "layers")",
+                     missingFonts.isEmpty ? "Unavailable fonts: none" : "Unavailable fonts: " + missingFonts.prefix(8).joined(separator: ", ") + (missingFonts.count > 8 ? " and \(missingFonts.count - 8) more" : ""),
+                     "Import notes: \(warnings.count)"]
+        lines += warnings.prefix(8)
+        if warnings.count > 8 { lines.append("…and \(warnings.count - 8) more; see Import notes on each canvas.") }
+        return lines.joined(separator: "\n")
+    }
+}
+enum StudioRoleScope {
+    static func affectedTextCount(role: TypeRole, direction: TypeDirection) -> Int {
+        CanvasPlanCache.plan(for: direction).elements.filter { $0.role == role && $0.text != nil }.count
+    }
 }
 struct StudioState: Codable {
     var version = 1
@@ -583,11 +682,31 @@ final class StudioStore: ObservableObject {
         lastEdit = nil
     }
     @discardableResult func removeSpace(_ id: UUID) -> Bool {
-        guard state.spaces.contains(where: { $0.id == id }) else { return false }
-        return persist {
-            state.spaces.removeAll { $0.id == id }
+        guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return false }
+        let removed = state.spaces[index]
+        let selectedBoard = focusedSpace == id ? focusedBoard : nil
+        guard persist({
+            state.spaces.remove(at: index)
             if focusedSpace == id { focusedSpace = nil; focusedBoard = nil }
-        }
+        }) else { return false }
+        let replaying = undoManager.isUndoing || undoManager.isRedoing
+        if !replaying { undoManager.beginUndoGrouping() }
+        undoManager.registerUndo(withTarget: self) { $0.restoreSpace(removed, at: index, selectedBoard: selectedBoard) }
+        undoManager.setActionName("Delete Space")
+        if !replaying { undoManager.endUndoGrouping() }
+        lastEdit = nil
+        return true
+    }
+    private func restoreSpace(_ space: DesignSpace, at index: Int, selectedBoard: UUID?) {
+        guard !state.spaces.contains(where: { $0.id == space.id }) else { return }
+        guard persist({
+            state.spaces.insert(space, at: min(index, state.spaces.count))
+            focusedSpace = space.id
+            focusedBoard = space.boards.contains(where: { $0.id == selectedBoard }) ? selectedBoard : space.boards.first?.id
+        }) else { return }
+        undoManager.registerUndo(withTarget: self) { $0.removeSpace(space.id) }
+        undoManager.setActionName("Delete Space")
+        lastEdit = nil
     }
     @discardableResult func renameSpace(_ id: UUID, to name: String) -> Bool {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return false }

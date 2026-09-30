@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.59.0 — 2026-09-29
+
+- Refine Library selection and filtering: saved searches restore their preview text, the metadata table respects style and tag filters, batch actions show the families and styles affected, and Replace selection with visible makes its scope explicit. Empty collections and unavailable recent imports have distinct next steps; clearing filters keeps the current Library section.
+- Make collection actions visible in the sidebar and header, confirm deletion with its family count, and show persistent success feedback for collection changes and exports. Backup import now previews what will be merged before confirmation. Library tools use a task menu with sizes suited to each task; Google Fonts downloads show license/source progress and retry guidance, and Font Health explains when original-file repair is unavailable.
+- Clarify Spaces editing and handoff: show whether typography changes affect a role or one imported layer, make Space deletion undoable, expose the 50-checkpoint retention limit, and show scope, missing fonts, omitted artwork and format limits before exports. Imports report their canvas, text-layer, font and warning counts.
+- Improve Letterform Editor navigation and proofing with drawn/empty character filters, character jump, a resizable word-proof strip and Edit-menu Undo/Redo for the current glyph. Export review identifies the exact SVG or TrueType scope and skipped glyphs; SVG import explains that its artwork is traced into new editable outlines.
+- Missing-letter suggestions remain hidden as of 0.58.1. Their local code and research evidence remain available for future work; no suggestion-quality target is claimed by this release.
+
 ## 0.58.1 — 2026-09-29
 
 - Pause missing-letter generation in the app: remove its Characters action, practice-gallery output, metrics-guide prompt and generated-glyph badges. Existing saved outlines remain editable and exportable.

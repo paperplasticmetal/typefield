@@ -16,10 +16,16 @@ struct FontLabTrueTypeArtifact: Equatable {
     let warnings: [String]
 
     var exportedCharacterCount: Int { mappedCharacters.count }
+    var exportedArtworkCharacterCount: Int { mappedCharacters.filter { $0 != " " }.count }
 
     func write(to destination: URL) throws {
         try data.write(to: destination, options: .atomic)
     }
+}
+
+struct FontLabTrueTypeExportScope: Equatable {
+    let mappedArtworkCharacters: [String]
+    let skippedCharacters: [String]
 }
 
 struct FontLabFontValidation: Equatable {
@@ -173,6 +179,7 @@ enum FontLabTrueTypeExporter {
         let familyName = uniqueFamilyName(project.name, projectID: project.id, fingerprint: revision.fingerprint)
         let postScriptName = sanitizedPostScriptName(familyName)
         let mappings = mappedGlyphs(project)
+        let scope = exportScope(in: project, mappings: mappings)
         guard mappings.contains(where: { $0.glyph?.hasArtwork == true }) else { throw ExportError.noDrawnCharacters }
 
         var simplificationCount = 0
@@ -216,8 +223,7 @@ enum FontLabTrueTypeExporter {
         )
 
         let mappedCharacters = mappings.map(\.character)
-        let mappedSet = Set(mappedCharacters)
-        let skipped = project.characters.filter { !mappedSet.contains($0) }
+        let skipped = scope.skippedCharacters
         var warnings: [String] = []
         if !skipped.isEmpty {
             warnings.append("\(skipped.count) undrawn or unsupported character\(skipped.count == 1 ? " was" : "s were") left out. The font includes only drawn, single-scalar characters plus a blank space.")
@@ -314,6 +320,25 @@ enum FontLabTrueTypeExporter {
         }
         guard first.mappedCharacters == [" ", "A", "x", "é", "😀"], first.skippedCharacters == ["Z"] else {
             throw ExportError.malformedFont("the drawn-character export policy changed")
+        }
+        let scope = exportScope(for: project)
+        guard scope.mappedArtworkCharacters == ["A", "x", "é", "😀"],
+              scope.skippedCharacters == first.skippedCharacters,
+              first.exportedArtworkCharacterCount == scope.mappedArtworkCharacters.count else {
+            throw ExportError.malformedFont("the export review scope disagreed with the generated font")
+        }
+        let decomposed = "e\u{301}"
+        var limited = FontLabProject(name: "Limited mapping", characters: ["A", decomposed, "Z"])
+        limited.glyphs["A"]?.strokes = [diagonal]
+        limited.glyphs[decomposed]?.strokes = [diagonal]
+        var orphan = FontLabGlyph(character: "Q")
+        orphan.strokes = [diagonal]
+        limited.glyphs["Q"] = orphan
+        let limitedScope = exportScope(for: limited)
+        guard limited.completedCount == 2,
+              limitedScope.mappedArtworkCharacters == ["A"],
+              limitedScope.skippedCharacters == [decomposed, "Z"] else {
+            throw ExportError.malformedFont("the export review counted an orphan or unsupported glyph")
         }
         let validation = try validate(first)
         guard validation.glyphCount == 8, validation.verifiedCharacters == first.mappedCharacters else {
@@ -421,6 +446,19 @@ enum FontLabTrueTypeExporter {
         let character: String
         let scalar: UInt32
         let glyph: FontLabGlyph?
+    }
+
+    static func exportScope(for project: FontLabProject) -> FontLabTrueTypeExportScope {
+        let output = project.outputProject
+        return exportScope(in: output, mappings: mappedGlyphs(output))
+    }
+
+    private static func exportScope(in project: FontLabProject, mappings: [MappedGlyph]) -> FontLabTrueTypeExportScope {
+        let mapped = Set(mappings.map(\.character))
+        return FontLabTrueTypeExportScope(
+            mappedArtworkCharacters: mappings.compactMap { $0.glyph == nil ? nil : $0.character },
+            skippedCharacters: project.characters.filter { !mapped.contains($0) }
+        )
     }
 
     private static func mappedGlyphs(_ project: FontLabProject) -> [MappedGlyph] {

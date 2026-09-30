@@ -405,7 +405,7 @@ struct FontLabProject: Codable, Identifiable, Equatable {
         glyphs = Dictionary(uniqueKeysWithValues: characters.map { ($0, FontLabGlyph(character: $0)) })
     }
 
-    var completedCount: Int { glyphs.keys.filter { resolvedGlyph($0)?.hasArtwork == true }.count }
+    var completedCount: Int { characters.filter { resolvedGlyph($0)?.hasArtwork == true }.count }
     var isValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 200 &&
             !characters.isEmpty && characters.count <= 2_000 && Set(characters).count == characters.count &&
@@ -995,6 +995,119 @@ enum FontLabCharacterPanelLayout {
     }
 }
 
+enum FontLabProofStripLayout {
+    static let minimumHeight = 126.0
+    static let defaultHeight = 166.0
+    static let maximumHeight = 340.0
+
+    static func clamped(_ height: Double) -> Double {
+        min(max(height, minimumHeight), maximumHeight)
+    }
+}
+
+enum FontLabCharacterFilter: String, CaseIterable, Identifiable {
+    case all = "All", drawn = "Drawn", empty = "Empty"
+    var id: String { rawValue }
+
+    func characters(in project: FontLabProject) -> [String] {
+        project.characters.filter { character in
+            switch self {
+            case .all: return true
+            case .drawn: return project.resolvedGlyph(character)?.hasArtwork == true
+            case .empty: return project.resolvedGlyph(character)?.hasArtwork != true
+            }
+        }
+    }
+}
+
+enum FontLabCharacterNavigation {
+    static func match(_ query: String, in characters: [String]) -> String? {
+        let character = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard character.count == 1 else { return nil }
+        return characters.first(where: { $0 == character }) ??
+            characters.first(where: { $0.caseInsensitiveCompare(character) == .orderedSame })
+    }
+
+    static func sequence(selectedCharacter: String, in project: FontLabProject, filter: FontLabCharacterFilter) -> [String] {
+        let visible = Set(filter.characters(in: project))
+        return project.characters.filter { visible.contains($0) || $0 == selectedCharacter }
+    }
+}
+
+/// The AppKit Edit menu reads this session-only snapshot. FontLabView owns the
+/// actual history and receives commands only while its workspace is visible.
+final class FontLabEditMenuBridge {
+    static let shared = FontLabEditMenuBridge()
+    static let commandNotification = Notification.Name("TypefieldFontLabHistoryCommand")
+
+    private(set) var projectID: UUID?
+    private(set) var character: String?
+    private(set) var canUndo = false
+    private(set) var canRedo = false
+    var undoTitle: String { character.map { "Undo \($0) edit" } ?? "Undo" }
+    var redoTitle: String { character.map { "Redo \($0) edit" } ?? "Redo" }
+
+    func update(projectID: UUID?, character: String?, canUndo: Bool, canRedo: Bool) {
+        self.projectID = projectID
+        self.character = character
+        self.canUndo = projectID != nil && canUndo
+        self.canRedo = projectID != nil && canRedo
+    }
+
+    func clear() { update(projectID: nil, character: nil, canUndo: false, canRedo: false) }
+    func requestUndo() {
+        guard canUndo else { return }
+        NotificationCenter.default.post(name: Self.commandNotification, object: "undo")
+    }
+    func requestRedo() {
+        guard canRedo else { return }
+        NotificationCenter.default.post(name: Self.commandNotification, object: "redo")
+    }
+}
+
+private struct FontLabProofStripDivider: View {
+    @Binding var height: Double
+    @State private var dragStart: Double?
+    @State private var hovered = false
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color.primary.opacity(hovered ? 0.08 : 0.025))
+            Capsule().fill(Color.secondary.opacity(hovered ? 0.8 : 0.45)).frame(width: 42, height: 3)
+        }
+        .frame(height: 12)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let start = dragStart ?? height
+                    if dragStart == nil { dragStart = height }
+                    height = FontLabProofStripLayout.clamped(start + value.translation.height)
+                }
+                .onEnded { _ in dragStart = nil }
+        )
+        .onTapGesture(count: 2) { height = FontLabProofStripLayout.defaultHeight }
+        .onHover { inside in
+            guard hovered != inside else { return }
+            hovered = inside
+            if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+        }
+        .onDisappear { if hovered { NSCursor.pop(); hovered = false } }
+        .help("Drag to resize the proof strip. Double-click to reset.")
+        .accessibilityElement()
+        .accessibilityLabel("Proof strip height")
+        .accessibilityValue("\(Int(height)) points")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: height = FontLabProofStripLayout.clamped(height + 24)
+            case .decrement: height = FontLabProofStripLayout.clamped(height - 24)
+            @unknown default: break
+            }
+        }
+        .accessibilityIdentifier("font-lab-proof-divider")
+    }
+}
+
 private struct FontLabCharacterPanelDivider: View {
     @Binding var width: Double
     @State private var dragStart: Double?
@@ -1061,7 +1174,12 @@ struct FontLabView: View {
     @State private var tabletInputDetected = false
     @State private var selectingCharacters = false
     @State private var selectedCharacters: Set<String> = []
+    @State private var characterFilter = FontLabCharacterFilter.all
+    @State private var characterJump = ""
+    @State private var characterJumpMessage = ""
     @AppStorage("fontLabCharacterBrowserWidth") private var characterBrowserWidth = FontLabCharacterPanelLayout.defaultWidth
+    @AppStorage("fontLabProofStripHeight") private var proofStripHeight = FontLabProofStripLayout.defaultHeight
+    @AppStorage("fontLabProofStripExpanded") private var proofStripExpanded = true
     @State private var showInputHelp = false
     @State private var showMetricsGuide = false
     @State private var showExamples = false
@@ -1078,6 +1196,15 @@ struct FontLabView: View {
     @State private var showSmoothing = false
     @State private var designUndo: (before: FontLabProject, after: FontLabProject)?
     @State private var glyphEditRevision = UUID()
+    @State private var exportRequest: ExportRequest?
+
+    private struct ExportRequest {
+        enum Kind { case glyphSVG, selectedSVGs, allSVGs, trueType }
+        let projectID: UUID
+        let kind: Kind
+        let characters: [String]
+        let message: String
+    }
 
     private struct ClearRequest: Identifiable {
         let id = UUID()
@@ -1092,6 +1219,9 @@ struct FontLabView: View {
     }
 
     private var project: FontLabProject? { store.selectedProject }
+    private var menuHistorySignature: String {
+        "\(project?.id.uuidString ?? "")|\(selectedCharacter)|\(glyphUndo.count)|\(glyphRedo.count)|\(store.readBlocked)"
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1110,7 +1240,7 @@ struct FontLabView: View {
         }
         .background {
             FontLabShortcutBridge(
-                characters: project?.characters ?? [],
+                characters: project.map { FontLabCharacterNavigation.sequence(selectedCharacter: selectedCharacter, in: $0, filter: characterFilter) } ?? [],
                 selectedCharacter: selectedCharacter,
                 canSketch: project?.glyphs[selectedCharacter]?.components?.isEmpty != false,
                 onSelectCharacter: { selectedCharacter = $0 },
@@ -1121,9 +1251,11 @@ struct FontLabView: View {
         }
         .onAppear {
             characterBrowserWidth = FontLabCharacterPanelLayout.clamped(characterBrowserWidth)
+            proofStripHeight = FontLabProofStripLayout.clamped(proofStripHeight)
             if let project = store.selectedProject, !project.characters.contains(selectedCharacter) {
                 selectedCharacter = project.characters.first ?? "A"
             }
+            syncMenuHistory()
         }
         .onChange(of: store.state.selectedProject) { _ in
             editHistory = FontLabGlyphEditHistory()
@@ -1135,6 +1267,26 @@ struct FontLabView: View {
             } else {
                 selectedCharacters.removeAll()
             }
+            characterFilter = .all
+            characterJumpMessage = ""
+            syncMenuHistory()
+        }
+        .onChange(of: menuHistorySignature) { _ in syncMenuHistory() }
+        .onReceive(NotificationCenter.default.publisher(for: FontLabEditMenuBridge.commandNotification)) { event in
+            guard let project, FontLabEditMenuBridge.shared.projectID == project.id,
+                  FontLabEditMenuBridge.shared.character == selectedCharacter else { return }
+            let glyph = project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
+            switch event.object as? String {
+            case "undo": undoStroke(glyph, projectID: project.id)
+            case "redo": redoGlyph(projectID: project.id)
+            default: break
+            }
+        }
+        .alert("Review export", isPresented: Binding(get: { exportRequest != nil }, set: { if !$0 { exportRequest = nil } }), presenting: exportRequest) { request in
+            Button("Continue to save…") { performExport(request) }
+            Button("Cancel", role: .cancel) { exportRequest = nil }
+        } message: { request in
+            Text(request.message)
         }
         .alert("Clear glyph artwork?", isPresented: Binding(get: { clearRequest != nil }, set: { if !$0 { clearRequest = nil } })) {
             Button("Clear", role: .destructive) {
@@ -1170,7 +1322,9 @@ struct FontLabView: View {
                 }
                 editHistory = FontLabGlyphEditHistory(); selectedCharacters.removeAll(); selectingCharacters = false
                 selectedCharacter = result.characters.first(where: { result.glyphs[$0]?.hasArtwork == true }) ?? "A"
-                store.status = "Imported artwork as editable outlines. Use Reshape to refine points, or export SVG / TrueType."
+                let changed = result.characters.filter { result.glyphs[$0]?.hasArtwork == true && result.glyphs[$0] != original?.glyphs[$0] }.count
+                store.error = ""
+                store.status = "Imported \(changed) traced \(changed == 1 ? "glyph" : "glyphs") into \(result.name). Review the editable outlines in Vector; the source file was not changed."
                 return true
             }
         }
@@ -1181,7 +1335,8 @@ struct FontLabView: View {
                     designUndo = (original, updated); editHistory = FontLabGlyphEditHistory(); vectorEditing = true
                     if let openCharacter { selectedCharacter = openCharacter }
                     glyphEditRevision = UUID()
-                    store.status = "Font design settings applied. Undo setup restores the previous project snapshot."
+                    store.error = ""
+                    store.status = "Updated project setup for \(updated.name). Project history can restore the previous snapshot."
                     return true
                 }
             }
@@ -1199,7 +1354,10 @@ struct FontLabView: View {
                 }
             }
         }
-        .onDisappear { store.flushPendingSave() }
+        .onDisappear {
+            FontLabEditMenuBridge.shared.clear()
+            store.flushPendingSave()
+        }
         .accessibilityIdentifier("font-lab-workspace")
     }
 
@@ -1264,6 +1422,7 @@ struct FontLabView: View {
     private func projectWorkspace(_ project: FontLabProject) -> some View {
         let selectedDrawnCharacters = project.characters.filter { selectedCharacters.contains($0) && project.resolvedGlyph($0)?.hasArtwork == true }
         let allDrawnCharacters = project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true }
+        let trueTypeScope = FontLabTrueTypeExporter.exportScope(for: project)
         return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 TextField("Project name", text: projectNameBinding(project.id))
@@ -1279,30 +1438,42 @@ struct FontLabView: View {
                 Button("Components & masters", systemImage: "square.stack.3d.up") { showFontDesign = true }.help("Components, masters, kerning groups and glyph set").disabled(store.readBlocked || isExportingFont)
                 Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
                     .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
-                if let undo = designUndo, undo.after == project {
-                    Button("Undo setup") {
-                        if store.replaceArtworkProject(undo.after, with: undo.before) {
-                            designUndo = nil; editHistory = FontLabGlyphEditHistory(); glyphEditRevision = UUID()
-                            if !undo.before.characters.contains(selectedCharacter) { selectedCharacter = undo.before.characters.first ?? "A" }
+                if designUndo?.after == project || artworkUndo?.after == project {
+                    Menu {
+                        if let undo = designUndo, undo.after == project {
+                            Button("Undo project setup") {
+                                if store.replaceArtworkProject(undo.after, with: undo.before) {
+                                    designUndo = nil; editHistory = FontLabGlyphEditHistory(); glyphEditRevision = UUID()
+                                    if !undo.before.characters.contains(selectedCharacter) { selectedCharacter = undo.before.characters.first ?? "A" }
+                                    store.status = "Restored the project before setup. Per-glyph edit history was cleared."
+                                }
+                            }
                         }
-                    }.disabled(store.readBlocked)
-                }
-                if let undo = artworkUndo, undo.after == project {
-                    Button("Undo import", systemImage: "arrow.uturn.backward") {
-                        if store.replaceArtworkProject(undo.after, with: undo.before) { artworkUndo = nil; editHistory = FontLabGlyphEditHistory() }
-                    }.disabled(store.readBlocked)
+                        if let undo = artworkUndo, undo.after == project {
+                            Button("Undo project import") {
+                                if store.replaceArtworkProject(undo.after, with: undo.before) {
+                                    artworkUndo = nil; editHistory = FontLabGlyphEditHistory(); glyphEditRevision = UUID()
+                                    if !undo.before.characters.contains(selectedCharacter) { selectedCharacter = undo.before.characters.first ?? "A" }
+                                    store.status = "Restored the project before import. Per-glyph edit history was cleared."
+                                }
+                            }
+                        }
+                    } label: { Label("Project history", systemImage: "clock.arrow.circlepath") }
+                        .help("Restore a whole-project snapshot. This is separate from the current glyph's edit history.")
+                        .disabled(store.readBlocked)
                 }
                 Menu {
-                    Button("Export \(selectedCharacter) as SVG…") { exportGlyphSVG(project) }
+                    Button("Export \(selectedCharacter) as SVG…") { prepareExport(.glyphSVG, characters: [selectedCharacter], project: project) }
                         .disabled(project.resolvedGlyph(selectedCharacter)?.hasArtwork != true)
                     Divider()
-                    Button("Export selected as SVGs…") { exportGlyphSVGs(project, characters: selectedDrawnCharacters) }
+                    Button("Export selected as SVGs…") { prepareExport(.selectedSVGs, characters: selectedDrawnCharacters, project: project) }
                         .disabled(selectedDrawnCharacters.isEmpty)
-                    Button("Export all drawn glyphs as SVGs…") { exportGlyphSVGs(project, characters: allDrawnCharacters) }
+                    Button("Export all drawn glyphs as SVGs…") { prepareExport(.allSVGs, characters: allDrawnCharacters, project: project) }
                         .disabled(allDrawnCharacters.isEmpty)
                     Divider()
-                    Button("Export installable TrueType (.ttf)…") { exportInstallableFont(project) }
-                        .disabled(allDrawnCharacters.isEmpty || isExportingFont)
+                    Button("Export installable TrueType (.ttf)…") { prepareExport(.trueType, characters: trueTypeScope.mappedArtworkCharacters, project: project) }
+                        .disabled(trueTypeScope.mappedArtworkCharacters.isEmpty || isExportingFont)
+                        .help(trueTypeScope.mappedArtworkCharacters.isEmpty ? "Draw a supported, single-scalar character before exporting a TrueType font." : "Export the outlined characters that TrueType can map.")
                 } label: { Label("Export", systemImage: "square.and.arrow.up") }
                     .disabled(store.readBlocked)
             }
@@ -1335,26 +1506,29 @@ struct FontLabView: View {
             }
             Divider()
             GeometryReader { proxy in
-                ScrollView([.horizontal, .vertical]) {
-                    VStack(spacing: 0) {
+                let proofHeight = proofStripExpanded ? FontLabProofStripLayout.clamped(proofStripHeight) : 44.0
+                VStack(spacing: 0) {
+                    preview(project).frame(height: proofHeight)
+                    if proofStripExpanded { FontLabProofStripDivider(height: $proofStripHeight) }
+                    Divider()
+                    ScrollView([.horizontal, .vertical]) {
                         HStack(spacing: 0) {
                             characterBrowser(project)
                                 .frame(width: characterBrowserWidth)
                             FontLabCharacterPanelDivider(width: $characterBrowserWidth)
                             glyphEditor(project)
                         }
-                        .frame(height: max(520, proxy.size.height - 160))
-                        Divider()
-                        preview(project)
+                        .frame(minWidth: max(930, proxy.size.width), alignment: .topLeading)
+                        .frame(height: max(520, proxy.size.height - proofHeight - (proofStripExpanded ? 13 : 1)))
                     }
-                    .frame(minWidth: max(930, proxy.size.width), alignment: .topLeading)
                 }
             }
         }
     }
 
     private func characterBrowser(_ project: FontLabProject) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let visibleCharacters = characterFilter.characters(in: project)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text("Characters").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
@@ -1364,9 +1538,32 @@ struct FontLabView: View {
                 .buttonStyle(.plain).font(.caption).foregroundStyle(ShelfPalette.ink)
                 .help(selectingCharacters ? "Finish selecting glyphs" : "Select several glyphs for SVG export")
             }
+            HStack(spacing: 6) {
+                Picker("Show characters", selection: $characterFilter) {
+                    ForEach(FontLabCharacterFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("font-lab-character-filter")
+                Text("\(visibleCharacters.count)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .accessibilityLabel("\(visibleCharacters.count) characters shown")
+            }
+            if !visibleCharacters.contains(selectedCharacter) {
+                Text("Editing \(selectedCharacter); hidden by \(characterFilter.rawValue.lowercased()) filter.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            TextField("Jump to character", text: $characterJump)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { jumpToCharacter(in: project) }
+                .onChange(of: characterJump) { _ in characterJumpMessage = "" }
+                .accessibilityIdentifier("font-lab-character-jump")
+            if !characterJumpMessage.isEmpty {
+                Text(characterJumpMessage).font(.caption2).foregroundStyle(.orange)
+            }
             if selectingCharacters {
                 HStack(spacing: 10) {
-                    Button("Drawn") {
+                    Button("Select drawn") {
                         selectedCharacters = Set(project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true })
                     }
                     .buttonStyle(.plain).font(.caption2)
@@ -1378,9 +1575,10 @@ struct FontLabView: View {
                 }
                 .accessibilityElement(children: .contain)
             }
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 34, maximum: 46), spacing: 6)], spacing: 6) {
-                    ForEach(project.characters, id: \.self) { character in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 34, maximum: 46), spacing: 6)], spacing: 6) {
+                    ForEach(visibleCharacters, id: \.self) { character in
                         let complete = project.resolvedGlyph(character)?.hasArtwork == true
                         let selectedForExport = selectedCharacters.contains(character)
                         Button {
@@ -1412,15 +1610,45 @@ struct FontLabView: View {
                         .accessibilityLabel("\(character), \(complete ? "artwork present" : "empty")")
                         .accessibilityValue(selectingCharacters ? (selectedForExport ? "Selected for export" : "Not selected for export") : (selectedCharacter == character ? "Current glyph" : ""))
                         .help(complete ? "Artwork present" : "No artwork yet")
+                        .id(character)
                     }
+                    }
+                    if visibleCharacters.isEmpty {
+                        Text(characterFilter == .drawn ? "No drawn characters yet." : "No empty characters.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 8)
+                    }
+                }
+                .onChange(of: selectedCharacter) { character in
+                    if characterFilter.characters(in: project).contains(character) { proxy.scrollTo(character, anchor: .center) }
+                }
+                .onChange(of: characterFilter) { filter in
+                    if filter.characters(in: project).contains(selectedCharacter) { proxy.scrollTo(selectedCharacter, anchor: .center) }
                 }
             }
         }
         .padding(16).frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
+    private func jumpToCharacter(in project: FontLabProject) {
+        let query = characterJump.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count == 1 else { characterJumpMessage = "Enter one character."; return }
+        guard let match = FontLabCharacterNavigation.match(query, in: project.characters) else {
+            characterJumpMessage = "\(query) is not in this project."
+            return
+        }
+        if !characterFilter.characters(in: project).contains(match) { characterFilter = .all }
+        selectedCharacter = match
+        characterJump = ""
+        characterJumpMessage = ""
+    }
+
     private func glyphEditor(_ project: FontLabProject) -> some View {
         let glyph = project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
+        let paths = FontLabVectorMath.paths(in: glyph)
+        let anchorCount = paths.reduce(0) { $0 + $1.nodes.count }
+        let canSimplify = paths.contains { $0.closed && ($0.nodes.allSatisfy { $0.incoming == nil && $0.outgoing == nil } || $0.nodes.count > 32) }
         return HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -1430,29 +1658,38 @@ struct FontLabView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!hasAdjacentCharacter(in: project, offset: -1))
-                    .help("Previous glyph (⌘[)")
+                    .help(characterFilter == .all ? "Previous glyph (⌘[)" : "Previous \(characterFilter.rawValue.lowercased()) glyph (⌘[)")
                     .accessibilityLabel("Previous glyph")
                     Button { selectAdjacentCharacter(in: project, offset: 1) } label: {
                         Image(systemName: "chevron.right").frame(width: 24, height: 24)
                     }
                     .buttonStyle(.plain)
                     .disabled(!hasAdjacentCharacter(in: project, offset: 1))
-                    .help("Next glyph (⌘])")
+                    .help(characterFilter == .all ? "Next glyph (⌘])" : "Next \(characterFilter.rawValue.lowercased()) glyph (⌘])")
                     .accessibilityLabel("Next glyph")
                     Spacer()
                     Picker("Editor", selection: $vectorEditing) {
                         Text("Vector").tag(true)
                         Text("Sketch").tag(false).disabled(glyph.components?.isEmpty == false)
                     }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
-                    Button("Simplify outline…") { showSmoothing = true }
-                        .disabled(store.readBlocked || FontLabVectorMath.paths(in: glyph).allSatisfy { !$0.closed || ($0.nodes.count <= 32 && $0.nodes.contains { $0.incoming != nil || $0.outgoing != nil }) })
-                    Button("Redo") { redoGlyph(projectID: project.id) }.disabled(glyphRedo.isEmpty || store.readBlocked)
-                    Button("Undo edit") { undoStroke(glyph, projectID: project.id) }.disabled(glyphUndo.isEmpty || store.readBlocked)
+                    if anchorCount <= 100 {
+                        Button("Simplify outline…") { showSmoothing = true }
+                            .disabled(store.readBlocked || !canSimplify)
+                    }
                     Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
                         .disabled(!glyph.hasArtwork || store.readBlocked)
                 }
-                let anchorCount = FontLabVectorMath.paths(in: glyph).reduce(0) { $0 + $1.nodes.count }
-                if anchorCount > 100 {
+                HStack(spacing: 8) {
+                    Text("History: \(selectedCharacter) artwork & spacing · this session")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("font-lab-history-scope")
+                    Spacer()
+                    Button("Undo edit") { undoStroke(glyph, projectID: project.id) }
+                        .disabled(glyphUndo.isEmpty || store.readBlocked)
+                    Button("Redo edit") { redoGlyph(projectID: project.id) }
+                        .disabled(glyphRedo.isEmpty || store.readBlocked)
+                }
+                if anchorCount > 100 && canSimplify {
                     HStack {
                         Label("\(anchorCount) points — simplify this outline before editing individual nodes.", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                             .font(.callout)
@@ -1549,14 +1786,16 @@ struct FontLabView: View {
     }
 
     private func hasAdjacentCharacter(in project: FontLabProject, offset: Int) -> Bool {
-        guard let index = project.characters.firstIndex(of: selectedCharacter) else { return false }
-        return project.characters.indices.contains(index + offset)
+        let sequence = FontLabCharacterNavigation.sequence(selectedCharacter: selectedCharacter, in: project, filter: characterFilter)
+        guard let index = sequence.firstIndex(of: selectedCharacter) else { return false }
+        return sequence.indices.contains(index + offset)
     }
 
     private func selectAdjacentCharacter(in project: FontLabProject, offset: Int) {
-        guard let index = project.characters.firstIndex(of: selectedCharacter),
-              project.characters.indices.contains(index + offset) else { return }
-        selectedCharacter = project.characters[index + offset]
+        let sequence = FontLabCharacterNavigation.sequence(selectedCharacter: selectedCharacter, in: project, filter: characterFilter)
+        guard let index = sequence.firstIndex(of: selectedCharacter),
+              sequence.indices.contains(index + offset) else { return }
+        selectedCharacter = sequence[index + offset]
     }
 
     private func metricsPanel(_ project: FontLabProject, glyph: FontLabGlyph) -> some View {
@@ -1599,20 +1838,36 @@ struct FontLabView: View {
     private func preview(_ project: FontLabProject) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Preview").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("Word proof").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
-                Text("Click a preview letter to edit it. Outlined tiles mark missing characters.").font(.caption).foregroundStyle(.secondary)
+                if proofStripExpanded {
+                    Text("Click a letter to edit it; outlines mark missing characters.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Button {
+                    proofStripExpanded.toggle()
+                } label: {
+                    Image(systemName: proofStripExpanded ? "chevron.up" : "chevron.down")
+                }
+                .buttonStyle(.plain)
+                .help(proofStripExpanded ? "Collapse word proof" : "Expand word proof")
+                .accessibilityLabel(proofStripExpanded ? "Collapse word proof" : "Expand word proof")
             }
-            TextField("Preview text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
-                .onSubmit { store.flushPendingSave() }.disabled(store.readBlocked)
-            FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: { character in
-                if project.characters.contains(character) { selectedCharacter = character }
-            })
-                .frame(height: 118).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.1)))
+            if proofStripExpanded {
+                TextField("Proof text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
+                    .onSubmit { store.flushPendingSave() }.disabled(store.readBlocked)
+                FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: { character in
+                    if project.characters.contains(character) { selectedCharacter = character }
+                })
+                    .frame(minHeight: 50, maxHeight: .infinity)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.1)))
+            }
         }
-        .padding(.horizontal, 20).padding(.vertical, 14)
+        .padding(.horizontal, 20).padding(.vertical, 10)
+        .accessibilityIdentifier("font-lab-proof-strip")
     }
 
     private var emptyState: some View {
@@ -1721,21 +1976,66 @@ struct FontLabView: View {
         store.setGlyph(edited, in: projectID, save: true)
     }
 
-    private func exportGlyphSVG(_ project: FontLabProject) {
-        guard let glyph = project.resolvedGlyph(selectedCharacter), glyph.hasArtwork else {
-            store.status = "Draw \(selectedCharacter) before exporting it."
+    private func syncMenuHistory() {
+        FontLabEditMenuBridge.shared.update(
+            projectID: project?.id,
+            character: project == nil ? nil : selectedCharacter,
+            canUndo: !glyphUndo.isEmpty && !store.readBlocked,
+            canRedo: !glyphRedo.isEmpty && !store.readBlocked
+        )
+    }
+
+    private func prepareExport(_ kind: ExportRequest.Kind, characters: [String], project: FontLabProject) {
+        let undrawn = max(0, project.characters.count - project.completedCount)
+        let message: String
+        switch kind {
+        case .glyphSVG:
+            message = "Export \(characters.first ?? selectedCharacter) as one SVG outline. Other glyphs and kerning pairs stay in this project; the SVG is not a full font."
+        case .selectedSVGs:
+            let skipped = max(0, selectedCharacters.count - characters.count)
+            message = "Export \(characters.count) selected drawn \(characters.count == 1 ? "glyph" : "glyphs") as separate SVG outlines. \(skipped) selected empty \(skipped == 1 ? "character is" : "characters are") skipped. Kerning pairs are not part of SVG glyph files."
+        case .allSVGs:
+            message = "Export all \(characters.count) drawn glyphs as separate SVG outlines. \(undrawn) undrawn \(undrawn == 1 ? "character is" : "characters are") omitted. Kerning pairs are not part of SVG glyph files."
+        case .trueType:
+            let scope = FontLabTrueTypeExporter.exportScope(for: project)
+            message = "Export a static TrueType font from the active master: \(scope.mappedArtworkCharacters.count) outlined \(scope.mappedArtworkCharacters.count == 1 ? "character" : "characters") mapped, plus a blank space. \(scope.skippedCharacters.count) empty or unsupported project \(scope.skippedCharacters.count == 1 ? "character is" : "characters are") omitted. Kerning uses the legacy kern table, which some apps ignore."
+        }
+        exportRequest = ExportRequest(projectID: project.id, kind: kind, characters: characters, message: message)
+    }
+
+    private func performExport(_ request: ExportRequest) {
+        exportRequest = nil
+        guard let project = store.selectedProject, project.id == request.projectID else {
+            store.error = "The selected project changed. Open Export again to review the current scope."
+            return
+        }
+        switch request.kind {
+        case .glyphSVG:
+            guard let character = request.characters.first else { return }
+            exportGlyphSVG(project, character: character)
+        case .selectedSVGs, .allSVGs:
+            exportGlyphSVGs(project, characters: request.characters)
+        case .trueType:
+            exportInstallableFont(project)
+        }
+    }
+
+    private func exportGlyphSVG(_ project: FontLabProject, character: String) {
+        guard let glyph = project.resolvedGlyph(character), glyph.hasArtwork else {
+            store.status = "Draw \(character) before exporting it."
             return
         }
         let panel = NSSavePanel()
         panel.title = "Export drawn glyph as SVG"
         panel.prompt = "Export SVG"
-        panel.nameFieldStringValue = "\(safeFilename(project.name))-\(safeFilename(selectedCharacter)).svg"
+        panel.nameFieldStringValue = "\(safeFilename(project.name))-\(safeFilename(character)).svg"
         panel.allowedContentTypes = [.svg]
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let destination = panel.url else { return }
         do {
             try FontLabSVGExporter.data(projectName: project.name, glyph: glyph, metrics: project.metrics).write(to: destination, options: .atomic)
-            store.status = "Exported \(selectedCharacter) as \(destination.lastPathComponent)."
+            store.error = ""
+            store.status = "Exported glyph \(character) as \(destination.lastPathComponent). SVG contains its outline only; kerning stays in the project."
         } catch {
             store.error = "The SVG could not be exported. " + error.localizedDescription
         }
@@ -1765,7 +2065,8 @@ struct FontLabView: View {
                 let url = destination.appendingPathComponent(artifact.suggestedFilename)
                 try artifact.data.write(to: url, options: [.atomic, .withoutOverwriting])
             }
-            store.status = "Exported \(artifacts.count) SVG \(artifacts.count == 1 ? "glyph" : "glyphs") to \(destination.lastPathComponent)."
+            store.error = ""
+            store.status = "Exported \(artifacts.count) SVG \(artifacts.count == 1 ? "glyph" : "glyphs") to \(destination.lastPathComponent). Kerning stays in the project."
             NSWorkspace.shared.activateFileViewerSelecting([destination])
         } catch {
             // Only clean up a directory this export successfully created. A
@@ -1776,14 +2077,15 @@ struct FontLabView: View {
     }
 
     private func exportInstallableFont(_ project: FontLabProject) {
-        guard project.completedCount > 0 else {
-            store.status = "Draw or import at least one glyph before exporting an installable font."
+        let scope = FontLabTrueTypeExporter.exportScope(for: project)
+        guard !scope.mappedArtworkCharacters.isEmpty else {
+            store.status = "Draw or import at least one supported, single-scalar character before exporting an installable font."
             return
         }
         let panel = NSSavePanel()
         panel.title = "Export installable TrueType font"
         panel.prompt = "Export Font"
-        panel.message = "Typefield builds a standard OpenType font with TrueType outlines and validates it with macOS before saving."
+        panel.message = "\(scope.mappedArtworkCharacters.count) outlined characters will be mapped, plus a blank space; \(scope.skippedCharacters.count) empty or unsupported project characters will be omitted. Kerning uses the legacy kern table. Typefield validates the font with macOS before saving."
         panel.nameFieldStringValue = safeFilename(project.name) + ".ttf"
         panel.allowedContentTypes = [UTType(filenameExtension: "ttf") ?? .data]
         panel.canCreateDirectories = true
@@ -1800,7 +2102,7 @@ struct FontLabView: View {
                 switch result {
                 case let .success(artifact):
                     let warning = artifact.warnings.isEmpty ? "" : " " + artifact.warnings.joined(separator: " ")
-                    store.status = "Exported \(artifact.exportedCharacterCount) mapped characters as \(destination.lastPathComponent)." + warning
+                    store.status = "Exported \(artifact.exportedArtworkCharacterCount) outlined characters plus a blank space as \(destination.lastPathComponent); \(artifact.skippedCharacters.count) empty or unsupported project characters omitted. Kerning uses legacy kern." + warning
                     NSWorkspace.shared.activateFileViewerSelecting([destination])
                 case let .failure(error):
                     store.error = "The installable font could not be exported. " + error.localizedDescription

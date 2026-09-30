@@ -124,6 +124,9 @@ struct OpenTypeInspector: View {
 struct FontContextView: View {
     let face: Face
     @ObservedObject var library: Library
+    @State private var noteDraft = ""
+    @State private var noteFaceName = ""
+    @State private var noteStatus = ""
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -142,8 +145,34 @@ struct FontContextView: View {
                 Text("Script coverage").font(.headline)
                 Text(face.writingSystems.sorted { $0.rawValue < $1.rawValue }.map(\.rawValue).joined(separator: " · "))
                 Text("Notes").font(.headline)
-                TextEditor(text: Binding(get: { library.pro.notes[face.name] ?? "" }, set: { library.pro.notes[face.name] = $0; library.savePro() })).frame(height: 100).overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2)))
+                TextEditor(text: $noteDraft).frame(height: 100).overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2)))
+                    .accessibilityLabel("Notes for \(face.name)")
+                if !noteStatus.isEmpty { Text(noteStatus).font(.caption).foregroundStyle(noteStatus.hasPrefix("Notes saved") ? Color.secondary : Color.red).textSelection(.enabled) }
             }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onAppear { loadNote(for: face.name) }
+        .onChange(of: noteDraft) { _ in if noteStatus.hasPrefix("Notes saved") { noteStatus = "" } }
+        .onChange(of: face.name) { newName in saveNote(); loadNote(for: newName) }
+        .onDisappear { saveNote() }
+        .task(id: noteDraft) {
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            if !Task.isCancelled { await MainActor.run { saveNote() } }
+        }
+    }
+    private func loadNote(for name: String) {
+        noteFaceName = name
+        noteDraft = library.pro.notes[name] ?? ""
+        noteStatus = ""
+    }
+    private func saveNote() {
+        let name = noteFaceName
+        guard !name.isEmpty, noteDraft != (library.pro.notes[name] ?? "") else { return }
+        let draft = noteDraft
+        if library.updatePro({ $0.notes[name] = draft }) {
+            noteStatus = "Notes saved for \(name) in Library."
+        } else {
+            noteDraft = library.pro.notes[name] ?? ""
+            noteStatus = "Notes were not saved. Previous text restored. " + library.message
         }
     }
     func metadata(_ font: CTFont) -> [(String, String)] {
@@ -320,6 +349,9 @@ struct DetailView: View {
                 .alert("Settings not saved", isPresented: Binding(get: { !settingsError.isEmpty }, set: { if !$0 { settingsError = "" } })) {
                     Button("OK") { settingsError = "" }
                 } message: { Text(settingsError) }
+            if !exportStatus.isEmpty {
+                HStack { Text(exportStatus).font(.caption).foregroundStyle(exportStatus.hasPrefix("Export failed:") ? .red : .secondary).textSelection(.enabled); Spacer(); Button("Dismiss") { exportStatus = "" } }
+            }
             HStack {
                 ShelfDropdown(title: "Style", selection: $chosen, options: family.faces.map { ($0.style, $0.name) }).frame(width: 300)
                 Button("Use as main preview") { setMainPreview(face.name) }
@@ -378,8 +410,5 @@ struct DetailView: View {
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }.padding(20).frame(width: 980, height: min(820, (NSScreen.main?.visibleFrame.height ?? 920) - 90)).onAppear { chosen = library.chosenFace(family).name }
-        .alert("Font export", isPresented: Binding(get: { !exportStatus.isEmpty }, set: { if !$0 { exportStatus = "" } })) {
-            Button("OK") { exportStatus = "" }
-        } message: { Text(exportStatus) }
     }
 }
