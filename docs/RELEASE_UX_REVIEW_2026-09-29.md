@@ -1,0 +1,66 @@
+# Typefield release UX and interaction review
+
+Date: 2026-09-29. Scope: Library (including Tools and font inspection), Spaces, Letterform Editor, onboarding and release handoff. This is a proposal for selection, not authorization to implement the items below.
+
+The review combines a read-only live inspection of the installed 0.58.0 UI, current source inspection, and the existing interaction matrices and readiness notes. The live pass inspected the three workspace layouts and Library Tools without changing a font, project or saved setting. Code findings below are labeled as such; older QA gaps are not treated as newly reproduced defects. The 0.58.1 change pauses and hides missing-letter generation while preserving saved glyphs and research.
+
+## Recommendation
+
+No new major feature is necessary for the current three-workspace product promise. Release work should concentrate on **trust** (the visible state matches the operation), **scope** (what a change affects), **feedback** (what was saved, omitted or declined), and a final signed-build validation pass. Avoid expanding into variable-font interpolation, vector weight, a cloud suggestion API, or a larger drawing suite for this release.
+
+## Fix or resolve before a public release
+
+| Area | Finding and evidence | Smallest useful change |
+| --- | --- | --- |
+| Library · saved coverage search | A saved search restores the hidden `requiredText` used by the coverage predicate but leaves the visible preview text unchanged. The displayed specimen can therefore differ from the text driving the results. Source: [search restore](../Sources/main.swift), `applySavedSearch`; [preview binding](../Sources/main.swift), `preview`. Code finding; not live reproduced. | Restore and show the saved preview text, or show a distinct coverage-text chip. Add a saved-search round-trip check. |
+| Library · metadata | The metadata table expands each matching family into all its faces after a style-level filter has narrowed the family list. A user can see rows that fail the active style filter. Source: [family filtering](../Sources/main.swift), [table rows](../Sources/LibraryExtras.swift). Code finding. | Use the same face predicate for table rows and counts as for the grid/list. |
+| Library · inspector notes | Notes edit the in-memory model before `savePro()`; the editor does not use the existing rollback path or show a failed-save result. Source: [inspector](../Sources/FontInspector.swift), [rollback helper](../Sources/main.swift). Code finding. | Save a draft on commit/debounce and restore the previous value with clear feedback if persistence fails. |
+| Library/Tools · batch scope | Selection survives filtering. “Select visible families” and “Select results” add to prior selection; Tags, activation, export and typeboard creation can then affect families no longer visible. The Tools sheet shows a total, but not how many selected families are outside the current results. Source: [selection](../Sources/main.swift), [Tools](../Sources/LibraryTools.swift). Code finding. | Rename additive controls or replace the selection, and show “X selected · Y outside this view” beside batch actions. Show the affected family/style count before applying a bulk change. |
+| Spaces · shared style scope | Editing selected template text changes its content locally, while font/spacing edits change the shared type role. This is explained in a small inspector caption and is easy to miss when the canvas object is selected. Source: [inspector](../Sources/StudioView.swift), [style model](../Sources/StudioTypography.swift). Code finding; UI effect needs a disposable replay. | Put a persistent “Editing role: Display · affects N text objects” scope label beside the controls. Consider local override/reset only if the labeled shared scope remains confusing in usability testing. |
+| Spaces · delete scope | Deleting a Space removes its boards without the Undo path available to typeboard/canvas changes. Source: [space removal](../Sources/StudioModels.swift), [action](../Sources/StudioView.swift). Code finding. | Make the operation undoable or explicitly confirm the Space name and board count, with a recoverable copy. |
+| Spaces · import/export omissions | Import notes are collapsed low in the inspector; unavailable-font feedback is local to one canvas. Exports vary in scope and omit unsupported artwork in some bridges. The user can miss a loss before handing work off. Source: [Spaces UI](../Sources/StudioView.swift), [readiness record](PRODUCTION_READINESS.md). Code finding and documented limit. | Show a post-import result summary and a compact export preflight with scope, missing fonts, omitted artwork and format limits. |
+| Letterform Editor · Edit-menu consistency | Glyph Undo/Redo has local controls and canvas shortcuts. Global Edit-menu validation appears routed only to Spaces or text editing, while Help lists Undo/Redo as common shortcuts. Source: [menu routing](../Sources/main.swift), [glyph history](../Sources/FontLab.swift), [shortcut reference](../Sources/TypefieldShortcutReference.swift). Code inference. | Replay on a disposable glyph, then route Edit-menu Undo/Redo to the active editor history or state the local scope accurately in Help. |
+| Tools · repair availability | Earlier disposable QA exported a repaired copy but could not enable “Repair original” on a watched fixture. The cause is unresolved, and the disabled control lacks a specific reason. [Earlier matrix](QA_TOOLS_MATRIX.md), [repair UI](../Sources/FontRepair.swift). Validation gap, not a confirmed current bug. | Test under the final signed sandbox with a disposable font; show exact eligibility requirements beside the control and keep repaired-copy export prominent. |
+
+## Design and flow polish worth doing after the release fixes
+
+### Library and Tools
+
+1. **Make the first card action obvious.** In the live grid, each card showed a circle, star, plus-square, “AB” and ellipsis beside its styles. Their purpose depends on tooltips; some accessible names are generic. Give each control a family-specific name and selected state. In list view, consider one labeled primary action and move secondary actions to More. [Card source](../Sources/main.swift).
+2. **Use the available space for comparison.** With a one-character specimen on a wide display, the live grid showed large empty card areas. Let short previews use a denser card height or constrain maximum card width, while keeping multiline specimens legible. This is a live layout observation, not a universal default-text defect.
+3. **Keep collections in the normal workflow.** Rename/delete and membership lean on context menus; the September matrix could not complete deletion through the accessible UI. Add a visible collection actions menu, a count, and a clear empty-collection message. “Clear filters” should not silently jump from a collection to All Fonts. [Sidebar/actions](../Sources/main.swift), [matrix](QA_LIBRARY_MATRIX.md).
+4. **Group Library Tools by task.** The live Tools menu lists 15 mixed actions, and the seven-tab Tools sheet occupies a large mostly empty modal for simple tasks such as Tags. Group Organization, Font files, and Backup/Migration in the menu; make the sheet size/content adapt to its selected task. Keep the underlying tools. [Tools sheet](../Sources/LibraryTools.swift).
+5. **Show backup scope before merge.** Choosing a backup currently starts a broad merge after the file picker. Show what will be added or copied (collections, typeboards, editor projects), then offer “Merge Backup.” Preserve the existing recovery journal. [Backup flow](../Sources/LibraryExtras.swift).
+6. **Put provenance where downloading happens.** Google Fonts cards should show source/license and readable inline failure/retry status before or at the Download action, rather than relying only on the saved license file and later status. [Google Fonts UI](../Sources/LibraryTools.swift).
+
+### Spaces
+
+7. **Make “Add” perform Add.** A role tile with no instances displays “Add,” but clicking selects the role; insertion requires dragging or another menu. Make click insert in a predictable place or label the tile “Drag to add” with an adjacent Add button. [Role browser](../Sources/StudioView.swift).
+8. **Label export scope at the command.** “Preview PDF” uses the current canvas, Figma uses the typeboard, and a type-system PDF uses the summary selection. Name the canvas/board/selection directly in each menu item or use a small export chooser. [Export actions](../Sources/StudioView.swift).
+9. **Make Fit literal.** “Fit all visible canvases” currently fits width. Fit both width and height, or call the option “Fit width.” [Zoom calculation](../Sources/StudioView.swift).
+10. **Align font counts and scope.** The toolbar’s “N fonts” reflects visible canvases, but its summary opens with all canvases selected. Use one default scope or show both counts. [Summary](../Sources/StudioView.swift).
+11. **Expose checkpoint retention.** Only the latest 50 checkpoints remain; the limit is not visible where checkpoints are created. Show a count and explain what happens at 50. [Model](../Sources/StudioModels.swift).
+12. **Lower inspector scanning cost.** The live full inspector presents role, font, size, color, paragraph, advanced type and canvas settings in one narrow column while the canvas occupies most of the window. Keep the frequent font/size/color controls visible; group the rest by “Type,” “Object,” and “Canvas,” and make the selected scope persistent. This is visual polish, pending small-window proof.
+
+### Letterform Editor
+
+13. **One dense-outline recovery action is enough.** A live 710-point glyph showed “Simplify outline…” in both the top toolbar and a warning banner. Use the banner as the primary action for dense glyphs and keep the normal toolbar action for other eligible shapes. [Editor header](../Sources/FontLab.swift).
+14. **Keep proofing within reach.** At the inspected window size, the word preview started below a tall drawing canvas. A resizable or collapsible proof strip would let a designer alternate between nodes and words without losing their editing place. This is a live layout observation.
+15. **Improve glyph navigation without growing the toolset.** The 76-character tile rail needs scrolling; a compact Drawn / Empty filter and “jump to character” would reduce travel, especially after importing an alphabet. Maintain the current character ordering as the default. [Character browser](../Sources/FontLab.swift).
+16. **Put export limitations in context.** Static TrueType export omits undrawn characters; SVG import traces the rendered artwork rather than retaining original control points; kerning uses the legacy `kern` table. Keep these limits visible in import/export review so “editable SVG” does not imply lossless round trip. [Editor design limits](FONT_LAB_DESIGN.md), [export UI](../Sources/FontLab.swift).
+17. **Unify history language.** The editor has “Undo edit,” “Undo setup,” and “Undo import,” each with different scope. Use a short history/scope label near the active undo controls; pair it with the Edit-menu check above. [Editor view](../Sources/FontLab.swift).
+
+### Shared presentation
+
+18. **Make first-run choices task-oriented.** The tour explains all three workspaces, then only dismisses. Finish with “Browse fonts,” “Open Spaces,” and “Draw a letter” routes using existing destinations. [Tour](../Sources/main.swift).
+19. **Use consistent save/result feedback.** Prefer a brief message near the action saying what changed and where, with a recovery path for failures. Space import, bulk Tags, backup merge and font export should use the same pattern. This should reuse existing status and rollback infrastructure.
+20. **Check compact width, high contrast and keyboard paths before changing visual styling.** The Library header has several fixed actions plus a 220-point minimum search field; the Spaces inspector and Editor have dense tool rows. Small-window overflow and VoiceOver order need a current-build check before any aesthetic restyling. [Header](../Sources/main.swift), [readiness](PRODUCTION_READINESS.md).
+
+## Release validation that should precede a public claim
+
+- Run a final distribution-signed/TestFlight build through clean install and upgrade on a second Mac, including the declared macOS 13 minimum. Check FontShelf-to-Typefield migration and external folder regrant.
+- Use disposable fixtures for denied/relocated/offline folders, session activation cleanup, backup import and interrupted recovery, original-font repair, duplicate Trash flow, real artwork import and TrueType use in another app.
+- Check keyboard-only and VoiceOver navigation, small windows, increased contrast/reduced transparency, actual drag/drop and pinch/scroll. Run the generated Figma and Adobe bridges in their host apps; mocked tests do not prove the round trip.
+- Resolve public bundle identity, signing, support/privacy destinations, store copy and screenshots. These remain open in the [App Store checklist](APP_STORE.md) and [production readiness audit](PRODUCTION_READINESS.md).
+
+The September 19 interaction matrices and later focused fixes are useful evidence, but they do not certify the current signed release. The release pass should record each tested build, fixture, action and visible result.

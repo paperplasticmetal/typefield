@@ -2,11 +2,9 @@
 
 Open a project and choose **Components & masters**. Changes are staged until **Apply**; Cancel preserves the current project. **Undo setup** restores the previous project while that applied setup is still the latest change.
 
-## Starter letters
+## Partial fonts and paused research
 
-An installable TrueType font can already be exported with only the letters that have artwork. Undrawn characters are omitted from the font's character map. To get editable starting points for the missing Latin letters, draw or import at least one letter and choose **Suggest missing letters…** in the Characters panel. Drawing **H** and **O** helps establish capital strokes and curves; **x**, **n**, **o**, and **p** provide lowercase height, stems, bowls and descenders. These examples improve the suggestions but are not required to export a partial font.
-
-The review sheet separates uppercase and lowercase suggestions. It identifies letters that reuse actual contours from the drawings and letters built as measured templates. Source-derived letters can open an O/o for C/c, add a feature to a copied bowl, reflect complete stem/bowl joins, mirror compatible forms, or repeat n arches for m. Templates inherit measured width, stem inset and lean, side bearings, terminal shape, stroke weight, and descender depth when sources are available; their contours are still new constructions. Choose individual letters or **Select → Only reused outlines**; Cancel leaves the project untouched. Apply fills only empty glyphs in the active master, keeps every existing drawing, and offers **Undo suggestions** while that project snapshot is current. Suggested outlines are independent editable vector paths. Dense polygons and generated curves receive a bounded two- to three-unit cubic fit when it preserves the outline; the review shows the resulting anchor count. References with a consistent advance retain monospaced template widths, including the repeated m. Inspect them at editing zoom, adjust their curves and bearings, and proof words before distributing a font. A few sample letters cannot determine every design choice in an alphabet, so this is a starter workflow rather than automatic type design or model-backed generation.
+An installable TrueType font can be exported with only the letters that have artwork. Undrawn characters are omitted from the font's character map. Missing-letter generation is paused and hidden from the app. Existing generated glyphs in saved projects remain editable and exportable; their provenance remains in the saved data. The local generator, its checks and the research record are retained for future work.
 
 ## Components
 
@@ -43,7 +41,7 @@ Workflow references: [Glyphs components](https://handbook.glyphsapp.com/componen
 
 ## Practice examples and dense imports (0.53)
 
-Use **Try handwriting & bubble examples…** in the Letterform Editor sidebar. The gallery shows original practice imports and suggested letters separately. **Open editable example** creates a new practice project with the source artwork and suggestions; it does not modify another project. Examples cover slanted handwriting with detached dots, irregular bubble counters, and a rounded A.
+Use **Try handwriting & bubble examples…** in the Letterform Editor sidebar. The gallery previews original practice imports. **Open editable example** creates a new practice project with only the source artwork; it does not modify another project. Examples cover slanted handwriting with detached dots, irregular bubble counters, and a rounded A.
 
 Existing projects keep their saved outlines when the app updates. A glyph with more than 100 anchors now shows a direct **Simplify outline…** action and its point count. The sheet starts with **Editable · 5 units** and compares the original with the proposed curve fit. Apply only after reviewing the preview; **Undo edit** restores the previous glyph. Straight spans become lines, clustered pixel corners are consolidated, and open pen paths remain unchanged.
 
@@ -53,4 +51,4 @@ See [the shape-similarity plan](FONT_LAB_QUALITY_PLAN.md) for the separate missi
 
 In **Nodes** mode, select a point and choose **Paths → Split at selected node** to open a closed contour or cut an open one. Select two open endpoints and choose **Join selected endpoints**; coincident points merge, while separated points connect with a straight segment. Select both ends of a segment and choose **Insert segment midpoints** to add exact editing points without changing its shape. **Transform → Distribute nodes horizontally/vertically** evenly spaces at least three anchors, carrying their handles with them.
 
-Undo and redo remain attached to each glyph while switching letters in a project session, and include side bearings. They reset on project/setup/import changes and are bounded to avoid retaining unlimited dense outlines. Undo without history is disabled. Suggestions now open as an **Experimental letter suggestions** review with nothing preselected; select the letters you have inspected before applying.
+Undo and redo remain attached to each glyph while switching letters in a project session, and include side bearings. They reset on project/setup/import changes and are bounded to avoid retaining unlimited dense outlines. Undo without history is disabled.

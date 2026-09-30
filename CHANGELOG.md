@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.58.1 — 2026-09-29
+
+- Pause missing-letter generation in the app: remove its Characters action, practice-gallery output, metrics-guide prompt and generated-glyph badges. Existing saved outlines remain editable and exportable.
+- Keep the local suggestion engine, regression checks and private research artifacts for a future quality campaign. Practice examples now open only their original imported artwork.
+
 ## 0.58.0 — 2026-09-28
 
 - Estimate proportional suggestion widths from H/O/n/o/p with a small local width prior trained on open-licensed font measurements. Keep compact procedural curves, source padding, monospaced spacing and safe fallback behavior. No model download or artwork upload is needed.

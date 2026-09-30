@@ -44,7 +44,6 @@ struct FontLabExamplesView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var choice = 0
     @State private var source: FontLabProject?
-    @State private var proposal: FontLabStarterProposal?
     @State private var rawCount = 0
     @State private var working = false
     @State private var error = ""
@@ -53,16 +52,14 @@ struct FontLabExamplesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Letterform examples").font(.title2.bold())
-            Text("Try original practice artwork through the same importer and suggestion engine. These are synthetic examples; the missing letters have no ground-truth design.").foregroundStyle(.secondary)
+            Text("Practice importing and editing original handwriting, bubble letters, and a rounded A. These synthetic examples open as separate projects.").foregroundStyle(.secondary)
             Picker("Example", selection: $choice) {
                 ForEach(0..<FontLabExamples.titles.count, id: \.self) { Text(FontLabExamples.titles[$0]).tag($0) }
             }.disabled(working)
-            if working { ProgressView("Importing and preparing suggestions…").frame(height: 330) }
-            else if let source, let proposal {
-                Text("Imported source · \(rawCount) trace points → \(source.glyphs.values.reduce(0) { $0 + FontLabVectorMath.paths(in: $1).flatMap(\.nodes).count }) editable anchors").font(.headline)
-                FontLabPreviewCanvas(text: drawn, glyphs: source.glyphs, metrics: source.metrics, maximumEm: 150, centered: true).frame(height: 150)
-                Text("Suggested letters · review style and spacing").font(.headline)
-                FontLabPreviewCanvas(text: "CDehmuq", glyphs: proposal.glyphs, metrics: source.metrics, maximumEm: 150, centered: true).frame(height: 150)
+            if working { ProgressView("Importing practice artwork…").frame(height: 240) }
+            else if let source {
+                Text("Imported artwork · \(rawCount) trace points → \(source.glyphs.values.reduce(0) { $0 + FontLabVectorMath.paths(in: $1).flatMap(\.nodes).count }) editable anchors").font(.headline)
+                FontLabPreviewCanvas(text: drawn, glyphs: source.glyphs, metrics: source.metrics, maximumEm: 170, centered: true).frame(height: 240)
             }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             HStack {
@@ -70,11 +67,10 @@ struct FontLabExamplesView: View {
                 Spacer()
                 Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Open editable example") {
-                    guard var project = source, let proposal else { return }
-                    for (character, glyph) in proposal.glyphs { project.glyphs[character] = glyph }
-                    project.previewText = drawn + " CDehmuq"
+                    guard var project = source else { return }
+                    project.previewText = drawn
                     onOpen(project); dismiss()
-                }.disabled(source == nil || proposal == nil || working)
+                }.disabled(source == nil || working)
             }
         }.padding(24).frame(width: 820)
         .onAppear { generate() }.onChange(of: choice) { _ in generate() }
@@ -82,17 +78,17 @@ struct FontLabExamplesView: View {
     }
     private func generate() {
         let id = UUID(), index = choice
-        revision = id; working = true; source = nil; proposal = nil; error = ""
+        revision = id; working = true; source = nil; error = ""
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { () throws -> (FontLabProject, FontLabStarterProposal, Int) in
+            let result = Result { () throws -> (FontLabProject, Int) in
                 let raw = try FontLabExamples.make(index, fitCurves: false)
                 let project = try FontLabExamples.make(index)
-                return (project, FontLabStarterAssist.propose(for: project), raw.glyphs.values.reduce(0) { $0 + FontLabVectorMath.paths(in: $1).flatMap(\.nodes).count })
+                return (project, raw.glyphs.values.reduce(0) { $0 + FontLabVectorMath.paths(in: $1).flatMap(\.nodes).count })
             }
             DispatchQueue.main.async {
                 guard revision == id else { return }; working = false
                 switch result {
-                case .success(let value): source = value.0; proposal = value.1; rawCount = value.2
+                case .success(let value): source = value.0; rawCount = value.1
                 case .failure(let failure): error = failure.localizedDescription
                 }
             }
