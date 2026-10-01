@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.3 — 2026-10-01
+
+- Give the five default Spaces formats distinct, editable compositions. Website now reads as a small product shop with a lamp, featured stool and supporting stories; Product UI uses a review queue, project states and a selected next action; Editorial has an article, proof-sheet illustration and pull quote; Poster has an event program and stronger type hierarchy; Type system reads as a compact specimen sheet.
+- Keep existing section and text identifiers so saved edits and section arrangements remain usable. Retain the legacy Editorial continuation when its text or position was customized.
+- Fit default formats down to 320 px, retain three Website stories on narrow canvases, and keep Poster rail text readable against user-selected accent colors.
+
 ## 0.59.2 — 2026-10-01
 
 - Keep Library grid cards aligned at large preview sizes by sharing a measured preview slot and baseline across each visible row. Avoid recomputing the Library filter for the footer count.

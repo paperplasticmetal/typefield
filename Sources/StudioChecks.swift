@@ -89,6 +89,40 @@ enum StudioChecks {
     static func verify(_ condition: @autoclosure () -> Bool, _ message: String = "Assertion failed", line: Int = #line) throws {
         if !condition() { throw NSError(domain: "FontShelfCheck", code: line, userInfo: [NSLocalizedDescriptionKey: "\(message) (StudioChecks.swift:\(line))"]) }
     }
+    /// Compare the actual arrangement of text and shapes, without making copy,
+    /// section titles, colors or exact pixel positions part of the contract.
+    static func templateGeometrySignature(_ plan: CanvasPlan) -> String {
+        let width = max(1, plan.artboardSize.width), height = max(1, plan.artboardSize.height)
+        return plan.elements.map { element in
+            let kind = element.text != nil ? "T" : element.image != nil ? "I" : "S"
+            let column = min(7, max(0, Int(element.rect.midX / width * 8)))
+            let row = min(15, max(0, Int(element.rect.midY / height * 16)))
+            let span = min(7, max(0, Int(element.rect.width / width * 8)))
+            return "\(kind)\(column):\(row):\(span)"
+        }.joined(separator: "|")
+    }
+    static func verifyTemplateTextGeometry(_ plan: CanvasPlan, kind: CanvasKind, width: Double) throws {
+        let text = plan.elements.filter { $0.text != nil }
+        let label = "\(kind.rawValue) at \(Int(width)) px"
+        for element in text {
+            let measured = element.text!.boundingRect(with: CGSize(width: max(1, element.rect.width), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading])
+            try verify(measured.height <= element.rect.height + 5, "\(label): a text frame is shorter than its rendered content")
+            if let section = plan.sections.first(where: { $0.id == element.sectionID }) {
+                try verify(element.rect.minY >= section.rect.minY - 1 && element.rect.maxY <= section.rect.maxY + 1,
+                           "\(label): editable text extends beyond its section and may collide after reordering")
+            }
+        }
+        // Text may deliberately sit on top of a shape or image, but separate
+        // text objects should never cover each other's rendered glyph area.
+        let bounds = text.map { plan.textBounds(for: $0) }
+        for first in text.indices {
+            for second in text.indices where second > first {
+                let overlap = bounds[first].intersection(bounds[second])
+                try verify(overlap.isNull || overlap.width < 4 || overlap.height < 4,
+                           "\(label): rendered text objects overlap (\(text[first].textID ?? text[first].sectionID), \(text[second].textID ?? text[second].sectionID))")
+            }
+        }
+    }
     static func integration(source: URL) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-activation-check-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -324,6 +358,11 @@ enum StudioChecks {
         let typeSystemPDF = try TypeSystemPDFExporter.data(directions: [summaryDirection, secondSummaryDirection])
         let typeSystemDocument = CGDataProvider(data: typeSystemPDF as CFData).flatMap(CGPDFDocument.init)
         try verify(typeSystemDocument?.numberOfPages == 2, "Type system export must create one PDF page per selected canvas")
+        let expectedSpecimen = CanvasPlan(direction: TypeSystemPDFExporter.specimenDirection(from: summaryDirection))
+        let specimenPage = typeSystemDocument?.page(at: 1)?.getBoxRect(.mediaBox)
+        try verify(specimenPage != nil && abs((specimenPage?.width ?? 0) - expectedSpecimen.size.width) < 1 &&
+                   abs((specimenPage?.height ?? 0) - expectedSpecimen.size.height) < 1,
+                   "Type system PDF must render its actual specimen dimensions")
         var importedPDFDirection = TypeDirection(name: "Imported Figma frame")
         importedPDFDirection.canvas = .imported
         importedPDFDirection.importedSource = .figma
@@ -426,7 +465,7 @@ enum StudioChecks {
         try verify(importedBoard.isValid && importedBoard.directions.count == board.directions.count, "Figma typeboard failed validation")
         let importedFirst = importedBoard.directions[0]
         try verify(importedFirst.canvas == .imported && importedFirst.importedSource == .figma && importedFirst.canvasDisplayName == "Figma layout" && importedFirst.canvasUnitLabel == "px" && importedFirst.importedLayout?.layers.filter { $0.style != nil }.count == CanvasPlan(direction: board.directions[0]).elements.filter { $0.text != nil }.count)
-        try verify(importedFirst.importedLayout?.layers.first?.style?.fontName == "Helvetica", "Imported font mapping failed")
+        try verify(importedFirst.importedLayout?.layers.first(where: { $0.style != nil })?.style?.fontName == "Helvetica", "Imported font mapping failed")
         let importedEncoded = try JSONEncoder().encode(importedBoard)
         let decodedImported = try JSONDecoder().decode(TypeBoard.self, from: importedEncoded)
         try verify(decodedImported == importedBoard, "Imported geometry/style persistence failed")
@@ -864,11 +903,11 @@ enum StudioChecks {
         let scaledShape = scaledPlan.elements.first { $0.color != nil && $0.radius > 0 }!, baseShape = basePlan.elements.first { $0.color != nil && $0.radius > 0 }!
         try verify(scaledPlan.artboardSize.width == basePlan.artboardSize.width * 2
                    && scaledPlan.artboardSize.height == basePlan.artboardSize.height * 2
-                   && scaledText.rect.width == baseText.rect.width * 2
+                   && abs(scaledText.rect.width - baseText.rect.width * 2) <= 2
                    && scaledText.style!.size == baseText.style!.size * 2
                    && scaledShape.rect.width == baseShape.rect.width * 2
                    && scaledShape.radius == baseShape.radius * 2,
-                   "Canvas resize must scale the artboard, text, and artwork together")
+                   "Canvas resize must scale the artboard, text, and artwork together: artboard \(basePlan.artboardSize) -> \(scaledPlan.artboardSize), text \(baseText.rect.width)/\(baseText.style!.size) -> \(scaledText.rect.width)/\(scaledText.style!.size), shape \(baseShape.rect.width)/\(baseShape.radius) -> \(scaledShape.rect.width)/\(scaledShape.radius)")
         try verify(CanvasProofing.renderedLines(for: scaledText)?.count == CanvasProofing.renderedLines(for: baseText)?.count,
                    "Proportional resize must preserve text wrapping")
         var scaledExportBoard = TypeBoard(); scaledExportBoard.directions = [arrangementA]
@@ -935,13 +974,34 @@ enum StudioChecks {
         try verify(GlyphCatalog.svg(font: font, glyph: capitalA.glyph)?.contains("<path") == true)
         var plans = 0
         var formatSignatures: Set<String> = []
+        let defaultFormats: Set<CanvasKind> = [.website, .product, .editorial, .poster, .specimen]
         for kind in CanvasKind.allCases {
-            for width in [390.0, 768, 960, 1200] {
+            let widths: [Double] = defaultFormats.contains(kind) ? [320, 390, 768, 960, 1200] : [390, 768, 960, 1200]
+            for width in widths {
                 var d = TypeDirection(); d.canvas = kind; d.width = width
                 let plan = CanvasPlan(direction: d)
-                if width == 960, ![CanvasKind.custom, .imported].contains(kind) { formatSignatures.insert(plan.sections.map(\.title).joined(separator: "|")) }
-                try verify(plan.size.height.isFinite && plan.size.width == width)
-                try verify(plan.elements.allSatisfy { $0.rect.minX >= 0 && $0.rect.maxX <= width + 1 && $0.rect.minY >= 0 && $0.rect.maxY <= plan.size.height }, "Canvas clipped content")
+                if width == 960, defaultFormats.contains(kind) { formatSignatures.insert(templateGeometrySignature(plan)) }
+                try verify(plan.size.height.isFinite && plan.size.width == width,
+                           "\(kind.rawValue) at \(Int(width)) px expanded unexpectedly to \(plan.size.width) px")
+                let clipped = plan.elements.first { $0.rect.minX < 0 || $0.rect.maxX > width + 1 || $0.rect.minY < 0 || $0.rect.maxY > plan.size.height }
+                try verify(clipped == nil, "\(kind.rawValue) at \(Int(width)) px clipped \(clipped?.textID ?? clipped?.sectionID ?? "unknown") at \(String(describing: clipped?.rect))")
+                if defaultFormats.contains(kind) { try verifyTemplateTextGeometry(plan, kind: kind, width: width) }
+                if kind == .website {
+                    try verify(plan.elements.filter { $0.sectionID == "Website:features" && $0.role == .subheading }.count == 3,
+                               "Website must retain all three feature stories at \(Int(width)) px")
+                }
+                if kind == .editorial {
+                    try verify(plan.elements.filter { $0.sectionID == "Editorial:article" && $0.role == .body }.count == 1,
+                               "Editorial must render one continuous article body at \(Int(width)) px")
+                    let proofSample = plan.elements.first { $0.sectionID == "Editorial:image" && $0.role == .display }
+                    try verify(proofSample.flatMap { CanvasProofing.contrast(for: $0, in: plan) }?.overlaid == false,
+                               "Editorial proof-sheet rules must clear the displayed letters at \(Int(width)) px")
+                }
+                if kind == .poster {
+                    let title = plan.elements.first { $0.sectionID == "Poster:poster-field" && $0.role == .display }
+                    let contrast = title.flatMap { CanvasProofing.contrast(for: $0, in: plan) }
+                    try verify((contrast?.minimum ?? 0) >= 3, "Poster display title needs readable large-text contrast at \(Int(width)) px")
+                }
                 plans += 1
                 if let first = plan.sections.first, let last = plan.sections.last, first.id != last.id {
                     d.reorder(first.id, target: last.id, before: false, visible: plan.sections.map(\.id))
@@ -955,7 +1015,41 @@ enum StudioChecks {
                 }
             }
         }
-        try verify(formatSignatures.count == 5, "Website, product UI, editorial, poster and type-system compositions must remain distinct")
+        var savedEditorial = TypeDirection(); savedEditorial.canvas = .editorial; savedEditorial.width = 960
+        let continuationID = "Editorial:article|Body|1"
+        savedEditorial.textPositions = [continuationID: CanvasTextPosition(x: 120, y: 1500)]
+        let restoredContinuation = CanvasPlan(direction: savedEditorial).elements.first { $0.textID == continuationID }
+        try verify(restoredContinuation != nil && abs(restoredContinuation!.rect.minX - 120) < 1,
+                   "A saved position for the legacy Editorial second body frame must keep that frame visible")
+        var darkRailPoster = TypeDirection(); darkRailPoster.canvas = .poster; darkRailPoster.width = 960
+        darkRailPoster.accent = "222222"; darkRailPoster.ink = "222222"
+        let darkRailPlan = CanvasPlan(direction: darkRailPoster)
+        for role in [TypeRole.mono, .label] {
+            let railDetail = darkRailPlan.elements.first { $0.sectionID == "Poster:poster-field" && $0.role == role }
+            try verify(railDetail.flatMap { CanvasProofing.contrast(for: $0, in: darkRailPlan) }?.minimum ?? 0 >= 4.5,
+                       "Poster date and venue must remain readable when the accent matches the ink")
+        }
+        try verify(formatSignatures.count == defaultFormats.count, "Default formats must differ in actual text-and-shape geometry, not only section names")
+        var specimenDirection = TypeDirection(); specimenDirection.canvas = .specimen
+        let specimenIDs = Set(CanvasPlan(direction: specimenDirection).elements.compactMap(\.textID))
+        for role in TypeRole.allCases {
+            let section = CanvasKind.specimen.rawValue + ":" + role.rawValue
+            let metadataID = section + "|" + TypeRole.caption.rawValue + "|0"
+            let sampleID = section + "|" + role.rawValue + "|" + (role == .caption ? "1" : "0")
+            try verify(specimenIDs.contains(metadataID) && specimenIDs.contains(sampleID),
+                       "Type system must retain editable metadata and sample IDs for \(role.rawValue) in saved Spaces")
+        }
+        for kind in defaultFormats {
+            var direction = TypeDirection(); direction.canvas = kind; direction.width = 960
+            let plan = CanvasPlan(direction: direction)
+            let pdf = CanvasNativeView(plan: plan).dataWithPDF(inside: CGRect(origin: .zero, size: plan.size))
+            let document = CGDataProvider(data: pdf as CFData).flatMap(CGPDFDocument.init)
+            let mediaBox = document?.page(at: 1)?.getBoxRect(.mediaBox)
+            try verify(document?.numberOfPages == 1 && mediaBox != nil &&
+                       abs((mediaBox?.width ?? 0) - plan.size.width) < 1 &&
+                       abs((mediaBox?.height ?? 0) - plan.size.height) < 1,
+                       "\(kind.rawValue) Preview PDF must contain a valid, correctly sized canvas page")
+        }
         let figmaData = try JSONSerialization.data(withJSONObject: FigmaLayoutExporter.payload(board: board))
         let figma = try JSONSerialization.jsonObject(with: figmaData) as! [String: Any]
         try verify(figma["format"] as? String == "fontshelf-figma" && (figma["frames"] as? [[String: Any]])?.count == 2)

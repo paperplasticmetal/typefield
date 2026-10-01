@@ -2180,6 +2180,20 @@ struct CanvasPlan {
             if at == nil { y += height + 18 }
             return height
         }
+        func readableTextColor(on background: NSColor) -> NSColor {
+            guard let surface = background.usingColorSpace(.sRGB),
+                  let foreground = ink.usingColorSpace(.sRGB) else { return .black }
+            func luminance(_ color: NSColor) -> Double {
+                func linear(_ channel: CGFloat) -> Double {
+                    let value = Double(channel)
+                    return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+                }
+                return 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent) + 0.0722 * linear(color.blueComponent)
+            }
+            let surfaceLight = luminance(surface), foregroundLight = luminance(foreground)
+            let contrast = (max(surfaceLight, foregroundLight) + 0.05) / (min(surfaceLight, foregroundLight) + 0.05)
+            return contrast >= 4.5 ? ink : (surfaceLight > 0.179 ? .black : .white)
+        }
         func rule() { elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.18))); y += 26 }
         func button(_ label: String? = nil, x: Double? = nil, width: Double? = nil) { let bx = x ?? margin, bw = width ?? usable, start = y, textIndex = elements.count; let h = text(.label, label, x: bx + 18, at: start + 13, width: bw - 36); elements[textIndex].textKind = .buttonLabel; elements.insert(CanvasElement(rect: CGRect(x: bx, y: start, width: bw, height: h + 26), color: accent, radius: 7), at: textIndex); y = start + h + 50 }
         switch d.canvas {
@@ -2189,110 +2203,488 @@ struct CanvasPlan {
         case .website:
             section("navigation", "Website navigation")
             let navY = y
-            let logoH = text(.label, "Studio 01", x: margin, at: navY, width: usable * 0.35)
-            let navH = text(.caption, "Work   About   Journal   Contact", x: margin + usable * 0.48, at: navY, width: usable * 0.52)
-            y = navY + max(logoH, navH) + 22; rule()
-            section("hero", "Split hero")
-            if w >= 700 {
-                let top = y, copyWidth = usable * 0.49, imageX = margin + usable * 0.57, imageWidth = usable * 0.43
-                let displayH = text(.display, x: margin, at: top, width: copyWidth)
-                let bodyH = text(.body, x: margin, at: top + displayH + 22, width: copyWidth * 0.88)
-                y = top + displayH + bodyH + 48; button("Explore the collection", x: margin, width: min(230, copyWidth))
-                let imageHeight = max(300, y - top + 54)
-                elements.insert(CanvasElement(rect: CGRect(x: imageX, y: top, width: imageWidth, height: imageHeight), color: accent.withAlphaComponent(0.2), radius: 3), at: elementStart)
-                elements.append(CanvasElement(rect: CGRect(x: imageX + imageWidth * 0.55, y: top + imageHeight * 0.12, width: imageWidth * 0.28, height: imageHeight * 0.65), color: accent.withAlphaComponent(0.38), radius: imageWidth * 0.14))
-                y = max(y, top + imageHeight + 34)
-            } else {
-                _ = text(.display); _ = text(.body); button("Explore the collection", width: min(240, usable)); elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 220), color: accent.withAlphaComponent(0.2), radius: 3)); y += 250
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: navY + 2, width: 11, height: 11), color: accent, radius: 2))
+            let logoH = text(.label, "COMMON / OBJECTS", x: margin + 20, at: navY, width: usable * (w >= 700 ? 0.34 : 0.49) - 20)
+            let navH = text(.caption, w >= 700 ? "Collection     Stories     About     Bag (0)" : "Menu     Bag (0)",
+                            x: margin + usable * (w >= 700 ? 0.46 : 0.55), at: navY + 1, width: usable * (w >= 700 ? 0.54 : 0.45))
+            y = navY + max(logoH, navH) + 24
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.22)))
+            y += 42
+
+            section("hero", "Collection introduction")
+            let heroTop = y, sideBySide = w >= 760, copyWidth = sideBySide ? usable * 0.51 : usable
+            let eyebrowH = text(.caption, "AN EDIT OF EVERYDAY OBJECTS  /  01", x: margin, at: heroTop, width: copyWidth)
+            let displayY = heroTop + eyebrowH + 18
+            let websiteDisplay = d.style(.display).text == TypeRole.display.sample ? "Objects worth keeping." : d.style(.display).text
+            let displayH = text(.display, websiteDisplay, x: margin, at: displayY, width: copyWidth)
+            let bodyY = displayY + displayH + 18
+            let websiteBody = d.style(.body).text == TypeRole.body.sample
+                ? "Small-batch pieces for the rooms we return to. Built slowly, chosen carefully, and made to stay."
+                : d.style(.body).text
+            let bodyH = text(.body, websiteBody,
+                             x: margin, at: bodyY, width: copyWidth * (sideBySide ? 0.91 : 1))
+            let ctaY = bodyY + bodyH + 28, ctaWidth = min(234, copyWidth)
+            let ctaInsertion = elements.count
+            let ctaH = text(.label, "Explore the collection  ↗", x: margin + 18, at: ctaY + 12, width: ctaWidth - 36)
+            elements[ctaInsertion].textKind = .buttonLabel
+            elements.insert(CanvasElement(rect: CGRect(x: margin, y: ctaY, width: ctaWidth, height: ctaH + 24),
+                                          radius: 2, strokeColor: ink.withAlphaComponent(0.62), strokeWidth: 1), at: ctaInsertion)
+            let copyBottom = ctaY + ctaH + 24
+            let visualX = sideBySide ? margin + usable * 0.58 : margin
+            let visualWidth = sideBySide ? usable * 0.42 : usable
+            let visualTop = sideBySide ? heroTop : copyBottom + 34
+            let visualHeight = sideBySide ? max(390, copyBottom - heroTop + 12) : max(260, visualWidth * 0.76)
+            elements.append(CanvasElement(rect: CGRect(x: visualX, y: visualTop, width: visualWidth, height: visualHeight),
+                                          color: ink.withAlphaComponent(0.045)))
+            let haloSize = min(visualWidth * 0.5, visualHeight * 0.52)
+            elements.append(CanvasElement(rect: CGRect(x: visualX + (visualWidth - haloSize) / 2,
+                                                       y: visualTop + visualHeight * 0.19,
+                                                       width: haloSize, height: haloSize),
+                                          color: accent.withAlphaComponent(0.3), radius: haloSize / 2))
+            let lampCenter = visualX + visualWidth * 0.5
+            let shadeWidth = visualWidth * 0.39, shadeHeight = max(24, visualHeight * 0.105)
+            let shadeY = visualTop + visualHeight * 0.38
+            elements.append(CanvasElement(rect: CGRect(x: lampCenter - shadeWidth / 2, y: shadeY,
+                                                       width: shadeWidth, height: shadeHeight),
+                                          color: ink.withAlphaComponent(0.84), radius: shadeHeight * 0.48))
+            elements.append(CanvasElement(rect: CGRect(x: lampCenter - shadeWidth * 0.58 / 2,
+                                                       y: shadeY + shadeHeight - 3,
+                                                       width: shadeWidth * 0.58, height: 4), color: accent))
+            let stemY = shadeY + shadeHeight
+            let baseY = visualTop + visualHeight * 0.77
+            elements.append(CanvasElement(rect: CGRect(x: lampCenter - 4, y: stemY, width: 8,
+                                                       height: max(6, baseY - stemY)), color: ink.withAlphaComponent(0.84)))
+            elements.append(CanvasElement(rect: CGRect(x: lampCenter - visualWidth * 0.14,
+                                                       y: baseY, width: visualWidth * 0.28, height: 8),
+                                          color: ink.withAlphaComponent(0.84), radius: 4))
+            _ = text(.mono, "ARC LAMP  /  001", x: visualX + 20, at: visualTop + 18, width: visualWidth - 40)
+            _ = text(.caption, "Brushed aluminium. Warm white.", x: visualX + 20, at: visualTop + visualHeight - 36,
+                     width: visualWidth - 40)
+            y = max(copyBottom, visualTop + visualHeight) + 48
+
+            section("proof", "Collection index")
+            let indexY = y, indexWidth = usable / 3
+            for (i, value) in ["01  /  OBJECTS", "02  /  STORIES", "03  /  STUDIO"].enumerated() {
+                _ = text(.caption, value, x: margin + Double(i) * indexWidth, at: indexY, width: indexWidth)
             }
-            section("proof", "Trust strip")
-            let proofY = y, proofWidth = usable / 3
-            for (i, value) in ["Est. 2018", "Independent", "Worldwide"].enumerated() { _ = text(.caption, value, x: margin + Double(i) * proofWidth, at: proofY, width: proofWidth) }
-            y = proofY + 38; rule()
-            section("features", "Feature stories")
-            let cards = w >= 768 ? 3 : 1, gap = 24.0, cw = (usable - Double(cards - 1) * gap) / Double(cards), top = y
-            var bottom = y
-            for i in 0..<cards {
-                let x = margin + Double(i) * (cw + gap), imageHeight = cw * (i == 1 ? 0.9 : 0.62)
-                elements.append(CanvasElement(rect: CGRect(x: x, y: top, width: cw, height: imageHeight), color: accent.withAlphaComponent(0.11 + Double(i) * 0.055), radius: 4))
-                let h = text(.subheading, ["Objects with purpose", "A slower process", "Inside the studio"][i], x: x, at: top + imageHeight + 16, width: cw)
-                let b = text(.body, x: x, at: top + imageHeight + h + 26, width: cw)
-                bottom = max(bottom, top + imageHeight + h + b + 42)
-            }
-            y = bottom; rule(); section("footer", "Website footer"); _ = text(.heading, "Stay curious."); _ = text(.caption, "Newsletter   Instagram   Terms   © 2026")
-        case .product:
-            section("app-bar", "Application chrome")
-            let barY = y
-            elements.append(CanvasElement(rect: CGRect(x: margin, y: barY, width: usable, height: 62), color: ink.withAlphaComponent(0.055), radius: 10))
-            _ = text(.label, "Acme Workspace", x: margin + 18, at: barY + 19, width: usable * 0.35)
-            _ = text(.caption, "⌘ K  Search   Arian ▾", x: margin + usable * 0.58, at: barY + 20, width: usable * 0.38)
-            y = barY + 86
-            section("dashboard", "Dashboard header")
-            _ = text(.caption, "Overview for this week"); _ = text(.heading, "Good morning, Arian"); _ = text(.body, "Track active projects, decisions, and the work that needs your attention.")
-            section("metrics", "Metric cards")
-            let columns = w >= 700 ? 3 : 1, gap = 14.0, cw = (usable - Double(columns - 1) * gap) / Double(columns)
-            for start in stride(from: 0, to: 3, by: columns) {
-                let rowY = y; var bottom = y
-                for i in start..<min(start + columns, 3) {
-                    let x = margin + Double(i - start) * (cw + gap), insertion = elements.count
-                    let captionH = text(.caption, ["Active projects", "Awaiting review", "On-time rate"][i], x: x + 18, at: rowY + 16, width: cw - 36)
-                    let numberH = text(.heading, ["24", "08", "96%" ][i], x: x + 18, at: rowY + captionH + 26, width: cw - 36)
-                    let height = captionH + numberH + 48
-                    elements.insert(CanvasElement(rect: CGRect(x: x, y: rowY, width: cw, height: height), color: accent.withAlphaComponent(i == 1 ? 0.2 : 0.09), radius: 10), at: insertion)
-                    bottom = max(bottom, rowY + height)
+            y = indexY + 32
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.22)))
+            y += 36
+
+            section("features", "Selected stories")
+            let featureTitles = ["Morrow stool", "How it is made", "Visit the workshop"]
+            let featureCopy = d.style(.body).text == TypeRole.body.sample
+                ? ["A quiet seat in solid ash. Finished by hand, made for the places people gather.",
+                   "From the first pencil line to the final coat of oil, see the making of a Morrow stool.",
+                   "Find us on West 3rd Street. Meet the makers and spend some time with the collection."]
+                : Array(repeating: d.style(.body).text, count: 3)
+            let featureTop = y
+            func drawStool(in field: CGRect) {
+                let seatWidth = field.width * 0.42, seatHeight = max(13, field.height * 0.07)
+                let seatY = field.minY + field.height * 0.37
+                let seatX = field.midX - seatWidth / 2
+                elements.append(CanvasElement(rect: CGRect(x: seatX, y: seatY, width: seatWidth, height: seatHeight),
+                                              color: ink.withAlphaComponent(0.8), radius: seatHeight * 0.48))
+                let legTop = seatY + seatHeight - 2, legBottom = field.minY + field.height * 0.83
+                for legX in [seatX + seatWidth * 0.17, seatX + seatWidth * 0.77] {
+                    elements.append(CanvasElement(rect: CGRect(x: legX, y: legTop, width: max(7, seatWidth * 0.055),
+                                                               height: max(1, legBottom - legTop)), color: ink.withAlphaComponent(0.8)))
                 }
-                y = bottom + 18
+                elements.append(CanvasElement(rect: CGRect(x: seatX + seatWidth * 0.18,
+                                                           y: field.minY + field.height * 0.68,
+                                                           width: seatWidth * 0.64, height: max(4, field.height * 0.018)),
+                                              color: ink.withAlphaComponent(0.8)))
             }
-            section("table", "Project table")
-            let tableY = y
-            elements.append(CanvasElement(rect: CGRect(x: margin, y: tableY, width: usable, height: 42), color: ink.withAlphaComponent(0.06), radius: 6))
-            _ = text(.caption, "Project", x: margin + 16, at: tableY + 13, width: usable * 0.44)
-            _ = text(.caption, "Status", x: margin + usable * 0.58, at: tableY + 13, width: usable * 0.2)
-            y = tableY + 42
-            for (i, item) in ["Website exploration", "Mobile interface", "Brand guidelines", "Product launch"].enumerated() {
-                let row = y
-                _ = text(.label, item, x: margin + 16, at: row + 16, width: usable * 0.48)
-                _ = text(.caption, i == 1 ? "Needs review" : "In progress", x: margin + usable * 0.58, at: row + 17, width: usable * 0.28)
-                y = row + 56; elements.append(CanvasElement(rect: CGRect(x: margin, y: y - 1, width: usable, height: 1), color: ink.withAlphaComponent(0.1)))
+            if w >= 760 {
+                let leadWidth = usable * 0.58, rightX = margin + usable * 0.65, rightWidth = usable * 0.35
+                let fieldHeight = max(240, leadWidth * 0.57)
+                let field = CGRect(x: margin, y: featureTop, width: leadWidth, height: fieldHeight)
+                elements.append(CanvasElement(rect: field,
+                                              color: accent.withAlphaComponent(0.12)))
+                drawStool(in: field)
+                _ = text(.mono, "OBJECT 01  /  SOLID ASH", x: margin + 22, at: featureTop + 18, width: leadWidth - 44)
+                _ = text(.caption, "$340", x: margin + leadWidth * 0.78, at: featureTop + fieldHeight - 34,
+                         width: leadWidth * 0.16)
+                let leadTitleY = featureTop + fieldHeight + 18
+                let leadTitleH = text(.subheading, featureTitles[0], x: margin, at: leadTitleY, width: leadWidth)
+                let leadBodyY = leadTitleY + leadTitleH + 12
+                let leadBodyH = text(.body, featureCopy[0], x: margin, at: leadBodyY, width: leadWidth * 0.9)
+                let leadBottom = leadBodyY + leadBodyH
+                var rightY = featureTop
+                for i in 1..<3 {
+                    elements.append(CanvasElement(rect: CGRect(x: rightX, y: rightY, width: rightWidth, height: 1),
+                                                  color: ink.withAlphaComponent(0.22)))
+                    let numberH = text(.mono, "0\(i + 1)  /  JOURNAL", x: rightX, at: rightY + 18, width: rightWidth)
+                    let titleY = rightY + numberH + 34
+                    let titleH = text(.subheading, featureTitles[i], x: rightX, at: titleY, width: rightWidth)
+                    let bodyY = titleY + titleH + 12
+                    let bodyH = text(.body, featureCopy[i], x: rightX, at: bodyY, width: rightWidth)
+                    rightY = bodyY + bodyH + 42
+                }
+                y = max(leadBottom, rightY) + 38
+            } else {
+                let fieldHeight = max(210, usable * 0.6)
+                let field = CGRect(x: margin, y: featureTop, width: usable, height: fieldHeight)
+                elements.append(CanvasElement(rect: field,
+                                              color: accent.withAlphaComponent(0.12)))
+                drawStool(in: field)
+                _ = text(.mono, "OBJECT 01  /  SOLID ASH", x: margin + 20, at: featureTop + 16, width: usable - 40)
+                _ = text(.caption, "$340", x: margin + usable * 0.77, at: featureTop + fieldHeight - 34,
+                         width: usable * 0.16)
+                let leadTitleY = featureTop + fieldHeight + 18
+                let leadTitleH = text(.subheading, featureTitles[0], x: margin, at: leadTitleY, width: usable)
+                let leadBodyY = leadTitleY + leadTitleH + 10
+                let leadBodyH = text(.body, featureCopy[0], x: margin, at: leadBodyY, width: usable)
+                var nextY = leadBodyY + leadBodyH + 38
+                for i in 1..<3 {
+                    elements.append(CanvasElement(rect: CGRect(x: margin, y: nextY, width: usable, height: 1),
+                                                  color: ink.withAlphaComponent(0.22)))
+                    let numberH = text(.mono, "0\(i + 1)  /  JOURNAL", x: margin, at: nextY + 18, width: usable)
+                    let titleY = nextY + numberH + 34
+                    let titleH = text(.subheading, featureTitles[i], x: margin, at: titleY, width: usable)
+                    let bodyY = titleY + titleH + 10
+                    let bodyH = text(.body, featureCopy[i], x: margin, at: bodyY, width: usable)
+                    nextY = bodyY + bodyH + 38
+                }
+                y = nextY + 18
             }
-            y += 22; section("command", "Command input")
-            let commandY = y; elements.append(CanvasElement(rect: CGRect(x: margin, y: commandY, width: usable, height: 58), color: accent.withAlphaComponent(0.13), radius: 9)); _ = text(.mono, "Ask your workspace…                         ⌘ ↵", x: margin + 18, at: commandY + 17, width: usable - 36); y = commandY + 82
+
+            section("footer", "Website footer")
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.22)))
+            let footerTop = y + 30, footerSplit = w >= 760
+            let footerCopyWidth = footerSplit ? usable * 0.5 : usable
+            let footerTitleH = text(.heading, "Notes from the studio.", x: margin, at: footerTop, width: footerCopyWidth)
+            let footerBodyY = footerTop + footerTitleH + 12
+            let footerBodyH = text(.body, "An occasional letter about new pieces, people, and process.",
+                                   x: margin, at: footerBodyY, width: footerCopyWidth)
+            let fieldY = footerSplit ? footerTop + 6 : footerBodyY + footerBodyH + 28
+            let fieldX = footerSplit ? margin + usable * 0.59 : margin
+            let fieldWidth = footerSplit ? usable * 0.41 : usable
+            let fieldInsertion = elements.count
+            let fieldTextH = text(.label, "Email address", x: fieldX + 16, at: fieldY + 13, width: fieldWidth * 0.55)
+            let actionH = text(.label, "Join  ↗", x: fieldX + fieldWidth * 0.72, at: fieldY + 13, width: fieldWidth * 0.24)
+            let fieldHeight = max(48, max(fieldTextH, actionH) + 26)
+            elements.insert(CanvasElement(rect: CGRect(x: fieldX, y: fieldY, width: fieldWidth, height: fieldHeight),
+                                          radius: 2, strokeColor: ink.withAlphaComponent(0.55), strokeWidth: 1), at: fieldInsertion)
+            let linksY = max(footerBodyY + footerBodyH, fieldY + fieldHeight) + 42
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: linksY - 14, width: usable, height: 1), color: ink.withAlphaComponent(0.22)))
+            let linksH = text(.caption, "Collection     Instagram     Contact     © 2026", x: margin, at: linksY, width: usable)
+            y = linksY + linksH + 24
+        case .product:
+            section("app-bar", "Workspace toolbar")
+            let barY = y
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: barY + 4, width: 12, height: 12), color: accent, radius: 3))
+            let brandH = text(.label, "ARC / WORKSPACE", x: margin + 22, at: barY, width: usable * (w >= 700 ? 0.35 : 0.45) - 22)
+            let searchX = margin + usable * (w >= 700 ? 0.43 : 0.53)
+            let searchWidth = usable * (w >= 700 ? 0.39 : 0.47)
+            let searchInsertion = elements.count
+            let searchH = text(.caption, w >= 700 ? "Search projects     ⌘ K" : "Search     ⌘ K",
+                               x: searchX + 12, at: barY + 4, width: searchWidth - 24)
+            elements.insert(CanvasElement(rect: CGRect(x: searchX, y: barY - 4, width: searchWidth, height: max(34, searchH + 16)),
+                                          color: ink.withAlphaComponent(0.04), radius: 5), at: searchInsertion)
+            if w >= 700 { _ = text(.caption, "MA", x: margin + usable * 0.94, at: barY + 4, width: usable * 0.06) }
+            y = barY + max(brandH, searchH + 8, 34) + 18
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.16)))
+            y += 40
+
+            section("dashboard", "Review queue header")
+            let dashboardTop = y
+            let headerCaptionH = text(.caption, "WORKSPACE  /  OVERVIEW", x: margin, at: dashboardTop, width: usable * 0.7)
+            let headingY = dashboardTop + headerCaptionH + 13
+            let headerWidth = w >= 700 ? usable * 0.65 : usable
+            let headingH = text(.heading, "Review queue", x: margin, at: headingY, width: headerWidth)
+            let introY = headingY + headingH + 10
+            let introH = text(.body, "The work moving forward, waiting for review, and ready for a decision.",
+                              x: margin, at: introY, width: headerWidth)
+            var headerBottom = introY + introH
+            let actionY = w >= 700 ? headingY + 2 : headerBottom + 22
+            let actionX = w >= 700 ? margin + usable - 146 : margin
+            let actionInsertion = elements.count
+            let actionH = text(.label, "New project  +", x: actionX + 14, at: actionY + 11, width: 118)
+            elements[actionInsertion].textKind = .buttonLabel
+            elements.insert(CanvasElement(rect: CGRect(x: actionX, y: actionY, width: 146, height: actionH + 22),
+                                          color: accent.withAlphaComponent(0.28), radius: 5), at: actionInsertion)
+            headerBottom = max(headerBottom, actionY + actionH + 22)
+            y = headerBottom + 40
+
+            section("metrics", "Workspace summary")
+            let metricTop = y, metricWidth = usable / 3
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: metricTop, width: usable, height: 1),
+                                          color: ink.withAlphaComponent(0.16)))
+            var metricBottom = metricTop
+            for i in 0..<3 {
+                let x = margin + Double(i) * metricWidth + (i == 0 ? 0 : 15)
+                let cellWidth = metricWidth - (i == 0 ? 12 : 27)
+                let captionH = text(.caption, ["Open items", "Needs review", "On track"][i],
+                                    x: x, at: metricTop + 15, width: cellWidth)
+                let numberY = metricTop + captionH + 25
+                let numberH = text(.heading, ["08", "03", "91%"][i], x: x, at: numberY, width: cellWidth)
+                metricBottom = max(metricBottom, numberY + numberH)
+                if i > 0 {
+                    elements.append(CanvasElement(rect: CGRect(x: margin + Double(i) * metricWidth, y: metricTop + 15,
+                                                               width: 1, height: max(66, captionH + numberH + 10)),
+                                                  color: ink.withAlphaComponent(0.14)))
+                }
+            }
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: metricBottom + 18, width: usable, height: 1),
+                                          color: ink.withAlphaComponent(0.16)))
+            y = metricBottom + 54
+
+            section("table", "Projects and selected detail")
+            let queueTop = y, splitQueue = w >= 700
+            let queueWidth = splitQueue ? usable * 0.59 : usable
+            let detailX = splitQueue ? margin + usable * 0.63 : margin
+            let detailWidth = splitQueue ? usable * 0.37 : usable
+            let kickerH = text(.mono, "RECENT WORK  /  04 ITEMS", x: margin, at: queueTop, width: queueWidth)
+            let tableTop = queueTop + kickerH + 20
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: tableTop, width: queueWidth, height: 38),
+                                          color: ink.withAlphaComponent(0.045)))
+            let projectHeaderH = text(.caption, "Project", x: margin + 14, at: tableTop + 10, width: queueWidth * 0.57 - 14)
+            let statusHeaderH = text(.caption, "Status", x: margin + queueWidth * 0.61, at: tableTop + 10, width: queueWidth * 0.33)
+            var rowY = tableTop + max(38, max(projectHeaderH, statusHeaderH) + 20)
+            let projectNames = ["Fieldwork site", "Packaging system", "Autumn campaign", "Studio archive"]
+            let projectStatuses = ["In review", "In progress", "Ready", "Blocked"]
+            for i in 0..<4 {
+                let labelH = text(.label, projectNames[i], x: margin + 14, at: rowY + 15,
+                                  width: queueWidth * 0.57 - 14)
+                let statusX = margin + queueWidth * 0.61
+                let statusH = text(.caption, projectStatuses[i], x: statusX + 13,
+                                   at: rowY + 16, width: queueWidth * 0.33 - 13)
+                let rowHeight = max(56, max(labelH, statusH) + 30)
+                if i == 0 {
+                    elements.insert(CanvasElement(rect: CGRect(x: margin, y: rowY, width: queueWidth, height: rowHeight),
+                                                  color: accent.withAlphaComponent(0.13)), at: elements.count - 2)
+                    elements.append(CanvasElement(rect: CGRect(x: margin, y: rowY, width: 3, height: rowHeight), color: accent))
+                }
+                let statusColor = i == 0 || i == 2 ? accent : ink.withAlphaComponent(i == 3 ? 0.68 : 0.32)
+                elements.append(CanvasElement(rect: CGRect(x: statusX, y: rowY + 21, width: 7, height: 7),
+                                              color: statusColor, radius: 3.5))
+                rowY += rowHeight
+                elements.append(CanvasElement(rect: CGRect(x: margin, y: rowY - 1, width: queueWidth, height: 1),
+                                              color: ink.withAlphaComponent(0.12)))
+            }
+            let listBottom = rowY
+            let detailTop = splitQueue ? tableTop : listBottom + 22
+            let detailInsertion = elements.count
+            let detailPadding = splitQueue ? 18.0 : 16.0
+            let detailContentWidth = detailWidth - detailPadding * 2
+            let selectedH = text(.caption, "SELECTED PROJECT  /  01", x: detailX + detailPadding,
+                                  at: detailTop + 20, width: detailContentWidth)
+            let detailTitleY = detailTop + selectedH + 32
+            let detailTitleH = text(.heading, "Fieldwork site", x: detailX + detailPadding,
+                                    at: detailTitleY, width: detailContentWidth)
+            let detailBodyY = detailTitleY + detailTitleH + 14
+            let detailBodyH = text(.body, "The storefront and product story are ready for a final pass before launch.",
+                                   x: detailX + detailPadding, at: detailBodyY, width: detailContentWidth)
+            let metaY = detailBodyY + detailBodyH + 24
+            elements.append(CanvasElement(rect: CGRect(x: detailX + detailPadding, y: metaY, width: detailContentWidth, height: 1),
+                                          color: ink.withAlphaComponent(0.15)))
+            let ownerY = metaY + 16
+            let ownerLabelH = text(.label, "Owner", x: detailX + detailPadding, at: ownerY, width: detailContentWidth * 0.43)
+            let ownerValueH = text(.label, "Mara Ellis", x: detailX + detailPadding + detailContentWidth * 0.46,
+                                   at: ownerY, width: detailContentWidth * 0.54)
+            let dueY = ownerY + max(ownerLabelH, ownerValueH) + 15
+            let dueLabelH = text(.label, "Due", x: detailX + detailPadding, at: dueY, width: detailContentWidth * 0.43)
+            let dueValueH = text(.label, "14 Oct", x: detailX + detailPadding + detailContentWidth * 0.46,
+                                 at: dueY, width: detailContentWidth * 0.54)
+            let nextRuleY = dueY + max(dueLabelH, dueValueH) + 22
+            elements.append(CanvasElement(rect: CGRect(x: detailX + detailPadding, y: nextRuleY,
+                                                       width: detailContentWidth, height: 1),
+                                          color: ink.withAlphaComponent(0.15)))
+            let nextLabelY = nextRuleY + 15
+            let nextLabelH = text(.caption, "NEXT ACTION", x: detailX + detailPadding,
+                                  at: nextLabelY, width: detailContentWidth)
+            let nextBodyY = nextLabelY + nextLabelH + 8
+            let nextBodyH = text(.body, "Approve the final type and image balance.",
+                                  x: detailX + detailPadding, at: nextBodyY, width: detailContentWidth)
+            let openY = nextBodyY + nextBodyH + 24
+            let openH = text(.label, "Open project  ↗", x: detailX + detailPadding, at: openY, width: detailContentWidth)
+            let detailBottom = openY + openH + 24
+            elements.insert(CanvasElement(rect: CGRect(x: detailX, y: detailTop, width: detailWidth,
+                                                       height: detailBottom - detailTop),
+                                          color: ink.withAlphaComponent(0.045), radius: 6), at: detailInsertion)
+            y = max(listBottom, detailBottom) + 38
+
+            section("command", "Quick capture")
+            let captureTop = y
+            let captureLabelH = text(.caption, "QUICK CAPTURE", x: margin, at: captureTop, width: usable)
+            let inputTop = captureTop + captureLabelH + 12
+            let inputInsertion = elements.count
+            let inputH = text(.mono, "Add a note or task…", x: margin + 16, at: inputTop + 15,
+                              width: usable - (w >= 700 ? 128 : 32), color: ink.withAlphaComponent(0.68))
+            if w >= 700 { _ = text(.caption, "⌘ ↵  SAVE", x: margin + usable - 98, at: inputTop + 16, width: 82) }
+            let inputHeight = max(54, inputH + 30)
+            elements.insert(CanvasElement(rect: CGRect(x: margin, y: inputTop, width: usable, height: inputHeight),
+                                          color: ink.withAlphaComponent(0.035), radius: 6), at: inputInsertion)
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: inputTop, width: usable, height: inputHeight),
+                                          radius: 6, strokeColor: ink.withAlphaComponent(0.15), strokeWidth: 1))
+            y = inputTop + inputHeight + 26
         case .editorial:
             section("masthead", "Magazine masthead")
-            let mastY = y; _ = text(.caption, "Vol. 12: Culture & design", x: margin, at: mastY, width: usable * 0.5); _ = text(.label, "The Field Notes", x: margin + usable * 0.62, at: mastY, width: usable * 0.38); y = mastY + 38; rule()
+            let mastY = y
+            let issueHeight = text(.caption, "ISSUE 12  /  CULTURE & DESIGN", x: margin, at: mastY, width: usable * 0.52)
+            let mastheadHeight = text(.label, "THE FIELD NOTES", x: margin + usable * 0.58, at: mastY, width: usable * 0.42)
+            y = mastY + max(issueHeight, mastheadHeight) + 24
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.7)))
+            y += 34
             section("cover-story", "Cover story")
-            _ = text(.display, "The quiet ideas reshaping everyday life"); _ = text(.subheading, "A conversation about objects, attention, and what it means to make things that last.")
-            let bylineY = y; _ = text(.caption, "Words by Maya Chen", x: margin, at: bylineY, width: usable * 0.45); _ = text(.caption, "Photography by Luis Ortega", x: margin + usable * 0.52, at: bylineY, width: usable * 0.48); y = bylineY + 42
+            let wideEditorial = w >= 700
+            let storyY = y, storyX = wideEditorial ? margin + usable * 0.16 : margin
+            let headlineY = storyY + (wideEditorial ? 0 : 42)
+            let headlineHeight = text(.display, "What we choose to keep", x: storyX, at: headlineY, width: wideEditorial ? usable * 0.78 : usable)
+            let deckY = headlineY + headlineHeight + 18
+            let deckHeight = text(.subheading, "Inside a small workshop, the case for making fewer things—and making them matter.", x: storyX, at: deckY, width: wideEditorial ? usable * 0.67 : usable)
+            let bylineY = deckY + deckHeight + 28
+            let wordsHeight = text(.caption, "Words by Maya Chen", x: storyX, at: bylineY, width: wideEditorial ? usable * 0.3 : usable * 0.46)
+            let photoX = wideEditorial ? storyX + usable * 0.35 : margin + usable * 0.51
+            let photoHeight = text(.caption, "Artwork from the studio", x: photoX, at: bylineY, width: wideEditorial ? usable * 0.43 : usable * 0.49)
+            let kickerHeight = text(.caption, "FEATURE  /  01", x: margin, at: storyY, width: wideEditorial ? usable * 0.13 : usable)
+            y = max(bylineY + max(wordsHeight, photoHeight), storyY + kickerHeight) + 38
             section("image", "Lead image")
-            let imageHeight = w >= 700 ? usable * 0.52 : 240
-            elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: imageHeight), color: accent.withAlphaComponent(0.22), radius: 2))
-            elements.append(CanvasElement(rect: CGRect(x: margin + usable * 0.64, y: y + imageHeight * 0.13, width: usable * 0.22, height: imageHeight * 0.7), color: ink.withAlphaComponent(0.12), radius: 2)); y += imageHeight + 18
-            _ = text(.caption, "Fig. 01 — Morning light in the workshop."); y += 18
+            let imageX = wideEditorial ? storyX : margin
+            let imageWidth = wideEditorial ? usable * 0.78 : usable
+            let imageY = y, imageHeight = wideEditorial ? min(440, usable * 0.44) : min(280, usable * 0.62)
+            elements.append(CanvasElement(rect: CGRect(x: imageX, y: imageY, width: imageWidth, height: imageHeight),
+                                          color: ink.withAlphaComponent(0.055)))
+            let proofX = imageX + imageWidth * 0.13, proofY = imageY + imageHeight * 0.09
+            let proofWidth = imageWidth * 0.54, proofHeight = imageHeight * 0.82
+            elements.append(CanvasElement(rect: CGRect(x: proofX + 10, y: proofY + 10, width: proofWidth, height: proofHeight),
+                                          color: ink.withAlphaComponent(0.13)))
+            elements.append(CanvasElement(rect: CGRect(x: proofX, y: proofY, width: proofWidth, height: proofHeight),
+                                          color: .white, strokeColor: ink.withAlphaComponent(0.1), strokeWidth: 1))
+            let proofSampleHeight = text(.display, "Aa", x: proofX + 18, at: proofY + 18, width: proofWidth - 36)
+            let proofLinesY = proofY + max(proofHeight * 0.63, proofSampleHeight + 26)
+            for line in 0..<3 {
+                elements.append(CanvasElement(rect: CGRect(x: proofX + 18, y: proofLinesY + Double(line) * min(16, proofHeight * 0.065),
+                                                           width: proofWidth * (line == 2 ? 0.44 : 0.66), height: 2),
+                                              color: ink.withAlphaComponent(0.32)))
+            }
+            elements.append(CanvasElement(rect: CGRect(x: imageX + imageWidth * 0.76, y: imageY + imageHeight * 0.13,
+                                                       width: imageWidth * 0.09, height: imageHeight * 0.71), color: accent))
+            elements.append(CanvasElement(rect: CGRect(x: imageX + imageWidth * 0.87, y: imageY + imageHeight * 0.19,
+                                                       width: imageWidth * 0.055, height: imageHeight * 0.62), color: ink.withAlphaComponent(0.8)))
+            let imageCaptionY = imageY + imageHeight + 12
+            let imageCaptionHeight = text(.caption, "Fig. 01 — Proof sheets and materials on the worktable.", x: imageX, at: imageCaptionY, width: imageWidth)
+            y = imageCaptionY + imageCaptionHeight + 42
             section("article", "Article and pull quote")
-            if w >= 700 {
-                let articleY = y, columnGap = 28.0, bodyWidth = usable * 0.29
-                let first = text(.body, Self.editorialSample(d.style(.body).text, repetitions: 4), x: margin, at: articleY, width: bodyWidth)
-                let quote = text(.heading, "“The useful things are often the most poetic.”", x: margin + bodyWidth + columnGap, at: articleY + 28, width: usable * 0.34)
-                let second = text(.body, Self.editorialSample(d.style(.body).text, repetitions: 4), x: margin + usable - bodyWidth, at: articleY, width: bodyWidth)
-                y = articleY + max(first, quote + 28, second) + 36
-            } else { _ = text(.heading, "“The useful things are often the most poetic.”"); _ = text(.body, Self.editorialSample(d.style(.body).text, repetitions: 5)) }
-            rule(); section("folio", "Editorial folio"); let folioY = y; _ = text(.caption, "The Field Notes", x: margin, at: folioY, width: usable * 0.5); _ = text(.mono, "024", x: margin + usable * 0.8, at: folioY, width: usable * 0.2); y = folioY + 38
+            let articleY = y, bodyWidth = wideEditorial ? usable * 0.54 : usable
+            let sourceBody = d.style(.body).text
+            let articleCopy = sourceBody == TypeRole.body.sample
+                ? "On a bright morning in Los Angeles, the workshop is quiet except for the sound of a pencil moving across paper. The team begins with a small question: what would make this object worth keeping?\n\nThey test the weight of a handle, the edge of a page, and the space around a line of type. Each decision is ordinary on its own. Together, they make an object that feels familiar before anyone notices why.\n\nThis is the slower work behind useful things: remove what distracts, keep what matters, and leave room for the person who will use it."
+                : sourceBody
+            let articleHeight = text(.body, articleCopy, x: storyX, at: articleY, width: bodyWidth)
+            let quoteX = wideEditorial ? margin + usable * 0.76 : storyX
+            let quoteY = wideEditorial ? articleY + 20 : articleY + articleHeight + 34
+            elements.append(CanvasElement(rect: CGRect(x: quoteX, y: quoteY, width: wideEditorial ? usable * 0.2 : 56, height: 3), color: accent))
+            let quoteTextY = quoteY + 22
+            let quoteHeight = text(.heading, "“Keep what matters.”", x: quoteX, at: quoteTextY, width: wideEditorial ? usable * 0.24 : usable)
+            var articleBottom = max(articleY + articleHeight, quoteTextY + quoteHeight)
+            // Earlier editorial layouts had a second body frame. Keep a user's
+            // edit to that frame visible, without repeating the default story.
+            let legacyContinuationID = currentID + "|" + TypeRole.body.rawValue + "|1"
+            if d.textOverrides?[legacyContinuationID] != nil || d.textPositions?[legacyContinuationID] != nil {
+                let continuation = d.textOverrides?[legacyContinuationID] ?? Self.editorialSample(sourceBody, repetitions: 4)
+                let continuationY = articleBottom + 28
+                let continuationHeight = text(.body, continuation, x: storyX, at: continuationY, width: bodyWidth)
+                articleBottom = continuationY + continuationHeight
+            }
+            y = articleBottom + 40
+            rule()
+            section("folio", "Editorial folio")
+            let folioY = y
+            let folioNameHeight = text(.caption, "THE FIELD NOTES", x: margin, at: folioY, width: usable * 0.5)
+            let folioNumberHeight = text(.mono, "024", x: margin + usable * 0.8, at: folioY, width: usable * 0.2)
+            y = folioY + max(folioNameHeight, folioNumberHeight) + 24
         case .poster:
             section("poster-code", "Poster index")
-            let indexY = y; _ = text(.mono, "Poster 07", x: margin, at: indexY, width: usable * 0.4); _ = text(.caption, "Design, music, conversation", x: margin + usable * 0.48, at: indexY, width: usable * 0.52); y = indexY + 60
+            let indexY = y
+            let indexNumberHeight = text(.mono, "POSTER 07", x: margin, at: indexY, width: usable * 0.4)
+            let indexNameHeight = text(.caption, "DESIGN / MUSIC / CONVERSATION", x: margin + usable * 0.48, at: indexY, width: usable * 0.52)
+            y = indexY + max(indexNumberHeight, indexNameHeight) + 24
+            elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 2), color: ink))
+            y += 30
             section("poster-field", "Graphic field")
-            let fieldY = y, fieldHeight = max(300, usable * 0.62)
-            elements.append(CanvasElement(rect: CGRect(x: margin, y: fieldY, width: usable, height: fieldHeight), color: accent, radius: 0))
-            elements.append(CanvasElement(rect: CGRect(x: margin + usable * 0.54, y: fieldY + fieldHeight * 0.08, width: usable * 0.34, height: usable * 0.34), color: paper.withAlphaComponent(0.9), radius: usable * 0.17))
-            _ = text(.display, "Form / Sound", x: margin + 28, at: fieldY + 30, width: usable * 0.62, color: paper)
-            _ = text(.mono, "08—10\nOct 2026", x: margin + 30, at: fieldY + fieldHeight * 0.68, width: usable * 0.34, color: paper)
-            _ = text(.label, "Hall 04 / Los Angeles", x: margin + usable * 0.54, at: fieldY + fieldHeight * 0.78, width: usable * 0.38, color: paper)
-            y = fieldY + fieldHeight + 42
+            let fieldY = y, fieldHeight = max(430, w * 0.55), widePoster = w >= 700
+            let titleY = fieldY + (widePoster ? 58 : 30)
+            if widePoster {
+                let railX = margin + usable * 0.73, railWidth = usable * 0.27
+                elements.append(CanvasElement(rect: CGRect(x: railX, y: fieldY + 24, width: railWidth, height: fieldHeight - 48), color: accent))
+                let titleHeight = text(.display, "Form\n/\nSound", x: margin, at: titleY, width: usable * 0.66)
+                let dateY = fieldY + fieldHeight * 0.16
+                let railTextColor = readableTextColor(on: accent)
+                let dateHeight = text(.mono, "08—10\nOCT 2026", x: railX + 18, at: dateY,
+                                      width: railWidth - 36, color: railTextColor)
+                let programY = fieldY + fieldHeight * 0.42
+                let programHeight = text(.caption, "THU  OPENING\nFRI  LIVE SETS\nSAT  TALKS", x: railX + 18,
+                                          at: programY, width: railWidth - 36, color: railTextColor)
+                let venueY = fieldY + fieldHeight * 0.72
+                let venueHeight = text(.label, "HALL 04\nLOS ANGELES", x: railX + 18, at: venueY,
+                                       width: railWidth - 36, color: railTextColor)
+                let editionY = fieldY + fieldHeight * 0.82
+                let editionHeight = text(.caption, "A GATHERING IN THREE ACTS", x: margin, at: editionY, width: usable * 0.61)
+                y = max(fieldY + fieldHeight, titleY + titleHeight + 40, dateY + dateHeight + 30,
+                        programY + programHeight + 30, venueY + venueHeight + 30,
+                        editionY + editionHeight + 30) + 34
+            } else {
+                let titleHeight = text(.display, "Form\n/\nSound", x: margin, at: titleY, width: usable)
+                let stripeY = max(fieldY + fieldHeight * 0.67, titleY + titleHeight + 34)
+                elements.append(CanvasElement(rect: CGRect(x: margin, y: stripeY, width: usable * 0.25, height: 8), color: accent))
+                let metaY = stripeY + 34
+                let dateHeight = text(.mono, "08—10\nOCT 2026", x: margin, at: metaY, width: usable * 0.43)
+                let venueHeight = text(.label, "HALL 04\nLOS ANGELES", x: margin + usable * 0.52, at: metaY, width: usable * 0.48)
+                y = max(fieldY + fieldHeight, metaY + max(dateHeight, venueHeight) + 30) + 34
+            }
             section("poster-details", "Event details")
-            let detailY = y; _ = text(.heading, "Three nights of new work.", x: margin, at: detailY, width: usable * 0.55); _ = text(.body, "Exhibitions, live performance, workshops, and conversations with independent makers.", x: margin + usable * 0.62, at: detailY, width: usable * 0.38); y = detailY + 150
-            rule(); section("poster-footer", "Poster footer"); let footerY = y; _ = text(.caption, "Tickets   Program   Access", x: margin, at: footerY, width: usable * 0.58); _ = text(.mono, "F/S 2026", x: margin + usable * 0.72, at: footerY, width: usable * 0.28); y = footerY + 44
+            let detailY = y
+            let detailHeadingHeight = text(.heading, "Three nights. One shared stage.", x: margin, at: detailY, width: widePoster ? usable * 0.5 : usable)
+            let detailBodyY = widePoster ? detailY : detailY + detailHeadingHeight + 20
+            let detailBodyHeight = text(.body, "Live sets, new work, and late conversations from independent studios. Doors open at 18:00 each night.", x: widePoster ? margin + usable * 0.59 : margin, at: detailBodyY, width: widePoster ? usable * 0.41 : usable)
+            y = max(detailY + detailHeadingHeight, detailBodyY + detailBodyHeight) + 42
+            rule()
+            section("poster-footer", "Poster footer")
+            let footerY = y
+            let footerLinksHeight = text(.caption, "TICKETS   PROGRAM   ACCESS", x: margin, at: footerY, width: usable * 0.58)
+            let footerCodeHeight = text(.mono, "F/S 2026", x: margin + usable * 0.72, at: footerY, width: usable * 0.28)
+            y = footerY + max(footerLinksHeight, footerCodeHeight) + 24
         case .specimen:
-            for role in TypeRole.allCases { section(role.rawValue, role.rawValue); _ = text(.caption, role.rawValue + ": " + d.style(role).fontName + " at \(Int(d.style(role).size)) px"); _ = text(role); rule() }
+            for (index, role) in TypeRole.allCases.enumerated() {
+                section(role.rawValue, role.rawValue)
+                let top = y
+                let compact = w < 700
+                let metadata = "\(role.rawValue). \(d.style(role).fontName) at \(Int(d.style(role).size)) px."
+                let metaWidth = compact ? usable : usable * 0.56
+                let metaHeight = text(.caption, metadata, x: margin, at: top, width: metaWidth)
+                if role == .display {
+                    _ = text(.mono, "TYPE SYSTEM  /  01", x: compact ? margin : margin + usable * 0.72,
+                             at: top + (compact ? metaHeight + 12 : 0), width: compact ? usable : usable * 0.28)
+                    let sampleY = top + (compact ? metaHeight + 55 : max(metaHeight, 20) + 70)
+                    let sampleWidth = compact ? usable : usable * 0.67
+                    let specimenSample = d.style(role).text == TypeRole.display.sample ? "Aa Bb Cc" : d.style(role).text
+                    let sampleHeight = text(role, specimenSample, x: margin, at: sampleY, width: sampleWidth)
+                    let glyphX = compact ? margin + usable * 0.58 : margin + usable * 0.76
+                    let glyphY = compact ? sampleY + sampleHeight + 30 : sampleY + 2
+                    let glyphWidth = compact ? usable * 0.42 : usable * 0.24
+                    elements.append(CanvasElement(rect: CGRect(x: glyphX, y: glyphY, width: glyphWidth,
+                                                                height: max(96, d.style(.display).size * 1.8)),
+                                                  color: accent.withAlphaComponent(0.13), radius: 2))
+                    let glyphHeight = text(.display, "12", x: glyphX + 14, at: glyphY + 13, width: max(1, glyphWidth - 28))
+                    y = max(sampleY + sampleHeight, glyphY + max(96, d.style(.display).size * 1.8), glyphY + 13 + glyphHeight) + 54
+                } else {
+                    let sampleX = compact ? margin : margin + usable * (role == .body ? 0.34 : 0.42)
+                    let sampleY = compact ? top + metaHeight + 24 : top + 7
+                    let sampleWidth = compact ? usable : usable - (sampleX - margin)
+                    let sampleHeight = text(role, x: sampleX, at: sampleY, width: sampleWidth)
+                    if role == .body, !compact {
+                        elements.append(CanvasElement(rect: CGRect(x: margin, y: top + metaHeight + 28,
+                                                                    width: usable * 0.22, height: 4), color: accent))
+                    }
+                    y = max(top + metaHeight, sampleY + sampleHeight) + (role == .body ? 62 : 42)
+                }
+                if index < TypeRole.allCases.count - 1 {
+                    elements.append(CanvasElement(rect: CGRect(x: margin, y: y - 22, width: usable, height: 1),
+                                                  color: ink.withAlphaComponent(0.16)))
+                }
+            }
         }
         for block in d.addedBlocks ?? [] { section(block.id, block.role.rawValue); _ = text(block.role) }
         finishSection()

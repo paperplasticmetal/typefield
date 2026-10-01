@@ -1,6 +1,10 @@
 # Typefield production readiness audit
 
-Updated 2026-10-01 for the installed 0.59.2 local build. Native fixtures, the mocked Figma bridge, canonical installation, installed-binary identity and saved-state hashes passed; [0.59.2 QA](QA_2026-10-01_0.59.2.md) records the large-preview grid replay, Spaces copy/color checks, performance measurements and remaining limits. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the prior interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+Updated 2026-10-01 for the installed 0.59.3 local build. [0.59.3 QA](QA_2026-10-01_0.59.3.md) records the five Spaces template refinements, responsive/contrast checks, local installation and saved-state verification. [0.59.2 QA](QA_2026-10-01_0.59.2.md) records the large-preview grid replay, Spaces copy/color checks and performance measurements. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the prior interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+
+## 0.59.3 Spaces composition refinement
+
+Website, Product UI, Editorial, Poster and Type system now use different content structures and visual rhythms. Website and Editorial use lightweight vector illustrations so their PDF and editable handoffs retain the composition. Responsive checks cover default layouts down to 320 px, text-frame fit, section reordering, saved Editorial continuation placement and Poster rail contrast with matching dark accent/ink colors. Saved boards are not migrated or rewritten.
 
 ## 0.59.2 release refinement
 

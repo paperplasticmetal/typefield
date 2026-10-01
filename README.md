@@ -4,7 +4,7 @@
 
 Native macOS workspace for organizing fonts, exploring typography in typeboards, and drawing editable letterforms.
 
-**Current local build: 0.59.2 (build 82).** The native suite, Figma bridge fixtures and canonical installation pass on Apple Silicon. Large Library previews align within each grid row, new Spaces canvases start white, and export and submenu text uses natural phrasing. App Store submission is in preparation; this is not a distribution-signed, notarized or App Store-approved release. See [current QA](docs/QA_2026-10-01_0.59.2.md).
+**Current local build: 0.59.3 (build 83).** The five default Spaces canvases now have distinct, realistic compositions that keep saved text and section edits. New canvases start white, and Library grid previews align within each row. App Store submission is in preparation; this is not a distribution-signed, notarized or App Store-approved release. See [current QA](docs/QA_2026-10-01_0.59.3.md).
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 
