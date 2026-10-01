@@ -127,7 +127,7 @@ struct FontLabStarterAssistView: View {
                 .font(.caption).foregroundStyle(.secondary)
 
             if let proposal {
-                Text("\(availableCharacters.count) suggestions available · \(unavailableCharacters.count) without suggestions · \(selectedCharacters.count) selected")
+                Text("\(availableCharacters.count) \(availableCharacters.count == 1 ? "suggestion" : "suggestions") available; \(unavailableCharacters.count) without suggestions; \(selectedCharacters.count) selected")
                     .font(.subheadline.monospacedDigit())
                 HStack(spacing: 16) {
                     Label("\(adaptedCharacters.count) reuse your outlines", systemImage: "square.on.square")

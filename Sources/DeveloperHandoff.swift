@@ -121,7 +121,7 @@ enum DeveloperHandoff {
             sizes[key] = ["var(--\(key)-size)", ["lineHeight": "var(--\(key)-line-height)", "letterSpacing": "var(--\(key)-tracking)", "fontWeight": number(weight)]]
             families[key] = ["var(--\(key)-font)"]
             theme += "  --font-\(key): var(--\(key)-font);\n  --text-\(key): var(--\(key)-size);\n  --text-\(key)--line-height: var(--\(key)-line-height);\n  --text-\(key)--letter-spacing: var(--\(key)-tracking);\n  --text-\(key)--font-weight: \(number(weight));\n"
-            cards += "<article><p class='meta'>\(html(entry.board)) / \(html(entry.canvas)) · \(html(entry.label))</p><p class='sample fs-\(key)'>\(html(s.text))</p><p class='meta'>\(html(s.fontName)) · \(number(s.size)) px · line \(number(line)) px · tracking \(number(s.tracking)) px</p><code>.tf-\(key)</code></article>\n"
+            cards += "<article><p class='meta'>\(html(entry.board)) / \(html(entry.canvas)): \(html(entry.label))</p><p class='sample fs-\(key)'>\(html(s.text))</p><p class='meta'>\(html(s.fontName)), \(number(s.size)) px, line height \(number(line)) px, tracking \(number(s.tracking)) px</p><code>.tf-\(key)</code></article>\n"
             let swiftAxes = s.axes.keys.sorted().map { "\($0): \(number(s.axes[$0]!))" }.joined(separator: ", ")
             let swiftFeatures = feature.keys.sorted().map { "\(quoted($0)): \(feature[$0]!)" }.joined(separator: ", ")
             swiftEntries.append("        \(quoted(key)): Style(postScriptName: \(quoted(s.fontName)), size: \(number(s.size)), lineHeight: \(number(line)), tracking: \(number(s.tracking)), axes: [\(swiftAxes.isEmpty ? ":" : swiftAxes)], features: [\(swiftFeatures.isEmpty ? ":" : swiftFeatures)], sample: \(quoted(s.text)))")
@@ -136,11 +136,12 @@ enum DeveloperHandoff {
         let missing = assets.filter { $0.face == nil }.map(\.name)
         let tokenDocument: [String: Any] = ["format": "FontShelf typography handoff", "version": 1, "title": title, "units": "Rendered typography values: CSS px / SwiftUI pt / Compose sp. Validate on target devices.", "fluidDefaults": ["minimumViewportPx": 320, "maximumViewportPx": 1200, "rootFontSizePx": 16, "minimumSizeFactor": 0.75, "minimumFluidSizePx": 20], "typography": tokens, "sourceBoards": try JSONSerialization.jsonObject(with: JSONEncoder().encode(boards))]
         let preloads = assets.prefix(2).map { "<link rel=\"preload\" href=\"\($0.file)\" as=\"font\" type=\"font/woff2\" crossorigin>" }.joined(separator: "\n")
+        let canvasCount = boards.reduce(0) { $0 + $1.directions.count }
         let specimen = """
         <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>\(html(title)) — Typefield handoff</title>
         <style>\(specimenCSS)
         *{box-sizing:border-box}body{margin:0;background:#f5f3ed;color:#242421;font:16px/1.55 system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:48px 24px}h1{font-size:36px;line-height:1.2;overflow-wrap:anywhere}.intro{max-width:760px}.notice{padding:18px 22px;background:#eee3b8;border-radius:12px}article{background:#fffefa;padding:28px;margin:24px 0;border:1px solid #dedbd3;border-radius:12px;overflow-wrap:anywhere}.meta{font:13px/1.6 system-ui,sans-serif;color:#66645f}.sample{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:22px;margin-bottom:22px}code{font:12px/1.6 ui-monospace,monospace}a{color:inherit}@media print{body{background:white}main{padding:0}article{break-inside:avoid;border-radius:0}.notice{background:white;border:1px solid #aaa}}
-        </style></head><body><main><p class="meta">Typefield · Developer handoff</p><h1>\(html(title))</h1><div class="intro"><p>\(boards.count) typeboard(s) · \(boards.reduce(0) { $0 + $1.directions.count }) canvases · \(items.count) text styles.</p><p class="notice">Font files are not bundled. This preview uses locally installed fonts when available, then licensed WOFF2 assets at the paths in fonts.json, then fallback fonts. It is a typography specimen, not a pixel-perfect canvas export.</p><p>Sizes above 20 px use a suggested fluid scale between 320 and 1200 px viewports. Rendered maximum sizes and exact source data are in tokens.json. Print this page to save a PDF.</p><p>\(missing.isEmpty ? "All requested fonts were available on the exporting Mac." : "Unavailable on exporting Mac: " + html(missing.joined(separator: ", ")))</p></div>\(cards)</main></body></html>
+        </style></head><body><main><p class="meta">Typefield: Developer handoff</p><h1>\(html(title))</h1><div class="intro"><p>\(boards.count) \(boards.count == 1 ? "typeboard" : "typeboards"), \(canvasCount) \(canvasCount == 1 ? "canvas" : "canvases"), and \(items.count) text \(items.count == 1 ? "style" : "styles").</p><p class="notice">Font files are not bundled. This preview uses locally installed fonts when available, then licensed WOFF2 assets at the paths in fonts.json, then fallback fonts. It is a typography specimen, not a pixel-perfect canvas export.</p><p>Sizes above 20 px use a suggested fluid scale between 320 and 1200 px viewports. Rendered maximum sizes and exact source data are in tokens.json. Print this page to save a PDF.</p><p>\(missing.isEmpty ? "All requested fonts were available on the exporting Mac." : "Unavailable on exporting Mac: " + html(missing.joined(separator: ", ")))</p></div>\(cards)</main></body></html>
         """
         let swift = """
         // Generated by Typefield. Register licensed fonts in your app before use.
@@ -286,7 +287,7 @@ struct CanvasTypographySummary {
         entries = values
     }
     func text(_ detail: TypographySummaryDetail, markdown: Bool = false) -> String {
-        let title = "\(canvas) · \(format)"
+        let title = "\(canvas) (\(format))"
         if markdown {
             var lines = ["# " + Self.markdownText(title), ""]
             if detail == .fonts { lines += fonts.map { "- " + Self.inlineCode($0) } }

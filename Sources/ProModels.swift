@@ -238,7 +238,7 @@ enum DuplicateFinder {
         for candidates in sizes.values where candidates.count > 1 {
             for url in candidates { do { hashes[try hash(url), default: []].append(url.path) } catch { errors.append(url.path + ": " + error.localizedDescription) } }
         }
-        var groups = hashes.filter { $0.value.count > 1 }.map { DuplicateGroup(id: $0.key, title: "Identical files · \($0.value.count) copies", paths: $0.value.sorted(), exact: true) }
+        var groups = hashes.filter { $0.value.count > 1 }.map { DuplicateGroup(id: $0.key, title: "\($0.value.count) identical file copies", paths: $0.value.sorted(), exact: true) }
         groups += names.filter { $0.value.count > 1 }.map { DuplicateGroup(id: "name:" + $0.key, title: $0.key, paths: $0.value.sorted(), exact: false) }
         return (groups.sorted { $0.title < $1.title }, errors)
     }

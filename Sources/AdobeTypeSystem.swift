@@ -221,8 +221,8 @@ enum AdobeTypeSystemExporter {
                         strikethrough: style.strikethrough ?? false,
                         kerning: style.effectiveKerning,
                         axes: axes, features: features,
-                        paragraphStyle: "Typefield P\(prefix) · \(styleLabel)",
-                        characterStyle: "Typefield C\(prefix) · \(styleLabel)",
+                        paragraphStyle: "Typefield P\(prefix): \(styleLabel)",
+                        characterStyle: "Typefield C\(prefix): \(styleLabel)",
                         warnings: warnings
                     ))
                 } else {
@@ -490,9 +490,9 @@ enum AdobeTypeSystemExporter {
                     var artboard;
                     if (canvasIndex === 0) { artboard = doc.artboards[0]; artboard.artboardRect = artboardRect; firstRect = artboardRect; }
                     else artboard = doc.artboards.add(artboardRect);
-                    artboard.name = (canvasIndex + 1) + " · " + canvas.name;
+                    artboard.name = (canvasIndex + 1) + ". " + canvas.name;
                     var layer = doc.layers.add();
-                    layer.name = (canvasIndex + 1) + " · " + canvas.name;
+                    layer.name = (canvasIndex + 1) + ". " + canvas.name;
                     var background = layer.pathItems.rectangle(top, left, canvas.width, canvas.height);
                     background.name = "Canvas background";
                     background.stroked = false; background.filled = true; background.fillColor = rgbColor(canvas.paper); background.opacity = canvas.paper.a * 100;
@@ -639,7 +639,7 @@ enum AdobeTypeSystemExporter {
                     var page = canvasIndex === 0 ? doc.pages[0] : doc.pages.add(LocationOptions.AT_END);
                     resizePage(page, canvas.width, canvas.height);
                     try { page.insertLabel("FontShelfCanvas", canvas.name); } catch (ignoredPageLabel) {}
-                    var layer = doc.layers.add({ name: (canvasIndex + 1) + " · " + canvas.name });
+                    var layer = doc.layers.add({ name: (canvasIndex + 1) + ". " + canvas.name });
                     var bounds = page.bounds;
                     var background = page.rectangles.add();
                     background.itemLayer = layer;

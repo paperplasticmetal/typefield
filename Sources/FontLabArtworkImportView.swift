@@ -130,7 +130,7 @@ struct FontLabArtworkImportSheet: View {
                 VStack(spacing: 15) {
                     Image(systemName: "doc.viewfinder").font(.system(size: 48)).foregroundStyle(.secondary)
                     Text("Your drawings → editable glyphs").font(.title2)
-                    Text("PNG · JPEG · TIFF · HEIC · SVG · Procreate").font(.subheadline)
+                    Text("PNG, JPEG, TIFF, HEIC, SVG, and Procreate").font(.subheadline)
                     Text("Use clear, separated letters on a plain or transparent background. Sheets may contain multiple rows. Grid mode handles regular worksheets; you can also draw your own letter boxes.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 500)
                     Text("Procreate files use their embedded flattened preview; export PNG from Procreate for full resolution. SVG is rendered and traced into new outlines, so original control points are not retained. Convert SVG text and effects to outlines first.")
@@ -141,7 +141,7 @@ struct FontLabArtworkImportSheet: View {
             HStack {
                 if busy { ProgressView().controlSize(.small); Text("Reading artwork and tracing letters…").font(.caption) }
                 else if settingsChanged { Text("Settings changed. Rescan before importing.").font(.caption).foregroundStyle(.secondary) }
-                else if scan != nil { Text("\(included.count) selected · \(invalidAssignments ? "Review missing or duplicate labels" : "Labels ready")").font(.caption).foregroundStyle(.secondary) }
+                else if scan != nil { Text("\(included.count) \(included.count == 1 ? "item" : "items") selected. \(invalidAssignments ? "Review missing or duplicate labels." : "Labels are ready.")").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Import \(included.count) glyphs") { commit() }

@@ -1,6 +1,10 @@
 # Typefield production readiness audit
 
-Updated 2026-09-30 for the installed 0.59.1 local build. Native fixtures, the mocked Figma bridge, canonical installation, installed-binary identity and saved-state hashes passed; [0.59.1 QA](QA_2026-09-30_0.59.1.md) records the final 980-point visual replay and remaining limits. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the prior interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+Updated 2026-10-01 for the installed 0.59.2 local build. Native fixtures, the mocked Figma bridge, canonical installation, installed-binary identity and saved-state hashes passed; [0.59.2 QA](QA_2026-10-01_0.59.2.md) records the large-preview grid replay, Spaces copy/color checks, performance measurements and remaining limits. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the prior interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+
+## 0.59.2 release refinement
+
+Library rows now align their cards at large preview sizes, including the 133-point single-letter case that regressed. New Spaces canvases use neutral white paper, while saved choices remain unchanged. UI and handoff copy avoid centered-dot spacers. A disposable 2/50/200-typeboard navigation audit and a small Library footer optimization address the reported sluggishness without weakening Spaces persistence. The [market-positioning review](MARKET_POSITIONING_2026-10-01.md) rejects an unverified first-of-its-kind claim and defines the connected three-workspace message.
 
 ## 0.59.1 compact visual work
 

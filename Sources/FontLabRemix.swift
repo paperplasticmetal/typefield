@@ -112,7 +112,7 @@ struct FontLabRemixProvenance: Codable, Equatable {
     }
 
     var summary: String {
-        "Editable local remix of \(sourcePostScriptNames.joined(separator: " + ")) · \(mode.title) \(Int((blendAmount * 100).rounded()))% · \(preset.title)" + ((preservedCharacters?.isEmpty == false) ? " · \(preservedCharacters!.count) glyphs retain a source shape with combined proportions" : "")
+        "Editable local remix of \(sourcePostScriptNames.joined(separator: " + ")). \(mode.title) at \(Int((blendAmount * 100).rounded()))% with the \(preset.title) preset." + ((preservedCharacters?.isEmpty == false) ? " \(preservedCharacters!.count) glyphs retain a source shape with combined proportions." : "")
     }
 }
 
@@ -124,9 +124,9 @@ struct FontLabRemixResult: Equatable {
 
     var status: String {
         let count = project.completedCount
-        let preserved = preservedCharacters.isEmpty ? "" : " · \(preservedCharacters.count) retain a source shape with combined proportions"
-        let skipped = skippedCharacters.isEmpty ? "" : " · \(skippedCharacters.count) unsupported"
-        return "Created \(count) editable glyphs from \(provenance.sourcePostScriptNames.joined(separator: " + "))\(skipped)\(preserved). \(FontLabRemixProvenance.licenseNotice)"
+        let preserved = preservedCharacters.isEmpty ? "" : " \(preservedCharacters.count) retain a source shape with combined proportions."
+        let skipped = skippedCharacters.isEmpty ? "" : " \(skippedCharacters.count) were unsupported."
+        return "Created \(count) editable glyphs from \(provenance.sourcePostScriptNames.joined(separator: " + ")).\(skipped)\(preserved) \(FontLabRemixProvenance.licenseNotice)"
     }
 }
 
@@ -489,7 +489,7 @@ enum FontLabRemixEngine {
                     CTLineDraw(line, context)
                     context.restoreGState()
                 }
-                label("\(pair.0) × \(pair.1) · \(Int(amount * 100))% B · Clean", 1090, size: 24)
+                label("\(pair.0) × \(pair.1), \(Int(amount * 100))% B, Clean", 1090, size: 24)
                 let recipes = [FontLabRemixRecipe(primaryPostScriptName: pair.0, secondaryPostScriptName: pair.0),
                                FontLabRemixRecipe(primaryPostScriptName: pair.1, secondaryPostScriptName: pair.1)] +
                     FontLabRemixMode.allCases.map { FontLabRemixRecipe(primaryPostScriptName: pair.0,

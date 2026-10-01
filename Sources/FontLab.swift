@@ -1691,7 +1691,7 @@ struct FontLabView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    Text("History: \(selectedCharacter) artwork & spacing · this session")
+                    Text("History: \(selectedCharacter) artwork and spacing from this session")
                         .font(.caption2).foregroundStyle(.secondary)
                         .accessibilityIdentifier("font-lab-history-scope")
                     Spacer()

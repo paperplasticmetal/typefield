@@ -63,7 +63,7 @@ final class FontLabVectorEditor: ObservableObject {
     @Published var fill = true
     @Published var objectSelection = true
     @Published var inkColor = Color(nsColor: .labelColor)
-    @Published var message = "V Select · P Bézier · R Rectangle · O Ellipse · Space-drag to pan"
+    @Published var message = "V: Select, P: Bézier, R: Rectangle, O: Ellipse. Hold Space and drag to pan."
     var onCommit: (FontLabGlyph) -> Void = { _ in }
     var onUndo: () -> Void = {}
     var onRedo: () -> Void = {}

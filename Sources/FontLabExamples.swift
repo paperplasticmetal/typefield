@@ -26,7 +26,7 @@ enum FontLabExamples {
     <path d="M15 115 L60 15 L105 115 M32 78 H88" fill="none" stroke="black" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     """
-    static let titles = ["Handwriting · slant and detached dots", "Bubble letters · irregular counters", "Rounded A · simplify a dense trace"]
+    static let titles = ["Handwriting: slant and detached dots", "Bubble letters: irregular counters", "Rounded A: simplify a dense trace"]
     static func make(_ index: Int, fitCurves: Bool = true) throws -> FontLabProject {
         let entries = [(handwritingSVG, "nopij"), (bubbleSVG, "BO"), (roundedASVG, "A")]
         let (svg, letters) = entries[index]
@@ -58,7 +58,7 @@ struct FontLabExamplesView: View {
             }.disabled(working)
             if working { ProgressView("Importing practice artwork…").frame(height: 240) }
             else if let source {
-                Text("Imported artwork · \(rawCount) trace points → \(source.glyphs.values.reduce(0) { $0 + FontLabVectorMath.paths(in: $1).flatMap(\.nodes).count }) editable anchors").font(.headline)
+                Text("Imported artwork: \(rawCount) trace points → \(source.glyphs.values.reduce(0) { $0 + FontLabVectorMath.paths(in: $1).flatMap(\.nodes).count }) editable anchors").font(.headline)
                 FontLabPreviewCanvas(text: drawn, glyphs: source.glyphs, metrics: source.metrics, maximumEm: 170, centered: true).frame(height: 240)
             }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }

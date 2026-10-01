@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.59.2 — 2026-10-01
+
+- Keep Library grid cards aligned at large preview sizes by sharing a measured preview slot and baseline across each visible row. Avoid recomputing the Library filter for the footer count.
+- Start new Spaces canvases on a neutral white background while retaining every saved canvas color.
+- Replace centered-dot separators in menus, labels, status text, templates and export handoffs with readable phrases. Preserve saved filter identifiers and actual text-list bullets.
+- Measure Spaces navigation on disposable 2/50/200-board projects and compute the visible typography toolbar summary once per render; retain the recovery-safe selection save after measured results.
+- Add a release-positioning review grounded in vendor documentation. Missing-letter suggestions remain hidden and are not a release claim.
+
 ## 0.59.1 — 2026-09-30
 
 - Tighten Library cards for short previews, keep style counts readable, center empty-state guidance, and clarify compact search and icon-only controls.

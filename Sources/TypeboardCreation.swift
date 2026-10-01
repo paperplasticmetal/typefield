@@ -52,7 +52,7 @@ struct TypeboardRoleMapper: View {
             HStack {
                 Label(draft.source, systemImage: "textformat")
                 Spacer()
-                Text("\(draft.fonts.count) \(draft.fonts.count == 1 ? "font" : "fonts") · “\(destination)”").foregroundStyle(.secondary)
+                Text("\(draft.fonts.count) \(draft.fonts.count == 1 ? "font" : "fonts") in “\(destination)”").foregroundStyle(.secondary)
             }.font(.caption)
 
             ScrollView {
@@ -67,7 +67,7 @@ struct TypeboardRoleMapper: View {
                                 roles[role.rawValue] ?? draft.fonts[0]
                             }, set: { roles[role.rawValue] = $0 }), options: draft.fonts.map { name in
                                 let face = library.face(named: name)
-                                return ((face.map { "\($0.originalFamily) · \($0.style)" } ?? name), name)
+                                return ((face.map { "\($0.originalFamily), \($0.style)" } ?? name), name)
                             }).frame(width: 300)
                             Text(role.sample).font(.custom(roles[role.rawValue] ?? draft.fonts[0], size: min(28, role.size))).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                         }.padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))

@@ -372,7 +372,7 @@ struct LibrarySearchView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 125))], alignment: .leading) {
                         ForEach(["lnum", "onum", "tnum", "pnum", "liga", "dlig", "smcp", "frac", "sups", "kern"], id: \.self) { tag in preset(OpenType.label(tag), "feature/" + tag) }
                     }
-                    Menu("Language / script") { ForEach(WritingSystem.allCases, id: \.self) { script in Button(script.rawValue) { add("typefield/script/" + script.rawValue) } } }
+                    Menu("Language / script") { ForEach(WritingSystem.allCases, id: \.self) { script in Button(script.displayName) { add("typefield/script/" + script.rawValue) } } }
                     Text("Filters combine with AND. #! excludes a tag or property. Parent tags include their children.").font(.caption).foregroundStyle(.secondary)
                 }
             }

@@ -2,9 +2,9 @@
 
 [![macOS build](https://github.com/paperplasticmetal/typefield/actions/workflows/build.yml/badge.svg)](https://github.com/paperplasticmetal/typefield/actions/workflows/build.yml)
 
-Native macOS font browsing, previews, and organization, built with SwiftUI, AppKit, and Core Text.
+Native macOS workspace for organizing fonts, exploring typography in typeboards, and drawing editable letterforms.
 
-**Current local build: 0.59.1 (build 81).** The native suite, Figma bridge fixtures and canonical installation pass on Apple Silicon. The visual pass tightens Library previews and improves Spaces and Letterform Editor at the 980-point window minimum. App Store submission is in preparation; this is not a distribution-signed, notarized or App Store-approved release. See [current QA](docs/QA_2026-09-30_0.59.1.md).
+**Current local build: 0.59.2 (build 82).** The native suite, Figma bridge fixtures and canonical installation pass on Apple Silicon. Large Library previews align within each grid row, new Spaces canvases start white, and export and submenu text uses natural phrasing. App Store submission is in preparation; this is not a distribution-signed, notarized or App Store-approved release. See [current QA](docs/QA_2026-10-01_0.59.2.md).
 
 **Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
 

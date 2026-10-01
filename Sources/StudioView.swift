@@ -235,8 +235,8 @@ struct StudioView: View {
                             Button("InDesign (.jsx)…") { exportAdobeReturnBridge(.indesign) }
                         }
                         Button("Create font collection…") { createCollection(from: space) }.disabled(space.boards.isEmpty)
-                        Button("Developer handoff · this space (\(space.boards.count) typeboards)…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
-                        Button("Export Space JSON · “\(space.displayName)”…") { exportSpace(space) }
+                        Button("Developer handoff for this space (\(space.boards.count) \(space.boards.count == 1 ? "typeboard" : "typeboards"))…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
+                        Button("Export “\(space.displayName)” as Space JSON…") { exportSpace(space) }
                         Button("Import space…") { importSpace() }.disabled(store.readBlocked)
                         Divider()
                         Button("Delete space…", role: .destructive) { confirmDelete = true }
@@ -352,7 +352,7 @@ struct StudioView: View {
     func transferReport(_ format: StudioTransferReport.Format, space: DesignSpace) -> StudioTransferReport {
         let canvasCount = space.boards.reduce(0) { $0 + $1.directions.count }
         return StudioTransferReport(format: format,
-                                    scope: "Space “\(space.displayName)” · \(space.boards.count) typeboards · \(canvasCount) canvases",
+                                    scope: "Space “\(space.displayName)” with \(space.boards.count) typeboards and \(canvasCount) canvases",
                                     directions: space.boards.flatMap(\.directions),
                                     availableFonts: Set(library.allFaces.map(\.name)))
     }
@@ -806,14 +806,14 @@ struct TypeBoardEditor: View {
     }
     var editingTitle: String { if let index = importedLayerIndex { return direction.importedLayout?.layers[index].name ?? "Text layer" }; return role.rawValue }
     var editingScopeLabel: String {
-        if let shape = selectedImportedShape { return "Editing object: “\(shape.name)” · affects 1 shape" }
-        if let artwork = selectedArtwork { return "Editing object: “\(artwork.name)” · affects 1 image" }
+        if let shape = selectedImportedShape { return "Editing object: “\(shape.name)”. This affects 1 shape." }
+        if let artwork = selectedArtwork { return "Editing object: “\(artwork.name)”. This affects 1 image." }
         if direction.canvas == .imported {
-            if importedLayerIndex != nil { return "Editing layer: “\(editingTitle)” · affects 1 text object" }
+            if importedLayerIndex != nil { return "Editing layer: “\(editingTitle)”. This affects 1 text object." }
             return "Select an imported text layer or object"
         }
         let count = StudioRoleScope.affectedTextCount(role: role, direction: direction)
-        return "Editing role: \(role.rawValue) · affects \(count) text \(count == 1 ? "object" : "objects")"
+        return "Editing role: \(role.rawValue). This affects \(count) text \(count == 1 ? "object" : "objects")."
     }
     func setStyle(_ style: TypeStyle) {
         if direction.canvas == .imported && importedLayerIndex == nil { return }
@@ -846,7 +846,12 @@ struct TypeBoardEditor: View {
     func directionBinding<T>(_ key: WritableKeyPath<TypeDirection, T>) -> Binding<T> { Binding(get: { direction[keyPath: key] }, set: { board.directions[directionIndex][keyPath: key] = $0; save() }) }
     func styleBinding<T>(_ key: WritableKeyPath<TypeStyle, T>) -> Binding<T> { Binding(get: { style[keyPath: key] }, set: { var updated = style; updated[keyPath: key] = $0; setStyle(updated); save(key == \TypeStyle.size ? "Change Size" : key == \TypeStyle.tracking ? "Change Letter Spacing" : key == \TypeStyle.text ? "Change Sample Text" : "Edit Typography") }) }
     func typeboardToolbar(compact: Bool) -> some View {
-        HStack(spacing: compact ? 7 : 12) {
+        let fontCount = visibleFontCount
+        let canvasCount = visibleDirections.count
+        let summaryLabel = "\(fontCount) \(fontCount == 1 ? "font" : "fonts") on \(canvasCount) visible \(canvasCount == 1 ? "canvas" : "canvases")"
+        let boardCanvasCount = board.directions.count
+        let boardCanvasLabel = "\(boardCanvasCount) \(boardCanvasCount == 1 ? "canvas" : "canvases")"
+        return HStack(spacing: compact ? 7 : 12) {
                 ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") })
                     .font(.headline).lineLimit(1).frame(minWidth: compact ? 90 : 110, maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: compact ? 4 : 12)
@@ -861,25 +866,25 @@ struct TypeBoardEditor: View {
                     .fixedSize().help("Import SVG, PNG, JPEG, TIFF, HEIC, BMP, or GIF artwork onto this canvas. You can also drop a file directly onto a canvas.")
                     .accessibilityLabel("Import artwork onto this canvas")
                 Button { openFontSummary() } label: {
-                    if compact { Label("\(visibleFontCount)", systemImage: "textformat") }
-                    else { Label("\(visibleFontCount) fonts · \(visibleDirections.count) shown", systemImage: "textformat") }
+                    if compact { Label("\(fontCount)", systemImage: "textformat") }
+                    else { Label(summaryLabel, systemImage: "textformat") }
                 }
-                    .fixedSize().accessibilityLabel("Typography summary: \(visibleFontCount) fonts across \(visibleDirections.count) shown canvases")
+                    .fixedSize().accessibilityLabel("Typography summary: " + summaryLabel)
                     .popover(isPresented: $showFontSummary) { fontSummaryPopover }
                 Menu("Export") {
-                    Button("Typography summary · shown canvases…") { openFontSummary() }
-                    Button("Web-font performance · shown canvases…") { summaryCanvasIDs = Set(visibleDirections.map(\.id)); showWebFontAudit = true }
-                    Button("Developer handoff · this typeboard (\(board.directions.count) canvases)…") { exportDeveloperHandoff() }
+                    Button("Typography summary for shown canvases…") { openFontSummary() }
+                    Button("Web-font performance for shown canvases…") { summaryCanvasIDs = Set(visibleDirections.map(\.id)); showWebFontAudit = true }
+                    Button("Developer handoff for this typeboard (\(boardCanvasLabel))…") { exportDeveloperHandoff() }
                     Divider()
-                    Button("Preview PDF · \(board.canvasName(direction))…") { exportPDF() }
-                    Button("Editable Figma layout · this typeboard (\(board.directions.count) canvases)…") { exportFigma() }
+                    Button("Preview PDF for \(board.canvasName(direction))…") { exportPDF() }
+                    Button("Editable Figma layout for this typeboard (\(boardCanvasLabel))…") { exportFigma() }
                 }.fixedSize()
                 Menu {
                     Button("Save checkpoint") { saveCheckpoint() }
                     Text("\((board.checkpoints ?? []).count) of \(StudioCheckpointSave.maximumCount) checkpoints saved")
                     Text("After 50, the oldest is replaced")
                     Menu("Restore checkpoint as canvas") {
-                        ForEach((board.checkpoints ?? []).reversed()) { checkpoint in Button(checkpoint.direction.name + " · " + checkpoint.date.formatted(date: .abbreviated, time: .shortened)) { let copy = checkpoint.direction.copy(name: checkpoint.direction.name + " restored"); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save() } }
+                        ForEach((board.checkpoints ?? []).reversed()) { checkpoint in Button(checkpoint.direction.name + ", " + checkpoint.date.formatted(date: .abbreviated, time: .shortened)) { let copy = checkpoint.direction.copy(name: checkpoint.direction.name + " restored"); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save() } }
                     }.disabled((board.checkpoints ?? []).isEmpty)
                     Button("Add shortlist as candidates") { board.candidates = Array(Set(board.candidates + library.compared.map { library.chosenFace($0).name })).sorted(); save() }
                     Menu("Create font collection") {
@@ -927,14 +932,14 @@ struct TypeBoardEditor: View {
                     }
                     if direction.canvas != .imported {
                         Menu("Width") {
-                            Button("Mobile · 390") { directionBinding(\.width).wrappedValue = 390 }
-                            Button("Tablet · 768") { directionBinding(\.width).wrappedValue = 768 }
-                            Button("Desktop · 1200") { directionBinding(\.width).wrappedValue = 1200 }
-                            Button("Canvas · 960") { directionBinding(\.width).wrappedValue = 960 }
+                            Button("Mobile (390)") { directionBinding(\.width).wrappedValue = 390 }
+                            Button("Tablet (768)") { directionBinding(\.width).wrappedValue = 768 }
+                            Button("Desktop (1200)") { directionBinding(\.width).wrappedValue = 1200 }
+                            Button("Canvas (960)") { directionBinding(\.width).wrappedValue = 960 }
                         }
                     }
                 } label: {
-                    Label(direction.canvasDisplayName + " · \(Int(direction.width)) \(direction.canvasUnitLabel)", systemImage: "rectangle.dashed")
+                    Label(direction.canvasDisplayName + " (\(Int(direction.width)) \(direction.canvasUnitLabel))", systemImage: "rectangle.dashed")
                         .lineLimit(1)
                 }.fixedSize().help("Change canvas format or width")
                 Menu {
@@ -990,7 +995,7 @@ struct TypeBoardEditor: View {
         .onChange(of: inspectorMode) { mode in
             if mode == .floating {
                 let host = StudioFloatingInspectorHost(session: editorSession, library: library) { AnyView(floatingInspectorContent) }
-                floatingInspector.show(content: AnyView(host), title: "Typefield · Inspector", relativeTo: NSApp.mainWindow) {
+                floatingInspector.show(content: AnyView(host), title: "Typefield: Inspector", relativeTo: NSApp.mainWindow) {
                     inspectorMode = inspectorBeforeFloating
                 }
             } else { floatingInspector.close() }
@@ -1054,7 +1059,7 @@ struct TypeBoardEditor: View {
                                height: max(geometry.size.height, extent.height * scale), alignment: .topLeading)
                     }.background(Color.primary.opacity(0.07)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
                     }
-                    if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B · " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.plan(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.plan(for: direction).artboardSize.height)) \(direction.canvasUnitLabel) · " + (zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
+                    if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B: " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.plan(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.plan(for: direction).artboardSize.height)) \(direction.canvasUnitLabel), " + (zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
         }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topTrailing) { if focusCanvas { focusControls.padding(12) } }
     }
@@ -1361,7 +1366,7 @@ struct TypeBoardEditor: View {
                         Text(board.canvasName(direction)).lineLimit(1).truncationMode(.tail)
                     }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
                 }.font(.caption).buttonStyle(.plain)
-                 .help(board.canvasName(direction) + (direction.id == self.direction.id ? " · Editing" : " · Click to edit"))
+                 .help(board.canvasName(direction) + (direction.id == self.direction.id ? " (editing)" : " (click to edit)"))
                  .accessibilityLabel(board.canvasName(direction) + (direction.id == self.direction.id ? ", Editing" : ", Click to edit"))
                 if plan.artboardSize.width * zoom >= 280 {
                     Text("\(Int(plan.artboardSize.width)) × \(Int(plan.artboardSize.height))").font(.caption2).monospacedDigit().foregroundStyle(.secondary).fixedSize()
@@ -1500,7 +1505,7 @@ struct TypeBoardEditor: View {
                     .accessibilityIdentifier("spaces-editing-scope")
                 if let warnings = direction.importWarnings, !warnings.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("Import result · \(warnings.count) \(warnings.count == 1 ? "note" : "notes")", systemImage: "exclamationmark.triangle")
+                        Label("Import result (\(warnings.count) \(warnings.count == 1 ? "note" : "notes"))", systemImage: "exclamationmark.triangle")
                             .font(.caption.weight(.semibold)).foregroundStyle(.orange)
                         Text(warnings[0]).font(.caption).foregroundStyle(.secondary)
                         if warnings.count > 1 {
@@ -1534,7 +1539,7 @@ struct TypeBoardEditor: View {
                 ForEach(TypeRole.allCases) { item in
                     let count = StudioRoleScope.affectedTextCount(role: item, direction: direction)
                     Button { if count == 0 { addRole(item, target: nil, before: false) } else { selectRole(item) } } label: {
-                        HStack { Text(item.rawValue).font(.caption).fontWeight(.medium); Spacer(); Text(count == 0 ? "Add" : "\(count)× · \(Int(direction.style(item).size))").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(9).background(role == item ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 7)).contentShape(Rectangle())
+                        HStack { Text(item.rawValue).font(.caption).fontWeight(.medium); Spacer(); Text(count == 0 ? "Add" : "\(count)× at \(Int(direction.style(item).size))").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(9).background(role == item ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 7)).contentShape(Rectangle())
                     }.buttonStyle(.plain).onDrag { NSItemProvider(object: (direction.id.uuidString + "|role|" + item.rawValue) as NSString) }
                         .help(count == 0 ? "Click to add this role at the end of the canvas, or drag to place it" : "Click to locate this role; drag to add another")
                         .accessibilityLabel(count == 0 ? "Add \(item.rawValue) to canvas" : "Select \(item.rawValue), \(count) text objects")
@@ -1638,7 +1643,7 @@ struct TypeBoardEditor: View {
     var kerningBinding: Binding<Bool> { Binding(get: { style.effectiveKerning }, set: { var s = style; s.setKerning($0); setStyle(s); save() }) }
     var fontPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text("Choose font · " + editingTitle).font(.headline); Spacer(); Button("Done") { showFontPicker = false } }
+            HStack { Text("Choose font for " + editingTitle).font(.headline); Spacer(); Button("Done") { showFontPicker = false } }
             TextField("Search fonts, styles or #tags", text: $editorSession.fontSearch).textFieldStyle(.roundedBorder).focused($fontSearchFocused)
             HStack(spacing: 12) {
                 ShelfDropdown(title: "Collection", selection: $editorSession.fontCollection, options: [("All fonts", "All fonts"), ("Favorites", "Favorites")] + library.saved.collections.keys.sorted().map { ($0, "collection:" + $0) })
@@ -1658,7 +1663,7 @@ struct TypeBoardEditor: View {
                     ForEach(faces) { face in
                         Button { chooseFont(face.name) } label: {
                             VStack(alignment: .leading, spacing: 6) {
-                                HStack { Text(face.originalFamily + " · " + face.style).font(.caption); Spacer(); if style.fontName == face.name { Image(systemName: "checkmark") } }
+                                HStack { Text(face.originalFamily + ", " + face.style).font(.caption); Spacer(); if style.fontName == face.name { Image(systemName: "checkmark") } }
                                 FontPreview(text: style.text.isEmpty ? "Aa Bb Cc 0123456789" : String(style.text.prefix(90)), name: face.name, size: 27, wraps: true).frame(minHeight: 38).allowsHitTesting(false)
                             }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(style.fontName == face.name ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
                         }.buttonStyle(.plain)
@@ -1704,7 +1709,7 @@ struct TypeBoardEditor: View {
         let eligible = library.families.filter { !$0.faces.allSatisfy { !allowed.contains($0.name) } }
         discoveryNonce &+= 1
         let preferred = library.discoveryCandidates(in: eligible, includeSystemFonts: false, seed: discoveryNonce, limit: 1).first ?? library.discoveryCandidates(in: eligible, includeSystemFonts: true, seed: discoveryNonce, limit: 1).first
-        if let preferred { chooseFont(preferred.face.name); fontSearch = ""; status = "Trying \(preferred.family.name) · \(preferred.face.style) from your local library" }
+        if let preferred { chooseFont(preferred.face.name); fontSearch = ""; status = "Trying \(preferred.family.name), \(preferred.face.style), from your local library" }
     }
     func openFontSummary() {
         summaryCanvasIDs = Set(visibleDirections.map(\.id))
@@ -1714,7 +1719,7 @@ struct TypeBoardEditor: View {
         let outcome = StudioCheckpointSave.save(direction: direction, board: board) { onSave($0, "Save Checkpoint") }
         board = outcome.board
         if outcome.saved {
-            status = "Checkpoint saved · \((board.checkpoints ?? []).count) of \(StudioCheckpointSave.maximumCount) kept"
+            status = "Checkpoint saved. \((board.checkpoints ?? []).count) of \(StudioCheckpointSave.maximumCount) kept."
         } else {
             status = library.studio.error.isEmpty ? "Checkpoint could not be saved" : "Checkpoint could not be saved: " + library.studio.error
         }
@@ -1722,7 +1727,7 @@ struct TypeBoardEditor: View {
     var fontSummaryPopover: some View {
         let summary = fontSummary
         return VStack(alignment: .leading, spacing: 14) {
-            HStack { VStack(alignment: .leading, spacing: 3) { Text("Typography summary").font(.headline); Text("\(selectedSummaryDirections.count) of \(board.directions.count) canvases · \(summary.fonts.count) fonts").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Done") { showFontSummary = false }.keyboardShortcut(.cancelAction) }
+            HStack { VStack(alignment: .leading, spacing: 3) { Text("Typography summary").font(.headline); Text("\(selectedSummaryDirections.count) of \(board.directions.count) \(board.directions.count == 1 ? "canvas" : "canvases") with \(summary.fonts.count) \(summary.fonts.count == 1 ? "font" : "fonts")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Done") { showFontSummary = false }.keyboardShortcut(.cancelAction) }
             VStack(alignment: .leading, spacing: 7) {
                 Text("Canvases to include").font(.caption).foregroundStyle(.secondary)
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -1744,13 +1749,13 @@ struct TypeBoardEditor: View {
                 Spacer()
                 Menu { Button("From this canvas…") { createCollection(.canvas) }; Button("From this typeboard…") { createCollection(.typeboard) }; Button("From this project…") { createCollection(.project) } } label: { Label("Collection", systemImage: "folder.badge.plus") }.fixedSize()
                 Menu("Export selected canvases") {
-                    Button("Plain text · \(selectedSummaryDirections.count) selected…") { exportFontSummary(markdown: false) }
-                    Button("Markdown · \(selectedSummaryDirections.count) selected…") { exportFontSummary(markdown: true) }
+                    Button("Plain text (\(selectedSummaryDirections.count) selected)…") { exportFontSummary(markdown: false) }
+                    Button("Markdown (\(selectedSummaryDirections.count) selected)…") { exportFontSummary(markdown: true) }
                     Divider()
-                    Button("Type system PDF · \(selectedSummaryDirections.count) selected…") { exportTypeSystemPDF() }
+                    Button("Type system PDF (\(selectedSummaryDirections.count) selected)…") { exportTypeSystemPDF() }
                     Divider()
-                    Button("Illustrator builder · \(selectedSummaryDirections.count) selected (.jsx)…") { exportAdobeTypeSystem(.illustrator) }
-                    Button("InDesign builder · \(selectedSummaryDirections.count) selected (.jsx)…") { exportAdobeTypeSystem(.indesign) }
+                    Button("Illustrator builder (\(selectedSummaryDirections.count) selected, .jsx)…") { exportAdobeTypeSystem(.illustrator) }
+                    Button("InDesign builder (\(selectedSummaryDirections.count) selected, .jsx)…") { exportAdobeTypeSystem(.indesign) }
                 }.fixedSize()
             }
             Text("Each selected canvas contributes its visible text styles. Type system PDF creates one specimen page per canvas; imported Figma and Adobe canvases are not supported yet. Use Preview PDF for their visual layout. Adobe builders create editable native documents when you run the saved script inside Illustrator or InDesign; fonts are referenced, never bundled.").font(.caption).foregroundStyle(.secondary)
@@ -1761,6 +1766,9 @@ struct TypeBoardEditor: View {
         let selected = selectedSummaryDirections
         if selected.count == 1, let canvas = selected.first { return "Canvas “\(board.canvasName(canvas))” in typeboard “\(board.name)”" }
         return "\(selected.count) of \(board.directions.count) selected canvases in typeboard “\(board.name)”"
+    }
+    var completeTypeboardCanvasScope: String {
+        board.directions.count == 1 ? "the canvas" : "all \(board.directions.count) canvases"
     }
     func createCollection(_ scope: CollectionScope) {
         let names: Set<String>, source: String, suggested: String
@@ -1792,7 +1800,7 @@ struct TypeBoardEditor: View {
         let scope = selectedSummaryDirections.count == 1 ? board.canvasName(selectedSummaryDirections[0]) : "\(selectedSummaryDirections.count) canvases"
         panel.nameFieldStringValue = board.name + " — " + scope + " typography." + suffix
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try fontSummary.text(fontSummaryDetail, markdown: markdown).write(to: url, atomically: true, encoding: .utf8); status = "Typography summary exported · \(selectedSummaryDirections.count) selected canvases" }
+        do { try fontSummary.text(fontSummaryDetail, markdown: markdown).write(to: url, atomically: true, encoding: .utf8); status = "Typography summary exported for \(selectedSummaryDirections.count) selected \(selectedSummaryDirections.count == 1 ? "canvas" : "canvases")." }
         catch { status = "Typography summary export failed: " + error.localizedDescription }
     }
     func exportTypeSystemPDF() {
@@ -1816,7 +1824,7 @@ struct TypeBoardEditor: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try AdobeTypeSystemExporter.data(directions: selectedSummaryDirections, title: board.name, target: target).write(to: url, options: .atomic)
-            status = "Adobe " + target.displayName + " builder exported · \(selectedSummaryDirections.count) selected canvases. Run the .jsx file inside " + target.displayName + "." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : "")
+            status = "Adobe " + target.displayName + " builder exported for \(selectedSummaryDirections.count) selected \(selectedSummaryDirections.count == 1 ? "canvas" : "canvases"). Run the .jsx file inside " + target.displayName + "." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : "")
         } catch {
             status = "Adobe " + target.displayName + " export failed: " + error.localizedDescription
         }
@@ -1975,10 +1983,10 @@ struct TypeBoardEditor: View {
     }
     func exportDeveloperHandoff() {
         guard confirmExport(.developerHandoff, directions: board.directions,
-                            scope: "Typeboard “\(board.name)” · all \(board.directions.count) canvases") else { return }
+                            scope: "Typeboard “\(board.name)” with \(completeTypeboardCanvasScope)") else { return }
         do {
             if let folder = try DeveloperHandoff.selectFolder(title: board.name, boards: [board], catalog: library.families) {
-                status = "Developer handoff exported · all \(board.directions.count) canvases. Open index.html for the specimen."
+                status = "Developer handoff exported for \(completeTypeboardCanvasScope). Open index.html for the specimen."
                 NSWorkspace.shared.activateFileViewerSelecting([folder])
             }
         } catch { status = "Handoff export failed: " + error.localizedDescription }
@@ -1988,17 +1996,17 @@ struct TypeBoardEditor: View {
                             scope: "Canvas “\(board.canvasName(direction))” in typeboard “\(board.name)”") else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — " + direction.name + ".pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let plan = CanvasPlanCache.plan(for: direction); let view = CanvasNativeView(plan: plan); try view.dataWithPDF(inside: view.bounds).write(to: url, options: .atomic); status = "Preview PDF exported · “\(board.canvasName(direction))”" } catch { status = "Export failed: " + error.localizedDescription }
+        do { let plan = CanvasPlanCache.plan(for: direction); let view = CanvasNativeView(plan: plan); try view.dataWithPDF(inside: view.bounds).write(to: url, options: .atomic); status = "Preview PDF exported for “\(board.canvasName(direction))”." } catch { status = "Export failed: " + error.localizedDescription }
     }
     func exportFigma() {
         guard confirmExport(.figma, directions: board.directions,
-                            scope: "Typeboard “\(board.name)” · all \(board.directions.count) canvases") else { return }
+                            scope: "Typeboard “\(board.name)” with \(completeTypeboardCanvasScope)") else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
         let omittedArtwork = StudioTransferReport(format: .figma, scope: board.name, directions: board.directions,
                                                    availableFonts: Set(library.allFaces.map(\.name))).omittedArtworkCount
         panel.message = "Choose where to save the editable Figma layout and local importer. No fonts are bundled." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers are omitted; use Preview PDF for a visual handoff." : "")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let folder = try FigmaLayoutExporter.write(board: board, parent: url); status = "Figma package exported · all \(board.directions.count) canvases. See README for import steps." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : ""); NSWorkspace.shared.activateFileViewerSelecting([folder]) } catch { status = "Figma export failed: " + error.localizedDescription }
+        do { let folder = try FigmaLayoutExporter.write(board: board, parent: url); status = "Figma package exported for \(completeTypeboardCanvasScope). See README for import steps." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : ""); NSWorkspace.shared.activateFileViewerSelecting([folder]) } catch { status = "Figma export failed: " + error.localizedDescription }
     }
 }
 
@@ -2182,7 +2190,7 @@ struct CanvasPlan {
             section("navigation", "Website navigation")
             let navY = y
             let logoH = text(.label, "Studio 01", x: margin, at: navY, width: usable * 0.35)
-            let navH = text(.caption, "Work · About · Journal · Contact", x: margin + usable * 0.48, at: navY, width: usable * 0.52)
+            let navH = text(.caption, "Work   About   Journal   Contact", x: margin + usable * 0.48, at: navY, width: usable * 0.52)
             y = navY + max(logoH, navH) + 22; rule()
             section("hero", "Split hero")
             if w >= 700 {
@@ -2211,7 +2219,7 @@ struct CanvasPlan {
                 let b = text(.body, x: x, at: top + imageHeight + h + 26, width: cw)
                 bottom = max(bottom, top + imageHeight + h + b + 42)
             }
-            y = bottom; rule(); section("footer", "Website footer"); _ = text(.heading, "Stay curious."); _ = text(.caption, "Newsletter · Instagram · Terms · © 2026")
+            y = bottom; rule(); section("footer", "Website footer"); _ = text(.heading, "Stay curious."); _ = text(.caption, "Newsletter   Instagram   Terms   © 2026")
         case .product:
             section("app-bar", "Application chrome")
             let barY = y
@@ -2220,7 +2228,7 @@ struct CanvasPlan {
             _ = text(.caption, "⌘ K  Search   Arian ▾", x: margin + usable * 0.58, at: barY + 20, width: usable * 0.38)
             y = barY + 86
             section("dashboard", "Dashboard header")
-            _ = text(.caption, "Overview · This week"); _ = text(.heading, "Good morning, Arian"); _ = text(.body, "Track active projects, decisions, and the work that needs your attention.")
+            _ = text(.caption, "Overview for this week"); _ = text(.heading, "Good morning, Arian"); _ = text(.body, "Track active projects, decisions, and the work that needs your attention.")
             section("metrics", "Metric cards")
             let columns = w >= 700 ? 3 : 1, gap = 14.0, cw = (usable - Double(columns - 1) * gap) / Double(columns)
             for start in stride(from: 0, to: 3, by: columns) {
@@ -2251,10 +2259,10 @@ struct CanvasPlan {
             let commandY = y; elements.append(CanvasElement(rect: CGRect(x: margin, y: commandY, width: usable, height: 58), color: accent.withAlphaComponent(0.13), radius: 9)); _ = text(.mono, "Ask your workspace…                         ⌘ ↵", x: margin + 18, at: commandY + 17, width: usable - 36); y = commandY + 82
         case .editorial:
             section("masthead", "Magazine masthead")
-            let mastY = y; _ = text(.caption, "Vol. 12 · Culture & design", x: margin, at: mastY, width: usable * 0.5); _ = text(.label, "The Field Notes", x: margin + usable * 0.62, at: mastY, width: usable * 0.38); y = mastY + 38; rule()
+            let mastY = y; _ = text(.caption, "Vol. 12: Culture & design", x: margin, at: mastY, width: usable * 0.5); _ = text(.label, "The Field Notes", x: margin + usable * 0.62, at: mastY, width: usable * 0.38); y = mastY + 38; rule()
             section("cover-story", "Cover story")
             _ = text(.display, "The quiet ideas reshaping everyday life"); _ = text(.subheading, "A conversation about objects, attention, and what it means to make things that last.")
-            let bylineY = y; _ = text(.caption, "Words · Maya Chen", x: margin, at: bylineY, width: usable * 0.45); _ = text(.caption, "Photography · Luis Ortega", x: margin + usable * 0.52, at: bylineY, width: usable * 0.48); y = bylineY + 42
+            let bylineY = y; _ = text(.caption, "Words by Maya Chen", x: margin, at: bylineY, width: usable * 0.45); _ = text(.caption, "Photography by Luis Ortega", x: margin + usable * 0.52, at: bylineY, width: usable * 0.48); y = bylineY + 42
             section("image", "Lead image")
             let imageHeight = w >= 700 ? usable * 0.52 : 240
             elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: imageHeight), color: accent.withAlphaComponent(0.22), radius: 2))
@@ -2271,7 +2279,7 @@ struct CanvasPlan {
             rule(); section("folio", "Editorial folio"); let folioY = y; _ = text(.caption, "The Field Notes", x: margin, at: folioY, width: usable * 0.5); _ = text(.mono, "024", x: margin + usable * 0.8, at: folioY, width: usable * 0.2); y = folioY + 38
         case .poster:
             section("poster-code", "Poster index")
-            let indexY = y; _ = text(.mono, "Poster 07", x: margin, at: indexY, width: usable * 0.4); _ = text(.caption, "Design · Music · Conversation", x: margin + usable * 0.48, at: indexY, width: usable * 0.52); y = indexY + 60
+            let indexY = y; _ = text(.mono, "Poster 07", x: margin, at: indexY, width: usable * 0.4); _ = text(.caption, "Design, music, conversation", x: margin + usable * 0.48, at: indexY, width: usable * 0.52); y = indexY + 60
             section("poster-field", "Graphic field")
             let fieldY = y, fieldHeight = max(300, usable * 0.62)
             elements.append(CanvasElement(rect: CGRect(x: margin, y: fieldY, width: usable, height: fieldHeight), color: accent, radius: 0))
@@ -2282,9 +2290,9 @@ struct CanvasPlan {
             y = fieldY + fieldHeight + 42
             section("poster-details", "Event details")
             let detailY = y; _ = text(.heading, "Three nights of new work.", x: margin, at: detailY, width: usable * 0.55); _ = text(.body, "Exhibitions, live performance, workshops, and conversations with independent makers.", x: margin + usable * 0.62, at: detailY, width: usable * 0.38); y = detailY + 150
-            rule(); section("poster-footer", "Poster footer"); let footerY = y; _ = text(.caption, "Tickets · Program · Access", x: margin, at: footerY, width: usable * 0.58); _ = text(.mono, "F/S 2026", x: margin + usable * 0.72, at: footerY, width: usable * 0.28); y = footerY + 44
+            rule(); section("poster-footer", "Poster footer"); let footerY = y; _ = text(.caption, "Tickets   Program   Access", x: margin, at: footerY, width: usable * 0.58); _ = text(.mono, "F/S 2026", x: margin + usable * 0.72, at: footerY, width: usable * 0.28); y = footerY + 44
         case .specimen:
-            for role in TypeRole.allCases { section(role.rawValue, role.rawValue); _ = text(.caption, role.rawValue + " · " + d.style(role).fontName + " · \(Int(d.style(role).size)) px"); _ = text(role); rule() }
+            for role in TypeRole.allCases { section(role.rawValue, role.rawValue); _ = text(.caption, role.rawValue + ": " + d.style(role).fontName + " at \(Int(d.style(role).size)) px"); _ = text(role); rule() }
         }
         for block in d.addedBlocks ?? [] { section(block.id, block.role.rawValue); _ = text(block.role) }
         finishSection()

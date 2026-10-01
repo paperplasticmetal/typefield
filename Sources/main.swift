@@ -540,7 +540,7 @@ final class Library: ObservableObject {
     var selectedOutsideViewCount: Int { selectedFamilies.subtracting(Set(filtered.map(\.name))).count }
     var selectedScopeLabel: String {
         let outside = selectedOutsideViewCount
-        return "\(selectedFamilies.count) selected · \(outside) outside this view"
+        return "\(selectedFamilies.count) selected (\(outside) outside this view)"
     }
     func selectVisibleFamilies() { selectedFamilies = Set(filtered.map(\.name)) }
     var hasActiveFilters: Bool {
@@ -699,10 +699,11 @@ struct ContentView: View {
             case .library:
                 VStack(spacing: 0) {
                 let visibleFamilies = library.filtered
+                let matchingStyleCount = visibleFamilies.reduce(0) { $0 + library.matchingFaces(in: $1).count }
                 topControls
                 libraryContent(visibleFamilies)
                 Divider()
-                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families") · \(library.filteredFaces.count) matching styles"); Text("·"); Text("\(library.styleCount) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
+                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families") with \(matchingStyleCount) matching styles; \(library.styleCount) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
                 }.accessibilityIdentifier("library-workspace")
             }
         }
@@ -786,7 +787,7 @@ struct ContentView: View {
                     Menu {
                         Button("The quick brown fox…") { preview = "The quick brown fox jumps over the lazy dog." }
                         Button("Alphabet & numbers") { preview = "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789" }
-                        ForEach(WritingSystem.allCases, id: \.self) { writing in Button(writing.rawValue) { preview = writing.sample } }
+                        ForEach(WritingSystem.allCases, id: \.self) { writing in Button(writing.displayName) { preview = writing.sample } }
                         Button("Family names") { preview = "{family}" }
                     } label: { Image(systemName: "text.quote") }.shelfIconMenu().help("Preview text presets").accessibilityLabel("Preview text presets")
                     Divider().frame(height: 20)
@@ -823,7 +824,7 @@ struct ContentView: View {
                 }.padding(.horizontal, 16).padding(.vertical, 10)
                 HStack {
                     if let writing = library.writing {
-                        Button { library.writing = nil } label: { Label(writing.rawValue, systemImage: "xmark.circle") }
+                        Button { library.writing = nil } label: { Label(writing.displayName, systemImage: "xmark.circle") }
                         Button("Use script sample") { preview = writing.sample }
                     }
                     Toggle("Contains preview characters", isOn: $library.requireCoverage).toggleStyle(.checkbox).disabled(preview == "{family}")
@@ -840,7 +841,7 @@ struct ContentView: View {
                             Text(referenceFamily.name).foregroundStyle(.cyan).lineLimit(1)
                             ShelfDropdown(title: "Reference style", selection: $library.overlayName, options: referenceFamily.faces.map { ($0.style, $0.name) }, showsTitle: false).frame(width: 180)
                         }
-                        Text("Cyan: reference · Orange: preview").foregroundStyle(.secondary)
+                        Text("Cyan shows the reference; orange shows the preview.").foregroundStyle(.secondary)
                         Spacer()
                         Button("End overlay") { library.overlayName = "" }
                     }.font(.caption).padding(.horizontal, 16).padding(.bottom, 10)
@@ -887,11 +888,12 @@ struct ContentView: View {
                                 ForEach(Array(stride(from: 0, to: families.count, by: columns)), id: \.self) { start in
                                     let row = Array(families[start..<min(start + columns, families.count)])
                                     let faces = row.map { library.chosenFace($0) }
-                                    let baseline = rowBaseline(faces)
+                                    let previewWidth = max(1, (width - Double(columns - 1) * 10) / Double(columns) - 40)
+                                    let metrics = rowPreviewMetrics(row, faces: faces, width: previewWidth)
                                     HStack(alignment: .top, spacing: 10) {
                                         ForEach(0..<columns, id: \.self) { column in
                                             if start + column < families.count {
-                                                card(families[start + column], face: faces[column], baseline: baseline).frame(maxWidth: .infinity)
+                                                card(families[start + column], face: faces[column], metrics: metrics).frame(maxWidth: .infinity)
                                             } else {
                                                 Color.clear.frame(maxWidth: .infinity)
                                             }
@@ -940,7 +942,7 @@ struct ContentView: View {
             SidebarSection(title: "Languages / Scripts", key: "sidebar.languages") {
             ForEach(WritingSystem.allCases, id: \.self) { writing in
                 Button { library.writing = library.writing == writing ? nil : writing } label: {
-                    HStack { Text(writing.mark).frame(width: 20); Text(writing.rawValue).lineLimit(1); Spacer(); Text("\(snapshot.count(writingSystem: writing))").font(.caption).foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
+                    HStack { Text(writing.mark).frame(width: 20); Text(writing.displayName).lineLimit(1); Spacer(); Text("\(snapshot.count(writingSystem: writing))").font(.caption).foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
                 }.buttonStyle(.plain).background(library.writing == writing ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
                     .accessibilityAddTraits(library.writing == writing ? .isSelected : [])
             }
@@ -983,19 +985,19 @@ struct ContentView: View {
                                 .shelfIconMenu().accessibilityLabel("Actions for collection \(name)")
                         }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) } }
                     }
-                    if library.saved.collections.isEmpty { Text("No collections yet · use + to create one").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 5) }
+                    if library.saved.collections.isEmpty { Text("No collections yet. Use + to create one.").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 5) }
                 }
             }
             }
             } }
             Spacer(minLength: 4)
             Button { library.addFolder() } label: { Label("Add font folder", systemImage: "folder.badge.plus").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(systemScheme == .dark ? Color.black : Color.white).padding(10).background(ShelfPalette.ink, in: RoundedRectangle(cornerRadius: 12)).padding(12)
-            Button { library.openTools("Folders") } label: { Label("Live folders · \(library.saved.folders.count)", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.horizontal, 22).padding(.bottom, 8).help("Manage folders that update automatically, including subfolders")
+            Button { library.openTools("Folders") } label: { Label("Live folders (\(library.saved.folders.count))", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.horizontal, 22).padding(.bottom, 8).help("Manage folders that update automatically, including subfolders")
             HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").accessibilityLabel("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
         }
     }
     private var tagFilterControl: some View {
-        Button(library.tagQuery.active ? "Tag filters •" : "Tag filters") { showTagFilters.toggle() }
+        Button(library.tagQuery.active ? "Tag filters (active)" : "Tag filters") { showTagFilters.toggle() }
             .popover(isPresented: $showTagFilters) { TagFilterView(library: library) }
             .fixedSize(horizontal: true, vertical: false)
     }
@@ -1129,18 +1131,58 @@ struct ContentView: View {
         .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
         .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
     }
-    func rowBaseline(_ faces: [Face]) -> Double {
-        let names = faces.map(\.name) + (library.overlayName.isEmpty ? [] : [library.overlayName])
-        return ceil(names.map { CTFontGetAscent(OpenType.font(name: $0, size: size, axes: library.pro.axes[$0] ?? [:], features: library.pro.features[$0] ?? [:])) }.max() ?? size) + 4
+    struct LibraryRowPreviewMetrics {
+        let baseline: Double
+        let height: Double
+    }
+    func rowPreviewMetrics(_ families: [Family], faces: [Face], width: Double) -> LibraryRowPreviewMetrics {
+        let samples: [(text: String, font: CTFont)] = zip(families, faces).flatMap { family, face in
+            let text = preview == "{family}" ? family.name : preview
+            let names = library.overlayName.isEmpty ? [face.name] : [face.name, library.overlayName]
+            return names.map { name in
+                (text, OpenType.font(name: name, size: size, axes: library.pro.axes[name] ?? [:], features: library.pro.features[name] ?? [:]))
+            }
+        }
+        // Measure only the first three visible lines, matching FontPreview's limit.
+        // This also includes the real fallback glyph bounds for mixed scripts.
+        let layouts = samples.map { sample -> (ascent: Double, descent: Double, lines: Int, font: CTFont) in
+            let text = String(sample.text.prefix(512))
+            let attributed = NSAttributedString(string: text, attributes: [.font: sample.font])
+            let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+            var offset = 0
+            var lines = 0
+            var ascent = Double(CTFontGetAscent(sample.font))
+            var descent = Double(CTFontGetDescent(sample.font))
+            while offset < attributed.length && lines < 3 {
+                let length = max(1, CTTypesetterSuggestLineBreak(typesetter, offset, width))
+                let line = CTTypesetterCreateLine(typesetter, CFRange(location: offset, length: length))
+                var lineAscent: CGFloat = 0
+                var lineDescent: CGFloat = 0
+                CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+                let inkBounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+                ascent = max(ascent, lineAscent, inkBounds.maxY)
+                descent = max(descent, lineDescent, -inkBounds.minY)
+                offset += length
+                lines += 1
+            }
+            return (ascent, descent, lines, sample.font)
+        }
+        let baseline = ceil(layouts.map(\.ascent).max() ?? size) + 4
+        let shortPreview = preview != "{family}" && preview.trimmingCharacters(in: .whitespacesAndNewlines).count <= 3 && !preview.contains("\n")
+        let minimumHeight = library.overlayName.isEmpty && shortPreview ? max(44, size * 1.18) : size * 1.5
+        let height = layouts.reduce(minimumHeight) { tallest, layout in
+            let advance = max(baseline + CTFontGetDescent(layout.font) + CTFontGetLeading(layout.font), size * 1.2)
+            return max(tallest, baseline + Double(max(0, layout.lines - 1)) * advance + layout.descent + 6)
+        }
+        return LibraryRowPreviewMetrics(baseline: baseline, height: ceil(height))
     }
     func reportFontExport(_ faces: [Face]) {
         guard let result = FontExporter.export(faces) else { return }
         if result.hasPrefix("Export failed:") || result.contains("\n") { library.message = result }
         else { library.resultNotice = result + " See the export folder in Finder." }
     }
-    func card(_ family: Family, face: Face, baseline: Double) -> some View {
+    func card(_ family: Family, face: Face, metrics: LibraryRowPreviewMetrics) -> some View {
         let shortPreview = preview != "{family}" && preview.trimmingCharacters(in: .whitespacesAndNewlines).count <= 3 && !preview.contains("\n")
-        let previewHeight = shortPreview ? max(44, size * 1.18) : size * 1.5
         return VStack(alignment: .leading, spacing: shortPreview ? 6 : 14) {
             HStack(spacing: 8) {
                 Button { if library.selectedFamilies.contains(family.name) { library.selectedFamilies.remove(family.name) } else { library.selectedFamilies.insert(family.name) } } label: { Image(systemName: library.selectedFamilies.contains(family.name) ? "checkmark.circle.fill" : "circle").font(.system(size: 16)).frame(width: 28, height: 28) }.buttonStyle(.plain).help("Select family for batch actions")
@@ -1149,7 +1191,7 @@ struct ContentView: View {
                     .accessibilityAddTraits(library.selectedFamilies.contains(family.name) ? .isSelected : [])
                 VStack(alignment: .leading, spacing: 3) {
                     Text(family.name).font(.system(size: 14, weight: .medium)).lineLimit(2)
-                    Text(library.category(family).rawValue + (family.variable ? " · Variable" : "")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(library.category(family).rawValue + (family.variable ? " (variable)" : "")).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }.frame(height: 42, alignment: .top)
@@ -1182,9 +1224,9 @@ struct ContentView: View {
                 Menu { actions(family) } label: { Image(systemName: "ellipsis").font(.system(size: 17)) }.shelfIconMenu().help("More actions for \(family.name)").accessibilityLabel("More actions for \(family.name)")
             }
             if !library.overlayName.isEmpty {
-                OverlayPreview(text: preview == "{family}" ? family.name : preview, candidate: face.name, reference: library.overlayName, size: size, library: library, baseline: baseline, maximumLines: 3).allowsHitTesting(false)
+                OverlayPreview(text: preview == "{family}" ? family.name : preview, candidate: face.name, reference: library.overlayName, size: size, library: library, baseline: metrics.baseline, maximumLines: 3).frame(height: metrics.height, alignment: .topLeading).allowsHitTesting(false)
             } else {
-                FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: baseline, maximumLines: 3).frame(minHeight: previewHeight, alignment: .top).allowsHitTesting(false)
+                FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: metrics.baseline, maximumLines: 3).frame(height: metrics.height, alignment: .topLeading).allowsHitTesting(false)
             }
             if grid && !shortPreview { Button("Expand preview…") { library.detail = family }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Open all preview text and font styles").accessibilityLabel("Expand \(family.name) preview") }
         }.frame(maxWidth: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.contextMenu { actions(family) }
@@ -1235,9 +1277,9 @@ private struct TourPage {
     let action: String
     static let all: [TourPage] = [
         .init(symbol: "square.grid.2x2", eyebrow: "Welcome", title: "Meet Typefield", detail: "Your fonts, type ideas, and letterforms live together here. This quick tour takes about a minute. You can skip it and return from Help at any time.", action: "Your work stays on this Mac unless you choose to export it."),
-        .init(symbol: "textformat", eyebrow: "01 · Library", title: "Find the right font", detail: "Browse fonts already on your Mac, preview your own words, filter by style or language, and save favorites and collections. Add a folder when you want Typefield to watch your own font files.", action: "Start with a preview, then shortlist a few families."),
-        .init(symbol: "square.stack.3d.up", eyebrow: "02 · Spaces", title: "Try type in context", detail: "Turn a shortlist into a typeboard. Arrange live text and shapes, compare directions, and tune roles such as Heading and Body. Export a PDF, Figma layout, Adobe bridge, or developer handoff when you are ready.", action: "Choose Spaces in the sidebar to make a typeboard."),
-        .init(symbol: "pencil.and.outline", eyebrow: "03 · Letterform Editor", title: "Draw your own letters", detail: "Sketch or edit vector letters, import artwork you have rights to use, refine spacing, and preview words. You can export SVG outlines or a font built from your own glyphs.", action: "Choose Letterform Editor in the sidebar to begin.")
+        .init(symbol: "textformat", eyebrow: "1. Library", title: "Find the right font", detail: "Browse fonts already on your Mac, preview your own words, filter by style or language, and save favorites and collections. Add a folder when you want Typefield to watch your own font files.", action: "Start with a preview, then shortlist a few families."),
+        .init(symbol: "square.stack.3d.up", eyebrow: "2. Spaces", title: "Try type in context", detail: "Turn a shortlist into a typeboard. Arrange live text and shapes, compare directions, and tune roles such as Heading and Body. Export a PDF, Figma layout, Adobe bridge, or developer handoff when you are ready.", action: "Choose Spaces in the sidebar to make a typeboard."),
+        .init(symbol: "pencil.and.outline", eyebrow: "3. Letterform Editor", title: "Draw your own letters", detail: "Sketch or edit vector letters, import artwork you have rights to use, refine spacing, and preview words. You can export SVG outlines or a font built from your own glyphs.", action: "Choose Letterform Editor in the sidebar to begin.")
     ]
 }
 
@@ -1489,7 +1531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         guard let command = item.representedObject as? String else { return true }
         if ["settings", "about", "privacy", "shortcuts"].contains(command) { return true }
-        let inspectorIsKey = NSApp.keyWindow?.title == "Typefield · Inspector" && library.workspace == .spaces
+        let inspectorIsKey = NSApp.keyWindow?.title == "Typefield: Inspector" && library.workspace == .spaces
         if command == "dockInspector" { return NSApp.isActive && inspectorIsKey && window.attachedSheet == nil }
         guard NSApp.isActive, window.attachedSheet == nil, window.isKeyWindow || inspectorIsKey else { return false }
         let inLibrary = library.workspace == .library
@@ -1517,7 +1559,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
     var activeUndoManager: UndoManager? {
         if let text = NSApp.keyWindow?.firstResponder as? NSTextView, !(library.workspace == .spaces && text.isFieldEditor), let manager = text.undoManager, manager.canUndo || manager.canRedo { return manager }
-        guard NSApp.keyWindow === window || NSApp.keyWindow?.title == "Typefield · Inspector" else { return nil }
+        guard NSApp.keyWindow === window || NSApp.keyWindow?.title == "Typefield: Inspector" else { return nil }
         return library.workspace == .spaces ? library.studio.undoManager : nil
     }
     @objc func undo(_ sender: Any?) {
@@ -1631,6 +1673,66 @@ enum PerformanceAudit {
         print(String(format: "PERF library filter: %.3f ms/pass", filtering.milliseconds))
         print(String(format: "PERF pairing rank: %.3f ms/pass; similarity rank: %.3f ms/pass", pairing.milliseconds, similarity.milliseconds))
         print(String(format: "PERF canvas plan: %.3f ms uncached, %.6f ms cached (%.1fx faster)", direct.milliseconds, cached.milliseconds, direct.milliseconds / max(0.000_001, cached.milliseconds)))
+
+        // Exercise the real Spaces read and selection paths without opening or
+        // changing the user's saved projects. Every fixture is removed on exit.
+        let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-navigation-audit-" + UUID().uuidString)
+        do {
+            try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+            func percentile(_ samples: [Double], _ fraction: Double) -> Double {
+                let sorted = samples.sorted()
+                return sorted[min(sorted.count - 1, max(0, Int(ceil(Double(sorted.count) * fraction)) - 1))]
+            }
+            func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+                if !condition() {
+                    throw NSError(domain: "Typefield.PerformanceAudit", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: message])
+                }
+            }
+            for boardCount in [2, 50, 200] {
+                let url = fixtureRoot.appendingPathComponent("spaces-\(boardCount).json")
+                var space = DesignSpace(name: "Performance fixture")
+                space.boards = (0..<boardCount).map { TypeBoard(name: "Typeboard \($0 + 1)") }
+                let seed = StudioStore(url: url)
+                seed.state.spaces = [space]
+                seed.focusedSpace = space.id
+                seed.focusedBoard = space.boards[0].id
+                try require(seed.save(), "Could not write disposable Spaces fixture")
+
+                var loadTimes: [Double] = []
+                loadTimes.reserveCapacity(10)
+                for _ in 0..<10 {
+                    let start = CFAbsoluteTimeGetCurrent()
+                    let loaded = StudioStore(url: url)
+                    loadTimes.append((CFAbsoluteTimeGetCurrent() - start) * 1_000)
+                    try require(!loaded.readBlocked && loaded.state.spaces.first?.boards.count == boardCount,
+                                "Disposable Spaces fixture did not round-trip")
+                }
+
+                let selected = StudioStore(url: url)
+                let first = space.boards[0].id
+                let last = space.boards[boardCount - 1].id
+                var selectTimes: [Double] = []
+                selectTimes.reserveCapacity(20)
+                for index in 0..<20 {
+                    let target = index.isMultiple(of: 2) ? last : first
+                    let start = CFAbsoluteTimeGetCurrent()
+                    let saved = selected.select(space: space.id, board: target)
+                    selectTimes.append((CFAbsoluteTimeGetCurrent() - start) * 1_000)
+                    try require(saved && selected.focusedBoard == target,
+                                "Disposable Spaces selection failed")
+                }
+                let reopened = StudioStore(url: url)
+                try require(reopened.focusedBoard == first, "Disposable Spaces selection was not persisted")
+                let kilobytes = Double((try? Data(contentsOf: url).count) ?? 0) / 1_024
+                print(String(format: "PERF Spaces %d boards (%.0f KB): first load %.3f ms, fresh-store load median %.3f ms, p95 %.3f ms; selection save median %.3f ms, p95 %.3f ms",
+                             boardCount, kilobytes, loadTimes[0], percentile(loadTimes, 0.5), percentile(loadTimes, 0.95),
+                             percentile(selectTimes, 0.5), percentile(selectTimes, 0.95)))
+            }
+        } catch {
+            fputs("PERF Spaces navigation audit failed: \(error.localizedDescription)\n", stderr)
+        }
     }
 }
 

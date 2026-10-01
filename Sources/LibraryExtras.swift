@@ -658,9 +658,9 @@ enum SpecimenExporter {
             var cursor = 690.0
             func beginPage() {
                 context.beginPDFPage(nil); context.setFillColor(NSColor.white.cgColor); context.fill(page)
-                let title = NSAttributedString(string: face.originalFamily + " · " + face.style, attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor.black])
+                let title = NSAttributedString(string: face.originalFamily + ", " + face.style, attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor.black])
                 context.textPosition = CGPoint(x: 44, y: 746); CTLineDraw(CTLineCreateWithAttributedString(title), context)
-                let footer = NSAttributedString(string: "Typefield · " + face.name, attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.darkGray])
+                let footer = NSAttributedString(string: "Typefield: " + face.name, attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.darkGray])
                 context.textPosition = CGPoint(x: 44, y: 26); CTLineDraw(CTLineCreateWithAttributedString(footer), context)
                 cursor = 708
             }

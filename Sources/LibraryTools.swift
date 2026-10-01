@@ -201,7 +201,7 @@ struct TagEditorView: View {
     var entries: [String] { Array(Set(input.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted() }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text(library.selectedScopeLabel + " · \(library.selectedFaces.count) styles affected"); Spacer(); Button("Replace selection with visible") { library.selectVisibleFamilies() }; Button("Clear selection") { library.selectedFamilies = [] } }
+            HStack { Text(library.selectedScopeLabel + " (\(library.selectedFaces.count) \(library.selectedFaces.count == 1 ? "style" : "styles") affected)"); Spacer(); Button("Replace selection with visible") { library.selectVisibleFamilies() }; Button("Clear selection") { library.selectedFamilies = [] } }
             TextField("Tags separated by commas; use / for nested tags", text: $input).textFieldStyle(.roundedBorder)
             HStack {
                 Button("Add tags to \(library.selectedFaces.count) styles") { apply(remove: false) }.disabled(entries.isEmpty || library.selectedFaces.isEmpty)
@@ -260,7 +260,7 @@ struct FamilyEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { TextField("Search fonts or families", text: $query); Toggle("Modified only", isOn: $modifiedOnly).toggleStyle(.checkbox) }
-            HStack { Text("\(selected.count) styles selected · \(selected.subtracting(Set(faces.map(\.name))).count) outside results"); Button("Select results") { selected = Set(faces.map(\.name)) }; Button("Clear") { selected = [] }; Spacer() }
+            HStack { Text("\(selected.count) \(selected.count == 1 ? "style" : "styles") selected (\(selected.subtracting(Set(faces.map(\.name))).count) outside results)"); Button("Select results") { selected = Set(faces.map(\.name)) }; Button("Clear") { selected = [] }; Spacer() }
             HStack { TextField("Family name to group selected styles under", text: $name); Button("Group \(selected.count) styles") { let target = name.trimmingCharacters(in: .whitespacesAndNewlines); if library.editFamily(names: selected, target: target) { status = "Grouped \(selected.count) styles under \(target). Saved in Library." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.isEmpty); Button("Restore \(selected.count) original styles") { if library.editFamily(names: selected, target: nil) { status = "Restored original families for \(selected.count) styles. Saved in Library." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(selected.isEmpty) }
             Text(status).font(.caption).foregroundStyle(.secondary)
             Text("Group selected styles to merge families, or assign a subset to split a family. Font files are not modified.").font(.caption).foregroundStyle(.secondary)
@@ -269,7 +269,7 @@ struct FamilyEditorView: View {
                     ForEach(faces) { face in
                         HStack {
                             Toggle("", isOn: Binding(get: { selected.contains(face.name) }, set: { if $0 { selected.insert(face.name) } else { selected.remove(face.name) } })).labelsHidden().toggleStyle(.checkbox)
-                            VStack(alignment: .leading, spacing: 3) { Text(face.name).font(.system(size: 12, weight: .medium)); Text("Original: \(face.originalFamily) · \(face.style)").font(.caption).foregroundStyle(.secondary) }
+                            VStack(alignment: .leading, spacing: 3) { Text(face.name).font(.system(size: 12, weight: .medium)); Text("Original: \(face.originalFamily), \(face.style)").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             Text(library.pro.familyOverrides[face.name] ?? face.originalFamily).font(.caption)
                         }.padding(8).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 5))
@@ -290,7 +290,7 @@ struct DuplicateView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Button(busy ? "Scanning…" : "Scan font files") { scan() }.disabled(busy); Picker("Match", selection: $exact) { Text("Identical file contents").tag(true); Text("Same PostScript name").tag(false) }.pickerStyle(.segmented); if busy { ProgressView().controlSize(.small) } }
             Text("Same-name matches may be different versions or formats. Identical copies can be moved to Trash individually.").font(.caption).foregroundStyle(.secondary)
-            if scanned { Text("\(groups.filter { $0.exact == exact }.count) groups · \(errors.count) unreadable files or folders").font(.caption) }
+            if scanned { Text("\(groups.filter { $0.exact == exact }.count) \(groups.filter { $0.exact == exact }.count == 1 ? "group" : "groups"); \(errors.count) unreadable files or folders").font(.caption) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 15) {
                     ForEach(groups.filter { $0.exact == exact }) { group in
@@ -344,7 +344,7 @@ struct ActivationView: View {
                     Spacer(minLength: 0)
                 }
             }
-            Text(library.selectedScopeLabel + " · \(library.selectedFaces.count) styles affected").font(.caption).foregroundStyle(.secondary)
+            Text(library.selectedScopeLabel + " (\(library.selectedFaces.count) \(library.selectedFaces.count == 1 ? "style" : "styles") affected)").font(.caption).foregroundStyle(.secondary)
             if !library.selectedFaces.isEmpty && selectedFileCount == 0 {
                 Text("The selected styles have no font file available to activate. Select styles from accessible files instead.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -438,7 +438,7 @@ final class GoogleFontStore: ObservableObject {
                     throw NSError(domain: "Typefield", code: 7, userInfo: [NSLocalizedDescriptionKey: "No license found for this download."])
                 }
                 let licenseFile = files.first(where: { ["OFL.txt", "LICENSE.txt", "LICENSE"].contains($0.name) })!.name
-                let licenseSource = "\(licenseFile) · google/fonts/\(sourceRoot)/\(slug)"
+                let licenseSource = "\(licenseFile) (google/fonts/\(sourceRoot)/\(slug))"
                 await MainActor.run {
                     licenseByFamily[font.family] = licenseSource
                     statusByFamily[font.family] = "License located. Downloading font files…"
@@ -503,20 +503,20 @@ struct GoogleFontsView: View {
                 Slider(value: $previewSize, in: 20...100, step: 1).frame(width: 140)
                 Text("\(Int(previewSize)) pt").monospacedDigit().frame(width: 48)
             }
-            Text("\(store.catalog.count) families · Previews load from the Google Fonts repository on GitHub. A license file is checked and saved with every download.").font(.caption).foregroundStyle(.secondary)
+            Text("\(store.catalog.count) families. Previews load from the Google Fonts repository on GitHub. A license file is checked and saved with every download.").font(.caption).foregroundStyle(.secondary)
             if !store.status.isEmpty { Text(store.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
             ScrollView { LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(matches) { font in
                     VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        VStack(alignment: .leading, spacing: 5) { Text(font.family).font(.headline); Text("\(font.category) · " + font.axes.map { "\($0.tag) \(Int($0.min))–\(Int($0.max))" }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading, spacing: 5) { Text(font.family).font(.headline); Text("\(font.category): " + font.axes.map { "\($0.tag) \(Int($0.min))–\(Int($0.max))" }.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
                         Spacer()
                         if library.originalFamilies.contains(where: { $0.name == font.family }) {
                             Button("Inspect installed") { if let family = library.families.first(where: { $0.name == font.family || $0.faces.contains { $0.originalFamily == font.family } }) { library.showTools = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { library.detail = family } } }
                         }
                         Button(store.busy == font.family ? "Downloading…" : store.failedFamilies.contains(font.family) ? "Retry download" : "Download variable") { store.download(font, library: library) }.disabled(store.busy != nil || library.loading)
                     }
-                    Text("Source: Google Fonts · google/fonts on GitHub · License: \(store.licenseByFamily[font.family] ?? "repository license file checked before installation")")
+                    Text("Source: Google Fonts (google/fonts on GitHub). License: \(store.licenseByFamily[font.family] ?? "repository license file checked before installation")")
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     if let result = store.statusByFamily[font.family] { Text(result).font(.caption).foregroundStyle(store.failedFamilies.contains(font.family) ? .red : .secondary).textSelection(.enabled) }
                     GoogleFontSample(font: font, text: previewText, size: previewSize, installed: library.originalFamilies.first(where: { $0.name == font.family })?.representative.name)

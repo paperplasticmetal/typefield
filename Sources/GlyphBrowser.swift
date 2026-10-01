@@ -100,10 +100,10 @@ struct GlyphBrowser: View {
                         if let entry = current {
                             GlyphPreview(font: font, glyph: entry.glyph, metrics: metrics, outlines: outlines).frame(width: 230, height: 220).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
                             Text(entry.title).font(.headline).textSelection(.enabled)
-                            Text(entry.code + " · " + entry.glyphName).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                            Text(entry.code + ": " + entry.glyphName).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                             Toggle("Metrics", isOn: $metrics).toggleStyle(.checkbox)
                             Toggle("Outline", isOn: $outlines).toggleStyle(.checkbox)
-                            if metrics { Text("Baseline · x-height · cap height").font(.caption).foregroundStyle(.secondary) }
+                            if metrics { Text("Baseline, x-height, cap height").font(.caption).foregroundStyle(.secondary) }
                             Button("Copy character") { if let scalar = entry.scalar { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(String(scalar), forType: .string); status = "Character copied" } }.disabled(entry.scalar == nil)
                             Button("Export SVG…") { export(entry) }.disabled(GlyphCatalog.svg(font: font, glyph: entry.glyph) == nil)
                             Text("Drag a glyph to export its vector outline.").font(.caption).foregroundStyle(.secondary)

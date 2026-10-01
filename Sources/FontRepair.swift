@@ -382,7 +382,7 @@ struct FontHealthView: View {
     }
     var summary: String {
         let affected = inspections.filter(\.needsReview).count
-        return inspections.isEmpty ? "" : "\(affected) need review · \(inspections.count) inspected"
+        return inspections.isEmpty ? "" : "\(affected) \(affected == 1 ? "needs" : "need") review out of \(inspections.count) inspected"
     }
     func resultRow(_ item: FontInspection) -> some View {
         Button { select(item) } label: {
@@ -390,7 +390,7 @@ struct FontHealthView: View {
                 Image(systemName: item.needsReview ? item.worst.icon : "checkmark.circle.fill").foregroundStyle(item.needsReview ? item.worst.color : Color.green)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.names.family == "—" ? item.url.deletingPathExtension().lastPathComponent : item.names.family).fontWeight(.medium).lineLimit(1)
-                    Text(item.url.lastPathComponent + " · " + (item.needsReview ? "\(item.issues.filter { $0.severity >= .warning }.count) finding\(item.issues.filter { $0.severity >= .warning }.count == 1 ? "" : "s")" : item.issues.isEmpty ? "Clean" : "No problems · \(item.issues.count) compatibility note\(item.issues.count == 1 ? "" : "s")")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(item.url.lastPathComponent + ": " + (item.needsReview ? "\(item.issues.filter { $0.severity >= .warning }.count) finding\(item.issues.filter { $0.severity >= .warning }.count == 1 ? "" : "s")" : item.issues.isEmpty ? "Clean" : "No problems (\(item.issues.count) compatibility note\(item.issues.count == 1 ? "" : "s"))")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
                 if !item.canRepair && !item.issues.isEmpty { Image(systemName: "eye").help("Inspection only") }
@@ -400,7 +400,7 @@ struct FontHealthView: View {
     func detail(_ item: FontInspection) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                VStack(alignment: .leading, spacing: 3) { Text(item.url.lastPathComponent).font(.headline); Text(item.format + " · " + ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file)).font(.caption).foregroundStyle(.secondary) }
+                VStack(alignment: .leading, spacing: 3) { Text(item.url.lastPathComponent).font(.headline); Text(item.format + ", " + ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file)).font(.caption).foregroundStyle(.secondary) }
                 Spacer(); Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
             }
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 5) {

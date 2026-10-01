@@ -6,6 +6,13 @@ import JavaScriptCore
 // These are coverage probes, not claims of full language or shaping support.
 enum WritingSystem: String, CaseIterable, Hashable {
     case devanagari = "Devanagari / Hindi", japanese = "Japanese", simplified = "Chinese · Simplified", traditional = "Chinese · Traditional", korean = "Korean", arabic = "Arabic", hebrew = "Hebrew", bengali = "Bengali", gujarati = "Gujarati", tamil = "Tamil", telugu = "Telugu", thai = "Thai", greek = "Greek", cyrillic = "Cyrillic", latin = "Latin"
+    var displayName: String {
+        switch self {
+        case .simplified: return "Simplified Chinese"
+        case .traditional: return "Traditional Chinese"
+        default: return rawValue
+        }
+    }
     var probe: String {
         switch self {
         case .devanagari: return "अआइईउएकखगचजतनमरहािुे"
@@ -65,7 +72,7 @@ struct CoverageView: View {
         VStack(alignment: .leading, spacing: 5) {
             Label(missing.isEmpty ? "Preview characters present" : "\(missing.count) missing preview characters", systemImage: missing.isEmpty ? "checkmark.circle" : "exclamationmark.triangle").foregroundStyle(missing.isEmpty ? Color.secondary : Color.orange)
             if !missing.isEmpty {
-                Text(missing.prefix(32).map { "\(String($0)) U+\(String(format: "%04X", $0.value))" }.joined(separator: " · ")).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                Text(missing.prefix(32).map { "\(String($0)) U+\(String(format: "%04X", $0.value))" }.joined(separator: ", ")).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
             }
             Text("Checks character coverage only. Shaping, ligatures, and regional forms can differ.").font(.caption).foregroundStyle(.secondary)
         }

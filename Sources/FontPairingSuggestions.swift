@@ -67,7 +67,7 @@ struct FontPairingSuggestionsSheet: View {
                         .background(ShelfPalette.indiaYellow.opacity(0.16), in: Capsule())
                         .foregroundStyle(ShelfPalette.ink)
                 }
-                Text("Starting from \(reference.originalFamily) · \(reference.style)").font(.headline)
+                Text("Starting from \(reference.originalFamily), \(reference.style)").font(.headline)
                 Text("Suggestions use only fonts in your local Typefield catalog. Scores order this list; they are not match percentages or a substitute for trying the pair in context.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -165,9 +165,9 @@ private struct FontPairingSuggestionCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(result.family.name).font(.headline)
-                        Text("· " + result.face.style).foregroundStyle(.secondary)
+                        Text(", " + result.face.style).foregroundStyle(.secondary)
                     }
-                    Text("Suggested for \(result.intendedRole.rawValue) · \(category.rawValue)")
+                    Text("Suggested for \(result.intendedRole.rawValue) (\(category.rawValue))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -187,7 +187,7 @@ private struct FontPairingSuggestionCard: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "lightbulb").foregroundStyle(ShelfPalette.indiaYellow)
-                Text(result.reasons.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(result.reasons.joined(separator: "; ")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Button(showingDetails ? "Hide scoring" : "How it scored") { showingDetails.toggle() }
                     .buttonStyle(.borderless).font(.caption)

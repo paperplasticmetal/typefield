@@ -248,7 +248,7 @@ extension TypeBoardEditor {
             HStack(alignment: .top, spacing: 8) {
                 StudioTypeNumber(title: "Size", icon: "textformat.size", value: styleBinding(\.size), range: direction.canvas == .imported ? 1...1000 : 8...160, unit: direction.canvasUnitLabel, presets: [8,10,12,14,16,18,24,30,36,48,60,72,96,120,144])
                 StudioTypeNumber(
-                    title: style.lineHeight == nil ? "Leading · auto" : "Leading",
+                    title: style.lineHeight == nil ? "Leading (auto)" : "Leading",
                     icon: "arrow.up.and.down.text.horizontal",
                     value: Binding(get: { style.lineHeight ?? style.size * style.leading }, set: { var s = style; s.lineHeight = $0; setStyle(s); save("Change Leading") }),
                     range: direction.canvas == .imported ? 1...2000 : 8...400,
@@ -260,7 +260,7 @@ extension TypeBoardEditor {
             DisclosureGroup("Character details") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
-                        Text(style.lineHeight == nil ? "Auto leading · \(Int(style.leading * 100))%" : "Custom leading")
+                        Text(style.lineHeight == nil ? "Auto leading: \(Int(style.leading * 100))%" : "Custom leading")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     HStack(alignment: .top, spacing: 8) {

@@ -27,7 +27,7 @@ struct FontLabDesignView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Font design · " + project.name).font(.title2.bold()); Spacer(); Text("Editing " + character).foregroundStyle(.secondary) }
+            HStack { Text("Font design: " + project.name).font(.title2.bold()); Spacer(); Text("Editing " + character).foregroundStyle(.secondary) }
             Picker("Font design", selection: $tab) { ForEach(["Masters", "Components", "Kerning", "Glyph set"], id: \.self) { Text($0) } }.pickerStyle(.segmented).labelsHidden()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -59,7 +59,7 @@ struct FontLabDesignView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Keep separate designs for Regular, Bold or other styles. Switching preserves the current outlines, components, metrics and kerning.").foregroundStyle(.secondary)
             Text("Each master exports as a separate static font. Automatic interpolation and variable-font export are not available yet.").font(.caption).foregroundStyle(.secondary)
-            if project.masters?.isEmpty != false { Text("Current design · Regular").font(.headline) }
+            if project.masters?.isEmpty != false { Text("Current design: Regular").font(.headline) }
             ForEach(project.masters ?? []) { master in
                 HStack {
                     Image(systemName: master.id == project.activeMasterID ? "checkmark.circle.fill" : "circle").foregroundStyle(master.id == project.activeMasterID ? Color.accentColor : .secondary)
@@ -231,10 +231,10 @@ struct FontLabSmoothingView: View {
     @State private var worker: Task<Void, Never>?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Simplify outline · " + original.character).font(.title2.bold())
+            Text("Simplify outline: " + original.character).font(.title2.bold())
             Text("Fit editable curves while keeping corners and counters. The original stays unchanged until you apply the preview.").foregroundStyle(.secondary)
             HStack {
-                Picker("Fit tolerance", selection: $tolerance) { Text("Gentle · 0.5 units").tag(0.5); Text("Balanced · 1 unit").tag(1.0); Text("Loose · 2 units").tag(2.0); Text("Editable · 5 units").tag(5.0) }.disabled(working)
+                Picker("Fit tolerance", selection: $tolerance) { Text("Gentle (0.5 units)").tag(0.5); Text("Balanced (1 unit)").tag(1.0); Text("Loose (2 units)").tag(2.0); Text("Editable (5 units)").tag(5.0) }.disabled(working)
                 Button("Preview") { generate() }.disabled(working)
                 if working { ProgressView().controlSize(.small) }
             }

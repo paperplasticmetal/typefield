@@ -396,7 +396,7 @@ enum WebFontAuditAnalyzer {
                                      usedCharacterCount: scalars.count,
                                      missingCharacters: missing,
                                      scriptsUsed: WebTextScript.names(in: text),
-                                     supportedSystems: (mapped?.1.writingSystems ?? catalogValue?.1.writingSystems ?? []).map(\.rawValue).sorted(),
+                                     supportedSystems: (mapped?.1.writingSystems ?? catalogValue?.1.writingSystems ?? []).map(\.displayName).sorted(),
                                      coverageSource: coverageSource,
                                      glyphCount: glyphs,
                                      subsetOpportunity: opportunity,
@@ -537,7 +537,7 @@ struct WebFontAuditView: View {
             HStack { Text("Licensed web assets").font(.caption.weight(.semibold)).foregroundStyle(.secondary); if loadingAssets { ProgressView().controlSize(.small) }; Spacer(); Button("Refresh") { loadAssets() }.disabled(loadingAssets); Button("Add WOFF2 folder…") { addFolder() }.disabled(loadingAssets) }
             let paths = library.saved.webAssetFolders ?? []
             if paths.isEmpty { Text("No web-asset folder added. Installed WOFF2 sources are detected automatically; other selected styles will be marked missing.").foregroundStyle(.secondary) }
-            else { ForEach(paths, id: \.self) { path in HStack { let name = URL(fileURLWithPath: path).lastPathComponent; Label(name, systemImage: inaccessibleFolderNames.contains(name) ? "exclamationmark.triangle" : "folder"); Text(inaccessibleFolderNames.contains(name) ? "· access needs renewal" : "· \(assets.filter { $0.url.path.hasPrefix(path + "/") || $0.url.deletingLastPathComponent().path == path }.count) WOFF2").foregroundStyle(inaccessibleFolderNames.contains(name) ? Color.orange : Color.secondary); Spacer(); Button("Remove") { removeFolder(path) }.buttonStyle(.borderless) } } }
+            else { ForEach(paths, id: \.self) { path in HStack { let name = URL(fileURLWithPath: path).lastPathComponent; Label(name, systemImage: inaccessibleFolderNames.contains(name) ? "exclamationmark.triangle" : "folder"); Text(inaccessibleFolderNames.contains(name) ? "Access needs renewal" : "\(assets.filter { $0.url.path.hasPrefix(path + "/") || $0.url.deletingLastPathComponent().path == path }.count) WOFF2 files").foregroundStyle(inaccessibleFolderNames.contains(name) ? Color.orange : Color.secondary); Spacer(); Button("Remove") { removeFolder(path) }.buttonStyle(.borderless) } } }
         }.padding(14).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
     }
 
@@ -553,7 +553,7 @@ struct WebFontAuditView: View {
     var summary: some View {
         HStack(spacing: 12) {
             let unresolved = report.missingAssetNames.count + report.ambiguousAssetNames.count + report.incompatibleAssetNames.count
-            card("Known WOFF2", WebFontAuditFormat.bytes(report.knownBytes), unresolved == 0 ? "Complete selected payload" : "+ \(report.missingAssetNames.count) missing · \(report.ambiguousAssetNames.count) ambiguous · \(report.incompatibleAssetNames.count) incompatible")
+            card("Known WOFF2", WebFontAuditFormat.bytes(report.knownBytes), unresolved == 0 ? "Complete selected payload" : "\(report.missingAssetNames.count) missing, \(report.ambiguousAssetNames.count) ambiguous, \(report.incompatibleAssetNames.count) incompatible")
             card("Styles", "\(report.rows.count)", "\(report.rows.filter { $0.variable }.count) variable")
             card("Excludable vs typeboard", WebFontAuditFormat.bytes(report.excludedBytes), report.excludedAssetCount == 0 ? "No unselected mapped assets" : "\(report.excludedAssetCount) mapped asset(s)")
             let risks = report.rows.filter { $0.fallback.available }.map { max(abs($0.fallback.maxWidthDelta), abs($0.fallback.maxHeightDelta)) }
@@ -567,12 +567,12 @@ struct WebFontAuditView: View {
             Text("Style details").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(report.rows) { row in
                 VStack(alignment: .leading, spacing: 9) {
-                    HStack { VStack(alignment: .leading) { Text(row.family + " · " + row.styleName).font(.headline); Text(row.postScriptName).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); if let asset = row.asset { Text(WebFontAuditFormat.bytes(asset.byteCount) + " WOFF2").monospacedDigit(); Text("Exact").font(.caption).foregroundStyle(.green) } else if row.assetCandidateCount > 1 { Text("WOFF2 ambiguous · \(row.assetCandidateCount) matches").foregroundStyle(.orange) } else if row.assetIncompatible { Text("WOFF2 incompatible with selected axes/style").foregroundStyle(.orange) } else { Text("WOFF2 missing").foregroundStyle(.orange) } }
-                    if row.asset == nil, let bytes = row.desktopBytes { Text("Desktop source: \(row.desktopFormat ?? "font") · \(WebFontAuditFormat.bytes(bytes)). This is not counted as web transfer.").font(.caption).foregroundStyle(.secondary) }
+                    HStack { VStack(alignment: .leading) { Text(row.family + ", " + row.styleName).font(.headline); Text(row.postScriptName).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); if let asset = row.asset { Text(WebFontAuditFormat.bytes(asset.byteCount) + " WOFF2").monospacedDigit(); Text("Exact").font(.caption).foregroundStyle(.green) } else if row.assetCandidateCount > 1 { Text("WOFF2: \(row.assetCandidateCount) possible matches").foregroundStyle(.orange) } else if row.assetIncompatible { Text("WOFF2 incompatible with selected axes/style").foregroundStyle(.orange) } else { Text("WOFF2 missing").foregroundStyle(.orange) } }
+                    if row.asset == nil, let bytes = row.desktopBytes { Text("Desktop source: \(row.desktopFormat ?? "font"), \(WebFontAuditFormat.bytes(bytes)). This is not counted as web transfer.").font(.caption).foregroundStyle(.secondary) }
                     HStack(alignment: .top, spacing: 24) {
-                        detail("Page use", "\(row.useCount) text element(s) · \(row.instanceCount) setting(s)\n\(row.usedCharacterCount) unique characters" + (row.glyphCount.map { " · \($0) WOFF2 glyphs" } ?? "") + "\nSubsetting opportunity: \(row.subsetOpportunity)")
-                        detail("Coverage · \(row.coverageSource.rawValue)", (row.coverageSource == .unavailable ? "Add one unambiguous WOFF2 asset or install the desktop face" : row.missingCharacters.isEmpty ? "All required characters present" : "Missing: " + row.missingCharacters.prefix(12).map { "\(String($0)) U+\(String(format: "%04X", $0.value))" }.joined(separator: " · ")) + "\nPage scripts: " + (row.scriptsUsed.isEmpty ? "none detected" : row.scriptsUsed.joined(separator: ", ")) + "\nBroad probes: " + (row.supportedSystems.isEmpty ? "none" : row.supportedSystems.joined(separator: ", ")))
-                        detail(row.fallback.available ? "Fallback · \(row.fallback.fallbackName)" : "Fallback reflow", row.fallback.available ? "x-height \(String(format: "%.2f", row.fallback.primaryXHeight)) → \(String(format: "%.2f", row.fallback.fallbackXHeight)) (\(WebFontAuditFormat.percent(row.fallback.xHeightDelta)))\nWidth \(WebFontAuditFormat.percent(row.fallback.maxWidthDelta)) · height \(WebFontAuditFormat.percent(row.fallback.maxHeightDelta)) · lines \(WebFontAuditFormat.signed(row.fallback.maxLineDelta))" + (row.fallback.buttonWidthDelta.map { "\nButton width \(String(format: "%+.1f px", $0))" } ?? "") + (row.fallback.missingScalars.isEmpty ? "" : "\nFallback misses \(row.fallback.missingScalars.count) character(s); Core Text may cascade") : row.fallback.note)
+                        detail("Page use", "\(row.useCount) text \(row.useCount == 1 ? "element" : "elements") across \(row.instanceCount) \(row.instanceCount == 1 ? "setting" : "settings")\n\(row.usedCharacterCount) unique \(row.usedCharacterCount == 1 ? "character" : "characters")" + (row.glyphCount.map { ", \($0) WOFF2 \($0 == 1 ? "glyph" : "glyphs")" } ?? "") + "\nSubsetting opportunity: \(row.subsetOpportunity)")
+                        detail("Coverage: \(row.coverageSource.rawValue)", (row.coverageSource == .unavailable ? "Add one unambiguous WOFF2 asset or install the desktop face" : row.missingCharacters.isEmpty ? "All required characters present" : "Missing: " + row.missingCharacters.prefix(12).map { "\(String($0)) U+\(String(format: "%04X", $0.value))" }.joined(separator: ", ")) + "\nPage scripts: " + (row.scriptsUsed.isEmpty ? "none detected" : row.scriptsUsed.joined(separator: ", ")) + "\nBroad probes: " + (row.supportedSystems.isEmpty ? "none" : row.supportedSystems.joined(separator: ", ")))
+                        detail(row.fallback.available ? "Fallback: \(row.fallback.fallbackName)" : "Fallback reflow", row.fallback.available ? "x-height \(String(format: "%.2f", row.fallback.primaryXHeight)) → \(String(format: "%.2f", row.fallback.fallbackXHeight)) (\(WebFontAuditFormat.percent(row.fallback.xHeightDelta)))\nWidth \(WebFontAuditFormat.percent(row.fallback.maxWidthDelta)), height \(WebFontAuditFormat.percent(row.fallback.maxHeightDelta)), lines \(WebFontAuditFormat.signed(row.fallback.maxLineDelta))" + (row.fallback.buttonWidthDelta.map { "\nButton width \(String(format: "%+.1f px", $0))" } ?? "") + (row.fallback.missingScalars.isEmpty ? "" : "\nFallback misses \(row.fallback.missingScalars.count) character(s); Core Text may cascade") : row.fallback.note)
                     }
                 }.padding(14).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
             }
@@ -583,7 +583,7 @@ struct WebFontAuditView: View {
 
     var comparisons: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Variable vs chosen static styles · exact compatible assets").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text("Variable and chosen static styles with exact compatible assets").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(report.comparisons) { item in HStack { Text(item.family).font(.headline); Spacer(); Text("Variable \(WebFontAuditFormat.bytes(item.variableBytes))"); Image(systemName: "arrow.left.arrow.right"); Text("\(item.staticCount) static \(WebFontAuditFormat.bytes(item.staticBytes))"); Text(item.delta >= 0 ? "Variable saves \(WebFontAuditFormat.bytes(item.delta))" : "Static saves \(WebFontAuditFormat.bytes(-item.delta))").foregroundStyle(item.delta >= 0 ? Color.green : Color.secondary) }.padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8)) }
         }
     }
@@ -606,7 +606,7 @@ struct WebFontAuditView: View {
                 guard assetScanToken == token else { return }
                 assets = found; loadingAssets = false
                 let result = found.isEmpty ? "No exact WOFF2 assets found" : "Read \(found.count) exact WOFF2 asset\(found.count == 1 ? "" : "s")"
-                message = resolved.failures.isEmpty ? result : result + " · renew access for " + resolved.failures.sorted().joined(separator: ", ")
+                message = resolved.failures.isEmpty ? result : result + ". Renew access for " + resolved.failures.sorted().joined(separator: ", ")
                 analyze()
             }
         }

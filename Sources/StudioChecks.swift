@@ -73,7 +73,7 @@ enum StudioChecks {
         try verify((scaledDisplay["fontSize"] as? Double) == 128 && abs((scaledDisplay["lineHeight"] as? Double ?? 0) - 172.8) < 0.001 && (scaledBody["fontSize"] as? Double) == 36 && (scaledBody["lineHeight"] as? Double) == 58, "Scaled canvas typography must use rendered font sizes and line heights")
         let html = try read("index.html"), css = try read("typography.css")
         try verify(!html.contains("<script>") && html.contains("&lt;script&gt;") && html.contains("café 🖋"), "HTML must escape sample text and retain Unicode")
-        try verify(html.contains("Typefield · Developer handoff") && !html.contains("FONTSHELF / DEVELOPER HANDOFF"), "Visible handoff branding must use Typefield")
+        try verify(html.contains("Typefield: Developer handoff") && !html.contains("FONTSHELF / DEVELOPER HANDOFF"), "Visible handoff branding must use Typefield")
         try verify(css.contains("clamp(") && css.contains("\"wght\" 520") && css.contains("font-display: swap") && css.contains("font-feature-settings: \"kern\" 0, \"liga\" 0") && css.contains("font-kerning: none"), "CSS carries axes, features, kerning and loading policy")
         try verify(css.contains("--b1-c2-display-size: \(DeveloperHandoff.fluid(128))") && html.contains("128 px") && swiftStarter.contains("\"b1-c2-display\": Style(postScriptName:") && swiftStarter.contains("size: 128") && composeStarter.contains("fontSize = 128.sp"), "CSS, specimen and native starters must agree with scaled canvas typography")
         try verify(DeveloperHandoff.fluid(16) == "1rem" && DeveloperHandoff.number(0) == "0" && DeveloperHandoff.number(100) == "100", "Fluid scale and numeric precision")
@@ -155,6 +155,12 @@ enum StudioChecks {
         try verify(abs((SpacesProofing.contrastRatio(ink: "777777", paper: "FFFFFF") ?? 0) - 4.478) < 0.01)
         try verify(SpacesProofing.contrastRatio(ink: "bad", paper: "FFFFFF") == nil)
         try verify(SpacesProofing.longestLine("Short\nA longer line") == 13)
+        let newCanvas = TypeDirection()
+        try verify(newCanvas.paper == "FFFFFF" && CanvasPlan(direction: newCanvas).paper.rgbHex == "FFFFFF", "New Spaces canvases must start with a neutral white background")
+        var savedWarmCanvas = newCanvas
+        savedWarmCanvas.paper = "F5F2EA"
+        let restoredWarmCanvas = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(savedWarmCanvas))
+        try verify(restoredWarmCanvas.paper == "F5F2EA" && CanvasPlan(direction: restoredWarmCanvas).paper.rgbHex == "F5F2EA", "Existing canvas background colors must survive loading and rendering")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("FontShelf-studio-checks-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -530,7 +536,7 @@ enum StudioChecks {
         try verify(artworkPlan.elements.filter { $0.image != nil }.count == 2
                    && artworkPlan.sections.contains { $0.id == rasterArtwork.id },
                    "Every Spaces canvas must render embedded artwork as selectable image layers")
-        let figmaPreflight = StudioTransferReport(format: .figma, scope: "Typeboard fixture · one canvas", directions: [restoredArtworkCanvas], availableFonts: [])
+        let figmaPreflight = StudioTransferReport(format: .figma, scope: "Typeboard fixture with one canvas", directions: [restoredArtworkCanvas], availableFonts: [])
         let pdfPreflight = StudioTransferReport(format: .previewPDF, scope: "Canvas fixture", directions: [restoredArtworkCanvas], availableFonts: [])
         try verify(figmaPreflight.omittedArtworkCount == 2 && figmaPreflight.detail.contains("Scope: Typeboard fixture")
                    && figmaPreflight.detail.contains("Image layers omitted: 2") && pdfPreflight.omittedArtworkCount == 0,

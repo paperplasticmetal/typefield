@@ -132,18 +132,18 @@ struct FontContextView: View {
             VStack(alignment: .leading, spacing: 14) {
                 let font = CTFontCreateWithName(face.name as CFString, 1000, nil)
                 Text(face.name).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                Text("Original family: \(face.originalFamily) · \(face.style)")
-                Text("\(face.facts.glyphCount) glyphs · Weight \(face.facts.weight) · \(CTFontGetUnitsPerEm(font)) units/em")
+                Text("Original family: \(face.originalFamily), \(face.style)")
+                Text("\(face.facts.glyphCount) glyphs, weight \(face.facts.weight), \(CTFontGetUnitsPerEm(font)) units/em")
                 Text("At 1000 pt: ascent \(Int(CTFontGetAscent(font))), descent \(Int(CTFontGetDescent(font))), x-height \(Int(CTFontGetXHeight(font))), cap height \(Int(CTFontGetCapHeight(font)))").font(.caption)
                 ForEach(metadata(font), id: \.0) { label, value in VStack(alignment: .leading, spacing: 3) { Text(label).font(.caption).foregroundStyle(.secondary); Text(value).textSelection(.enabled) } }
                 if let url = face.url {
                     Text(url.path).font(.caption).textSelection(.enabled)
                     let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    Text("\(url.pathExtension.uppercased()) · \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)) · \(scopeLabel(url))").font(.caption)
+                    Text("\(url.pathExtension.uppercased()), \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)), \(scopeLabel(url))").font(.caption)
                     HStack { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }; Button("Copy path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.path, forType: .string) } }
                 }
                 Text("Script coverage").font(.headline)
-                Text(face.writingSystems.sorted { $0.rawValue < $1.rawValue }.map(\.rawValue).joined(separator: " · "))
+                Text(face.writingSystems.sorted { $0.displayName < $1.displayName }.map(\.displayName).joined(separator: ", "))
                 Text("Notes").font(.headline)
                 TextEditor(text: $noteDraft).frame(height: 100).overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2)))
                     .accessibilityLabel("Notes for \(face.name)")
@@ -224,7 +224,7 @@ struct SimilarFontsView: View {
                 }
                 Spacer()
                 if reference.facts.widthClass < 5 { Label("Narrow", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right").font(.caption) }
-                if reference.facts.panoseIndicatesHighContrast { Label("High contrast · metadata", systemImage: "circle.lefthalf.filled").font(.caption) }
+                if reference.facts.panoseIndicatesHighContrast { Label("High contrast (metadata)", systemImage: "circle.lefthalf.filled").font(.caption) }
             }
             HStack(spacing: 8) {
                 Text("Your visual labels").font(.caption).foregroundStyle(.secondary)
@@ -239,9 +239,9 @@ struct SimilarFontsView: View {
                     ForEach(results) { result in
                         HStack(alignment: .top, spacing: 14) {
                             VStack(alignment: .leading, spacing: 7) {
-                                HStack { Text(result.family.name).font(.headline); Text("· " + result.face.style).foregroundStyle(.secondary); Spacer(); Text(library.category(result.family).rawValue).font(.caption).foregroundStyle(.secondary) }
+                                HStack { Text(result.family.name).font(.headline); Text(", " + result.face.style).foregroundStyle(.secondary); Spacer(); Text(library.category(result.family).rawValue).font(.caption).foregroundStyle(.secondary) }
                                 FontPreview(text: preview, name: result.face.name, size: 29, wraps: true).frame(minHeight: 44).allowsHitTesting(false)
-                                Text(result.reasons.isEmpty ? "Closest available local metrics" : result.reasons.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                                Text(result.reasons.isEmpty ? "Closest available local metrics" : result.reasons.joined(separator: "; ")).font(.caption).foregroundStyle(.secondary)
                             }
                             VStack(alignment: .trailing, spacing: 7) {
                                 Button("Inspect") { open(result.family) }
@@ -289,7 +289,7 @@ struct FontDiscoveryView: View {
                     ForEach(results) { result in
                         HStack(alignment: .top, spacing: 16) {
                             VStack(alignment: .leading, spacing: 7) {
-                                HStack { Text(result.family.name).font(.headline); Text("· " + result.face.style).foregroundStyle(.secondary); Spacer(); Text(usage(result)).font(.caption).foregroundStyle(.secondary) }
+                                HStack { Text(result.family.name).font(.headline); Text(", " + result.face.style).foregroundStyle(.secondary); Spacer(); Text(usage(result)).font(.caption).foregroundStyle(.secondary) }
                                 FontPreview(text: preview, name: result.face.name, size: 31, wraps: true).frame(minHeight: 46).allowsHitTesting(false)
                                 Text(result.currentCanvasCount == 0 ? "Not used in a current canvas" : "Used in \(result.currentCanvasCount) current canvas\(result.currentCanvasCount == 1 ? "" : "es")").font(.caption).foregroundStyle(.secondary)
                             }
@@ -306,7 +306,7 @@ struct FontDiscoveryView: View {
         }.frame(width: 900, height: min(760, (NSScreen.main?.visibleFrame.height ?? 900) - 100))
     }
     func usage(_ result: FontDiscoveryResult) -> String {
-        if let date = result.lastAppliedAt { return "Last applied " + date.formatted(date: .abbreviated, time: .omitted) + " · \(result.applicationCount)×" }
+        if let date = result.lastAppliedAt { return "Last applied " + date.formatted(date: .abbreviated, time: .omitted) + " (\(result.applicationCount) \(result.applicationCount == 1 ? "time" : "times"))" }
         return "Never explicitly applied"
     }
     func open(_ family: Family) { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { library.detail = family } }
@@ -368,7 +368,7 @@ struct DetailView: View {
                     VStack {
                         HStack {
                             Toggle("Overlay comparison", isOn: $overlayStyles).toggleStyle(.checkbox)
-                            if overlayStyles { Text("Cyan: \(face.style) · Orange: each style").foregroundStyle(.secondary) }
+                            if overlayStyles { Text("Cyan: \(face.style); orange: each style").foregroundStyle(.secondary) }
                             Spacer()
                         }
                         HStack { TextField("Preview text", text: $preview); Slider(value: $size, in: 16...160).frame(width: 150); Text("\(Int(size)) pt").monospacedDigit().frame(width: 50) }

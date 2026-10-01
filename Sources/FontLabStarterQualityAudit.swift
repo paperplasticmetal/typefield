@@ -75,7 +75,7 @@ enum FontLabStarterQualityAudit {
                         let paths = FontLabVectorMath.paths(in: glyph).filter(\.closed).map { $0.svg(xScale: glyph.resolvedDesignWidth) }.joined(separator: " ")
                         return "<path fill='\(color)' fill-opacity='.55' transform='translate(\(glyph.leftSideBearing * 1000),0)' d='\(paths)'/>"
                     }
-                    report += "<div class='tile'><b>\(character)</b><svg viewBox='0 0 1400 1000'>\(drawing(actual,color:"#111"))\(drawing(candidate,color:"#1681db"))</svg><div class='score'>\(percent(score)) · \(Int(anchors.last ?? 0)) anchors<br>\(method)</div></div>"
+                    report += "<div class='tile'><b>\(character)</b><svg viewBox='0 0 1400 1000'>\(drawing(actual,color:"#111"))\(drawing(candidate,color:"#1681db"))</svg><div class='score'>\(percent(score)), \(Int(anchors.last ?? 0)) anchors<br>\(method)</div></div>"
                 }
                 if CommandLine.arguments.contains("--starter-quality-details") {
                     print("STARTER GLYPH \(name) \(character): \(percent(score)) [\(method)]")
