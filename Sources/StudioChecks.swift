@@ -989,6 +989,19 @@ enum StudioChecks {
                 if kind == .website {
                     try verify(plan.elements.filter { $0.sectionID == "Website:features" && $0.role == .subheading }.count == 3,
                                "Website must retain all three feature stories at \(Int(width)) px")
+                    let bag = plan.elements.first { $0.textID == "Website:navigation|Caption|1" }
+                    try verify(bag?.text?.string == "Bag (0)" && bag?.style?.alignment == .right &&
+                               abs((bag?.rect.maxX ?? 0) - (width - (width < 500 ? 24 : 56))) < 1,
+                               "Website bag must align with the right content edge at \(Int(width)) px")
+                }
+                if kind == .product {
+                    let save = plan.elements.first { $0.textID == "Product UI:command|Caption|1" }
+                    try verify(save?.text?.string.contains("SAVE") == true,
+                               "Product UI quick capture needs a visible save action at \(Int(width)) px")
+                    let metricNumbers = plan.elements.filter { $0.sectionID == "Product UI:metrics" && $0.role == .heading }
+                    try verify(metricNumbers.count == 3 &&
+                               metricNumbers.map(\.rect.minY).max()! - metricNumbers.map(\.rect.minY).min()! < 1,
+                               "Product UI metrics must share a baseline at \(Int(width)) px")
                 }
                 if kind == .editorial {
                     try verify(plan.elements.filter { $0.sectionID == "Editorial:article" && $0.role == .body }.count == 1,
@@ -1001,6 +1014,14 @@ enum StudioChecks {
                     let title = plan.elements.first { $0.sectionID == "Poster:poster-field" && $0.role == .display }
                     let contrast = title.flatMap { CanvasProofing.contrast(for: $0, in: plan) }
                     try verify((contrast?.minimum ?? 0) >= 3, "Poster display title needs readable large-text contrast at \(Int(width)) px")
+                    let program = plan.elements.first { $0.textID == "Poster:poster-field|Caption|0" }
+                    try verify(program?.text?.string.contains("FRI  LIVE SETS") == true,
+                               "Poster must retain its event program at \(Int(width)) px")
+                }
+                if kind == .specimen {
+                    let figures = plan.elements.first { $0.textID == "Type system:Display|Caption|1" }
+                    try verify(figures?.text?.string == "FIGURES / 12",
+                               "Type system figures need a label at \(Int(width)) px")
                 }
                 plans += 1
                 if let first = plan.sections.first, let last = plan.sections.last, first.id != last.id {
@@ -1021,6 +1042,11 @@ enum StudioChecks {
         let restoredContinuation = CanvasPlan(direction: savedEditorial).elements.first { $0.textID == continuationID }
         try verify(restoredContinuation != nil && abs(restoredContinuation!.rect.minX - 120) < 1,
                    "A saved position for the legacy Editorial second body frame must keep that frame visible")
+        var savedWebsite = TypeDirection(); savedWebsite.canvas = .website; savedWebsite.width = 960
+        savedWebsite.textOverrides = ["Website:navigation|Caption|0": "My saved navigation and bag"]
+        let savedNavigation = CanvasPlan(direction: savedWebsite).elements.filter { $0.sectionID == "Website:navigation" && $0.role == .caption }
+        try verify(savedNavigation.count == 1 && savedNavigation.first?.text?.string == "My saved navigation and bag",
+                   "Older customized Website navigation must not gain a duplicate bag label")
         var darkRailPoster = TypeDirection(); darkRailPoster.canvas = .poster; darkRailPoster.width = 960
         darkRailPoster.accent = "222222"; darkRailPoster.ink = "222222"
         let darkRailPlan = CanvasPlan(direction: darkRailPoster)

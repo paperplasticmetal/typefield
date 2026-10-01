@@ -1,6 +1,10 @@
 # Typefield production readiness audit
 
-Updated 2026-10-01 for the installed 0.59.3 local build. [0.59.3 QA](QA_2026-10-01_0.59.3.md) records the five Spaces template refinements, responsive/contrast checks, local installation and saved-state verification. [0.59.2 QA](QA_2026-10-01_0.59.2.md) records the large-preview grid replay, Spaces copy/color checks and performance measurements. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the prior interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+Updated 2026-10-01 for the 0.59.4 local build. [0.59.4 QA](QA_2026-10-01_0.59.4.md) records compact Spaces polish, responsive checks, installation and saved-state verification. [0.59.3 QA](QA_2026-10-01_0.59.3.md) records the five template compositions, and [0.59.2 QA](QA_2026-10-01_0.59.2.md) records the large-preview grid replay, Spaces copy/color checks and performance measurements. Distribution signing and the broader interaction matrix are pending. The 0.47 and 0.40 findings below remain historical evidence; they are not fresh verification of this build. The [release UX review](RELEASE_UX_REVIEW_2026-09-29.md) records the prior interaction changes, and the [roadmap](ROADMAP.md) tracks product depth separately.
+
+## 0.59.4 compact Spaces polish
+
+Responsive default-format checks cover right-edge Website navigation, visible Product UI Save text and aligned summary values, the compact Poster program, and the Type system numeral label. A legacy Website navigation override remains a single text frame. PDF previews at 320, 390 and 960 px were visually reviewed; saved projects were not changed.
 
 ## 0.59.3 Spaces composition refinement
 

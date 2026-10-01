@@ -2169,10 +2169,12 @@ struct CanvasPlan {
         func section(_ id: String, _ title: String) {
             finishSection(); currentID = d.canvas.rawValue + ":" + id; currentTitle = title; sectionStart = y; elementStart = elements.count; textCounts = [:]
         }
-        func text(_ role: TypeRole, _ override: String? = nil, x: Double? = nil, at: Double? = nil, width: Double? = nil, color: NSColor? = nil) -> Double {
+        func text(_ role: TypeRole, _ override: String? = nil, x: Double? = nil, at: Double? = nil,
+                  width: Double? = nil, color: NSColor? = nil, alignment: TextAlignmentOption? = nil) -> Double {
             let occurrence = textCounts[role, default: 0]; textCounts[role] = occurrence + 1
             let textID = currentID + "|" + role.rawValue + "|" + String(occurrence)
             var style = d.style(role); style.text = d.textOverrides?[textID] ?? override ?? style.text
+            if let alignment { style.alignment = alignment }
             let value = style.attributed(color: color ?? ink)
             let available = max(1, width ?? usable)
             let height = ceil(value.boundingRect(with: NSSize(width: available, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading]).height) + 4
@@ -2205,8 +2207,21 @@ struct CanvasPlan {
             let navY = y
             elements.append(CanvasElement(rect: CGRect(x: margin, y: navY + 2, width: 11, height: 11), color: accent, radius: 2))
             let logoH = text(.label, "COMMON / OBJECTS", x: margin + 20, at: navY, width: usable * (w >= 700 ? 0.34 : 0.49) - 20)
-            let navH = text(.caption, w >= 700 ? "Collection     Stories     About     Bag (0)" : "Menu     Bag (0)",
-                            x: margin + usable * (w >= 700 ? 0.46 : 0.55), at: navY + 1, width: usable * (w >= 700 ? 0.54 : 0.45))
+            let legacyNavigationID = currentID + "|" + TypeRole.caption.rawValue + "|0"
+            let navH: Double
+            if d.textOverrides?[legacyNavigationID] != nil || d.textPositions?[legacyNavigationID] != nil {
+                // A saved edit or move belongs to the earlier combined navigation frame.
+                navH = text(.caption, w >= 700 ? "Collection     Stories     About     Bag (0)" : "Menu     Bag (0)",
+                            x: margin + usable * (w >= 700 ? 0.46 : 0.55), at: navY + 1,
+                            width: usable * (w >= 700 ? 0.54 : 0.45))
+            } else {
+                let linksH = text(.caption, w >= 700 ? "Collection     Stories     About" : "Menu",
+                                  x: margin + usable * (w >= 700 ? 0.46 : 0.55), at: navY + 1,
+                                  width: usable * (w >= 700 ? 0.34 : 0.18))
+                let bagH = text(.caption, "Bag (0)", x: margin + usable * (w >= 700 ? 0.82 : 0.76),
+                                 at: navY + 1, width: usable * (w >= 700 ? 0.18 : 0.24), alignment: .right)
+                navH = max(linksH, bagH)
+            }
             y = navY + max(logoH, navH) + 24
             elements.append(CanvasElement(rect: CGRect(x: margin, y: y, width: usable, height: 1), color: ink.withAlphaComponent(0.22)))
             y += 42
@@ -2411,20 +2426,26 @@ struct CanvasPlan {
             let metricTop = y, metricWidth = usable / 3
             elements.append(CanvasElement(rect: CGRect(x: margin, y: metricTop, width: usable, height: 1),
                                           color: ink.withAlphaComponent(0.16)))
-            var metricBottom = metricTop
+            var captionHeights: [Double] = []
             for i in 0..<3 {
                 let x = margin + Double(i) * metricWidth + (i == 0 ? 0 : 15)
                 let cellWidth = metricWidth - (i == 0 ? 12 : 27)
                 let captionH = text(.caption, ["Open items", "Needs review", "On track"][i],
                                     x: x, at: metricTop + 15, width: cellWidth)
-                let numberY = metricTop + captionH + 25
+                captionHeights.append(captionH)
+            }
+            let numberY = metricTop + (captionHeights.max() ?? 0) + 25
+            var metricBottom = metricTop
+            for i in 0..<3 {
+                let x = margin + Double(i) * metricWidth + (i == 0 ? 0 : 15)
+                let cellWidth = metricWidth - (i == 0 ? 12 : 27)
                 let numberH = text(.heading, ["08", "03", "91%"][i], x: x, at: numberY, width: cellWidth)
                 metricBottom = max(metricBottom, numberY + numberH)
-                if i > 0 {
-                    elements.append(CanvasElement(rect: CGRect(x: margin + Double(i) * metricWidth, y: metricTop + 15,
-                                                               width: 1, height: max(66, captionH + numberH + 10)),
-                                                  color: ink.withAlphaComponent(0.14)))
-                }
+            }
+            for i in 1..<3 {
+                elements.append(CanvasElement(rect: CGRect(x: margin + Double(i) * metricWidth, y: metricTop + 15,
+                                                           width: 1, height: max(66, metricBottom - metricTop - 4)),
+                                              color: ink.withAlphaComponent(0.14)))
             }
             elements.append(CanvasElement(rect: CGRect(x: margin, y: metricBottom + 18, width: usable, height: 1),
                                           color: ink.withAlphaComponent(0.16)))
@@ -2510,10 +2531,13 @@ struct CanvasPlan {
             let captureLabelH = text(.caption, "QUICK CAPTURE", x: margin, at: captureTop, width: usable)
             let inputTop = captureTop + captureLabelH + 12
             let inputInsertion = elements.count
-            let inputH = text(.mono, "Add a note or task…", x: margin + 16, at: inputTop + 15,
-                              width: usable - (w >= 700 ? 128 : 32), color: ink.withAlphaComponent(0.68))
-            if w >= 700 { _ = text(.caption, "⌘ ↵  SAVE", x: margin + usable - 98, at: inputTop + 16, width: 82) }
-            let inputHeight = max(54, inputH + 30)
+            let inputH = text(.mono, w < 360 ? "Add a note…" : "Add a note or task…",
+                              x: margin + 16, at: inputTop + 15,
+                              width: usable - (w >= 700 ? 128 : 104), color: ink.withAlphaComponent(0.68))
+            let saveH = text(.caption, w >= 700 ? "⌘ ↵  SAVE" : "SAVE",
+                              x: margin + usable - (w >= 700 ? 98 : 72), at: inputTop + 16,
+                              width: w >= 700 ? 82 : 56, alignment: .right)
+            let inputHeight = max(54, inputH + 30, saveH + 32)
             elements.insert(CanvasElement(rect: CGRect(x: margin, y: inputTop, width: usable, height: inputHeight),
                                           color: ink.withAlphaComponent(0.035), radius: 6), at: inputInsertion)
             elements.append(CanvasElement(rect: CGRect(x: margin, y: inputTop, width: usable, height: inputHeight),
@@ -2564,7 +2588,7 @@ struct CanvasPlan {
             elements.append(CanvasElement(rect: CGRect(x: imageX + imageWidth * 0.87, y: imageY + imageHeight * 0.19,
                                                        width: imageWidth * 0.055, height: imageHeight * 0.62), color: ink.withAlphaComponent(0.8)))
             let imageCaptionY = imageY + imageHeight + 12
-            let imageCaptionHeight = text(.caption, "Fig. 01 — Proof sheets and materials on the worktable.", x: imageX, at: imageCaptionY, width: imageWidth)
+            let imageCaptionHeight = text(.caption, "Fig. 01 — Letterforms and ink swatches from the studio.", x: imageX, at: imageCaptionY, width: imageWidth)
             y = imageCaptionY + imageCaptionHeight + 42
             section("article", "Article and pull quote")
             let articleY = y, bodyWidth = wideEditorial ? usable * 0.54 : usable
@@ -2632,7 +2656,14 @@ struct CanvasPlan {
                 let metaY = stripeY + 34
                 let dateHeight = text(.mono, "08—10\nOCT 2026", x: margin, at: metaY, width: usable * 0.43)
                 let venueHeight = text(.label, "HALL 04\nLOS ANGELES", x: margin + usable * 0.52, at: metaY, width: usable * 0.48)
-                y = max(fieldY + fieldHeight, metaY + max(dateHeight, venueHeight) + 30) + 34
+                let programY = metaY + max(dateHeight, venueHeight) + 34
+                elements.append(CanvasElement(rect: CGRect(x: margin, y: programY - 13, width: usable, height: 1),
+                                              color: ink.withAlphaComponent(0.18)))
+                let programHeight = text(.caption, "THU  OPENING\nFRI  LIVE SETS\nSAT  TALKS",
+                                          x: margin, at: programY, width: usable * 0.53)
+                let editionHeight = text(.caption, "A GATHERING IN THREE ACTS",
+                                          x: margin + usable * 0.58, at: programY, width: usable * 0.42)
+                y = max(fieldY + fieldHeight, programY + max(programHeight, editionHeight) + 24) + 24
             }
             section("poster-details", "Event details")
             let detailY = y
@@ -2668,7 +2699,12 @@ struct CanvasPlan {
                                                                 height: max(96, d.style(.display).size * 1.8)),
                                                   color: accent.withAlphaComponent(0.13), radius: 2))
                     let glyphHeight = text(.display, "12", x: glyphX + 14, at: glyphY + 13, width: max(1, glyphWidth - 28))
-                    y = max(sampleY + sampleHeight, glyphY + max(96, d.style(.display).size * 1.8), glyphY + 13 + glyphHeight) + 54
+                    let figureCaptionY = compact ? glyphY + 39 : glyphY - 26
+                    let figureCaptionHeight = text(.caption, "FIGURES / 12",
+                                                   x: compact ? margin : glyphX, at: figureCaptionY,
+                                                   width: compact ? usable * 0.48 : glyphWidth)
+                    y = max(sampleY + sampleHeight, glyphY + max(96, d.style(.display).size * 1.8),
+                            glyphY + 13 + glyphHeight, figureCaptionY + figureCaptionHeight) + 54
                 } else {
                     let sampleX = compact ? margin : margin + usable * (role == .body ? 0.34 : 0.42)
                     let sampleY = compact ? top + metaHeight + 24 : top + 7

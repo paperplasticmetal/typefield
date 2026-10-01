@@ -4,7 +4,7 @@
 - [x] Sandbox and hardened-runtime configuration.
 - [x] Icon asset catalog and privacy manifest.
 - [x] Local build and regression checks for previous development releases.
-- [x] Run the 0.59.3 native suite and mocked Figma bridge, canonical install, ad hoc signature and installed-binary verification. The default Spaces formats have distinct, responsive compositions; see [0.59.3 QA](QA_2026-10-01_0.59.3.md). The 133-point Library grid and Spaces wording pass is recorded in [0.59.2 QA](QA_2026-10-01_0.59.2.md).
+- [x] Run the 0.59.4 native suite and mocked Figma bridge, canonical install, ad hoc signature and installed-binary verification. The compact Spaces refinements are recorded in [0.59.4 QA](QA_2026-10-01_0.59.4.md); the five distinct default formats are described in [0.59.3 QA](QA_2026-10-01_0.59.3.md). The 133-point Library grid and Spaces wording pass is recorded in [0.59.2 QA](QA_2026-10-01_0.59.2.md).
 - [ ] Finish signed-build UI and permission testing with disposable projects and font fixtures.
 - [ ] Active paid Apple Developer team and registered production bundle identifier.
 - [ ] Final public version, distribution-signed archive, Organizer validation and App Store Connect upload.

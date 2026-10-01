@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.59.4 — 2026-10-01
+
+- Refine the five default Spaces compositions at compact widths: keep the Website bag aligned to the right edge, show Product UI's Save label and line up its summary numbers, retain the Poster program, and label the Type system numeral specimen.
+- Make the Editorial illustration caption describe the displayed letterforms and ink swatches. Preserve older customized Website navigation as one frame so its saved text or position does not gain a duplicate bag label.
+
 ## 0.59.3 — 2026-10-01
 
 - Give the five default Spaces formats distinct, editable compositions. Website now reads as a small product shop with a lamp, featured stool and supporting stories; Product UI uses a review queue, project states and a selected next action; Editorial has an article, proof-sheet illustration and pull quote; Poster has an event program and stronger type hierarchy; Type system reads as a compact specimen sheet.
