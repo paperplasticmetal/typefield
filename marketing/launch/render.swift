@@ -2,13 +2,13 @@ import AppKit
 import CoreText
 import Foundation
 
-// Typefield launch film v4. Vector choreography, orthographic planes and shared objects.
+// Typefield launch film v5. Vector choreography, orthographic planes and shared objects.
 // No screenshots are drawn. Product capabilities follow the verified v3 QA round trip.
 let args=CommandLine.arguments
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
 let output=root.appendingPathComponent("marketing/launch/renders")
 try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
-let width=1920,height=1080,fps=60,duration=28.0
+let width=1920,height=1080,fps=60,duration=30.0
 let rgb=CGColorSpace(name:CGColorSpace.sRGB)!
 let paper="F1EEE6",ink="171B1C",dark="121719",muted="88908F",coral="DF805E",blue="96BDC3"
 var c:CGContext!
@@ -46,16 +46,16 @@ func text(_ s:String,_ x:Double,_ baseline:Double,_ size:Double,_ col:String=ink
  save{c.textMatrix=CGAffineTransform(scaleX:1,y:-1);c.textPosition=CGPoint(x:x+shift,y:baseline);CTLineDraw(l,c)}
 }
 func title(_ s:String,_ local:Double,_ light:Bool=true,_ sub:String="") {
- let p=progress(local,0,0.26),col=light ? paper:ink
- save{c.clip(to:CGRect(x:80,y:82,width:1760,height:135));text(s,960,188+120*(1-p),88,col,"sans","center")}
- if !sub.isEmpty {layer(progress(local,0.12,0.28)){text(sub,960,253,28,light ? "A5ADAA":"606866","sans","center")}}
+ let p=progress(local,0,0.34),col=light ? paper:ink
+ layer(p){text(s,960,188+22*(1-p),88,col,"sans","center")}
+ if !sub.isEmpty {layer(progress(local,0.14,0.36)){text(sub,960,253,28,light ? "A5ADAA":"4E463E","sans","center")}}
 }
 let nav=["Library","Spaces","Letterform Editor"]
 let navWidths=nav.map{bounds($0,25).width}
-let navGap=190.0,navWidth=navWidths.reduce(0,+)+380
-let navCenters:[Double]={var edge=960-navWidth/2;return navWidths.map{w in let center=edge+w/2;edge+=w+navGap;return center}}()
+// Three equal 380 px columns. Spaces lies on the frame's center axis.
+let navCenters=[580.0,960.0,1340.0]
 func navigation(_ t:Double,_ current:Int,_ light:Bool=true) {
- let col=light ? paper:ink,quiet=light ? "87908E":"767E79"
+ let col=light ? paper:ink,quiet=light ? "87908E":"67483D"
  for i in 0..<3 {text(nav[i],navCenters[i],1025,25,i==current ? col:quiet,"sans","center")}
  let w=bounds(nav[current],25).width
  rect(navCenters[current]-w/2,1046,w,2,light ? coral:ink)
@@ -77,8 +77,17 @@ func plane(_ p:Pose,_ f:()->Void){
   c.concatenate(CGAffineTransform(a:cos(y),b:sin(x)*sin(y),c:0,d:cos(x),tx:0,ty:0));f()
  }
 }
+func planeBounds(_ pose:Pose,_ w:Double,_ h:Double)->CGRect {
+ let yaw=pose.yaw*Double.pi/180,pitch=pose.pitch*Double.pi/180,roll=pose.roll*Double.pi/180
+ let corners=[(-w/2,-h/2),(w/2,-h/2),(-w/2,h/2),(w/2,h/2)].map {x,y -> CGPoint in
+  let ox=cos(yaw)*x,oy=sin(pitch)*sin(yaw)*x+cos(pitch)*y
+  return CGPoint(x:pose.x+pose.s*(ox*cos(roll)-oy*sin(roll)),y:pose.y+pose.s*(ox*sin(roll)+oy*cos(roll)))
+ }
+ let xs=corners.map{$0.x},ys=corners.map{$0.y}
+ return CGRect(x:xs.min()!,y:ys.min()!,width:xs.max()!-xs.min()!,height:ys.max()!-ys.min()!)
+}
 func stock(_ w:Double,_ h:Double,_ fill:String,_ shadow:Double=0.26){
- save{c.setShadow(offset:CGSize(width:18,height:28),blur:50,color:color("000000",shadow));rect(-w/2,-h/2,w,h,fill)}
+ save{c.setShadow(offset:CGSize(width:14,height:18),blur:32,color:color("000000",shadow));rect(-w/2,-h/2,w,h,fill)}
  line(-w/2,-h/2,w/2,-h/2,fill==paper ? "FFFFFF":"EBA386",1.4)
 }
 func specimen(_ name:String,_ word:String,_ face:String,_ fill:String,_ p:Pose){
@@ -92,8 +101,8 @@ let cardWords=["Ag","Type","Form","Aa","01"]
 let cardColors=["D2D8D2","B7C7C5",paper,"DCD3BF","CED0C1"]
 func libraryPose(_ i:Int,_ t:Double)->Pose {
  let d=Double(i-2),intro=progress(t,0,0.75),settle=progress(t,0.5,2.1),exit=progress(t,2.65,3.55)
- let base=Pose(x:960+d*500,y:590+abs(d)*42,s:1-abs(d)*0.125,yaw:d*13,pitch:8,roll:d*4)
- return Pose(x:base.x+d*exit*650,y:base.y+105*(1-intro)-settle*14,s:base.s*(1+0.018*settle),yaw:base.yaw+(1-intro)*9,pitch:base.pitch,roll:base.roll)
+ let base=Pose(x:960+d*500,y:590+abs(d)*42+(i==2 ? 20:0),s:1-abs(d)*0.125,yaw:d*13,pitch:8,roll:d*4)
+ return Pose(x:base.x+d*exit*650,y:base.y-48*(1-intro)-settle*14,s:base.s*(1+0.018*settle),yaw:base.yaw+(1-intro)*9,pitch:base.pitch,roll:base.roll)
 }
 func formLayout(_ w:Double,_ h:Double,_ appear:Double,_ custom:Bool=false){
  let left = -w/2+66,right=w/2-66,top = -h/2+54,bottom=h/2-47
@@ -122,22 +131,29 @@ func opening(_ t:Double){
   text("Form",mix(0,-w/2+66+wordWidth/2,p),mix(74,-15,p),mix(140,224,p),ink,"serif","center")
   formLayout(w,h,progress(t,3.55,4.0))
  }
- if t<2.65 {title("Find your type.",t+0.26)}else{title("From Library to Spaces.",t-2.65,true,"Create a typeboard with your chosen fonts.")}
+ if t<2.65 {title("Find your type.",t+0.34)}else{title("From Library to Spaces.",t-2.65,true,"Create a typeboard with your chosen fonts.")}
  navigation(t,t<3.35 ? 0:1)
 }
 func layouts(_ t:Double){
  background()
- let p=progress(t,5.3,6.45),out=progress(t,7.65,8.5)
- let main=Pose(x:mix(960,708,p)-out*500,y:mix(615,612,p),s:mix(1,0.82,p),yaw:mix(0,-8,p),pitch:mix(0,5,p),roll:mix(0,-4,p))
+ let poses=layoutPoses(t)
+ let main=poses.0
  plane(main){stock(1280,650,paper);text("Form",-574,-15,224,ink,"serif");formLayout(1280,650,1)}
- let second=Pose(x:mix(2350,1470,p)-out*360,y:mix(725,620,p),s:mix(0.72,0.94,p)+out*3.6,yaw:mix(16,-3,p),pitch:4*(1-out),roll:mix(13,7,p)*(1-out))
+ let second=poses.1
  plane(second){stock(530,676,coral);text("Type studies.",-217,-269,31);line(-217,-235,217,-235,"A35A43")
  text("F",0,206,510,ink,"serif","center");text("Form in practice.",-217,280,27)}
- layer(1-progress(t,7.65,7.88)){
+ layer(1-progress(t,7.35,7.60)){
   if t<5.3 {title("From Library to Spaces.",1,true,"Create a typeboard with your chosen fonts.")}else{title("Put it to work.",t-5.3,true,"Compose with your fonts in Spaces.")}
   navigation(t,1)
  }
 }
+func layoutPoses(_ t:Double)->(Pose,Pose){
+ let p=progress(t,5.3,6.45),out=progress(t,7.65,8.5)
+ let main=Pose(x:mix(960,708,p)-out*500,y:mix(615,612,p),s:mix(1,0.82,p),yaw:mix(0,-8,p),pitch:mix(0,5,p),roll:mix(0,-4,p))
+ let second=Pose(x:mix(2350,1470,p)-out*360,y:mix(632,612,p),s:mix(0.72,0.90,p)+out*3.6,yaw:mix(16,-3,p),pitch:4*(1-out),roll:mix(13,7,p)*(1-out))
+ return (main,second)
+}
+
 func handwritingPaths()->[CGPath] {
     var a:[CGPath]=[]
     let n=CGMutablePath();n.move(to:CGPoint(x:30,y:173));n.addQuadCurve(to:CGPoint(x:45,y:91),control:CGPoint(x:35,y:130));a.append(n)
@@ -184,6 +200,9 @@ struct Segment {let kind:CGPathElementType;let points:[CGPoint]}
 var character:UniChar=112,glyph:CGGlyph=0
 precondition(CTFontGetGlyphsForCharacters(font(1000,"ink"),&character,&glyph,1))
 let rawP=CTFontCreatePathForGlyph(font(1000,"ink"),glyph,nil)!,rawBounds=rawP.boundingBoxOfPath
+var exportedPNorm=CGAffineTransform(a:1/rawBounds.height,b:0,c:0,d:-1/rawBounds.height,tx:-rawBounds.midX/rawBounds.height,ty:rawBounds.midY/rawBounds.height)
+let exportedP=rawP.copy(using:&exportedPNorm)!
+
 let strokeP=CGMutablePath()
 for index in [3,4] {strokeP.addPath(handwritingPaths()[index])}
 let smoothP=strokeP.copy(strokingWithWidth:13,lineCap:.round,lineJoin:.round,miterLimit:10)
@@ -250,11 +269,10 @@ func drawingScene(_ t:Double){
  layer(scan*(1-progress(t,10.5,10.75))){
   for i in 0..<3 {
    let x=positions[i]-2,y=i==1 ? 324.0:340.0,w=i==1 ? 349.0:332.0,h=i==1 ? 428.0:550.0
-   c.setStrokeColor(color("668E91"));c.setLineWidth(1.4);c.stroke(CGRect(x:x,y:y,width:w,height:h))
-   text(i==1 ? "o":"p",x+w/2,y+h+39,28,"547A7E","sans","center")
+   c.setStrokeColor(color("855642"));c.setLineWidth(1.4);c.stroke(CGRect(x:x,y:y,width:w,height:h))
+   text(i==1 ? "o":"p",x+w/2,y+h+39,28,"5B493F","sans","center")
   }
  }
- if local>1.35 && t<10.6{text("Import artwork",960,291,26,ink,"sans","center")}
  navigation(t,2,false)
 }
 func editing(_ t:Double){
@@ -265,7 +283,9 @@ func editing(_ t:Double){
  let finalX=960-bounds("pop",630,"ink").midX+rawBounds.midX*0.63-70,finalY=723-rawBounds.midY*0.63
  let h=mix(mix(smoothBounds.height*3.5,610,enter),rawBounds.height*0.63,leave)
  let x=mix(mix(startX,960,enter),finalX,leave),y=mix(mix(startY,595,enter),finalY,leave)
- vectorP(x,y,h,bend,progress(t,11.5,11.8)*(1-leave))
+ let outlineHandoff=progress(t,14.33,14.5)
+ layer(1-outlineHandoff){vectorP(x,y,h,bend,progress(t,11.5,11.8)*(1-leave))}
+ layer(outlineHandoff){transform(x,y,h){c.setFillColor(color(paper));c.addPath(exportedP);c.fillPath()}}
  if leave>0 {layer(leave){kernWord(960+320*(1-leave),723,630,70,paper,1)}}
  if t<14.05 {title("Make every curve yours.",t-11.0,true,"Editable outlines. Precise Bézier control.")}else{title("Down to the space between.",t-14.05)}
  navigation(t,2)
@@ -292,14 +312,14 @@ func spacing(_ t:Double){
 func fileOutline(_ w:Double,_ h:Double,_ fill:String,_ fold:Double){
  let left = -w/2,right=w/2,top = -h/2,bottom=h/2
  let p=CGMutablePath();p.move(to:CGPoint(x:left,y:top));p.addLine(to:CGPoint(x:right-fold,y:top));p.addLine(to:CGPoint(x:right,y:top+fold));p.addLine(to:CGPoint(x:right,y:bottom));p.addLine(to:CGPoint(x:left,y:bottom));p.closeSubpath()
- save{c.setShadow(offset:CGSize(width:15,height:25),blur:35,color:color("000000",0.2));c.setFillColor(color(fill));c.addPath(p);c.fillPath()}
+ save{c.setShadow(offset:CGSize(width:14,height:18),blur:32,color:color("000000",0.2));c.setFillColor(color(fill));c.addPath(p);c.fillPath()}
  line(right-fold,top,right-fold,top+fold,"B5BEB5",1.5);line(right-fold,top+fold,right,top+fold,"B5BEB5",1.5)
 }
 func exportAndReturn(_ t:Double){
  background()
  let p=progress(t,16.65,17.25),returning=progress(t,18.35,19.0)
  for i in [0,4,1,3] {
-  let base=libraryPose(i,2.5),pose=Pose(x:base.x+Double(i-2)*600*(1-returning),y:base.y+150*(1-returning),s:base.s,yaw:base.yaw,pitch:base.pitch,roll:base.roll)
+  let base=libraryPose(i,2.5),pose=Pose(x:base.x+Double(i-2)*600*(1-returning),y:base.y-48*(1-returning),s:base.s,yaw:base.yaw,pitch:base.pitch,roll:base.roll)
   if returning>0 {specimen(cardNames[i],cardWords[i],cardFaces[i],cardColors[i],pose)}
  }
  let w=mix(440,560,returning),h=mix(570,620,returning)
@@ -328,7 +348,12 @@ func finalLayout(_ t:Double){
  plane(pose){
   stock(w,h,paper)
   layer(p){rect(-w/2,-h/2,w,h,coral)}
-  layer(1-p){text("Ink",-230,-248,28,ink,"medium");text("Regular",-230,259,22,"5D6662")}
+  layer(1-p){
+   text("Ink",-w/2+46,-h/2+60,28,ink,"medium")
+   text("Regular",-w/2+46,h/2-44,22,"5D6662")
+   text("Aa",w/2-46,h/2-44,24,ink,"sans","right")
+   line(-w/2+46,-h/2+93,w/2-46,-h/2+93,"AAB3A9")
+  }
   layer(progress(t,20.8,21.2)){formLayout(w,h,1,true)}
   text("pop",0,mix(55,115,p),mix(236,580,p),ink,"ink","center")
  }
@@ -340,35 +365,87 @@ func ending(_ t:Double){
  let p=progress(t,24.0,24.6)
  let size=mix(330,238,p)
  image(icon,CGRect(x:960-size/2,y:340-size/2,width:size,height:size))
- save{c.clip(to:CGRect(x:360,y:495,width:1200,height:160));text("Typefield",960,617+140*(1-p),124,ink,"medium","center")}
- if t>24.5 {text("Your type, all together.",960,715,38,"646E66","sans","center")}
- for i in 0..<3 {text(nav[i],navCenters[i],857,25,"626B65","sans","center")}
- text("For Mac",960,991,24,"7B837C","sans","center")
+ let wordmark=progress(t,24.10,24.56)
+ layer(wordmark){text("Typefield",960,617+24*(1-wordmark),124,ink,"medium","center")}
+ let detail=progress(t,24.30,24.60)
+ layer(detail){
+  text("Your type, all together.",960,715+8*(1-detail),38,"646E66","sans","center")
+  for i in 0..<3 {text(nav[i],navCenters[i],857+8*(1-detail),25,"626B65","sans","center")}
+  text("For Mac",960,991,24,"7B837C","sans","center")
+ }
 }
-func frame(_ t:Double)->CGContext {
+// Preserve the approved composition choreography while allocating extra time to
+// import recognition, outline editing, spacing, export and the return to Library.
+// Each pair is (original story beat, actual output time), in seconds.
+let timing:[(story:Double,output:Double)]=[
+ (0,0),(8.5,8.5),(9.65,9.85),(10.1,10.3),(10.5,10.95),(10.6,11.05),(11,11.55),
+ (11.6,12.25),(12.25,12.9),(13.45,14.25),(14.05,14.9),(14.5,15.4),
+ (14.65,15.6),(15.65,16.65),(16.65,17.9),(16.95,18.3),(17.12,18.47),
+ (17.25,18.6),(18.35,19.95),(19,20.7),(20.15,22.15),(21.15,23.3),
+ (21.2,23.35),(22.4,24.55),(23.3,25.3),(24,26),(24.6,26.65),(28,30)
+]
+func storyTime(_ outputTime:Double)->Double {
+ for (a,b) in zip(timing,timing.dropFirst()) where outputTime<=b.output {
+  return mix(a.story,b.story,clamp((outputTime-a.output)/(b.output-a.output)))
+ }
+ return timing.last!.story
+}
+func frame(_ outputTime:Double)->CGContext {
+ let t=storyTime(outputTime)
  let ctx=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:width*4,space:rgb,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
  c=ctx;c.translateBy(x:0,y:1080);c.scaleBy(x:1,y:-1);c.setAllowsAntialiasing(true);c.setShouldAntialias(true);c.interpolationQuality = .high
  if t<4 {opening(t)}else if t<8.5 {layouts(t)}else if t<11 {drawingScene(t)}else if t<14.5 {editing(t)}else if t<16.65 {spacing(t)}else if t<20.15 {exportAndReturn(t)}else if t<24 {finalLayout(t)}else{ending(t)}
  return ctx
 }
 func png(_ ctx:CGContext,_ url:URL)throws {try NSBitmapImageRep(cgImage:ctx.makeImage()!).representation(using:.png,properties:[:])!.write(to:url)}
-if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v4-%05.2f.png",t)))}
+if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v5-%05.2f.png",t)))}
 else if args.contains("--stills"){
- for t in [0.0,0.5,1.5,2.6,3.1,3.6,4.3,5.8,6.8,7.8,8.4,8.6,9.3,10.3,10.8,11.2,12.2,13.7,14.7,15.8,16.8,17.4,18.7,19.5,20.4,21.5,23.1,24.2,25.3,27.0]{try png(frame(t),output.appendingPathComponent(String(format:"v4-%05.2f.png",t)))}
- print("Rendered 30 composition and transition frames.")
+ for t in [0.0,1.5,3.4,4.3,6.8,8.4,8.9,9.8,10.5,11.2,11.8,12.5,13.7,14.4,15.1,15.35,15.4,16.1,17.3,18.1,18.7,19.5,20.4,21.6,22.14,22.15,22.7,23.7,25.5,26.3,26.7,28.5,29.9]{try png(frame(t),output.appendingPathComponent(String(format:"v5-%05.2f.png",t)))}
+ print("Rendered 33 composition and transition frames.")
 }else if args.contains("--audit"){
  let headings=["Find your type.","From Library to Spaces.","Put it to work.","Make a font of your own.","Make every curve yours.","Down to the space between.","Export your font.","Add it to Library.","Your font, in Spaces."]
  for h in headings {precondition(bounds(h,88).width<1760);print("Heading: \(h), \(Int(bounds(h,88).width)) px")}
  for i in 0..<3 {let b=bounds(nav[i],25);precondition(navCenters[i]-b.width/2>120 && navCenters[i]+b.width/2<1800)}
- precondition(abs((navCenters[0]-navWidths[0]/2)+(navCenters[2]+navWidths[2]/2)-1920)<0.001)
+ precondition(navCenters[1]==960)
+ precondition(navCenters[1]-navCenters[0]==navCenters[2]-navCenters[1])
+ precondition(navCenters[0]+navCenters[2]==1920)
+ for w in navWidths {precondition(w<380)}
+ for (a,b) in zip(timing,timing.dropFirst()) {precondition(b.story>a.story && b.output>a.output)}
+ precondition(storyTime(26)==24 && storyTime(30)==28)
+ for t in stride(from:0.0,to:duration,by:1.0/60) {precondition(storyTime(t+1.0/60)>=storyTime(t))}
+ print("Verified equal 380 px workspace columns centered at x=960, monotonic timing, four-second end card.")
  var letters=Array("pop".utf16),gs=[CGGlyph](repeating:0,count:3)
  precondition(CTFontGetGlyphsForCharacters(font(100,"ink"),&letters,&gs,3) && gs.allSatisfy{$0>0})
  for t in stride(from:0.0,to:4.0,by:1.0/60){for i in 0..<5{let p=libraryPose(i,t);precondition(p.x.isFinite && p.y.isFinite && p.s>0)}}
+ // The navigation's tallest label begins just above y=1006. Keep paper
+ // surfaces at or above y=948: a minimum 58 px separation while nav is visible.
+ var maxPaperBottom=0.0
+ func checkPaper(_ pose:Pose,_ w:Double,_ h:Double,_ top:Double=230){
+  let box=planeBounds(pose,w,h)
+  if box.maxX>0 && box.minX<1920 {maxPaperBottom=max(maxPaperBottom,box.maxY);precondition(box.maxY<=948,"Paper overlaps navigation safe area: \(box.maxY)");precondition(box.minY>=top,"Paper overlaps heading safe area: \(box.minY)")}
+ }
+ for outputTime in stride(from:0.0,to:duration,by:1.0/60){
+  let t=storyTime(outputTime)
+  if t<4 {
+   for i in [0,4,1,3] {checkPaper(libraryPose(i,t),560,620)}
+   let p=progress(t,2.65,4),pose=libraryPose(2,min(t,2.65)).toward(Pose(x:960,y:615),p)
+   checkPaper(pose,mix(560,1280,p),mix(620,650,p),t<2.65 ? 230:280)
+  } else if t<7.60 {
+   let poses=layoutPoses(t);checkPaper(poses.0,1280,650,280);checkPaper(poses.1,530,676,280)
+  } else if t>=18.35 && t<20.15 {
+   let r=progress(t,18.35,19)
+   for i in [0,4,1,3] {let base=libraryPose(i,2.5);checkPaper(Pose(x:base.x+Double(i-2)*600*(1-r),y:base.y-48*(1-r),s:base.s,yaw:base.yaw,pitch:base.pitch,roll:base.roll),560,620)}
+  } else if t>=20.15 && t<24 {
+   let p=progress(t,20.15,21.15),expand=progress(t,22.4,23.3)
+   checkPaper(Pose(x:960,y:590,s:1+expand*0.075),mix(560,1280,p),mix(620,650,p))
+  }
+ }
+ print("Checked paper/navigation clearance over all 1,800 output frames; lowest paper edge: \(maxPaperBottom) px.")
  print("Verified optical heading bounds, centered workspace labels, real exported glyphs and 1,200 catalog poses.")
 }else{
  let proc=Process();proc.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
- proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v4.mp4").path]
+ proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v5.mp4").path]
  let pipe=Pipe();proc.standardInput=pipe;try proc.run()
- for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / 28s");fflush(stdout)}}
+ for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / 30s");fflush(stdout)}}
  try pipe.fileHandleForWriting.close();proc.waitUntilExit();precondition(proc.terminationStatus==0);print("Master complete.")
 }
