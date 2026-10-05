@@ -1,33 +1,35 @@
-# Typefield launch film — landscape revision 2
+# Typefield launch film — landscape revision 3
 
-27 seconds, 1920 × 1080 (16:9), silent. `Typefield-Launch-Landscape-v2.mp4` is the 30 fps H.264 review delivery. `Typefield-Launch-Master-1080p60-v2.mp4` is the 60 fps master for subsequent editing. Both are generated in the ignored `renders/` directory. The first cut is retained locally in `renders/v1/`; its source is in commit `9e4deaa`.
+27 seconds, 1920 × 1080, silent. The 30 fps delivery is `renders/Typefield-Launch-Landscape-v3.mp4`; the 60 fps editing master is `renders/Typefield-Launch-Master-1080p60-v3.mp4`. Previous deliveries remain locally available with their versioned filenames. Revision 2 source is in commit `b730184`.
 
-## Revision direction
+## Story and pacing
 
-The second cut removes capsule-shaped feature labels, all-caps corner captions, faux window chrome, rounded UI cards, the website CTA, and the original all-caps closing subtitle. It uses a restrained porcelain/ink palette, a small rust editing accent, and a sage poster. The story is carried by one letterform rather than a sequence of disconnected cards.
+The film opens in Library and demonstrates a complete, explicit workflow. Real app captures replace the fictional library and layouts. The selected Helvetica specimen appears in a Spaces typeboard; original handwriting is then imported, edited, exported as TrueType, added to Library and used in a second Spaces layout.
 
-The motion illustrations are not screen recordings. Atelier is a fictional demonstration project. Its consistent specimen is rendered from the Mac's Futura Medium: the same actual glyph outline, its actual control points, and naturally spaced word are reused throughout. This is a typographic stand-in, not an original font that was created or shipped in Typefield. Helvetica Neue and Baskerville provide the surrounding typography. No font binaries, personal fonts, user projects, or screenshots are bundled or read. The end uses the existing Typefield app icon.
-
-## Typography and continuity
-
-- Core Text's native pair kerning is retained; the previous universal `.kern` override is removed.
-- Text uses explicit baselines and actual glyph-ink bounds for alignment. There is no font-size multiplier standing in for ascent or cap height.
-- Main two-line phrases use 96 px type on 108 px baselines. Optical left edges align at x = 128; supporting text uses a small 3 px optical inset. Stage headings use 68 px. The wordmark uses 116 px medium.
-- Specimen words retain their native glyph advances. The moving `a` is positioned from the very same font bounds and baseline as the other letters.
-- One analytic outline trajectory spans opening, editing, Library, Spaces, workflow summary and icon handoff. Its joins have zero endpoint velocity. No wipe intersects a heading.
-- Neighboring specimen letters appear after the `a` arrives. Surrounding artboards disappear before it leaves; the letter never has to pass through readable neighboring text.
-- The closing icon and wordmark are centered from their visible bounds, with a stable final hold.
-
-## Edit map
-
-| Time | Story |
+| Time | Action |
 | --- | --- |
-| 0–3.2 s | “It starts with a letter.” A large letter introduces the film; its control points appear. |
-| 3.2–7.2 s | “Give it character.” A shoulder correction resolves into the final outline. Letterform Editor, curves, spacing and kerning are identified in sentence case. |
-| 7.2–11.7 s | “Your font. Your library.” The letter settles into the Atelier specimen in a typographic Library list. Export/add steps remain explicit. |
-| 11.7–19.5 s | “Put your type to work.” The same specimen moves onto a composition, then the camera pulls back for a second poster. A single caption identifies Spaces. |
-| 19.5–22.8 s | “Three spaces. One flow.” The letter moves to the center with Letterform Editor → Library → Spaces beneath it. |
-| 22.8–27 s | The letter gives way to the Typefield icon, wordmark, “Make it your own.” and “For Mac”. |
+| 0–2.6 s | Find a font in Library. |
+| 2.6–4.7 s | Select fonts and use the actual Create typeboard command. |
+| 4.7–8.0 s | See the same font and preview text in a Spaces layout. |
+| 8.0–10.0 s | Draw original letter artwork; the animation follows the fixture's actual strokes. |
+| 10.0–12.7 s | Import and label the five drawn letters. |
+| 12.7–16.1 s | Inspect editable nodes, Bézier handles, metrics and spacing. |
+| 16.1–18.5 s | Export the actual outlines as Ink.ttf. |
+| 18.5–21.2 s | Add the exported font folder to Library. |
+| 21.2–24.5 s | Use that same font in a Spaces poster. |
+| 24.5–27.0 s | Typefield icon, wordmark and closing line. |
+
+Headlines settle in 240 ms, product frames in 380 ms and the workflow indicator in 320 ms. There are no opacity fades. Text uses Core Text's native kerning, measured ink bounds and explicit baselines. The persistent three-space indicator identifies the current workspace without pills or dot separators. Marketing copy is sentence case; any uppercase text inside the app is part of an actual layout template.
+
+## Capture and font provenance
+
+Seven cropped product states in `assets/v3/` were captured from the existing isolated Typefield Interaction QA application, version 0.59.6, using its separate data container. The film animates those captures; it is not a continuous screen recording. Unrelated QA project lists and full raw captures are not included in the source assets.
+
+The original artwork is `tests/fixtures/font-lab-artwork/handwriting-nopij.svg`. Its five glyphs were imported through the real artwork review sheet into a disposable Ink project, then exported through the app's TrueType exporter. `assets/v3/Ink.ttf` is that generated fixture font, containing n, o, p, i, j and a blank space. It is not a user's font or a complete alphabet. The film renders only supported characters from it. The renderer reads it directly through Core Graphics; it does not install or register it system-wide.
+
+The exported folder was added to the QA Library, the family was labeled Ink using Library's family editor, and a typeboard was created from that font. The captured poster shows the imported letters spelling “pin.” Spaces retains the exporter's original internal font name in its chooser. The stylized file drawing at 16.1 s illustrates this verified export step. It does not imply automatic Library import, automatic font completion or live synchronization.
+
+Helvetica Neue supplies the marketing typography and uses the Mac's installed font. The closing icon is the existing Typefield app icon. No external media, music or online generation service is required.
 
 ## Reproduce
 
@@ -35,12 +37,14 @@ The motion illustrations are not screen recordings. Atelier is a fictional demon
 bash marketing/launch/render.sh
 ```
 
-Requires macOS, Swift/AppKit/CoreText, and the existing Homebrew FFmpeg installation at `/opt/homebrew/bin/ffmpeg`. No new packages or online services are needed. The source and its analytic animation are deterministic; no random seed applies. It writes only to `marketing/launch/renders/` and the temporary Swift module cache.
+Requires macOS, Swift/AppKit/CoreText and FFmpeg at `/opt/homebrew/bin/ffmpeg`. The included product crops and generated fixture font make normal rendering reproducible. `render --prepare-assets` is an optional maintenance step requiring the local raw QA capture bundle in `renders/v3-captures/`; normal rendering does not require that bundle.
 
-After compiling, `render --stills` produces 25 layout/transition frames, and `render --audit` verifies measured type bounds, all 1,620 outline positions, twelve trajectory joins, and the two native specimen-baseline matches. Edit copy, timing and composition in `render.swift`.
+The script compiles the renderer, audits measured heading bounds and capture dimensions, renders 22 still samples and a 60 fps master, creates the 30 fps H.264/yuv420p delivery, extracts a closing poster and decodes the entire delivery. Outputs and raw captures are ignored by Git. Animation is deterministic; no random seed applies.
 
-## Review and validation
+## Scope
 
-The revision was checked through 25 storyboard/transition frames, larger views around specimen arrivals and departures, and decoded samples of the delivered video. This exposed and corrected a departing-letter collision and a Library baseline drift. The automated audit passes. FFmpeg decodes the complete delivery without errors; ffprobe confirms 1920 × 1080, H.264/yuv420p, 27 seconds and 810 frames at 30 fps. The master has 1,620 frames at 60 fps. These checks support geometry and encoding correctness; they do not replace the user's design approval.
+This revision changes marketing assets only. App source, versions, canonical installation, production Library data and paused letterform research edits are unchanged. The QA-only font folder and demo projects remain available for later capture refinements. The website, vertical adaptation, music and public posting are separate work.
 
-Capabilities remain based on Typefield 0.59.6. No missing-letter synthesis, automatic font installation, live cross-app synchronization, variable-font export, or public availability is advertised. This is a marketing-only change: app code, versions and installation are unchanged. Existing paused research edits remain untouched. No website, vertical adaptation, music, or publishing action is included.
+## Validation for this cut
+
+The renderer audit and shell syntax check pass. All 22 layout/transition samples were generated; representative scenes and six decoded video frames were inspected. A clipped export menu was replaced with the font-file animation. The final H.264 delivery decodes without errors and contains 810 frames at 30 fps, 1920 × 1080, for exactly 27 seconds. The master contains 1,620 frames at 60 fps. The original research-file diff was compared byte for byte and remains unchanged. Native app tests were not rerun because app code was not changed. Design approval remains with the user.
