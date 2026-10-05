@@ -25,11 +25,13 @@ struct GlyphEntry: Identifiable {
     }
 }
 enum GlyphCatalog {
-    static func entries(font: CTFont) -> [GlyphEntry] {
+    static func entries(font: CTFont, isCancelled: () -> Bool = { Task.isCancelled }) -> [GlyphEntry] {
+        guard !isCancelled() else { return [] }
         let coverage = CTFontCopyCharacterSet(font) as CharacterSet
         var mapped: [CGGlyph: Unicode.Scalar] = [:]
         for plane in UInt8(0)...16 where coverage.hasMember(inPlane: plane) {
             for value in (UInt32(plane) << 16)...min(0x10FFFF, (UInt32(plane) << 16) + 65535) {
+                if value % 1024 == 0 && isCancelled() { return [] }
                 guard let scalar = Unicode.Scalar(value), coverage.contains(scalar) else { continue }
                 let units = Array(String(scalar).utf16)
                 var glyphs = [CGGlyph](repeating: 0, count: units.count)
@@ -37,10 +39,14 @@ enum GlyphCatalog {
                 if let glyph = glyphs.first, glyph != 0, mapped[glyph] == nil { mapped[glyph] = scalar }
             }
         }
-        return (1..<CTFontGetGlyphCount(font)).map { value in
+        var result: [GlyphEntry] = []
+        for value in 1..<max(1, CTFontGetGlyphCount(font)) {
+            if value % 1024 == 1 && isCancelled() { return [] }
             let glyph = CGGlyph(value)
-            return GlyphEntry(glyph: glyph, scalar: mapped[glyph], glyphName: CTFontCopyNameForGlyph(font, glyph) as String? ?? "glyph\(value)")
-        }.sorted { ($0.scalar?.value ?? UInt32.max, $0.glyph) < ($1.scalar?.value ?? UInt32.max, $1.glyph) }
+            result.append(GlyphEntry(glyph: glyph, scalar: mapped[glyph], glyphName: CTFontCopyNameForGlyph(font, glyph) as String? ?? "glyph\(value)"))
+        }
+        guard !isCancelled() else { return [] }
+        return result.sorted { ($0.scalar?.value ?? UInt32.max, $0.glyph) < ($1.scalar?.value ?? UInt32.max, $1.glyph) }
     }
     static func svg(font: CTFont, glyph: CGGlyph) -> String? {
         guard let path = CTFontCreatePathForGlyph(font, glyph, nil), !path.isEmpty else { return nil }
@@ -121,7 +127,8 @@ struct GlyphBrowser: View {
         .task(id: face.name) {
             loading = true; selected = nil
             let name = face.name
-            let result = await Task.detached(priority: .userInitiated) { GlyphCatalog.entries(font: CTFontCreateWithName(name as CFString, 100, nil)) }.value
+            let worker = Task.detached(priority: .userInitiated) { GlyphCatalog.entries(font: CTFontCreateWithName(name as CFString, 100, nil)) }
+            let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
             guard !Task.isCancelled else { return }
             entries = result; selected = result.first?.id; loading = false
         }
@@ -193,6 +200,15 @@ enum GlyphBrowserChecks {
         }
         let view = GlyphNativeView(frame: NSRect(x: 0, y: 0, width: 80, height: 80))
         let font = CTFontCreateWithName("Helvetica" as CFString, 100, nil)
+        try check(GlyphCatalog.entries(font: font, isCancelled: { true }).isEmpty,
+                  "A cancelled glyph scan must not return entries")
+        var cancellationChecks = 0
+        let interrupted = GlyphCatalog.entries(font: font, isCancelled: {
+            cancellationChecks += 1
+            return cancellationChecks >= 3
+        })
+        try check(interrupted.isEmpty && cancellationChecks == 3,
+                  "Glyph scanning must poll cancellation during enumeration and discard partial results")
         view.update(font: font, glyph: 36, metrics: false, outlines: false)
         // A detached NSView does not track AppKit's dirty regions. Check the
         // redraw decision directly without opening a test window on the desktop.

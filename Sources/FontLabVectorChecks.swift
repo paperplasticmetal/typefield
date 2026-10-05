@@ -84,6 +84,29 @@ enum FontLabVectorChecks {
         try check(history.redo(glyph) == editedO && history.undo(a) == nil,
                   "Undo without history must not remove saved artwork; redo must restore the matching glyph")
 
+        var denseHistory = FontLabGlyphEditHistory()
+        for step in 0..<30 {
+            var snapshot = denseGlyph; snapshot.leftSideBearing = Double(step) / 1000
+            denseHistory.record(snapshot)
+        }
+        try check(denseHistory.undoEntries["D"]?.count == 20,
+                  "Dense history must retain at most its 200,000-anchor budget")
+        var denseCurrent = denseGlyph; denseCurrent.leftSideBearing = 0.031
+        let densePrevious = denseHistory.undo(denseCurrent)!
+        try check(denseHistory.redo(densePrevious) == denseCurrent,
+                  "Dense history pruning must preserve the newest undo/redo pair")
+        _ = denseHistory.undo(denseCurrent)
+        denseHistory.record(densePrevious)
+        try check(denseHistory.redo(densePrevious) == nil,
+                  "A new edit after undo must invalidate the abandoned redo branch")
+        let rejectedEditor = FontLabVectorEditor(glyph: glyph, metrics: metrics)
+        rejectedEditor.selectAll()
+        let rejectionSelection = rejectedEditor.selection
+        var rejectedCommits = 0; rejectedEditor.onCommit = { _ in rejectedCommits += 1 }
+        rejectedEditor.move(dx: 10, dy: 0)
+        try check(rejectedEditor.glyph == glyph && rejectedEditor.selection == rejectionSelection && rejectedCommits == 0,
+                  "Rejected geometry must preserve the complete glyph, selection and undo boundary")
+
         var navigationProject = FontLabProject(name: "Navigation fixture", characters: ["A", "B", "C"])
         var drawnB = glyph; drawnB.character = "B"
         navigationProject.glyphs["B"] = drawnB
@@ -258,6 +281,67 @@ enum FontLabVectorChecks {
         _=objectEditor.apply(objectResized,commit:false);objectEditor.finishGesture(from:glyph)
         try check(objectCommits==1 && objectEditor.glyph.isValid,"Corner resizing must commit one undoable edit")
 
+        func pointer(_ type: NSEvent.EventType, _ point: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        func key(_ characters: String, code: UInt16, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+        }
+        let transactionEditor = FontLabVectorEditor(glyph: glyph, metrics: metrics)
+        transactionEditor.objectSelection = false; transactionEditor.snap = false
+        let transactionCanvas = FontLabVectorNSView(editor: transactionEditor)
+        transactionCanvas.frame = CGRect(x: 0, y: 0, width: 600, height: 600)
+        let transactionNode = transactionEditor.paths[0].nodes[0]
+        let transactionRect = transactionCanvas.designRect
+        let nodeLocation = CGPoint(x: transactionRect.minX + transactionNode.point.x * transactionRect.width,
+                                   y: transactionRect.minY + transactionNode.point.y * transactionRect.height)
+        let movedLocation = CGPoint(x: nodeLocation.x + 8, y: nodeLocation.y + 5)
+        var transactionCommits: [FontLabGlyph] = []
+        transactionEditor.onCommit = { transactionCommits.append($0) }
+        transactionEditor.selection = [transactionNode.id]
+        transactionCanvas.mouseDown(with: pointer(.leftMouseDown, nodeLocation))
+        transactionCanvas.mouseDragged(with: pointer(.leftMouseDragged, movedLocation))
+        try check(transactionEditor.glyph != glyph && transactionCommits.isEmpty, "Dragging must remain an uncommitted edit until release")
+        transactionCanvas.keyDown(with: key("q", code: 12))
+        try check(transactionCommits.isEmpty && transactionEditor.glyph != glyph,
+                  "Unrecognized keys must not commit or terminate an active drag")
+        transactionCanvas.keyDown(with: key("\u{1b}", code: 53))
+        transactionCanvas.mouseUp(with: pointer(.leftMouseUp, movedLocation))
+        try check(transactionEditor.glyph == glyph && transactionEditor.selection == [transactionNode.id] && transactionCommits.isEmpty,
+                  "Escape must restore geometry and selection without creating an undo entry on mouse-up")
+        transactionCanvas.mouseDown(with: pointer(.leftMouseDown, nodeLocation))
+        transactionCanvas.mouseDragged(with: pointer(.leftMouseDragged, movedLocation))
+        transactionEditor.onUndo = {
+            if !transactionCommits.isEmpty { transactionEditor.receive(glyph) }
+        }
+        transactionCanvas.keyDown(with: key("z", code: 6, modifiers: .command))
+        transactionCanvas.mouseDragged(with: pointer(.leftMouseDragged, CGPoint(x: movedLocation.x + 5, y: movedLocation.y)))
+        transactionCanvas.mouseUp(with: pointer(.leftMouseUp, movedLocation))
+        try check(transactionCommits.count == 1 && transactionEditor.glyph == glyph,
+                  "Undo during drag must finish one transaction and stop subsequent drag events from replaying it")
+        transactionCommits = []
+        transactionEditor.tool = .rectangle
+        let shapeStart = CGPoint(x: transactionRect.minX + 20, y: transactionRect.minY + 20)
+        let shapeEnd = CGPoint(x: shapeStart.x + 30, y: shapeStart.y + 40)
+        transactionCanvas.mouseDown(with: pointer(.leftMouseDown, shapeStart))
+        transactionCanvas.mouseDragged(with: pointer(.leftMouseDragged, shapeEnd))
+        transactionCanvas.cancelOperation(nil)
+        transactionCanvas.mouseUp(with: pointer(.leftMouseUp, shapeEnd))
+        try check(transactionEditor.glyph == glyph && transactionCommits.isEmpty, "Cancelling a shape must discard its temporary contour")
+
+        let denseOuter = FontLabVectorPath(nodes: densePoints.map { FontLabVectorNode(point: $0) }, closed: true)
+        let denseInnerPoints = (0..<600).map { index -> FontLabPoint in
+            let angle = Double(index) * 2 * Double.pi / 600
+            return .init(x: 0.5 + 0.2 * cos(angle), y: 0.5 + 0.2 * sin(angle))
+        }
+        let denseInner = FontLabVectorPath(nodes: denseInnerPoints.map { FontLabVectorNode(point: $0) }, closed: true)
+        let denseObjectEditor = FontLabVectorEditor(glyph: FontLabGlyph(character: "O", strokes: [FontLabStroke(vectorPaths: [denseOuter, denseInner])]), metrics: metrics)
+        let selectionStarted = Date()
+        denseObjectEditor.selectObject(1, adding: false)
+        try check(denseObjectEditor.selection.count == 10_600,
+                  "Dense object selection must retain both enclosing outline and counter anchors")
+        print(String(format: "PERF: select 10,600-anchor object and counter %.3f ms", Date().timeIntervalSince(selectionStarted) * 1000))
+
         let accessibilityEditor=FontLabVectorEditor(glyph:glyph,metrics:metrics)
         let accessibilityCanvas=FontLabVectorNSView(editor:accessibilityEditor)
         accessibilityCanvas.frame=CGRect(x:0,y:0,width:600,height:600)
@@ -265,6 +349,8 @@ enum FontLabVectorChecks {
         try check(contours.count==2 && contours[0].accessibilityLabel()?.contains("Contour 1") == true,"Vector contours are missing from the accessibility hierarchy")
         let nodes=contours[0].accessibilityChildren() as? [NSAccessibilityElement] ?? []
         try check(nodes.count==4 && nodes[0].accessibilityLabel()?.contains("node 1") == true,"Vector nodes are missing from the accessibility hierarchy")
+        try check(contours.allSatisfy { $0.isAccessibilityEnabled() } && nodes.allSatisfy { $0.isAccessibilityEnabled() },
+                  "Editable contours and nodes must expose AXEnabled for VoiceOver press actions")
         try check(nodes[0].accessibilityPerformPress() && accessibilityEditor.selection==[glyph.strokes[0].vectorPaths![0].nodes[0].id] && !accessibilityEditor.objectSelection,"Accessible node selection did not enter node mode")
         let beforeNudge=accessibilityEditor.paths[0].nodes[0].point.x
         let moveRight=nodes[0].accessibilityCustomActions()?.first { $0.name == "Move node right one unit" }

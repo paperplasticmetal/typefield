@@ -529,6 +529,22 @@ struct StudioState: Codable {
     var selectedSpace: UUID?
     var selectedBoard: UUID?
 }
+/// Keep document persistence and Foundation's history movement in one transaction.
+/// Failed writes put the same group back on its original stack for retry.
+final class StudioUndoManager: UndoManager {
+    weak var store: StudioStore?
+    override func undo() {
+        guard canUndo else { return }
+        guard let store else { super.undo(); return }
+        store.replayHistory({ super.undo() }, restoringHistory: { super.redo() })
+    }
+    override func redo() {
+        guard canRedo else { return }
+        guard let store else { super.redo(); return }
+        store.replayHistory({ super.redo() }, restoringHistory: { super.undo() })
+    }
+}
+
 final class StudioStore: ObservableObject {
     @Published var focusedSpace: UUID?
     @Published var focusedBoard: UUID?
@@ -536,11 +552,18 @@ final class StudioStore: ObservableObject {
     @Published var error = ""
     @Published var savedAt: Date?
     let url: URL
-    let undoManager = UndoManager()
+    let undoManager = StudioUndoManager()
+    private typealias HistoryAction = (name: String, apply: (StudioStore) -> Bool)
+    private var replayingHistory = false
+    private var restoringHistory = false
+    private var historyFailed = false
+    private var replayedActions: [HistoryAction] = []
+    private var historyRegistrations = 0
     private var lastEdit: (board: UUID, action: String, date: Date)?
     private(set) var readBlocked = false
     init(url: URL, recoveryError: String? = nil) {
         self.url = url
+        undoManager.store = self
         undoManager.levelsOfUndo = 100
         if let recoveryError {
             readBlocked = true
@@ -582,6 +605,41 @@ final class StudioStore: ObservableObject {
             try data.write(to: url, options: .atomic); savedAt = Date(); error = ""; return true
         } catch { self.error = "Spaces could not be saved: " + error.localizedDescription; return false }
     }
+    fileprivate func replayHistory(_ replay: () -> Void, restoringHistory restore: () -> Void) {
+        let previousState = state, previousSpace = focusedSpace, previousBoard = focusedBoard
+        let previousSavedAt = savedAt, previousEdit = lastEdit
+        replayingHistory = true; historyFailed = false; replayedActions = []
+        defer { replayingHistory = false; restoringHistory = false; replayedActions = [] }
+        replay()
+        if !historyFailed && save() { lastEdit = nil; return }
+        if historyFailed && error.isEmpty { error = "Spaces history could not be applied. The document and history were preserved." }
+        state = previousState; focusedSpace = previousSpace; focusedBoard = previousBoard
+        savedAt = previousSavedAt; lastEdit = previousEdit
+        // Every replayed action registered an inverse, including a placeholder
+        // for rejected actions. Move that group back while restoring only its
+        // callbacks; never attempt a second disk write or document mutation.
+        restoringHistory = true
+        restore()
+    }
+    private func registerHistory(_ name: String, apply: @escaping (StudioStore) -> Bool) {
+        historyRegistrations += 1
+        undoManager.registerUndo(withTarget: self) { store in
+            if store.restoringHistory {
+                guard let original = store.replayedActions.popLast() else { return }
+                store.registerHistory(original.name, apply: original.apply)
+                return
+            }
+            store.replayedActions.append((name, apply))
+            let registrations = store.historyRegistrations
+            if !store.historyFailed && !apply(store) { store.historyFailed = true }
+            if store.historyRegistrations == registrations {
+                // Keep failed and no-op callbacks in the group so compensation
+                // can restore the exact original ordering and retry operation.
+                store.registerHistory(name) { _ in true }
+            }
+        }
+        undoManager.setActionName(name)
+    }
     /// A failed write must not leave a space or typeboard visible only in memory.
     @discardableResult private func persist(_ edit: () -> Void) -> Bool {
         guard !readBlocked else { return false }
@@ -590,6 +648,7 @@ final class StudioStore: ObservableObject {
         let previousBoard = focusedBoard
         let previousSavedAt = savedAt
         edit()
+        if replayingHistory { return true }
         guard save() else {
             state = previousState
             focusedSpace = previousSpace
@@ -643,10 +702,9 @@ final class StudioStore: ObservableObject {
         if contentChanged {
             if !coalesced {
                 if !replaying { undoManager.beginUndoGrouping() }
-                undoManager.registerUndo(withTarget: self) { store in
+                registerHistory(action) { store in
                     store.update(space: space, board: previous, action: action, focus: true)
                 }
-                undoManager.setActionName(action)
                 if !replaying { undoManager.endUndoGrouping() }
             }
             lastEdit = replaying ? nil : (board.id, action, Date())
@@ -665,21 +723,20 @@ final class StudioStore: ObservableObject {
         }) else { return false }
         let replaying = undoManager.isUndoing || undoManager.isRedoing
         if !replaying { undoManager.beginUndoGrouping() }
-        undoManager.registerUndo(withTarget: self) { $0.restoreBoard(space: space, board: board, index: j) }
-        undoManager.setActionName("Delete Typeboard")
+        registerHistory("Delete Typeboard") { $0.restoreBoard(space: space, board: board, index: j) }
         if !replaying { undoManager.endUndoGrouping() }
         lastEdit = nil
         return true
     }
-    private func restoreBoard(space: UUID, board: TypeBoard, index: Int) {
-        guard let i = state.spaces.firstIndex(where: { $0.id == space }), !state.spaces[i].boards.contains(where: { $0.id == board.id }) else { return }
+    private func restoreBoard(space: UUID, board: TypeBoard, index: Int) -> Bool {
+        guard let i = state.spaces.firstIndex(where: { $0.id == space }), !state.spaces[i].boards.contains(where: { $0.id == board.id }) else { return false }
         guard persist({
             state.spaces[i].boards.insert(board, at: min(index, state.spaces[i].boards.count))
             focusedSpace = space; focusedBoard = board.id
-        }) else { return }
-        undoManager.registerUndo(withTarget: self) { $0.removeBoard(space: space, id: board.id) }
-        undoManager.setActionName("Delete Typeboard")
+        }) else { return false }
+        registerHistory("Delete Typeboard") { $0.removeBoard(space: space, id: board.id) }
         lastEdit = nil
+        return true
     }
     @discardableResult func removeSpace(_ id: UUID) -> Bool {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return false }
@@ -691,30 +748,34 @@ final class StudioStore: ObservableObject {
         }) else { return false }
         let replaying = undoManager.isUndoing || undoManager.isRedoing
         if !replaying { undoManager.beginUndoGrouping() }
-        undoManager.registerUndo(withTarget: self) { $0.restoreSpace(removed, at: index, selectedBoard: selectedBoard) }
-        undoManager.setActionName("Delete Space")
+        registerHistory("Delete Space") { $0.restoreSpace(removed, at: index, selectedBoard: selectedBoard) }
         if !replaying { undoManager.endUndoGrouping() }
         lastEdit = nil
         return true
     }
-    private func restoreSpace(_ space: DesignSpace, at index: Int, selectedBoard: UUID?) {
-        guard !state.spaces.contains(where: { $0.id == space.id }) else { return }
+    private func restoreSpace(_ space: DesignSpace, at index: Int, selectedBoard: UUID?) -> Bool {
+        guard !state.spaces.contains(where: { $0.id == space.id }) else { return false }
         guard persist({
             state.spaces.insert(space, at: min(index, state.spaces.count))
             focusedSpace = space.id
             focusedBoard = space.boards.contains(where: { $0.id == selectedBoard }) ? selectedBoard : space.boards.first?.id
-        }) else { return }
-        undoManager.registerUndo(withTarget: self) { $0.removeSpace(space.id) }
-        undoManager.setActionName("Delete Space")
+        }) else { return false }
+        registerHistory("Delete Space") { $0.removeSpace(space.id) }
         lastEdit = nil
+        return true
     }
     @discardableResult func renameSpace(_ id: UUID, to name: String) -> Bool {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return false }
         return persist { state.spaces[index].name = name }
     }
     @discardableResult func select(space: UUID, board: UUID? = nil) -> Bool {
-        guard let existing = state.spaces.first(where: { $0.id == space }), board.map({ id in existing.boards.contains { $0.id == id } }) ?? true else { return false }
-        return persist { focusedSpace = space; focusedBoard = board }
+        guard !readBlocked, let existing = state.spaces.first(where: { $0.id == space }), board.map({ id in existing.boards.contains { $0.id == id } }) ?? true else { return false }
+        guard focusedSpace != space || focusedBoard != board else { return true }
+        guard persist({ focusedSpace = space; focusedBoard = board }) else { return false }
+        // Returning to a board starts a fresh editing interaction, even when
+        // navigation was quicker than the numeric-field coalescing interval.
+        endUndoCoalescing()
+        return true
     }
     @discardableResult func importSpace(_ space: DesignSpace) -> Bool {
         guard space.boards.allSatisfy(\.isValid) else { error = "Space could not be imported: a typeboard contains invalid data."; return false }

@@ -99,11 +99,19 @@ extension Library {
         guard let members = saved.collections[old], !name.isEmpty, name == old || saved.collections[name] == nil else { return false }
         guard name != old else { return true }
         let previousCollections = saved.collections
+        let previousSearches = saved.savedSearches
         let previousSelection = selection
         saved.collections[name] = members; saved.collections.removeValue(forKey: old)
+        if var searches = saved.savedSearches {
+            for key in searches.keys where searches[key]?.section == "collection:" + old {
+                searches[key]?.section = "collection:" + name
+            }
+            saved.savedSearches = searches
+        }
         if selection == "collection:" + old { selection = "collection:" + name }
         guard save() else {
             saved.collections = previousCollections
+            saved.savedSearches = previousSearches
             selection = previousSelection
             return false
         }
@@ -204,8 +212,8 @@ struct TagEditorView: View {
             HStack { Text(library.selectedScopeLabel + " (\(library.selectedFaces.count) \(library.selectedFaces.count == 1 ? "style" : "styles") affected)"); Spacer(); Button("Replace selection with visible") { library.selectVisibleFamilies() }; Button("Clear selection") { library.selectedFamilies = [] } }
             TextField("Tags separated by commas; use / for nested tags", text: $input).textFieldStyle(.roundedBorder)
             HStack {
-                Button("Add tags to \(library.selectedFaces.count) styles") { apply(remove: false) }.disabled(entries.isEmpty || library.selectedFaces.isEmpty)
-                Button("Remove tags from \(library.selectedFaces.count) styles") { apply(remove: true) }.disabled(entries.isEmpty || library.selectedFaces.isEmpty)
+                Button("Add tags to \(library.selectedFaces.count) \(library.selectedFaces.count == 1 ? "style" : "styles")") { apply(remove: false) }.disabled(entries.isEmpty || library.selectedFaces.isEmpty)
+                Button("Remove tags from \(library.selectedFaces.count) \(library.selectedFaces.count == 1 ? "style" : "styles")") { apply(remove: true) }.disabled(entries.isEmpty || library.selectedFaces.isEmpty)
                 Spacer()
                 Button("Export tag backup…") { backup() }
                 Button("Import tag backup…") { restore() }
@@ -227,7 +235,7 @@ struct TagEditorView: View {
             status = library.message.isEmpty ? "Could not save tag settings." : library.message
             return
         }
-        status = "\(remove ? "Removed" : "Added") tags for \(faces.count) styles in \(library.selectedFamilies.count) families. Saved in Library."
+        status = "\(remove ? "Removed" : "Added") tags for \(faces.count) \(faces.count == 1 ? "style" : "styles") in \(library.selectedFamilies.count) \(library.selectedFamilies.count == 1 ? "family" : "families"). Saved in Library."
     }
     func backup() {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "Typefield-tags.json"
@@ -243,7 +251,7 @@ struct TagEditorView: View {
                 status = library.message.isEmpty ? "Could not save tag settings." : library.message
                 return
             }
-            status = "Merged tags for \(tags.count) styles into Library."
+            status = "Merged tags for \(tags.count) \(tags.count == 1 ? "style" : "styles") into Library."
         } catch { status = error.localizedDescription }
     }
 }
@@ -261,7 +269,7 @@ struct FamilyEditorView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { TextField("Search fonts or families", text: $query); Toggle("Modified only", isOn: $modifiedOnly).toggleStyle(.checkbox) }
             HStack { Text("\(selected.count) \(selected.count == 1 ? "style" : "styles") selected (\(selected.subtracting(Set(faces.map(\.name))).count) outside results)"); Button("Select results") { selected = Set(faces.map(\.name)) }; Button("Clear") { selected = [] }; Spacer() }
-            HStack { TextField("Family name to group selected styles under", text: $name); Button("Group \(selected.count) styles") { let target = name.trimmingCharacters(in: .whitespacesAndNewlines); if library.editFamily(names: selected, target: target) { status = "Grouped \(selected.count) styles under \(target). Saved in Library." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.isEmpty); Button("Restore \(selected.count) original styles") { if library.editFamily(names: selected, target: nil) { status = "Restored original families for \(selected.count) styles. Saved in Library." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(selected.isEmpty) }
+            HStack { TextField("Family name to group selected styles under", text: $name); Button("Group \(selected.count) \(selected.count == 1 ? "style" : "styles")") { let target = name.trimmingCharacters(in: .whitespacesAndNewlines); if library.editFamily(names: selected, target: target) { status = "Grouped \(selected.count) \(selected.count == 1 ? "style" : "styles") under \(target). Saved in Library." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.isEmpty); Button("Restore \(selected.count) original \(selected.count == 1 ? "style" : "styles")") { if library.editFamily(names: selected, target: nil) { status = "Restored original families for \(selected.count) \(selected.count == 1 ? "style" : "styles"). Saved in Library." } else { status = library.message.isEmpty ? "Could not save family changes." : library.message } }.disabled(selected.isEmpty) }
             Text(status).font(.caption).foregroundStyle(.secondary)
             Text("Group selected styles to merge families, or assign a subset to split a family. Font files are not modified.").font(.caption).foregroundStyle(.secondary)
             ScrollView {

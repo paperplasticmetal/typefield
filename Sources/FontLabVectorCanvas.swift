@@ -6,6 +6,7 @@ final class FontLabVectorNSView: NSView {
     private var previousGlyph: FontLabGlyph?
     private var originalPaths: [FontLabVectorPath] = []
     private var initialSelection = Set<UUID>()
+    private var initialActivePath: UUID?
     private var marquee: CGRect?
     private var spaceDown = false
     private var panStart = CGPoint.zero
@@ -270,7 +271,7 @@ final class FontLabVectorNSView: NSView {
     }
     override func mouseDown(with event:NSEvent) {
         window?.makeFirstResponder(self)
-        start=convert(event.locationInWindow,from:nil);previousGlyph=editor.glyph;originalPaths=editor.paths;initialSelection=editor.selection
+        start=convert(event.locationInWindow,from:nil);previousGlyph=editor.glyph;originalPaths=editor.paths;initialSelection=editor.selection;initialActivePath=editor.activePath
         if spaceDown || editor.tool == .hand {drag = .pan;panStart=editor.pan;return}
         let point=snapped(design(start),event:event)
         switch editor.tool {
@@ -356,7 +357,9 @@ final class FontLabVectorNSView: NSView {
             }}
             _=editor.apply(paths,commit:false)
         case let .handle(a,b,outgoing):
-            var paths=editor.paths;let point=paths[a].nodes[b].point
+            var paths=editor.paths
+            guard paths.indices.contains(a), paths[a].nodes.indices.contains(b) else { previousGlyph=nil; endGesture(commit: false); return }
+            let point=paths[a].nodes[b].point
             var handle=design(end,clamp:false)
             if event.modifierFlags.contains(.shift) {if abs(handle.x-point.x)*designRect.width>abs(handle.y-point.y)*designRect.height {handle.y=point.y} else {handle.x=point.x}}
             if outgoing {paths[a].nodes[b].outgoing=handle} else {paths[a].nodes[b].incoming=handle}
@@ -390,21 +393,40 @@ final class FontLabVectorNSView: NSView {
         }
         needsDisplay=true
     }
-    override func mouseUp(with event:NSEvent) {
-        switch drag {case .nodes,.handle,.pen,.shape,.resize:if let previousGlyph {editor.finishGesture(from:previousGlyph)};default:break}
-        previousGlyph=nil;marquee=nil;drag = .none;needsDisplay=true
+    private func endGesture(commit: Bool) {
+        switch drag {
+        case .nodes, .handle, .pen, .shape, .resize:
+            if let previousGlyph {
+                if commit { editor.finishGesture(from: previousGlyph) }
+                else { editor.receive(previousGlyph); editor.selection = initialSelection; editor.activePath = initialActivePath }
+            }
+        case .pan: if !commit { editor.pan = panStart }
+        case .marquee: if !commit { editor.selection = initialSelection }
+        case .none: break
+        }
+        previousGlyph=nil;originalPaths=[];initialSelection=[];initialActivePath=nil;marquee=nil;drag = .none;needsDisplay=true
+    }
+    override func mouseUp(with event:NSEvent) { endGesture(commit: true) }
+    override func cancelOperation(_ sender: Any?) {
+        if case .none = drag { editor.activePath=nil;editor.tool = .select;editor.selection=[];needsDisplay=true }
+        else { endGesture(commit: false) }
     }
     override func keyDown(with event:NSEvent) {
+        if event.keyCode == 53 { cancelOperation(nil); return }
         if handleCommandShortcut(event) { return }
         let modifiers=event.modifierFlags.intersection([.command,.shift,.option,.control])
         if (modifiers == .option || modifiers == [.option, .shift]), event.keyCode == 123 || event.keyCode == 124 {
+            endGesture(commit: true)
             navigateSelection(forward: event.keyCode == 124, adding: modifiers.contains(.shift))
             return
         }
         guard modifiers.isEmpty || modifiers == .shift else {super.keyDown(with:event);return}
         let key=event.charactersIgnoringModifiers?.lowercased() ?? ""
+        guard [UInt16(51), 117, 36, 123, 124, 125, 126].contains(event.keyCode) || [" ", "v", "p", "r", "o", "h"].contains(key) else {
+            super.keyDown(with: event); return
+        }
+        endGesture(commit: true)
         let shift=modifiers.contains(.shift)
-        if event.keyCode==53 {editor.activePath=nil;editor.tool = .select;editor.selection=[];return}
         if event.keyCode==51 || event.keyCode==117 {editor.deleteSelection();return}
         if event.keyCode==36 {editor.smooth(!editor.selectedNodes.allSatisfy(\.smooth));return}
         let unit=shift ? 0.01:0.001
@@ -434,7 +456,10 @@ final class FontLabVectorNSView: NSView {
         let modifiers=event.modifierFlags.intersection([.command,.shift,.option,.control])
         guard modifiers == .command || modifiers == [.command,.shift] else {return false}
         let shift=modifiers.contains(.shift)
-        switch event.charactersIgnoringModifiers?.lowercased() {
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        guard key == "z" || key == "+" || key == "=" || (!shift && ["a", "c", "v", "d", "0", "-"].contains(key)) else { return false }
+        endGesture(commit: true)
+        switch key {
         case "z":if shift {editor.onRedo()} else {editor.onUndo()}
         case "a" where !shift:editor.selectAll()
         case "c" where !shift:editor.copyPaths()
@@ -481,6 +506,7 @@ private final class FontLabVectorAccessibilityElement: NSAccessibilityElement {
         super.init()
         setAccessibilityElement(true)
         setAccessibilityRole(nodeID == nil ? .group : .button)
+        setAccessibilityEnabled(true)
         setAccessibilityHelp(nodeID == nil
             ? "Press to select this contour. Use the Actions menu to add it to the selection, move it, or delete it."
             : "Press to select this node. Use the Actions menu to add it to the selection, move it, or delete it.")

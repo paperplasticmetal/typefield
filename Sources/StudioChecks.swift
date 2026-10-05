@@ -524,6 +524,20 @@ enum StudioChecks {
         try verify(restored.state.spaces[0].boards[0] == beforeTyping, "Numeric typing was not coalesced")
         restored.undoManager.redo()
         try verify(restored.state.spaces[0].boards[0] == edited, "Coalesced redo lost the final value")
+        restored.undoManager.removeAllActions()
+        edited.directions[0].styles[TypeRole.display.rawValue]!.size = 81
+        try verify(restored.update(space: space, board: edited, action: "Change Size"), "Could not save the edit before navigation")
+        let beforeNavigationEdit = edited
+        try verify(restored.select(space: space) && restored.select(space: space, board: edited.id), "Board navigation must persist focus")
+        let navigationSavedAt = restored.savedAt
+        try verify(restored.select(space: space, board: edited.id) && restored.savedAt == navigationSavedAt, "Selecting the already-focused board must not rewrite workspace data")
+        edited.directions[0].styles[TypeRole.display.rawValue]!.size = 82
+        try verify(restored.update(space: space, board: edited, action: "Change Size"), "Could not save the edit after navigation")
+        restored.undoManager.undo()
+        try verify(restored.state.spaces[0].boards[0] == beforeNavigationEdit, "Rapid navigation away and back must separate numeric edits in undo history")
+        restored.undoManager.redo()
+        try verify(restored.state.spaces[0].boards[0] == edited && StudioStore(url: restored.url).state.spaces[0].boards[0] == edited,
+                   "Redo after navigation must persist the latest numeric edit")
         restored.removeBoard(space: space, id: edited.id)
         try verify(restored.state.spaces[0].boards.isEmpty)
         restored.undoManager.undo()
@@ -554,6 +568,7 @@ enum StudioChecks {
         try verify(broken.addBoard(space: UUID()) == nil && broken.state.spaces.count == blockedSpaceCount, "Read-blocked workspace must reject new typeboards")
         let unchanged = try Data(contentsOf: corruptURL); try verify(unchanged == corrupt)
         try checkSpacesSaveRollback(in: root)
+        try checkSpacesHistoryRecovery(in: root)
         let shape = ImportedLayer(name: "Shape", x: 0, y: 0, width: 100, height: 100, color: "FFFFFF")
         let text = ImportedLayer(name: "Text", x: 0, y: 0, width: 100, height: 40, color: "000000", style: TypeStyle(fontName: "Helvetica", size: 18, text: "Text"))
         let importedLayout = ImportedLayout(width: 100, height: 100, layers: [shape, text])
@@ -1296,6 +1311,72 @@ enum StudioChecks {
         let retained = try Data(contentsOf: savedParent.appendingPathComponent("spaces.json"))
         try verify(retained == original, "Failed Spaces operations must preserve the saved file")
         print("PASS: failed Spaces creates, edits, deletions, imports and selection roll back memory and undo while preserving saved data.")
+    }
+
+    private static func checkSpacesHistoryRecovery(in root: URL) throws {
+        let fm = FileManager.default
+        let parent = root.appendingPathComponent("history-recovery")
+        let held = root.appendingPathComponent("history-recovery-held")
+        let store = StudioStore(url: parent.appendingPathComponent("spaces.json"))
+        guard let space = store.addSpace("History fixture"), let boardID = store.addBoard(space: space) else {
+            throw NSError(domain: "TypefieldCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create history fixture"])
+        }
+        store.undoManager.groupsByEvent = false
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        func failAndRetryLater(_ operation: () -> Void) throws {
+            let state = try encoder.encode(store.state), disk = try Data(contentsOf: store.url)
+            let focusedSpace = store.focusedSpace, focusedBoard = store.focusedBoard, savedAt = store.savedAt
+            let canUndo = store.undoManager.canUndo, canRedo = store.undoManager.canRedo
+            let undoName = store.undoManager.undoActionName, redoName = store.undoManager.redoActionName
+            try fm.moveItem(at: parent, to: held)
+            defer { try? fm.removeItem(at: parent); try? fm.moveItem(at: held, to: parent) }
+            try Data("Save obstruction".utf8).write(to: parent)
+            operation()
+            let restoredState = try encoder.encode(store.state)
+            try verify(restoredState == state, "Failed history replay must restore the entire document")
+            try verify(store.focusedSpace == focusedSpace && store.focusedBoard == focusedBoard && store.savedAt == savedAt,
+                       "Failed history replay must restore focus and the last successful save time")
+            try verify(store.undoManager.canUndo == canUndo && store.undoManager.canRedo == canRedo &&
+                       store.undoManager.undoActionName == undoName && store.undoManager.redoActionName == redoName,
+                       "Failed history replay must preserve both stacks and action labels")
+            let retainedDisk = try Data(contentsOf: held.appendingPathComponent("spaces.json"))
+            try verify(!store.error.isEmpty && retainedDisk == disk,
+                       "Failed history replay must report failure without changing saved data")
+        }
+        var board = store.state.spaces[0].boards[0]
+        let original = board
+        board.name = "First edit"
+        try verify(store.update(space: space, board: board, action: "Rename Typeboard"), "First history edit failed")
+        let first = board
+        board.name = "Second edit"
+        try verify(store.update(space: space, board: board, action: "Rename Typeboard"), "Second history edit failed")
+        for _ in 0..<2 { try failAndRetryLater { store.undoManager.undo() } }
+        store.undoManager.undo()
+        try verify(store.state.spaces[0].boards[0] == first, "Undo retry skipped the failed history entry")
+        for _ in 0..<2 { try failAndRetryLater { store.undoManager.redo() } }
+        store.undoManager.redo()
+        try verify(store.state.spaces[0].boards[0] == board, "Redo retry lost the failed history entry")
+        store.undoManager.undo(); store.undoManager.undo()
+        try verify(store.state.spaces[0].boards[0] == original, "Failure recovery must retain older undo entries")
+        store.undoManager.redo(); store.undoManager.redo()
+        store.undoManager.removeAllActions()
+        // A nested group whose second inverse depends on its first: restore
+        // the deleted Space, then restore its previously deleted typeboard.
+        store.undoManager.beginUndoGrouping()
+        try verify(store.removeBoard(space: space, id: boardID) && store.removeSpace(space), "Grouped deletion fixture failed")
+        store.undoManager.endUndoGrouping()
+        for _ in 0..<2 { try failAndRetryLater { store.undoManager.undo() } }
+        store.undoManager.undo()
+        try verify(store.state.spaces.first?.boards.first == board && store.focusedSpace == space && store.focusedBoard == boardID,
+                   "Grouped undo retry must restore Space, typeboard and focus in dependency order")
+        for _ in 0..<2 { try failAndRetryLater { store.undoManager.redo() } }
+        store.undoManager.redo()
+        try verify(store.state.spaces.isEmpty && StudioStore(url: store.url).state.spaces.isEmpty,
+                   "Grouped redo retry must persist both deletions together")
+        store.undoManager.undo()
+        try verify(StudioStore(url: store.url).state.spaces.first?.boards.first == board,
+                   "Grouped undo retry must survive relaunch")
+        print("PASS: failed Spaces undo/redo preserves data, focus, action names, both history stacks and grouped retry ordering.")
     }
 
     private static func checkBackupSafety(in root: URL) throws {

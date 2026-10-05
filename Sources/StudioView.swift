@@ -1691,7 +1691,17 @@ struct TypeBoardEditor: View {
             Text(direction.canvas == .imported ? "Drag to reorder or move layers. On a focused canvas, use arrows to select, ⌘⌥↑/↓ to reorder, or ⌥arrow to nudge." : "Drag to reorder sections. On a focused canvas, use arrows to select and ⌘⌥↑/↓ to reorder.").font(.caption2).foregroundStyle(.secondary)
         }
     }
-    func chooseFont(_ name: String) { let changed = style.fontName != name; var s = style; s.fontName = name; s.axes = library.pro.axes[name] ?? [:]; s.features = library.pro.features[name] ?? [:]; setStyle(s); save("Change Font"); if changed && library.studio.error.isEmpty { _ = library.recordFontUse(name) } }
+    @discardableResult func chooseFont(_ name: String) -> Bool {
+        let changed = style.fontName != name
+        var s = style; s.fontName = name; s.axes = library.pro.axes[name] ?? [:]; s.features = library.pro.features[name] ?? [:]
+        setStyle(s)
+        guard save("Change Font") else {
+            status = library.studio.error.isEmpty ? "Font change could not be saved." : library.studio.error
+            return false
+        }
+        if changed { _ = library.recordFontUse(name) }
+        return true
+    }
     func applyPairingSuggestion(_ face: Face, to target: TypeRole, reference: Face) {
         var paired = direction.style(target)
         paired.fontName = face.name
@@ -1700,8 +1710,11 @@ struct TypeBoardEditor: View {
         board.directions[directionIndex].styles[target.rawValue] = paired
         board.candidates = Array(Set(board.candidates + [reference.name, face.name])).sorted()
         role = target; selectedSection = nil; selectedTextID = nil
-        save("Apply Pairing Suggestion")
-        if library.studio.error.isEmpty { _ = library.recordFontUse(face.name) }
+        guard save("Apply Pairing Suggestion") else {
+            status = library.studio.error.isEmpty ? "Pairing could not be saved." : library.studio.error
+            return
+        }
+        _ = library.recordFontUse(face.name)
         status = "Paired " + reference.originalFamily + " with " + face.originalFamily + " for " + target.rawValue
     }
     func chooseDiscoveryFont() {
@@ -1709,7 +1722,7 @@ struct TypeBoardEditor: View {
         let eligible = library.families.filter { !$0.faces.allSatisfy { !allowed.contains($0.name) } }
         discoveryNonce &+= 1
         let preferred = library.discoveryCandidates(in: eligible, includeSystemFonts: false, seed: discoveryNonce, limit: 1).first ?? library.discoveryCandidates(in: eligible, includeSystemFonts: true, seed: discoveryNonce, limit: 1).first
-        if let preferred { chooseFont(preferred.face.name); fontSearch = ""; status = "Trying \(preferred.family.name), \(preferred.face.style), from your local library" }
+        if let preferred, chooseFont(preferred.face.name) { fontSearch = ""; status = "Trying \(preferred.family.name), \(preferred.face.style), from your local library" }
     }
     func openFontSummary() {
         summaryCanvasIDs = Set(visibleDirections.map(\.id))

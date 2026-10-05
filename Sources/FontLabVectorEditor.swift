@@ -132,15 +132,17 @@ final class FontLabVectorEditor: ObservableObject {
     func selectObject(_ index: Int, adding: Bool) {
         let value = paths
         guard value.indices.contains(index) else { return }
+        let outlines = value.map(\.cgPath)
+        let outlineBounds = outlines.map(\.boundingBoxOfPath)
         var outer = index
         for i in value.indices where value[i].closed && i != index {
-            if value[i].cgPath.boundingBoxOfPath.contains(value[outer].cgPath.boundingBoxOfPath),
+            if outlineBounds[i].contains(outlineBounds[outer]),
                let first = value[outer].nodes.first,
-               value[i].cgPath.contains(CGPoint(x: first.point.x * 1000, y: first.point.y * 1000)) { outer = i }
+               outlines[i].contains(CGPoint(x: first.point.x * 1000, y: first.point.y * 1000)) { outer = i }
         }
         let chosen = value.indices.filter { i in
             i == outer || (value[i].closed && value[outer].closed && value[i].nodes.allSatisfy {
-                value[outer].cgPath.contains(CGPoint(x: $0.point.x * 1000, y: $0.point.y * 1000))
+                outlines[outer].contains(CGPoint(x: $0.point.x * 1000, y: $0.point.y * 1000))
             })
         }
         let ids = Set(chosen.flatMap { value[$0].nodes.map(\.id) })

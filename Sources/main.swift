@@ -1096,7 +1096,8 @@ struct ContentView: View {
                     .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
                     .frame(minWidth: 110, maxWidth: 165, minHeight: WorkspaceHeaderLayout.titleHeight)
                     .help(name)
-                Text("\(library.saved.collections[name]?.count ?? 0) families").font(.caption).foregroundStyle(.secondary)
+                let count = library.saved.collections[name]?.count ?? 0
+                Text("\(count) \(count == 1 ? "family" : "families")").font(.caption).foregroundStyle(.secondary)
                 Menu {
                     Button("Rename collection…") { renameCollection(name) }
                     Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) }
@@ -1913,6 +1914,23 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     }
     testLibrary.search = "Helvetica"; testLibrary.requiredText = "Hello"; testLibrary.requireCoverage = true
     precondition(testLibrary.saveCurrentSearch(as: "Preview round trip", previewText: "Hello"))
+    let collectionChecks = Library(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-collection-check-" + UUID().uuidString + "/library.json"))
+    defer { try? FileManager.default.removeItem(at: collectionChecks.saveURL.deletingLastPathComponent()) }
+    collectionChecks.families = fonts
+    collectionChecks.saved.collections["Before"] = [fonts[0].name]
+    collectionChecks.selection = "collection:Before"
+    precondition(collectionChecks.saveCurrentSearch(as: "Scoped", previewText: "Custom specimen"))
+    collectionChecks.selection = "All Fonts"
+    precondition(collectionChecks.saveCurrentSearch(as: "Global", previewText: "Global specimen"))
+    precondition(collectionChecks.renameCollection("Before", to: "After"))
+    precondition(collectionChecks.applySavedSearch("Scoped") == "Custom specimen")
+    precondition(collectionChecks.selection == "collection:After" && collectionChecks.filtered.map(\.name) == [fonts[0].name], "Saved searches must follow renamed collections")
+    precondition(collectionChecks.saved.savedSearches?["Global"]?.section == "All Fonts")
+    precondition(Library(storageURL: collectionChecks.saveURL).saved.savedSearches?["Scoped"]?.section == "collection:After", "Renamed saved-search scope must persist")
+    let previousCollectionSearches = collectionChecks.saved.savedSearches
+    collectionChecks.librarySaveBlocked = true
+    precondition(!collectionChecks.renameCollection("After", to: "Rejected"))
+    precondition(collectionChecks.saved.savedSearches == previousCollectionSearches && collectionChecks.saved.collections["After"] != nil && collectionChecks.saved.collections["Rejected"] == nil && collectionChecks.selection == "collection:After", "A failed rename must roll back searches, members and selection together")
     let savedSearchData = try JSONEncoder().encode(testLibrary.saved.savedSearches!["Preview round trip"]!)
     let restoredSavedSearch = try JSONDecoder().decode(SavedSearch.self, from: savedSearchData)
     testLibrary.saved.savedSearches = ["Preview round trip": restoredSavedSearch]

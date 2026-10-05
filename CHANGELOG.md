@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.6 — 2026-10-05
+
+- Preserve saved searches when collections are renamed, and cancel obsolete glyph scans during rapid navigation.
+- Make interrupted vector gestures cancel or commit consistently, release temporary drag snapshots, and report editable nodes correctly to accessibility tools. Reuse contour paths during dense object selection.
+- Preserve Spaces Undo/Redo groups after failed saves, avoid redundant navigation writes, and separate edits made before and after navigation. Show successful font changes only after saving.
+
 ## 0.59.5 — 2026-10-05
 
 - Reuse Library filter results and style counts across unrelated UI updates; explain only displayed similarity matches and reuse search-token parsing rules.
