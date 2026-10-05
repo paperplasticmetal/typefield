@@ -239,27 +239,47 @@ enum FontLabTraceSmoothing {
 
     private static func area(_ p: [FontLabPoint]) -> Double { p.indices.reduce(0) { sum,i in let a=p[i],b=p[(i+1)%p.count];return sum+a.x*b.y-b.x*a.y } }
     private static func close(_ samples:[FontLabPoint],to polygon:[FontLabPoint],within limit:Double)->Bool {
-        samples.allSatisfy { p in
+        // Most segments are nowhere near a sample. Reuse their geometry and
+        // reject their bounds before doing the exact point-to-segment test.
+        let segments = polygon.indices.map { i in
+            let a=polygon[i],b=polygon[(i+1)%polygon.count],dx=b.x-a.x,dy=b.y-a.y
+            return (a:a,dx:dx,dy:dy,length:max(1e-20,dx*dx+dy*dy),
+                    minX:(min(a.x,b.x)-limit).nextDown,maxX:(max(a.x,b.x)+limit).nextUp,
+                    minY:(min(a.y,b.y)-limit).nextDown,maxY:(max(a.y,b.y)+limit).nextUp)
+        }
+        return samples.allSatisfy { p in
             if Task.isCancelled { return false }
-            return polygon.indices.contains { i in
-                let a=polygon[i],b=polygon[(i+1)%polygon.count],dx=b.x-a.x,dy=b.y-a.y
-                let t=min(1,max(0,((p.x-a.x)*dx+(p.y-a.y)*dy)/max(1e-20,dx*dx+dy*dy)))
-                return hypot(p.x-a.x-dx*t,p.y-a.y-dy*t)<=limit
+            return segments.contains { edge in
+                guard p.x >= edge.minX, p.x <= edge.maxX, p.y >= edge.minY, p.y <= edge.maxY else { return false }
+                let t=min(1,max(0,((p.x-edge.a.x)*edge.dx+(p.y-edge.a.y)*edge.dy)/edge.length))
+                return hypot(p.x-edge.a.x-edge.dx*t,p.y-edge.a.y-edge.dy*t)<=limit
             }
         }
     }
     private static func crossings(_ contours:[[FontLabPoint]])->Bool {
-        struct Edge { let a:FontLabPoint;let b:FontLabPoint;let contour:Int;let index:Int;let count:Int }
-        let edges=contours.enumerated().flatMap { c,p in p.indices.map { Edge(a:p[$0],b:p[($0+1)%p.count],contour:c,index:$0,count:p.count) } }
+        struct Edge {
+            let a:FontLabPoint;let b:FontLabPoint;let contour:Int;let index:Int;let count:Int
+            let minX:Double;let maxX:Double;let minY:Double;let maxY:Double
+        }
+        let edges=contours.enumerated().flatMap { c,p in p.indices.map { i in
+            let a=p[i],b=p[(i+1)%p.count]
+            return Edge(a:a,b:b,contour:c,index:i,count:p.count,
+                        minX:min(a.x,b.x),maxX:max(a.x,b.x),minY:min(a.y,b.y),maxY:max(a.y,b.y))
+        } }.sorted { $0.minX < $1.minX }
         func side(_ a:FontLabPoint,_ b:FontLabPoint,_ p:FontLabPoint)->Double {(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x)}
         for i in edges.indices {
             if Task.isCancelled { return true }
-            for j in edges.indices where j>i {
-            let a=edges[i],b=edges[j]
-            if a.contour==b.contour && (abs(a.index-b.index)<=1 || abs(a.index-b.index)==a.count-1) {continue}
-            if max(a.a.x,a.b.x)<min(b.a.x,b.b.x) || max(b.a.x,b.b.x)<min(a.a.x,a.b.x) || max(a.a.y,a.b.y)<min(b.a.y,b.b.y) || max(b.a.y,b.b.y)<min(a.a.y,a.b.y) {continue}
-            if side(a.a,a.b,b.a)*side(a.a,a.b,b.b)<(-1e-16) && side(b.a,b.b,a.a)*side(b.a,b.b,a.b)<(-1e-16) {return true}
-        } }
+            let a=edges[i]
+            // Later edges cannot intersect once their left edge passes this
+            // segment's right edge; contour adjacency still uses source indices.
+            for j in (i+1)..<edges.count {
+                let b=edges[j]
+                if b.minX > a.maxX { break }
+                if a.contour==b.contour && (abs(a.index-b.index)<=1 || abs(a.index-b.index)==a.count-1) {continue}
+                if a.maxY<b.minY || b.maxY<a.minY {continue}
+                if side(a.a,a.b,b.a)*side(a.a,a.b,b.b)<(-1e-16) && side(b.a,b.b,a.a)*side(b.a,b.b,a.b)<(-1e-16) {return true}
+            }
+        }
         return false
     }
 }

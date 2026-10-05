@@ -35,6 +35,36 @@ enum FontLabDesignChecks {
         try check(!cycle.isValid,"Cyclic component reference accepted")
         var outside=p;outside.glyphs["B"]!.components![0].x=2
         try check(!outside.isValid,"Out-of-bounds component accepted")
+        let chainNames = Array("ABCDEFGH").map(String.init)
+        var emptyChain = FontLabProject(name: "Empty component graph", characters: chainNames)
+        for index in 0..<(chainNames.count - 1) {
+            emptyChain.glyphs[chainNames[index]]?.components = (0..<16).map { _ in
+                FontLabComponentUse(source: chainNames[index + 1])
+            }
+        }
+        let emptyStarted = Date()
+        try check(emptyChain.isValid && emptyChain.resolvedGlyph("A")?.strokes.isEmpty == true,
+                  "Repeated empty component trees must resolve without expanding every reference")
+        print(String(format: "PERF: 8-level, 16-way empty component validation %.3f ms", Date().timeIntervalSince(emptyStarted) * 1000))
+        // Resolve H first to populate its cache, then reach it through an
+        // over-depth branch. Reuse must preserve the original depth rejection.
+        var tooDeep = emptyChain
+        tooDeep.characters.append("I"); tooDeep.glyphs["I"] = FontLabGlyph(character: "I")
+        tooDeep.glyphs["H"]?.components = [FontLabComponentUse(source: "I")]
+        tooDeep.glyphs["A"]?.components?.insert(FontLabComponentUse(source: "H"), at: 0)
+        try check(tooDeep.resolvedGlyph("A") == nil, "Cached empty components bypassed the nesting limit")
+        var emptyCycle = emptyChain
+        emptyCycle.glyphs["H"]?.components = [FontLabComponentUse(source: "A")]
+        try check(emptyCycle.resolvedGlyph("A") == nil, "Empty component caching bypassed cycle rejection")
+        var mixedGraph = p
+        mixedGraph.characters += chainNames.filter { mixedGraph.glyphs[$0] == nil }
+        for name in chainNames where mixedGraph.glyphs[name] == nil { mixedGraph.glyphs[name] = emptyChain.glyphs[name] }
+        // H is empty and can be shared with differently transformed artwork.
+        mixedGraph.glyphs["B"]?.components = [FontLabComponentUse(source: "H"), FontLabComponentUse(source: "A", x: 0.01, scale: 0.8), FontLabComponentUse(source: "H")]
+        var withoutEmpty = mixedGraph
+        withoutEmpty.glyphs["B"]?.components?.removeAll { $0.source == "H" }
+        try check(mixedGraph.resolvedGlyph("C") == withoutEmpty.resolvedGlyph("C"),
+                  "Empty component reuse changed nested nonempty geometry, transforms or metrics")
         let componentFont=try FontLabTrueTypeExporter.artifact(for:p)
         let bakedFont=try FontLabTrueTypeExporter.artifact(for:p.outputProject)
         try check(componentFont.data == bakedFont.data,"Component export differs from resolved outline export")

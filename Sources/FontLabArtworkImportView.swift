@@ -22,6 +22,8 @@ struct FontLabArtworkImportSheet: View {
     @State private var reviewed = false
     @State private var busy = false
     @State private var failure = ""
+    @State private var scanTask: Task<Void, Never>?
+    @State private var scanGeneration = UUID()
 
     private var included: [FontLabArtworkRegion] { scan?.regions.filter(\.included) ?? [] }
     private var invalidAssignments: Bool {
@@ -154,6 +156,7 @@ struct FontLabArtworkImportSheet: View {
         .onChange(of: useCurrentProject) { _ in reviewed = false; replace = false }
         .onChange(of: replace) { _ in reviewed = false }
         .interactiveDismissDisabled(busy)
+        .onDisappear { cancelScan() }
     }
 
     private var scanControls: some View {
@@ -209,21 +212,30 @@ struct FontLabArtworkImportSheet: View {
         change(&scan!.regions[index]); reviewed = false
     }
 
+    private func cancelScan() {
+        scanTask?.cancel(); scanTask = nil
+        scanGeneration = UUID(); busy = false
+    }
+
     private func chooseFile() {
         let panel = NSOpenPanel(); panel.title = "Import letter artwork"; panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
         panel.allowedContentTypes = FontLabImportFormat.allCases.flatMap { $0.filenameExtensions.compactMap { UTType(filenameExtension: $0) } }
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        cancelScan()
         busy = true; failure = ""; reviewed = false
-        let requestedOptions = options
-        Task {
-            let result = await Task.detached(priority: .userInitiated) {
+        let requestedOptions = options, generation = scanGeneration
+        scanTask = Task {
+            let worker = Task.detached(priority: .userInitiated) {
                 Result {
+                    try Task.checkCancellation()
                     let loaded = try FontLabArtworkReader.load(url)
                     return (loaded, Result { try FontLabArtworkEngine.scan(loaded, options: requestedOptions) })
                 }
-            }.value
+            }
+            let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
             await MainActor.run {
-                busy = false
+                guard !Task.isCancelled, scanGeneration == generation else { return }
+                scanTask = nil; busy = false
                 switch result {
                 case let .success((loaded, scanResult)):
                     source = loaded; scan = nil; scannedOptions = nil; selectedRegion = nil
@@ -242,12 +254,15 @@ struct FontLabArtworkImportSheet: View {
 
     private func rescan() {
         guard let source else { return }
+        cancelScan()
         busy = true; failure = ""; reviewed = false
-        let requestedOptions = options
-        Task {
-            let result = await Task.detached(priority: .userInitiated) { Result { try FontLabArtworkEngine.scan(source, options: requestedOptions) } }.value
+        let requestedOptions = options, generation = scanGeneration
+        scanTask = Task {
+            let worker = Task.detached(priority: .userInitiated) { Result { try FontLabArtworkEngine.scan(source, options: requestedOptions) } }
+            let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
             await MainActor.run {
-                busy = false
+                guard !Task.isCancelled, scanGeneration == generation else { return }
+                scanTask = nil; busy = false
                 switch result {
                 case var .success(value):
                     if requestedOptions.layout == .single, !value.regions.isEmpty { value.regions[0].character = selectedCharacter; useCurrentProject = currentProject != nil }

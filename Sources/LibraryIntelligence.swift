@@ -155,15 +155,20 @@ enum LibraryIntelligence {
                 }
             }
             if let best {
-                let signature = FontSignature(face: best.face, category: effectiveCategory, tags: tagsByPostScriptName[best.face.name] ?? [])
-                let explained = assessment(source, signature, includeReasons: true)
-                results.append(FontSimilarityResult(family: family, face: best.face, distance: explained.distance, reasons: explained.reasons))
+                results.append(FontSimilarityResult(family: family, face: best.face, distance: best.assessment.distance, reasons: []))
             }
         }
-        return Array(results.sorted {
+        // Explain only the displayed matches, after ranking. Large catalogs can
+        // contain thousands of families that will never appear in the result.
+        return results.sorted {
             if $0.distance != $1.distance { return $0.distance < $1.distance }
             return stableName($0.family.name) < stableName($1.family.name)
-        }.prefix(limit))
+        }.prefix(limit).map { result in
+            let category = categoryOverrides[result.family.name] ?? result.family.automaticCategory
+            let signature = FontSignature(face: result.face, category: category, tags: tagsByPostScriptName[result.face.name] ?? [])
+            let explained = assessment(source, signature, includeReasons: true)
+            return FontSimilarityResult(family: result.family, face: result.face, distance: result.distance, reasons: explained.reasons)
+        }
     }
 
     /// Returns only families supplied by the current local catalog. Stale usage

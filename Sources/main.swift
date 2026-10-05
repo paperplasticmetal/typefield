@@ -140,7 +140,7 @@ enum WorkspaceMode: String, CaseIterable, Identifiable {
 final class Library: ObservableObject {
     @Published var workspace = WorkspaceMode.library
     @Published var typeboardDraft: TypeboardSeedDraft?
-    @Published var tagQuery = TagQuery()
+    @Published var tagQuery = TagQuery() { didSet { invalidateFilteredCatalog() } }
     @Published var folderStatus = ""
     let folderWatcher = FolderWatcher()
     var autoActivatedPaths: Set<String> = []
@@ -175,10 +175,13 @@ final class Library: ObservableObject {
         }
         return (compared.map { chosenFace($0).name }, comparison.isEmpty ? "Blank typeboard" : "Shortlist")
     }
-    @Published var families: [Family] = [] { willSet { rebuildCatalogIndexes(for: newValue) } }
+    @Published var families: [Family] = [] {
+        willSet { rebuildCatalogIndexes(for: newValue) }
+        didSet { invalidateFilteredCatalog() }
+    }
     var originalFamilies: [Family] = []
-    @Published var pro = ProState()
-    @Published var advanced = AdvancedFilter()
+    @Published var pro = ProState() { didSet { invalidateFilteredCatalog() } }
+    @Published var advanced = AdvancedFilter() { didSet { invalidateFilteredCatalog() } }
     @Published var selectedFamilies: Set<String> = []
     @Published var showTools = false
     @Published var toolsTab = "Tags"
@@ -318,19 +321,19 @@ final class Library: ObservableObject {
     }
     func tags(_ family: Family) -> Set<String> { family.faces.reduce(into: []) { $0.formUnion(pro.tags[$1.name] ?? []) } }
 
-    @Published var saved: SavedLibrary
+    @Published var saved: SavedLibrary { didSet { invalidateFilteredCatalog() } }
     @Published var loading = false
     @Published var message = ""
     @Published var resultNotice = ""
-    @Published var selection = "All Fonts"
-    @Published var search = ""
-    @Published var sort = "Name A–Z"
-    @Published var source = "All sources"
-    @Published var variableOnly = false
+    @Published var selection = "All Fonts" { didSet { invalidateFilteredCatalog() } }
+    @Published var search = "" { didSet { invalidateFilteredCatalog() } }
+    @Published var sort = "Name A–Z" { didSet { invalidateFilteredCatalog() } }
+    @Published var source = "All sources" { didSet { invalidateFilteredCatalog() } }
+    @Published var variableOnly = false { didSet { invalidateFilteredCatalog() } }
     @Published var detail: Family?
-    @Published var writing: WritingSystem?
-    @Published var requiredText = ""
-    @Published var requireCoverage = false
+    @Published var writing: WritingSystem? { didSet { invalidateFilteredCatalog() } }
+    @Published var requiredText = "" { didSet { invalidateFilteredCatalog() } }
+    @Published var requireCoverage = false { didSet { invalidateFilteredCatalog() } }
     @Published var comparison: [String] = []
     @Published var overlayName = ""
     @Published var showCompare = false
@@ -525,16 +528,33 @@ final class Library: ObservableObject {
         guard save() else { saved.savedSearches = previous; return false }
         return true
     }
-    var filtered: [Family] {
+    // Retain only the current result. Selection, preview size and other UI changes
+    // must not re-run every font predicate and localized sort in a large catalog.
+    private var cachedFilteredCatalog: (families: [Family], styleCount: Int)?
+    fileprivate func invalidateFilteredCatalog() { cachedFilteredCatalog = nil }
+    var filtered: [Family] { filteredCatalog.families }
+    var matchingStyleCount: Int { filteredCatalog.styleCount }
+    private var filteredCatalog: (families: [Family], styleCount: Int) {
+        // Activation predicates also read live Core Text registration state.
+        let canCache = advanced.activation == "Any" && !search.lowercased().contains("/active")
+        if canCache, let cachedFilteredCatalog { return cachedFilteredCatalog }
         let query = FontSearchQuery(search)
-        let result = families.filter { f in
-            matchesSection(f, selection) && f.faces.contains { faceMatches($0, in: f, query: query) } && (!variableOnly || f.variable) && (source == "All sources" || (source == "User / third-party" ? f.userFont : !f.userFont))
+        var styleCount = 0
+        let result = families.filter { family in
+            guard matchesSection(family, selection), !variableOnly || family.variable,
+                  source == "All sources" || (source == "User / third-party" ? family.userFont : !family.userFont) else { return false }
+            let matches = family.faces.reduce(0) { $0 + (faceMatches($1, in: family, query: query) ? 1 : 0) }
+            styleCount += matches
+            return matches > 0
         }
-        return result.sorted { a,b in
+        let sorted = result.sorted { a,b in
             if sort == "Most styles", a.faces.count != b.faces.count { return a.faces.count > b.faces.count }
             if sort == "Category", category(a) != category(b) { return category(a).rawValue < category(b).rawValue }
             return a.name.localizedStandardCompare(b.name) == (sort == "Name Z–A" ? .orderedDescending : .orderedAscending)
         }
+        let snapshot = (families: sorted, styleCount: styleCount)
+        if canCache { cachedFilteredCatalog = snapshot }
+        return snapshot
     }
     var filteredFaces: [Face] { filtered.flatMap { matchingFaces(in: $0) } }
     var selectedOutsideViewCount: Int { selectedFamilies.subtracting(Set(filtered.map(\.name))).count }
@@ -699,7 +719,7 @@ struct ContentView: View {
             case .library:
                 VStack(spacing: 0) {
                 let visibleFamilies = library.filtered
-                let matchingStyleCount = visibleFamilies.reduce(0) { $0 + library.matchingFaces(in: $1).count }
+                let matchingStyleCount = library.matchingStyleCount
                 topControls
                 libraryContent(visibleFamilies)
                 Divider()
@@ -1647,7 +1667,12 @@ enum PerformanceAudit {
         let catalogAccess = measure(iterations: 10_000) { library.allFaces.count &+ library.availableFaceNames.count }
         let sidebarCounts = measure(iterations: 100) { LibrarySidebarSnapshot(library: library).checksum }
         library.search = "a"
-        let filtering = measure(iterations: 100) { library.filtered.reduce(0) { $0 &+ $1.faces.count } }
+        let filtering = measure(iterations: 100) {
+            library.invalidateFilteredCatalog()
+            return library.filtered.reduce(0) { $0 &+ $1.faces.count }
+        }
+        let cachedFiltering = measure(iterations: 100) { library.filtered.reduce(0) { $0 &+ $1.faces.count } }
+        precondition(filtering.checksum == cachedFiltering.checksum, "Cached filtering changed catalog results")
         let reference = catalog.first(where: { $0.automaticCategory != .symbol })?.representative
         let pairing = measure(iterations: 10) {
             guard let reference else { return 0 }
@@ -1670,7 +1695,7 @@ enum PerformanceAudit {
         print(String(format: "PERF catalog scan: %.2f ms (%d families, %d styles)", scanMilliseconds, catalog.count, catalog.reduce(0) { $0 + $1.faces.count }))
         print(String(format: "PERF cached catalog access: %.6f ms/pass", catalogAccess.milliseconds))
         print(String(format: "PERF sidebar count snapshot: %.3f ms/pass", sidebarCounts.milliseconds))
-        print(String(format: "PERF library filter: %.3f ms/pass", filtering.milliseconds))
+        print(String(format: "PERF library filter: %.3f ms uncached, %.6f ms cached", filtering.milliseconds, cachedFiltering.milliseconds))
         print(String(format: "PERF pairing rank: %.3f ms/pass; similarity rank: %.3f ms/pass", pairing.milliseconds, similarity.milliseconds))
         print(String(format: "PERF canvas plan: %.3f ms uncached, %.6f ms cached (%.1fx faster)", direct.milliseconds, cached.milliseconds, direct.milliseconds / max(0.000_001, cached.milliseconds)))
 
@@ -1797,6 +1822,41 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     precondition(testLibrary.availableFaceNames == Set(indexedFaces.map(\.name)))
     precondition(indexedFaces.first.map { testLibrary.face(named: $0.name)?.name == $0.name } ?? true)
     withExtendedLifetime(catalogSubscription) {}
+    // Warm the snapshot before each mutation, then compare with a fresh scan.
+    // Nested value-type edits must invalidate just like replacing the property.
+    func checkFilterInvalidation(_ change: () -> Void) {
+        _ = testLibrary.filtered
+        change()
+        let names = testLibrary.filtered.map(\.name)
+        let count = testLibrary.matchingStyleCount
+        testLibrary.invalidateFilteredCatalog()
+        precondition(names == testLibrary.filtered.map(\.name), "Library filter cache retained stale families")
+        precondition(count == testLibrary.matchingStyleCount, "Library filter cache retained stale style count")
+        precondition(count == testLibrary.filtered.reduce(0) { $0 + testLibrary.matchingFaces(in: $1).count })
+    }
+    checkFilterInvalidation { testLibrary.search = "Helvetica" }
+    checkFilterInvalidation { testLibrary.search = "" }
+    checkFilterInvalidation { testLibrary.sort = "Name Z–A" }
+    checkFilterInvalidation { testLibrary.source = "User / third-party" }
+    checkFilterInvalidation { testLibrary.source = "All sources" }
+    checkFilterInvalidation { testLibrary.variableOnly = true }
+    checkFilterInvalidation { testLibrary.variableOnly = false }
+    checkFilterInvalidation { testLibrary.writing = .devanagari }
+    checkFilterInvalidation { testLibrary.writing = nil }
+    checkFilterInvalidation { testLibrary.requiredText = "हिन्दी"; testLibrary.requireCoverage = true }
+    checkFilterInvalidation { testLibrary.requiredText = "Hello" }
+    checkFilterInvalidation { testLibrary.requireCoverage = false }
+    checkFilterInvalidation { testLibrary.advanced.slant = "Italic" }
+    checkFilterInvalidation { testLibrary.advanced = AdvancedFilter() }
+    checkFilterInvalidation { testLibrary.tagQuery.included = ["cache-test"] }
+    checkFilterInvalidation { testLibrary.pro.tags[fonts[0].faces[0].name] = ["cache-test"] }
+    checkFilterInvalidation { testLibrary.tagQuery = TagQuery() }
+    checkFilterInvalidation { testLibrary.selection = "Favorites" }
+    checkFilterInvalidation { testLibrary.saved.favorites.insert(fonts[0].name) }
+    checkFilterInvalidation { testLibrary.selection = "All Fonts" }
+    checkFilterInvalidation { testLibrary.families = Array(fonts.prefix(1)) }
+    checkFilterInvalidation { testLibrary.families = fonts }
+    testLibrary.saved.favorites = []; testLibrary.pro.tags = [:]; testLibrary.sort = "Name A–Z"
     testLibrary.search = "Helvetica"
     precondition(!testLibrary.filtered.isEmpty && testLibrary.filtered.allSatisfy { $0.name.localizedCaseInsensitiveContains("Helvetica") || $0.faces.contains { $0.name.localizedCaseInsensitiveContains("Helvetica") } })
     testLibrary.search = ""; testLibrary.selection = "Monospaced"
@@ -1869,7 +1929,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try GlyphBrowserChecks.run(); try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

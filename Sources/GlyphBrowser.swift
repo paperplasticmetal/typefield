@@ -72,40 +72,45 @@ struct GlyphBrowser: View {
     @State private var outlines = false
     @State private var loading = true
     @State private var status = ""
-    var filtered: [GlyphEntry] { entries.filter { (group == "All glyphs" || $0.group == group) && $0.matches(query.trimmingCharacters(in: .whitespaces)) } }
+    var filtered: [GlyphEntry] {
+        let search = query.trimmingCharacters(in: .whitespaces)
+        return entries.filter { (group == "All glyphs" || $0.group == group) && $0.matches(search) }
+    }
     var current: GlyphEntry? { entries.first { $0.id == selected } }
     var font: CTFont { OpenType.font(name: face.name, size: 100, axes: axes) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let visibleEntries = filtered
+        let previewFont = font
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 TextField("Character, Unicode name, U+code, or glyph name", text: $query).textFieldStyle(.roundedBorder)
                 ShelfDropdown(title: "Group", selection: $group, options: ["All glyphs", "Letters", "Numbers", "Marks", "Punctuation", "Symbols / other", "Unmapped"].map { ($0, $0) }).frame(width: 210)
-                Text("\(filtered.count)").monospacedDigit().foregroundStyle(.secondary)
+                Text("\(visibleEntries.count)").monospacedDigit().foregroundStyle(.secondary)
             }
             if loading { ProgressView("Reading glyphs…").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else {
                 HStack(alignment: .top, spacing: 20) {
                     ScrollView {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 78))], spacing: 8) {
-                            ForEach(filtered) { entry in
+                            ForEach(visibleEntries) { entry in
                                 Button { selected = entry.id } label: {
-                                    VStack(spacing: 4) { GlyphPreview(font: font, glyph: entry.glyph, metrics: false, outlines: false).frame(height: 62); Text(entry.code).font(.system(size: 9, design: .monospaced)).lineLimit(1) }.padding(6).background(selected == entry.id ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
+                                    VStack(spacing: 4) { GlyphPreview(font: previewFont, glyph: entry.glyph, metrics: false, outlines: false).frame(height: 62); Text(entry.code).font(.system(size: 9, design: .monospaced)).lineLimit(1) }.padding(6).background(selected == entry.id ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
                                 }.buttonStyle(.plain).help(entry.title).accessibilityLabel(entry.title + " " + entry.code)
                                 .onDrag { provider(entry) }
                             }
                         }
-                        if filtered.isEmpty { Text("No matching glyphs").foregroundStyle(.secondary).padding(30) }
+                        if visibleEntries.isEmpty { Text("No matching glyphs").foregroundStyle(.secondary).padding(30) }
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         if let entry = current {
-                            GlyphPreview(font: font, glyph: entry.glyph, metrics: metrics, outlines: outlines).frame(width: 230, height: 220).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+                            GlyphPreview(font: previewFont, glyph: entry.glyph, metrics: metrics, outlines: outlines).frame(width: 230, height: 220).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
                             Text(entry.title).font(.headline).textSelection(.enabled)
                             Text(entry.code + ": " + entry.glyphName).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                             Toggle("Metrics", isOn: $metrics).toggleStyle(.checkbox)
                             Toggle("Outline", isOn: $outlines).toggleStyle(.checkbox)
                             if metrics { Text("Baseline, x-height, cap height").font(.caption).foregroundStyle(.secondary) }
                             Button("Copy character") { if let scalar = entry.scalar { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(String(scalar), forType: .string); status = "Character copied" } }.disabled(entry.scalar == nil)
-                            Button("Export SVG…") { export(entry) }.disabled(GlyphCatalog.svg(font: font, glyph: entry.glyph) == nil)
+                            Button("Export SVG…") { export(entry) }.disabled(CTFontCreatePathForGlyph(previewFont, entry.glyph, nil)?.isEmpty != false)
                             Text("Drag a glyph to export its vector outline.").font(.caption).foregroundStyle(.secondary)
                         } else { Text("Select a glyph").foregroundStyle(.secondary) }
                         Text(status).font(.caption).foregroundStyle(.secondary)
@@ -142,6 +147,17 @@ final class GlyphNativeView: NSView {
     var glyph: CGGlyph = 0
     var metrics = false
     var outlines = false
+    /// Parent selection/search updates should not repaint every visible glyph.
+    @discardableResult func update(font: CTFont, glyph: CGGlyph, metrics: Bool, outlines: Bool) -> Bool {
+        guard !CFEqual(self.font, font) || self.glyph != glyph ||
+                self.metrics != metrics || self.outlines != outlines else { return false }
+        self.font = font
+        self.glyph = glyph
+        self.metrics = metrics
+        self.outlines = outlines
+        needsDisplay = true
+        return true
+    }
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let rect = CTFontGetBoundingRectsForGlyphs(font, .default, [glyph], nil, 1)
@@ -165,5 +181,35 @@ struct GlyphPreview: NSViewRepresentable {
     let metrics: Bool
     let outlines: Bool
     func makeNSView(context: Context) -> GlyphNativeView { GlyphNativeView() }
-    func updateNSView(_ view: GlyphNativeView, context: Context) { view.font = font; view.glyph = glyph; view.metrics = metrics; view.outlines = outlines; view.needsDisplay = true }
+    func updateNSView(_ view: GlyphNativeView, context: Context) { view.update(font: font, glyph: glyph, metrics: metrics, outlines: outlines) }
+}
+
+/// A glyph selection changes its surrounding button, not the glyph's pixels.
+enum GlyphBrowserChecks {
+    static func run() throws {
+        func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+            if !condition() { throw NSError(domain: "Typefield.GlyphBrowserCheck", code: 1,
+                                             userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        let view = GlyphNativeView(frame: NSRect(x: 0, y: 0, width: 80, height: 80))
+        let font = CTFontCreateWithName("Helvetica" as CFString, 100, nil)
+        view.update(font: font, glyph: 36, metrics: false, outlines: false)
+        // A detached NSView does not track AppKit's dirty regions. Check the
+        // redraw decision directly without opening a test window on the desktop.
+        for _ in 0..<100 {
+            try check(!view.update(font: CTFontCreateCopyWithAttributes(font, 100, nil, nil),
+                                   glyph: 36, metrics: false, outlines: false),
+                      "Equivalent glyph updates must not trigger repaint")
+        }
+        try check(view.update(font: font, glyph: 37, metrics: false, outlines: false) && view.glyph == 37,
+                  "Changing the glyph must repaint")
+        try check(view.update(font: font, glyph: 37, metrics: true, outlines: false) && view.metrics,
+                  "Toggling metrics must repaint")
+        try check(view.update(font: font, glyph: 37, metrics: true, outlines: true) && view.outlines,
+                  "Toggling outlines must repaint")
+        let larger = CTFontCreateCopyWithAttributes(font, 120, nil, nil)
+        try check(view.update(font: larger, glyph: 37, metrics: true, outlines: true) && CTFontGetSize(view.font) == 120,
+                  "Changing the font must repaint")
+        print("PASS: glyph previews skip unchanged redraws and invalidate changed rendering inputs.")
+    }
 }

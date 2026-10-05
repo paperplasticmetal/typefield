@@ -243,19 +243,27 @@ final class FontLabVectorNSView: NSView {
         }}
         return nil
     }
-    private func hitSegment(_ p:CGPoint)->(Int,Int,Double)? {
+    func hitSegment(_ p:CGPoint)->(Int,Int,Double)? {
         var best:(Int,Int,Double)?,distance=7.0
+        let r=designRect
         let paths=editor.paths
         for a in paths.indices {for b in 0..<paths[a].segmentCount {
-            let c=paths[a].controls(b),samples=paths[a].isCurve(b) ? 50:1
+            let c=paths[a].controls(b),curve=paths[a].isCurve(b),samples=curve ? 50:1
+            // A Bézier remains inside its control hull. Reject distant segments
+            // before sampling, without changing the existing hit tolerance.
+            let hull=FontLabVectorMath.bounds(c)
+            let hitBounds=CGRect(x:r.minX+hull.minX*r.width,y:r.minY+hull.minY*r.height,
+                                 width:hull.width*r.width,height:hull.height*r.height).insetBy(dx:-distance,dy:-distance)
+            guard hitBounds.contains(p) else { continue }
+            var q=screen(c[0])
             for i in 0..<samples {
                 let t0=Double(i)/Double(samples),t1=Double(i+1)/Double(samples)
-                let q=screen(paths[a].isCurve(b) ? FontLabVectorMath.evaluate(c,t0):c[0])
-                let r=screen(paths[a].isCurve(b) ? FontLabVectorMath.evaluate(c,t1):c[3])
-                let dx=r.x-q.x,dy=r.y-q.y
+                let next=screen(curve ? FontLabVectorMath.evaluate(c,t1):c[3])
+                let dx=next.x-q.x,dy=next.y-q.y
                 let t=min(1,max(0,((p.x-q.x)*dx+(p.y-q.y)*dy)/max(1e-12,dx*dx+dy*dy)))
                 let d=hypot(q.x+dx*t-p.x,q.y+dy*t-p.y)
                 if d<distance {distance=d;best=(a,b,t0+(t1-t0)*t)}
+                q=next
             }
         }}
         return best

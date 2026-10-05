@@ -10,6 +10,70 @@ enum FontLabVectorChecks {
     static func run() throws {
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
+        let densePoints = (0..<10_000).map { index -> FontLabPoint in
+            let angle = Double(index) * 2 * Double.pi / 10_000
+            return .init(x: 0.5 + 0.4 * cos(angle), y: 0.5 + 0.4 * sin(angle))
+        }
+        let denseGlyph = FontLabGlyph(character: "D", strokes: [FontLabStroke(contours: [densePoints])])
+        let cachedEditor = FontLabVectorEditor(glyph: denseGlyph, metrics: metrics)
+        let firstPaths = cachedEditor.paths
+        let startUncached = Date.timeIntervalSinceReferenceDate
+        var uncachedCount = 0
+        for _ in 0..<100 { uncachedCount += FontLabVectorMath.paths(in: denseGlyph)[0].nodes.count }
+        let uncachedTime = Date.timeIntervalSinceReferenceDate - startUncached
+        let startCached = Date.timeIntervalSinceReferenceDate
+        var cachedCount = 0
+        for _ in 0..<100 { cachedCount += cachedEditor.paths[0].nodes.count }
+        let cachedTime = Date.timeIntervalSinceReferenceDate - startCached
+        try check(cachedCount == uncachedCount && firstPaths == cachedEditor.paths,
+                  "Cached legacy contours changed node identities or geometry")
+        cachedEditor.glyph.strokes[0].contours![0][0].x = 0.8
+        try check(cachedEditor.paths[0].nodes[0].point.x == 0.8,
+                  "Nested glyph edits must invalidate converted contours")
+        cachedEditor.receive(glyph)
+        try check(cachedEditor.paths == FontLabVectorMath.paths(in: glyph),
+                  "Receiving another glyph must invalidate converted contours")
+        cachedEditor.receive(denseGlyph)
+        try check(cachedEditor.paths == firstPaths && cachedEditor.glyph == denseGlyph,
+                  "Restoring a glyph must restore its paths without modifying saved artwork")
+        print(String(format: "PERF: 100 dense-outline reads (10,000 anchors): uncached %.3f ms; cached %.3f ms", uncachedTime * 1000, cachedTime * 1000))
+
+        // Compare optimized hit testing with the original exhaustive sampler,
+        // including curved controls outside their anchors at several zoom levels.
+        let hitEditor = FontLabVectorEditor(glyph: glyph, metrics: metrics)
+        let hitCanvas = FontLabVectorNSView(editor: hitEditor)
+        hitCanvas.frame = CGRect(x: 0, y: 0, width: 600, height: 600)
+        func exhaustiveHit(_ point: CGPoint) -> (Int, Int, Double)? {
+            var best: (Int, Int, Double)?, distance = 7.0
+            let rect = hitCanvas.designRect
+            func screen(_ p: FontLabPoint) -> CGPoint { CGPoint(x: rect.minX + p.x * rect.width, y: rect.minY + p.y * rect.height) }
+            for (a, path) in hitEditor.paths.enumerated() {
+                for b in 0..<path.segmentCount {
+                    let controls = path.controls(b), curve = path.isCurve(b), samples = curve ? 50 : 1
+                    for sample in 0..<samples {
+                        let t0 = Double(sample) / Double(samples), t1 = Double(sample + 1) / Double(samples)
+                        let q = screen(curve ? FontLabVectorMath.evaluate(controls, t0) : controls[0])
+                        let r = screen(curve ? FontLabVectorMath.evaluate(controls, t1) : controls[3])
+                        let dx = r.x-q.x, dy = r.y-q.y
+                        let t = min(1, max(0, ((point.x-q.x)*dx + (point.y-q.y)*dy) / max(1e-12, dx*dx+dy*dy)))
+                        let d = hypot(q.x+dx*t-point.x, q.y+dy*t-point.y)
+                        if d < distance { distance = d; best = (a, b, t0+(t1-t0)*t) }
+                    }
+                }
+            }
+            return best
+        }
+        for zoom in [0.5, 1.0, 3.0] {
+            hitEditor.zoom = zoom
+            for x in stride(from: 0.0, through: 600.0, by: 19) {
+                for y in stride(from: 0.0, through: 600.0, by: 23) {
+                    let point = CGPoint(x: x, y: y)
+                    let expected = exhaustiveHit(point), actual = hitCanvas.hitSegment(point)
+                    try check(expected?.0 == actual?.0 && expected?.1 == actual?.1 && abs((expected?.2 ?? 0) - (actual?.2 ?? 0)) < 1e-10,
+                              "Control-hull hit rejection changed the selected curve or insertion position")
+                }
+            }
+        }
         var history = FontLabGlyphEditHistory()
         var editedO = glyph; editedO.leftSideBearing += 0.01
         var a = glyph; a.character = "A"

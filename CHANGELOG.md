@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.5 — 2026-10-05
+
+- Reuse Library filter results and style counts across unrelated UI updates; explain only displayed similarity matches and reuse search-token parsing rules.
+- Reuse editable outline conversions, skip distant curves during hit testing, and avoid repainting unchanged glyph previews.
+- Reduce dense-outline validation work while retaining exact distance and crossing checks. Prevent repeated empty linked components from expanding exponentially.
+- Bound retained canvas artwork memory, stop obsolete artwork scans, and reuse font resolution within Figma imports. Preserve saved fonts, projects, geometry and import warnings.
+
 ## 0.59.4 — 2026-10-01
 
 - Refine the five default Spaces compositions at compact widths: keep the Website bag aligned to the right edge, show Product UI's Save label and line up its summary numbers, retain the Poster program, and label the Type system numeral specimen.

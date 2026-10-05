@@ -79,8 +79,17 @@ enum FontLabDesign {
             return glyph.isValid ? glyph : nil
         }
         var remaining = 30000
+        // Empty component trees consume no point budget, so repeated links can
+        // otherwise expand exponentially. Cache only successfully resolved empty
+        // trees; retain their depth so reuse cannot bypass the nesting limit.
+        var emptyDepth: [String: Int] = [:]
         func visit(_ character: String, chain: Set<String>) -> FontLabGlyph? {
             guard !chain.contains(character), chain.count < 8, var glyph = glyphs[character] else { return nil }
+            if let depth = emptyDepth[character] {
+                guard chain.count + depth <= 8 else { return nil }
+                glyph.components = nil
+                return glyph
+            }
             var nextChain = chain; nextChain.insert(character)
             let uses = glyph.components ?? []; glyph.components = nil
             remaining -= glyph.strokes.reduce(0) { $0 + $1.points.count + ($1.contours?.reduce(0) { $0 + $1.count } ?? 0) + ($1.vectorPaths?.reduce(0) { $0 + $1.nodes.count } ?? 0) }
@@ -109,7 +118,11 @@ enum FontLabDesign {
                     glyph.strokes.append(stroke)
                 }
             }
-            return glyph.isValid ? glyph : nil
+            guard glyph.isValid else { return nil }
+            if glyph.strokes.isEmpty {
+                emptyDepth[character] = 1 + (uses.compactMap { emptyDepth[$0.source] }.max() ?? 0)
+            }
+            return glyph
         }
         return visit(character, chain: [])
     }

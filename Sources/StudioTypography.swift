@@ -210,9 +210,12 @@ struct StudioInspectorIcon: View {
 
 extension TypeBoardEditor {
     var selectedFace: Face? { library.allFaces.first { $0.name == style.fontName } }
-    var familyFaces: [Face] { guard let family = selectedFace?.originalFamily else { return [] }; return library.allFaces.filter { $0.originalFamily == family } }
     var characterPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let selectedFace = self.selectedFace
+        let familyFaces = selectedFace.map { selected in
+            library.allFaces.filter { $0.originalFamily == selected.originalFamily }
+        } ?? []
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Button { showFontPicker = true } label: {
                     HStack(spacing: 6) {

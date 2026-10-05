@@ -257,9 +257,11 @@ struct FontLabInkMask {
     mutating func components(minimumArea: Int) throws -> [CGRect] {
         var seen = [UInt8](repeating: 0, count: ink.count), boxes: [CGRect] = []
         for start in ink.indices where ink[start] != 0 && seen[start] == 0 {
+            try Task.checkCancellation()
             var queue = [start], next = 0, minX = start % width, maxX = minX, minY = start / width, maxY = minY
             seen[start] = 1
             while next < queue.count {
+                if next % 4096 == 0 { try Task.checkCancellation() }
                 let p = queue[next]; next += 1
                 let x = p % width, y = p / width
                 minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
@@ -283,7 +285,9 @@ struct FontLabInkMask {
 enum FontLabArtworkEngine {
     static func scan(_ source: FontLabArtworkSource, options: FontLabArtworkOptions, recognize: Bool = true) throws -> FontLabArtworkScan {
         guard (0.05...0.95).contains(options.threshold), (1...32).contains(options.rows), (1...32).contains(options.columns), (1...200).contains(options.minimumArea) else { throw FontLabArtworkError.message("The scan settings are invalid.") }
+        try Task.checkCancellation()
         var mask = FontLabInkMask(image: source.image, options: options)
+        try Task.checkCancellation()
         let components = try mask.components(minimumArea: options.minimumArea)
         guard !components.isEmpty else { throw FontLabArtworkError.message("No ink was found. Try the other ink color or adjust the threshold.") }
         var boxes: [CGRect]
@@ -299,12 +303,18 @@ enum FontLabArtworkEngine {
         case .automatic: boxes = readingOrder(groupDetachedMarks(components))
         }
         guard boxes.count <= 256 else { throw FontLabArtworkError.message("More than 256 letters were detected. Import a smaller sheet, use a grid, or remove background marks.") }
-        var regions = boxes.compactMap { region(rect: $0, mask: mask) }
+        var regions: [FontLabArtworkRegion] = []
+        for box in boxes {
+            try Task.checkCancellation()
+            if let value = region(rect: box, mask: mask) { regions.append(value) }
+        }
+        try Task.checkCancellation()
         var notices = source.notices
         if recognize {
             do { try suggestCharacters(in: &regions, mask: mask) }
             catch { notices.append("Automatic character recognition was unavailable. Enter the letter order or label the regions manually.") }
         }
+        try Task.checkCancellation()
         if regions.contains(where: { min($0.rect.width, $0.rect.height) < 12 }) { notices.append("Some letters have very little image detail. Inspect their outlines before importing.") }
         if regions.contains(where: { $0.rect.width > Double(mask.width) * 0.98 && $0.rect.height > Double(mask.height) * 0.98 }) {
             notices.append("Ink touches the image edges. If this is the background, switch ink color; if letters touch each other, use Grid sheet or draw separate regions.")
@@ -362,7 +372,9 @@ enum FontLabArtworkEngine {
             x >= Int(r.minX) && x < Int(r.maxX) && y >= Int(r.minY) && y < Int(r.maxY) && mask.ink[y * mask.width + x] != 0
         }
         func edge(_ x: Int, _ y: Int, _ nx: Int, _ ny: Int) { edges[y * stride + x, default: []].append(ny * stride + nx) }
-        for y in Int(r.minY)..<Int(r.maxY) { for x in Int(r.minX)..<Int(r.maxX) where occupied(x, y) {
+        for y in Int(r.minY)..<Int(r.maxY) {
+            if Task.isCancelled { return [] }
+            for x in Int(r.minX)..<Int(r.maxX) where occupied(x, y) {
             if !occupied(x, y - 1) { edge(x, y, x + 1, y) }
             if !occupied(x + 1, y) { edge(x + 1, y, x + 1, y + 1) }
             if !occupied(x, y + 1) { edge(x + 1, y + 1, x, y + 1) }
@@ -373,6 +385,7 @@ enum FontLabArtworkEngine {
             while edges[start]?.isEmpty == false {
                 var current = start, previous = start - 1, points: [FontLabPoint] = []
                 repeat {
+                    if points.count % 4096 == 0 && Task.isCancelled { return [] }
                     let x = current % stride, y = current / stride
                     points.append(FontLabPoint(x: (Double(x) - r.minX) / r.width, y: 1 - (Double(y) - r.minY) / r.height))
                     guard let choices = edges[current], !choices.isEmpty else { break }

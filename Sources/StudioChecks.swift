@@ -466,6 +466,28 @@ enum StudioChecks {
         let importedFirst = importedBoard.directions[0]
         try verify(importedFirst.canvas == .imported && importedFirst.importedSource == .figma && importedFirst.canvasDisplayName == "Figma layout" && importedFirst.canvasUnitLabel == "px" && importedFirst.importedLayout?.layers.filter { $0.style != nil }.count == CanvasPlan(direction: board.directions[0]).elements.filter { $0.text != nil }.count)
         try verify(importedFirst.importedLayout?.layers.first(where: { $0.style != nil })?.style?.fontName == "Helvetica", "Imported font mapping failed")
+        var repeatedFontPayload = FigmaLayoutExporter.payload(board: board)
+        var repeatedFontFrame = (repeatedFontPayload["frames"] as! [[String: Any]])[0]
+        let mappedFontLayer = (repeatedFontFrame["elements"] as! [[String: Any]]).first { $0["kind"] as? String == "text" }!
+        var mixedCaseFontLayer = mappedFontLayer
+        mixedCaseFontLayer["fontFamily"] = (mappedFontLayer["fontFamily"] as! String).uppercased()
+        mixedCaseFontLayer["fontStyle"] = (mappedFontLayer["fontStyle"] as! String).lowercased()
+        var missingFontLayer = mappedFontLayer
+        missingFontLayer["fontFamily"] = "Typefield Missing Font Fixture"
+        missingFontLayer["name"] = "Missing one"
+        var secondMissingFontLayer = missingFontLayer
+        secondMissingFontLayer["name"] = "Missing two"
+        repeatedFontFrame["elements"] = [mappedFontLayer, mappedFontLayer, mixedCaseFontLayer, missingFontLayer, secondMissingFontLayer]
+        repeatedFontPayload["frames"] = [repeatedFontFrame]
+        let repeatedFontData = try JSONSerialization.data(withJSONObject: repeatedFontPayload)
+        let unavailableImport = try FigmaLayoutImporter.board(data: repeatedFontData, fonts: [])
+        let repeatedFontImport = try FigmaLayoutImporter.board(data: repeatedFontData, fonts: catalog.flatMap(\.faces))
+        let mappedNames = repeatedFontImport.directions[0].importedLayout!.layers.compactMap { $0.style?.fontName }
+        try verify(Array(mappedNames.prefix(3)) == ["Helvetica", "Helvetica", "Helvetica"], "Repeated and mixed-case font mapping must preserve catalog matching")
+        try verify(Array(mappedNames.suffix(2)) == ["Typefield Missing Font Fixture", "Typefield Missing Font Fixture"] &&
+                   repeatedFontImport.directions[0].importWarnings?.count == 2 &&
+                   (unavailableImport.directions[0].importWarnings?.count ?? 0) > 2,
+                   "Cached missing fonts must retain each layer warning and stay local to one import")
         let importedEncoded = try JSONEncoder().encode(importedBoard)
         let decodedImported = try JSONDecoder().decode(TypeBoard.self, from: importedEncoded)
         try verify(decodedImported == importedBoard, "Imported geometry/style persistence failed")
@@ -604,6 +626,42 @@ enum StudioChecks {
             pixels[index] > 220 && pixels[index + 1] < 50 && pixels[index + 2] < 50 && pixels[index + 3] > 220
         }
         try verify(redArtworkRendered, "Spaces PDF export must contain visible imported image pixels")
+        // Exercise image-cost eviction with highly compressible PNGs: encoded
+        // size alone must not stand in for their decoded bitmap footprint.
+        do {
+            let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1024, pixelsHigh: 1024,
+                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                          isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            memset(bitmap.bitmapData!, 0, bitmap.bytesPerRow * bitmap.pixelsHigh)
+            let png = bitmap.representation(using: .png, properties: [:])!
+            let image = NSImage(data: png)!
+            try verify(CanvasPlanCache.imageBytes(image) >= 1024 * 1024 * 4,
+                       "Artwork cache cost must include decoded pixels")
+            try verify(CanvasPlanCache.imageBytes(NSImage(size: .zero)) > CanvasPlanCache.maximumImageBytes,
+                       "Unknown image footprints must not be admitted as zero-cost entries")
+            func imageDirection(_ count: Int) -> TypeDirection {
+                var direction = TypeDirection(name: "Image cache fixture", fonts: ["Helvetica"])
+                direction.canvas = .imported
+                direction.importedLayout = ImportedLayout(width: 100, height: 100, layers: (0..<count).map { index in
+                    ImportedLayer(name: "Image \(index)", x: 0, y: 0, width: 100, height: 100, color: "FFFFFF", artworkData: png)
+                })
+                return direction
+            }
+            CanvasPlanCache.removeAll()
+            let first = imageDirection(9)
+            let originalImage = CanvasPlanCache.plan(for: first).elements.first!.image!
+            try verify(CanvasPlanCache.plan(for: first).elements.first!.image === originalImage,
+                       "Artwork within the memory budget must reuse its cached plan")
+            for _ in 0..<3 { _ = CanvasPlanCache.plan(for: imageDirection(9)) }
+            try verify(CanvasPlanCache.plan(for: first).elements.first!.image !== originalImage,
+                       "Decoded artwork budget must evict the least recently used plan")
+            CanvasPlanCache.removeAll()
+            let oversized = imageDirection(33)
+            let oversizedImage = CanvasPlanCache.plan(for: oversized).elements.first!.image!
+            try verify(CanvasPlanCache.plan(for: oversized).elements.first!.image !== oversizedImage,
+                       "A single oversized artwork plan must render without entering the cache")
+            CanvasPlanCache.removeAll()
+        }
         var invalidArtwork = rasterArtwork; invalidArtwork.artworkData = Data("not png".utf8)
         try verify(!invalidArtwork.isValidArtwork, "Invalid embedded artwork must not pass project validation")
         let corruptArtworkFile = root.appendingPathComponent("broken.png")

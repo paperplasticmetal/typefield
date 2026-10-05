@@ -182,6 +182,18 @@ enum FontLabArtworkChecks {
             try check(complete.isValid && complete.completedCount == 52, "Practice project suggestions could not be opened for editing")
         }
         let source = try FontLabArtworkReader.load(folder.appendingPathComponent("alphabet-A-Z.png"))
+        let cancelledScan = DispatchSemaphore(value: 0)
+        Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do { _ = try FontLabArtworkEngine.scan(source, options: FontLabArtworkOptions(), recognize: false); return }
+            catch is CancellationError {}
+            catch { return }
+            var mask = FontLabInkMask(width: 2, height: 2, ink: [1, 1, 1, 1])
+            do { _ = try mask.components(minimumArea: 1); return }
+            catch is CancellationError { cancelledScan.signal() }
+            catch {}
+        }
+        try check(cancelledScan.wait(timeout: .now() + 5) == .success, "Cancelled artwork scans and component traversal must stop before producing results")
         var sheet = try FontLabArtworkEngine.scan(source, options: FontLabArtworkOptions(), recognize: false)
         try check(sheet.regions.count == 26, "Alphabet segmentation found \(sheet.regions.count) regions instead of 26.")
         for index in sheet.regions.indices { sheet.regions[index].character = alphabetPaths[index].0 }

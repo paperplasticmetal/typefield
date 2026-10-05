@@ -241,8 +241,9 @@ struct FontSearchQuery {
     struct Token: Identifiable, Equatable { let raw: String; let name: String; let excluded: Bool; var id: String { raw } }
     var text: String
     var tokens: [Token] = []
+    private static let tokenExpression = try! NSRegularExpression(pattern: #"(?<!\S)#!?(?:"[^"]+"|[^\s"]+)"#)
     init(_ source: String) {
-        let regex = try! NSRegularExpression(pattern: #"(?<!\S)#!?(?:"[^"]+"|[^\s"]+)"#)
+        let regex = Self.tokenExpression
         let ns = source as NSString
         let matches = regex.matches(in: source, range: NSRange(location: 0, length: ns.length))
         for match in matches {

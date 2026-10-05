@@ -773,6 +773,10 @@ enum FigmaLayoutImporter {
             guard [r, g, b, a].allSatisfy({ (0...1).contains($0) }) else { throw invalid("A layer has an invalid color.") }
             return (NSColor(srgbRed: r, green: g, blue: b, alpha: a).rgbHex, a)
         }
+        struct FontKey: Hashable { let family: String; let style: String }
+        // Many layers repeat the same font. Cache both matches and misses for
+        // this import only, retaining the catalog's first-match behavior.
+        var resolvedFonts: [FontKey: Int] = [:]
         var directions: [TypeDirection] = []
         var totalLayers = 0
         var totalTextBytes = 0
@@ -796,7 +800,14 @@ enum FigmaLayoutImporter {
                     guard TypeDirection.acceptsCanvasText(text), family.count <= 256, fontStyle.count <= 256 else { throw invalid("A text layer is too large.") }
                     totalTextBytes += text.utf8.count
                     guard totalTextBytes <= 5_000_000 else { throw invalid("The layout contains too much text.") }
-                    let face = fonts.first { $0.originalFamily.caseInsensitiveCompare(family) == .orderedSame && $0.style.caseInsensitiveCompare(fontStyle) == .orderedSame }
+                    let key = FontKey(family: family, style: fontStyle)
+                    let index: Int
+                    if let cached = resolvedFonts[key] { index = cached }
+                    else {
+                        index = fonts.firstIndex { $0.originalFamily.caseInsensitiveCompare(family) == .orderedSame && $0.style.caseInsensitiveCompare(fontStyle) == .orderedSame } ?? -1
+                        resolvedFonts[key] = index
+                    }
+                    let face = index >= 0 ? fonts[index] : nil
                     let name = face?.name ?? family
                     if face == nil { warnings.append("Font “\(family) \(fontStyle)” is unavailable; check the fallback for \(layer.name).") }
                     var style = TypeStyle(fontName: name, size: try number(e, "fontSize"), tracking: try number(e, "letterSpacing", fallback: 0), text: text)

@@ -2058,7 +2058,23 @@ struct CanvasElement {
 }
 struct CanvasSection: Identifiable { var id: String; var title: String; var rect: CGRect }
 enum CanvasPlanCache {
-    private struct Entry { let direction: TypeDirection; let plan: CanvasPlan; let textLength: Int; var used: UInt64 }
+    private struct Entry { let direction: TypeDirection; let plan: CanvasPlan; let textLength: Int; let imageBytes: Int; var used: UInt64 }
+    static let maximumImageBytes = 128 * 1024 * 1024
+    /// Account for every representation without forcing bitmap rendering. A
+    /// normal RGBA decode needs four bytes per pixel; retain larger actual row
+    /// strides for high-depth bitmaps. Saturation makes extreme sizes safe.
+    static func imageBytes(_ image: NSImage) -> Int {
+        var total = 0.0
+        for representation in image.representations {
+            let width = Double(representation.pixelsWide), height = Double(representation.pixelsHigh)
+            guard width > 0, height > 0 else { return maximumImageBytes + 1 }
+            let rows = (representation as? NSBitmapImageRep).map { Double($0.bytesPerRow) * height } ?? 0
+            total += max(width * height * 4, rows)
+            guard total.isFinite, total <= Double(maximumImageBytes) else { return maximumImageBytes + 1 }
+        }
+        // Unknown/lazy representations cannot be assigned a reliable cost.
+        return total > 0 ? Int(total.rounded(.up)) : maximumImageBytes + 1
+    }
     private static let lock = NSLock()
     private static var entries: [UUID: Entry] = [:]
     private static var clock: UInt64 = 0
@@ -2074,10 +2090,22 @@ enum CanvasPlanCache {
         }
         lock.unlock()
         let plan = CanvasPlan(direction: direction)
-        lock.lock()
         let textLength = plan.elements.reduce(0) { $0 + ($1.text?.length ?? 0) }
-        if plan.elements.count <= 1_000 && textLength <= 1_000_000 { entries[direction.id] = Entry(direction: direction, plan: plan, textLength:textLength, used: used) }
-        while entries.count > 16 || entries.values.reduce(0, { $0+$1.textLength }) > 2_000_000 {
+        var imageBytes = 0
+        for element in plan.elements {
+            if let image = element.image { imageBytes = min(maximumImageBytes + 1, imageBytes + self.imageBytes(image)) }
+        }
+        // The cached direction also retains compressed artwork, including
+        // hidden layers. Overcount shared data instead of underbudgeting it.
+        for layer in (direction.artworkLayers ?? []) + (direction.importedLayout?.layers ?? []) {
+            imageBytes += min(maximumImageBytes + 1 - imageBytes, layer.artworkData?.count ?? 0)
+        }
+        lock.lock()
+        entries.removeValue(forKey: direction.id)
+        if plan.elements.count <= 1_000 && textLength <= 1_000_000 && imageBytes <= maximumImageBytes {
+            entries[direction.id] = Entry(direction: direction, plan: plan, textLength:textLength, imageBytes:imageBytes, used: used)
+        }
+        while entries.count > 16 || entries.values.reduce(0, { $0+$1.textLength }) > 2_000_000 || entries.values.reduce(0, { $0+$1.imageBytes }) > maximumImageBytes {
             guard let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key else { break }
             entries.removeValue(forKey: oldest)
         }

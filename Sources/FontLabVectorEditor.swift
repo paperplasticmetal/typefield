@@ -51,7 +51,12 @@ enum FontLabVectorTool: String, CaseIterable, Identifiable {
 }
 
 final class FontLabVectorEditor: ObservableObject {
-    @Published var glyph: FontLabGlyph
+    @Published var glyph: FontLabGlyph {
+        didSet { cachedPaths = nil }
+    }
+    // Legacy polygon outlines require node conversion. Reuse that conversion
+    // across drawing, hit testing and selection until the glyph changes.
+    private var cachedPaths: [FontLabVectorPath]?
     @Published var componentStrokes: [FontLabStroke] = []
     @Published var metrics: FontLabMetrics
     @Published var tool = FontLabVectorTool.select
@@ -70,7 +75,12 @@ final class FontLabVectorEditor: ObservableObject {
     var onFocusSelectionRequested: () -> Void = {}
     var activePath: UUID?
     init(glyph: FontLabGlyph, metrics: FontLabMetrics) { self.glyph=glyph;self.metrics=metrics }
-    var paths: [FontLabVectorPath] { FontLabVectorMath.paths(in:glyph) }
+    var paths: [FontLabVectorPath] {
+        if let cachedPaths { return cachedPaths }
+        let value = FontLabVectorMath.paths(in: glyph)
+        cachedPaths = value
+        return value
+    }
     var selectedNodes: [FontLabVectorNode] { paths.flatMap(\.nodes).filter { selection.contains($0.id) } }
     var selectedBounds: CGRect { FontLabVectorMath.bounds(selectedNodes.map(\.point)) }
     var selectedFocusBounds: CGRect {
