@@ -2,7 +2,7 @@ import AppKit
 import CoreText
 import Foundation
 
-// Typefield launch film v7. Vector choreography, orthographic planes and shared objects.
+// Typefield launch film v8. Vector choreography, orthographic planes and shared objects.
 // No screenshots are drawn. Product capabilities follow the verified v3 QA round trip.
 let args=CommandLine.arguments
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
@@ -53,7 +53,7 @@ func text(_ s:String,_ x:Double,_ baseline:Double,_ size:Double,_ col:String=ink
 func title(_ s:String,_ local:Double,_ light:Bool=true,_ sub:String="") {
  let p=progress(local,0,0.34),col=ink
  if local>0 {captionTop=sub.isEmpty ? 230:280}
- layer(p){text(s,960,188+22*(1-p),88,col,"sans","center")}
+ layer(p){text(s,960,188+22*(1-p),88,col,"medium","center")}
  if !sub.isEmpty {layer(progress(local,0.14,0.36)){text(sub,960,253,28,muted,"sans","center")}}
 }
 let nav=["Library","Spaces","Letterform Editor"]
@@ -121,13 +121,13 @@ func libraryPose(_ i:Int,_ t:Double)->Pose {
 func formLayout(_ w:Double,_ h:Double,_ appear:Double,_ custom:Bool=false){
  let left = -w/2+66,right=w/2-66,top = -h/2+54,bottom=h/2-47
  if custom {
-  text("A new sound.",left,top,25);text("Independent music",right,top,24,ink,"sans","right")
+  text("A new sound",left,top,25);text("Independent music",right,top,24,ink,"sans","right")
   line(left,top+29,right,top+29,"A55843",1)
   text("Live, in good company.",left,bottom,25);text("Friday, 9 pm",right,bottom,25,ink,"sans","right")
  } else {
   layer(appear){text("The shape of ideas",left,top,25);text("Volume 01",right,top,24,ink,"sans","right")
    line(left,top+29,right,top+29,"C5C8CD",1)
-   text("& feeling.",left,122,112,ink,"serif")
+   text("& feeling",left,122,112,ink,"serif")
    line(left,bottom-42,right,bottom-42,"C5C8CD",1)
    text("Typography journal",left,bottom,25);text("A study in contrast",right,bottom,25,ink,"sans","right")
    save{dot(CGPoint(x:350,y:5),166,coral);dot(CGPoint(x:410,y:5),123,ink);dot(CGPoint(x:457,y:5),75,paper)}
@@ -162,8 +162,8 @@ func libraryStory(_ t:Double){
    let pose=sortedPose(i,min(t,3)).toward(collectionPose(i),collect)
    layer(i==3 || i==4 ? 1-collect:1){specimen(cardNames[i],cardWords[i],cardFaces[i],cardColors[i],pose)}
   }
-  if t<3 {title("Find your type.",t+0.34,true,"Sort by name, style count or category.")}
-  else {title("Organize by project.",t-3,true,"Named collections keep your fonts together.")}
+  if t<3 {title("Find your type",t+0.34,true,"Sort by name, style count or category.")}
+  else {title("Organize by project",t-3,true,"Named collections keep your fonts together.")}
  } else if t<8.2 {
   let p=progress(t,5.7,6.65)
   layer(1-p){plane(Pose(x:960,y:610)){stock(1520,620,"E7E8EA",0.11);text("Editorial",-690,-252,31,ink,"medium");text("Collection",690,-252,25,muted,"sans","right");line(-690,-221,690,-221,"CDD0D4")}}
@@ -173,7 +173,7 @@ func libraryStory(_ t:Double){
    specimen(cardNames[i],"Form",cardFaces[i],paper,pose)
    shortlistMark(pose,progress(t,6.45,6.85))
   }
-  title("Build your shortlist.",t-5.7,true,"Keep your strongest candidates together.")
+  title("Build your shortlist",t-5.7,true,"Keep your strongest candidates together.")
  } else {
   let p=progress(t,8.2,9.1),clear=progress(t,10.5,10.9)
   layer(1-p){specimen("Didot","Form","didot",paper,shortlistPose(0).toward(Pose(x:960,y:615),p))}
@@ -187,7 +187,7 @@ func libraryStory(_ t:Double){
    layer(p*(1-clear)*0.66){save{c.setBlendMode(.multiply);text("Form",bx,by,size,"B05732","didot")}}
    layer(p*(1-clear)){text("Same text. Same size.",0,h/2-52,24,muted,"sans","center")}
   }
-  title("Compare every detail.",t-8.2,true,"A/B overlays reveal the difference.")
+  title("Compare every detail",t-8.2,true,"A/B overlays reveal the difference.")
  }
  navigation(t,0)
 }
@@ -200,7 +200,7 @@ func libraryToSpaces(_ t:Double){
   text("Form",mix(0,-574+wordWidth/2,p),mix(55,-15,p),size,ink,"serif","center")
   formLayout(1280,650,progress(t,11.65,12.3))
  }
- title("From Library to Spaces.",t-11,true,"Create a typeboard with your chosen fonts.")
+ title("From Library to Spaces",t-11,true,"Create a typeboard with your chosen fonts.")
  navigation(t,t<11.6 ? 0:1)
 }
 func layouts(_ t:Double){
@@ -209,10 +209,10 @@ func layouts(_ t:Double){
  let main=poses.0
  plane(main){stock(1280,650,paper);text("Form",-574,-15,224,ink,"serif");formLayout(1280,650,1)}
  let second=poses.1
- plane(second){stock(530,676,coral);text("Type studies.",-217,-269,31);line(-217,-235,217,-235,"A35A43")
+ plane(second){stock(530,676,coral);text("Type studies",-217,-269,31);line(-217,-235,217,-235,"A35A43")
  text("F",0,206,510,ink,"serif","center");text("Form in practice.",-217,280,27)}
  layer(1){
-  if t<5.3 {title("From Library to Spaces.",1,true,"Create a typeboard with your chosen fonts.")}else{title("Put it to work.",t-5.3,true,"Compose with your fonts in Spaces.")}
+  if t<5.3 {title("From Library to Spaces",1,true,"Create a typeboard with your chosen fonts.")}else{title("Put it to work",t-5.3,true,"Compose with your fonts in Spaces.")}
   navigation(t,1)
  }
 }
@@ -382,16 +382,16 @@ func spacesToTablet(_ t:Double){
  let p=progress(t,15.8,16.9),poses=layoutPoses(7.6)
  transform(-2100*p,0){
   plane(poses.0){stock(1280,650,paper);text("Form",-574,-15,224,ink,"serif");formLayout(1280,650,1)}
-  plane(poses.1){stock(530,676,coral);text("Type studies.",-217,-269,31);line(-217,-235,217,-235,"A35A43");text("F",0,206,510,ink,"serif","center");text("Form in practice.",-217,280,27)}
+  plane(poses.1){stock(530,676,coral);text("Type studies",-217,-269,31);line(-217,-235,217,-235,"A35A43");text("F",0,206,510,ink,"serif","center");text("Form in practice.",-217,280,27)}
  }
  tablet(t,2100*(1-p))
- layer(1-progress(t,15.8,16.08)){title("Put it to work.",1,true,"Compose with your fonts in Spaces.");navigation(t,1)}
- if t>16.2 {title("Draw your way.",t-16.2,true,"Use an iPad or a connected drawing tablet.")}
+ layer(1-progress(t,15.8,16.08)){title("Put it to work",1,true,"Compose with your fonts in Spaces.");navigation(t,1)}
+ if t>16.2 {title("Draw your way",t-16.2,true,"Use an iPad or a connected drawing tablet.")}
 }
 func drawingScene(_ t:Double){
  background();tablet(t)
- if t<19.05 {title("Draw your way.",1,true,"Use an iPad or a connected drawing tablet.")}
- else {title("Import your artwork.",t-19.05,true,"Export PNG, then open it in Letterform Editor.")}
+ if t<19.05 {title("Draw your way",1,true,"Use an iPad or a connected drawing tablet.")}
+ else {title("Import your artwork",t-19.05,true,"Export PNG, then open it in Letterform Editor.")}
  layer(progress(t,19.3,19.7)){navigation(t,2)}
 }
 func editing(_ t:Double){
@@ -406,7 +406,7 @@ func editing(_ t:Double){
  layer(1-outlineHandoff){vectorP(x,y,h,bend,progress(t,11.5,11.8)*(1-leave))}
  layer(outlineHandoff){transform(x,y,h){c.setFillColor(color(ink));c.addPath(exportedP);c.fillPath()}}
  if leave>0 {layer(leave){kernWord(960+320*(1-leave),723,630,70,ink,1)}}
- if t<14.05 {title("Make every curve yours.",t-11.0,true,"Editable outlines. Precise Bézier control.")}else{title("Down to the space between.",t-14.05)}
+ if t<14.05 {title("Make every curve yours",t-11.0,true,"Editable outlines. Precise Bézier control.")}else{title("Down to the space between",t-14.05)}
  navigation(t,2)
 }
 func kernWord(_ x:Double,_ baseline:Double,_ size:Double,_ adjustment:Double,_ col:String,_ first:Int=0){
@@ -419,7 +419,7 @@ func kernWord(_ x:Double,_ baseline:Double,_ size:Double,_ adjustment:Double,_ c
 func spacing(_ t:Double){
  background()
  let p=progress(t,14.65,15.65),a=mix(70,0,p)
- title("Down to the space between.",t-14.05)
+ title("Down to the space between",t-14.05)
  kernWord(960,723,630,a,ink)
  let b=bounds("pop",630,"ink")
  let lx=960-b.width/2-a,rx=960+b.width/2+a
@@ -455,7 +455,7 @@ func exportAndReturn(_ t:Double){
   kernWord(0,mix(133,55,p),mix(630,236,p),0,ink)
   save{c.clip(to:CGRect(x:-w*reveal/2,y:-h*reveal/2,width:w*reveal,height:h*reveal));kernWord(0,mix(133,55,p),mix(630,236,p),0,ink)}
  }
- if t<18.35 {title("Export your font.",t-16.65,true,"Save an installable TrueType file.")}else{title("Add it to Library.",t-18.35,true,"Export, then add your font folder.")}
+ if t<18.35 {title("Export your font",t-16.65,true,"Save an installable TrueType file.")}else{title("Add it to Library",t-18.35,true,"Export, then add your font folder.")}
  navigation(t,t<18.75 ? 2:0)
 }
 func finalLayout(_ t:Double){
@@ -476,7 +476,7 @@ func finalLayout(_ t:Double){
   layer(progress(t,20.8,21.2)){formLayout(w,h,1,true)}
   text("pop",0,mix(55,115,p),mix(236,580,p),ink,"ink","center")
  }
- title("Your font, in Spaces.",t-20.15)
+ title("Your font, in Spaces",t-20.15)
  navigation(t,t<20.65 ? 0:1)
 }
 func ending(_ t:Double){
@@ -486,7 +486,7 @@ func ending(_ t:Double){
   image(icon,CGRect(x:860,y:282,width:200,height:200))
   // Small optical corrections place the visible ink of each line on the icon's center axis.
   text("Typefield",955,620,112,ink,"medium","center")
-  text("Your type, all together.",955,692,36,muted,"sans","center")
+  text("Your type, all together",955,692,36,muted,"sans","center")
   text("For Mac",961,759,24,muted,"sans","center")
  }}
 }
@@ -523,13 +523,16 @@ func frame(_ outputTime:Double)->CGContext {
  return ctx
 }
 func png(_ ctx:CGContext,_ url:URL)throws {try NSBitmapImageRep(cgImage:ctx.makeImage()!).representation(using:.png,properties:[:])!.write(to:url)}
-if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v7-%05.2f.png",t)))}
+if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v8-%05.2f.png",t)))}
 else if args.contains("--stills"){
- for t in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5]{try png(frame(t),output.appendingPathComponent(String(format:"v7-%05.2f.png",t)))}
+ for t in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5]{try png(frame(t),output.appendingPathComponent(String(format:"v8-%05.2f.png",t)))}
  print("Rendered 40 composition and transition frames.")
 }else if args.contains("--audit"){
- let headings=["Find your type.","Organize by project.","Build your shortlist.","Compare every detail.","From Library to Spaces.","Put it to work.","Draw your way.","Import your artwork.","Make every curve yours.","Down to the space between.","Export your font.","Add it to Library.","Your font, in Spaces."]
- for h in headings {precondition(bounds(h,88).width<1760);print("Heading: \(h), \(Int(bounds(h,88).width)) px")}
+ let resolvedHeadingFont=CTFontCopyPostScriptName(font(88,"medium")) as String
+ precondition(resolvedHeadingFont=="HelveticaNeue-Medium")
+ print("Heading font: \(resolvedHeadingFont)")
+ let headings=["Find your type","Organize by project","Build your shortlist","Compare every detail","From Library to Spaces","Put it to work","Draw your way","Import your artwork","Make every curve yours","Down to the space between","Export your font","Add it to Library","Your font, in Spaces"]
+ for h in headings {precondition(bounds(h,88,"medium").width<1760);print("Heading: \(h), \(Int(bounds(h,88,"medium").width)) px")}
  precondition(navCenters[1]==960 && navCenters[1]-navCenters[0]==navCenters[2]-navCenters[1])
  var letters=Array("pop".utf16),gs=[CGGlyph](repeating:0,count:3)
  precondition(CTFontGetGlyphsForCharacters(font(100,"ink"),&letters,&gs,3) && gs.allSatisfy{$0>0})
@@ -540,7 +543,7 @@ else if args.contains("--stills"){
 
 }else{
  let proc=Process();proc.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
- proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v7.mp4").path]
+ proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v8.mp4").path]
  let pipe=Pipe();proc.standardInput=pipe;try proc.run()
  for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / 40s");fflush(stdout)}}
  try pipe.fileHandleForWriting.close();proc.waitUntilExit();precondition(proc.terminationStatus==0);print("Master complete.")

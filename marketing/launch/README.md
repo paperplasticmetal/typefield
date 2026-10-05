@@ -1,12 +1,12 @@
-# Typefield launch film — landscape revision 7
+# Typefield launch film — landscape revision 8
 
-40 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v7.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v7.mp4`. Earlier local deliveries remain available. Revision 6 source is preserved in commit `43d5e20`.
+40 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v8.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v8.mp4`. Earlier local deliveries remain available. Revision 7 source is preserved in commit `169829f`.
 
 ## Direction
 
 A white stage carries the whole film. Neutral specimen cards, gray captions and coral artwork keep the palette restrained. Every opening specimen reads “Form” at the same point size, so the typeface itself supplies the variation. The opening now demonstrates sorting, named collections, shortlisting and A/B overlays before the selected font becomes a Spaces composition. A shared horizontal move takes the layouts into a drawing scene; the previous giant-F zoom and pause are removed. The drawn artwork becomes a PNG, an editable letter, a spaced word, an exported TrueType file, a Library specimen and a new Spaces poster.
 
-The closing card contains only the existing app icon, Typefield, “Your type, all together.” and “For Mac.” The platform line now sits closer to the tagline, and small optical corrections align the visible ink of all three text lines with the icon. The wordmark and tagline move 5 px left; “For Mac” moves 1 px right. The prior bounds-centered layout put their visual mass on different axes.
+The closing card contains only the existing app icon, Typefield, “Your type, all together” and “For Mac.” The platform line now sits closer to the tagline, and small optical corrections align the visible ink of all three text lines with the icon. The wordmark and tagline move 5 px left; “For Mac” moves 1 px right. The prior bounds-centered layout put their visual mass on different axes.
 
 Primary references consulted for revision 4, retained as direction for this original composition:
 
@@ -28,7 +28,7 @@ No reference footage, artwork, music or other third-party media was copied into 
 | 11–12.3 s | The same “Form” specimen expands into a Spaces editorial composition. |
 | 12.3–15.8 s | A second Spaces layout arrives and settles. |
 | 15.8–16.9 s | Both layouts move left as the drawing surface enters from the right. |
-| 16.9–19.05 s | A visible pencil draws original p, o, p strokes. “Draw your way.” names both iPad and a connected drawing tablet. |
+| 16.9–19.05 s | A visible pencil draws original p, o, p strokes. “Draw your way” names both iPad and a connected drawing tablet. |
 | 19.05–21.6 s | The surface becomes Artwork.png; the caption explains exporting PNG and opening it in Letterform Editor. Import regions appear, then the file and other letters leave the first p in place. |
 | 21.6–25.45 s | The p moves into an editing view. Handles arrive, its shoulder is adjusted, then the outline blends into the actual exported glyph. |
 | 25.45–27.95 s | The exported font demonstrates spacing and kerning with a settled reading pause. |
@@ -49,7 +49,7 @@ The drawing scene illustrates artwork made in an external drawing app using an i
 
 Original artwork comes from `tests/fixtures/font-lab-artwork/handwriting-nopij.svg`. The macro editing illustration uses smooth outlines derived from its strokes, with an animated shoulder adjustment; it is not a capture of the exact imported nodes. The spacing, file, returned Library specimen and final poster render `assets/v3/Ink.ttf`, the actual app-generated export of the SVG fixture from revision 3. The PNG illustration is not a separately captured app export. That font contains n, o, p, i, j and space; the film only uses supported letters. It is not a complete alphabet or a user's font. Core Graphics reads it without system-wide font registration.
 
-Other specimens use the Mac's installed Helvetica Neue, Baskerville, Didot, Futura and Menlo. Marketing text uses Helvetica Neue. The end card uses the existing icon in `Resources/Assets.xcassets/AppIcon.appiconset/`. Older screenshot assets remain for revision 3 reproducibility; this renderer does not load them.
+Other specimens use the Mac's installed Helvetica Neue, Baskerville, Didot, Futura and Menlo. Marketing text uses Helvetica Neue. The 88 px scene headlines now use Helvetica Neue Medium, increased from Regular; captions remain Regular. All scene headlines, artwork titles and the closing tagline omit trailing periods. The renderer verifies the resolved headline PostScript name is `HelveticaNeue-Medium` and audits widths using that actual face. The end card uses the existing icon in `Resources/Assets.xcassets/AppIcon.appiconset/`. Older screenshot assets remain for revision 3 reproducibility; this renderer does not load them.
 
 ## Reproduce and validate
 
@@ -59,7 +59,7 @@ bash marketing/launch/render.sh
 
 Requires macOS, Swift/AppKit/CoreText and FFmpeg at `/opt/homebrew/bin/ffmpeg`. The script compiles the renderer, audits heading bounds, equal navigation columns, font glyph availability, timing and sampled composition clearance, renders 40 review frames and the 60 fps master, then creates the H.264/yuv420p 30 fps delivery. Actual transformed paper bounds are checked on every one of the 2,400 master frames. The script extracts an end-card poster and decodes the full delivery. Outputs are ignored by Git; rendering is deterministic.
 
-For one frame, run `marketing/launch/renders/render --frame 21.6`. `--stills` renders the predefined review set; `--audit` performs layout and font checks. The completed delivery is 1,200 frames at 30 fps, exactly 40 seconds. The master is 2,400 frames at 60 fps. Representative compositions, transition endpoints and decoded delivery samples receive visual review, including an independent read-only review. Revision 7 passed compilation, full-frame paper clearance, final delivery decode, shell syntax and diff checks. Independent still review measured the end-card visible-ink centers within 1 px of one another and confirmed a solid coral top edge. Eight decoded delivery samples were extracted for review. Private evidence is kept under `.context/qa-artifacts/launch-film-v7/`.
+For one frame, run `marketing/launch/renders/render --frame 21.6`. `--stills` renders the predefined review set; `--audit` performs layout and font checks. The completed delivery is 1,200 frames at 30 fps, exactly 40 seconds. The master is 2,400 frames at 60 fps. Representative compositions, transition endpoints and decoded delivery samples receive visual review, including an independent read-only review. Revision 8 retains the validated white layout and checks the heavier headline face at every scene. Compilation, full-frame paper clearance, final delivery decode, shell syntax and diff checks passed. Six encoded review frames were extracted; the opening, longest headline and closing card were inspected. An independent still review confirmed the heavier weight and closing-text optical centers within 1 px of the frame axis. Private evidence is kept under `.context/qa-artifacts/launch-film-v8/`.
 
 ## Scope
 
