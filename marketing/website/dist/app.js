@@ -6,6 +6,7 @@ const workspaceData = {
 const tabs = [...document.querySelectorAll('[data-workspace]')];
 function selectWorkspace(key) {
   const d = workspaceData[key];
+  animateWorkspace();
   tabs.forEach(tab => { const active = tab.dataset.workspace === key; tab.setAttribute('aria-selected',String(active)); tab.tabIndex = active ? 0 : -1; });
   document.querySelector('#workspace-number').textContent=d.number;
   document.querySelector('#workspace-title').innerHTML=d.title;
@@ -45,3 +46,104 @@ document.querySelectorAll('[name="face"]').forEach(radio => radio.addEventListen
 document.querySelector('#reset-type').addEventListener('click', fitTypeSample);
 window.addEventListener('resize', fitTypeSample);
 fitTypeSample();
+
+// Spring-like, interaction-led motion. Every effect respects reduced motion.
+const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
+const motionAllowed = () => !motionPreference.matches;
+const springEase = 'cubic-bezier(.2,.85,.25,1.2)';
+function animateWorkspace() {
+  if (!motionAllowed()) return;
+  const panel = document.querySelector('#workspace-view');
+  panel.getAnimations().forEach(a => a.cancel());
+  panel.animate([{opacity:.2,transform:'translateY(16px) scale(.985)'},{opacity:1,transform:'none'}],{duration:480,easing:'cubic-bezier(.16,1,.3,1)'});
+}
+const specimens = [...document.querySelectorAll('.specimen-letter')];
+function springSpecimen(button, direction = 1) {
+  if (!motionAllowed()) return;
+  button.getAnimations().forEach(a => a.cancel());
+  button.animate([
+    {transform:'translateY(0) rotate(0) scale(1)'},
+    {transform:`translateY(-18px) rotate(${direction*9}deg) scale(1.07)`,offset:.36},
+    {transform:`translateY(4px) rotate(${-direction*3}deg) scale(.98)`,offset:.7},
+    {transform:'none'}
+  ],{duration:650,easing:'cubic-bezier(.22,.8,.3,1)'});
+}
+specimens.forEach((button,i) => {
+  button.addEventListener('pointerenter', () => springSpecimen(button,i%2?1:-1));
+  button.addEventListener('click', () => {
+    const span = button.querySelector('span');
+    const useAlternative = button.dataset.alternate !== 'true';
+    button.dataset.alternate = String(useAlternative);
+    span.style.fontFamily = useAlternative ? (i%2 ? 'Georgia,serif' : '"Helvetica Neue",Arial,sans-serif') : '';
+    springSpecimen(button,i%2?1:-1);
+  });
+});
+if (motionAllowed()) {
+  document.querySelector('.hero h1').animate([{opacity:0,transform:'translateY(22px)'},{opacity:1,transform:'none'}],{duration:800,easing:'cubic-bezier(.16,1,.3,1)'});
+  specimens.forEach((button,i) => button.animate([{opacity:0,transform:'translateY(35px) rotate(-8deg)'},{opacity:1,transform:'none'}],{duration:700,delay:160+i*60,easing:springEase,fill:'backwards'}));
+}
+const revealObserver = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    if (motionAllowed()) entry.target.animate([{opacity:.25,transform:'translateY(28px)'},{opacity:1,transform:'none'}],{duration:750,easing:'cubic-bezier(.16,1,.3,1)'});
+    revealObserver.unobserve(entry.target);
+  });
+},{threshold:.12});
+document.querySelectorAll('.intro,.workspace,.playground,.detail-card,.principles article,.faq,.closing').forEach(el => revealObserver.observe(el));
+motionPreference.addEventListener('change', () => {
+  if (motionPreference.matches) document.getAnimations().forEach(a=>a.cancel());
+});
+
+// Compact player chrome, with native controls as the no-JavaScript fallback.
+const filmDialog = document.querySelector('#film-dialog');
+const filmStage = filmDialog.querySelector('.film-stage');
+const film = filmStage.querySelector('video');
+const filmControls = filmStage.querySelector('.film-controls');
+const filmToggle = document.querySelector('#film-toggle');
+const filmSeek = document.querySelector('#film-seek');
+const filmMute = document.querySelector('#film-mute');
+const filmFullscreen = document.querySelector('#film-fullscreen');
+film.controls = false;
+filmControls.hidden = false;
+film.volume = .75;
+const timeLabel = seconds => `${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;
+function updateFilm() {
+  const duration = Number.isFinite(film.duration) ? film.duration : 60;
+  filmSeek.value = String(duration ? film.currentTime/duration*1000 : 0);
+  filmSeek.setAttribute('aria-valuetext',`${timeLabel(film.currentTime)} of ${timeLabel(duration)}`);
+  document.querySelector('#film-time').textContent = `${timeLabel(film.currentTime)} / ${timeLabel(duration)}`;
+  filmStage.classList.toggle('is-paused',film.paused);
+  filmToggle.setAttribute('aria-label',film.paused?'Play film':'Pause film');
+  filmMute.setAttribute('aria-label',film.muted?'Unmute film':'Mute film');
+  filmStage.classList.toggle('is-muted',film.muted);
+}
+function toggleFilm() { if (film.paused) film.play().catch(()=>{}); else film.pause(); }
+filmToggle.addEventListener('click',toggleFilm);
+film.addEventListener('click',toggleFilm);
+filmSeek.addEventListener('input',()=>{if(Number.isFinite(film.duration))film.currentTime=Number(filmSeek.value)/1000*film.duration;updateFilm();});
+filmMute.addEventListener('click',()=>{film.muted=!film.muted;updateFilm();});
+filmFullscreen.addEventListener('click',async()=>{
+  try {
+    if(document.fullscreenElement) await document.exitFullscreen();
+    else if(filmStage.requestFullscreen) await filmStage.requestFullscreen();
+    else if(film.webkitEnterFullscreen) film.webkitEnterFullscreen();
+  } catch {}
+});
+document.addEventListener('fullscreenchange',()=>filmFullscreen.setAttribute('aria-label',document.fullscreenElement?'Exit fullscreen':'Enter fullscreen'));
+if(!document.fullscreenEnabled && !film.webkitEnterFullscreen)filmFullscreen.hidden=true;
+['timeupdate','loadedmetadata','play','pause','ended','volumechange'].forEach(event=>film.addEventListener(event,updateFilm));
+filmStage.addEventListener('keydown',e=>{if((e.target===filmStage||e.target===film)&&e.code==='Space'){e.preventDefault();toggleFilm();}});
+filmDialog.addEventListener('close',()=>{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});});
+updateFilm();
+let filmControlsTimer;
+function showFilmControls() {
+  filmStage.classList.add('controls-active');
+  clearTimeout(filmControlsTimer);
+  if (!film.paused) filmControlsTimer = setTimeout(()=>filmStage.classList.remove('controls-active'),2200);
+}
+filmStage.addEventListener('pointermove',showFilmControls);
+filmStage.addEventListener('pointerdown',showFilmControls);
+filmStage.addEventListener('focusin',showFilmControls);
+film.addEventListener('play',showFilmControls);
+film.addEventListener('pause',showFilmControls);
+filmDialog.addEventListener('close',()=>clearTimeout(filmControlsTimer));

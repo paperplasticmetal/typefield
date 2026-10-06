@@ -52,8 +52,42 @@ App runtime files and paused letterform experiments are unchanged. Native app te
 
 ## Launch film revision 16
 
-The site video and poster are byte-identical to the revision 16 delivery and end-card files in `marketing/launch/renders/`. Video metadata: 59.5 seconds, 1920 × 1080, H.264, 30 fps, silent. Versioned asset URLs prevent reuse of the previous cached film. The UI rounds the duration to one minute.
+Before the soundtrack update, the site video and poster were byte-identical to the revision 16 delivery and end-card files in `marketing/launch/renders/`. Video metadata: 59.5 seconds, 1920 × 1080, H.264, 30 fps, silent. Versioned asset URLs prevent reuse of the previous cached film. The UI rounds the duration to one minute.
 
 ## Supporting-copy cleanup
 
 Preserved every h1, h2, and h3 verbatim. Removed decorative eyebrow lines, redundant hero workspace labels, section mottos, playground filler, closing support copy, and the footer slogan. Retained feature descriptions, actual workspace identifiers, and useful control instructions. Use fewer subheaders going forward; each supporting label should identify something or explain an action.
+
+## Player, motion, and soundtrack
+
+The film opens in a near-viewport-width paper surface with no visible title or caption. Custom keyboard-accessible controls provide play/pause, seeking, mute, fullscreen, and close. Controls fade during playback and stay visible when paused or keyboard-focused. The native video controls remain the fallback before JavaScript enhancement. Playback begins only after a user action.
+
+Motion takes inspiration from Graphical's changing type and responsive controls: staggered specimen entrance, spring-like hover/click movement, clickable typeface changes, workspace transitions, and one-time section entrances. It does not copy Graphical code or artwork. CSS and JavaScript both honor reduced motion. No endless scroll effects or automatic audio.
+
+The film's visual stream is revision 16, unchanged. A separate music edit is generated at `marketing/launch/renders/Typefield-Launch-Landscape-v16-music-draft.mp4`; the approved silent delivery remains intact.
+
+### Music provenance
+
+- Track: Kraft Twerk, by Alejandro Magaña (A. M.).
+- Source: https://mixkit.co/free-stock-music/electronic/
+- Original asset: https://assets.mixkit.co/music/115/115.mp3
+- License: Mixkit Stock Music Free License, https://mixkit.co/license/#musicFree
+- Terms: https://mixkit.co/terms/
+- Retrieved October 5, 2026, Pacific time.
+- License permits use within commercial web/social video and online advertisements. Do not distribute this track as standalone stock music, register it in a rights-management service, or assume the same license permits games or broadcast use.
+- Source SHA-256: `9de6760a1b3d36f8ea6e9e7106a05b5d63a9a4327ee888f9f396a6ed43c86295`.
+- Music-edit SHA-256: `a78f92ee44ca96711675e0f0d020f133e283594642bb5a980337ba93abe399c0`.
+- Raw music and saved license evidence remain local in `.context/qa-artifacts/website-motion/`. Only the music synchronized into the film is distributed with the site.
+
+Reproduction from repository root, using the locally downloaded source:
+
+```sh
+/opt/homebrew/bin/ffmpeg -y -i marketing/launch/renders/Typefield-Launch-Landscape-v16.mp4 \
+  -i .context/qa-artifacts/website-motion/music/kraft-twerk.mp3 \
+  -map 0:v:0 -map 1:a:0 -t 59.5 -c:v copy \
+  -af 'atrim=duration=59.5,asetpts=PTS-STARTPTS,loudnorm=I=-18:TP=-1.5:LRA=9,afade=t=in:st=0:d=0.35,afade=t=out:st=57:d=2.5' \
+  -c:a aac -b:a 192k -ar 48000 -movflags +faststart \
+  marketing/launch/renders/Typefield-Launch-Landscape-v16-music-draft.mp4
+```
+
+Validation: JavaScript syntax, complete media decode, 59.5-second H.264/AAC stream checks, desktop and mobile player layout, play/pause, mute, seeking, fullscreen entry/exit, close/pause behavior, specimen typeface switching, and workspace transition tested. Browser error log was empty. Music selection used the source's genre metadata; automated playback was verified, but subjective audio audition is left to the user.
