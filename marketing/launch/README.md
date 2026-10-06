@@ -1,17 +1,17 @@
-# Typefield launch film — landscape revision 11
+# Typefield launch film — landscape revision 12
 
-46 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v11.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v11.mp4`. Earlier local deliveries remain available. Revision 10, which established the current 46-second pacing, is preserved in commit `6876bb7`.
+52 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v12.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v12.mp4`. Earlier local deliveries remain available. Revision 11 is preserved in commit `91b0267`.
 
 ## Direction
 
-A white stage carries the whole film. Neutral specimen cards, gray captions and coral artwork keep the palette restrained. Every opening specimen reads “Form” at the same point size, so the typeface itself supplies the variation. The opening now demonstrates sorting, named collections, shortlisting and A/B overlays before the selected font becomes a Spaces composition. A shared horizontal move takes the layouts into a drawing scene; the previous giant-F zoom and pause are removed. The drawn artwork becomes a PNG, an editable letter, a spaced word, an exported TrueType file, a Library specimen and a new Spaces poster.
+Typefield is a place to discover fonts, explore pairings and layouts, and develop your own type alongside your existing design tools. This revision replaces the finished-composition “Put it to work” section with a visible experiment: local body-font suggestions become three studies containing the same words. The studies initially share a Baskerville heading, then two heading faces change and one composition shifts to a left-aligned layout. The custom-font round trip returns to another pairing study, followed by an explicit layout-export handoff for Figma, Illustrator and InDesign.
 
-The closing card contains only the existing app icon, Typefield, “Your type, all together” and “For Mac.” Revision 11 removes the separate optical offsets. All three text lines use their visible glyph bounds around one shared center at x=960, matching the icon. The wordmark and tagline move 5 px right; “For Mac” moves 1 px left. Their sizes, baselines and vertical spacing remain unchanged.
+The white stage, neutral cards, restrained coral artwork and native Core Text typography continue the approved visual direction. Every opening specimen reads “Form.” Headers use Helvetica Neue Medium at 88 px without trailing periods. Captions use Helvetica Neue Regular. Workspace names occupy equal 380 px columns centered at x=580, 960 and 1340, and disappear on the external drawing scene and final card. The end card preserves revision 11's shared x=960 center for the icon, wordmark, tagline and platform line.
 
 Primary references consulted for revision 4, retained as direction for this original composition:
 
-- [Ordinary Folk — Webflow, A New Era of No Code](https://www.ordinaryfolk.co/project/webflow-a-new-era-of-no-code): continuity between objects, changes in scale and spatial layering.
-- [BUCK — Notion, Think it. Make it.](https://buck.co/work/notion-think-it-make-it): telling the product story through creative material.
+- [Ordinary Folk — Webflow, A New Era of No Code](https://www.ordinaryfolk.co/project/webflow-a-new-era-of-no-code): continuity between objects and spatial layering.
+- [BUCK — Notion, Think it. Make it.](https://buck.co/work/notion-think-it-make-it): product stories told through creative material.
 - [Ordinary Folk — Process](https://www.ordinaryfolk.co/process): resolving story and visual language before animation polish.
 - [Ordinary Folk — Procreate Dreams](https://www.ordinaryfolk.co/project/procreate-dreams): a compact drawing-to-outcome story.
 
@@ -21,35 +21,44 @@ No reference footage, artwork, music or other third-party media was copied into 
 
 | Time | Action |
 | --- | --- |
-| 0–3.3 s | Library specimens enter, sort alphabetically and hold for reading. |
-| 3.3–6.3 s | Three specimens gather into an Editorial collection and settle. |
-| 6.3–9.15 s | Two candidates move forward into a shortlist. |
-| 9.15–12.45 s | Candidates merge into a same-baseline A/B overlay. The comparison holds for 1.9 seconds before the candidate clears. |
-| 12.45–13.75 s | The same “Form” specimen expands into a Spaces editorial composition. |
-| 13.75–17.8 s | The first composition holds before the second layout arrives; both then hold. |
-| 17.8–18.9 s | The layouts move left as the drawing surface enters from the right. |
-| 18.9–21.85 s | Pencil drawing runs for 2.12 seconds. The completed artwork holds for 0.68 seconds before export. |
-| 21.85–25 s | The surface becomes Artwork.png. Fully visible import regions hold for 1.18 seconds before the file and other letters leave the first p in place. |
-| 25–29.7 s | The p enters the editor. Its shoulder adjustment pauses for 0.5 seconds at the maximum bend, returns, then settles for 1.05 seconds before joining the word. |
-| 29.7–32.7 s | Spacing and kerning retain their action speed. The finished word holds for 1.75 seconds. |
-| 32.7–35.1 s | The word contracts into a TrueType file; the completed file holds for 1.7 seconds. |
-| 35.1–37.75 s | The file unfolds into an Ink Library specimen and holds for 1.9 seconds. |
-| 37.75–42 s | That specimen expands into the coral Spaces poster. |
-| 42–46 s | The unchanged four-second end card settles by 42.58 s. |
+| 0–3.3 s | Library specimens enter and sort alphabetically. |
+| 3.3–6.3 s | Three specimens gather into an Editorial collection. |
+| 6.3–9.15 s | Two candidates move into a shortlist. |
+| 9.15–12.45 s | A same-baseline A/B overlay reveals differences in letterforms. |
+| 12.45–16.45 s | The selected Baskerville specimen becomes an editorial study beside body-font suggestions from the Library. Helvetica Neue is highlighted as its partner. |
+| 16.45–23 s | Three studies compare the same content with Helvetica Neue, Futura and Menlo body text. All start with Baskerville headings. B visibly changes its heading to Didot, C to Helvetica Neue, then B changes alignment. The final combinations hold together for over two seconds. |
+| 23–24.1 s | The studies leave as the drawing surface enters in the same horizontal move. |
+| 24.1–27 s | Artwork is drawn with an iPad or connected drawing tablet. |
+| 27–29.8 s | The drawing becomes a PNG with identified letter regions; the first p remains for editing. |
+| 29.8–33.7 s | An editable outline gains handles, changes shoulder curvature, then joins the word. |
+| 33.7–36.2 s | Spacing and kerning adjust, followed by a reading hold. |
+| 36.2–38.1 s | The word becomes an installable TrueType file. |
+| 38.1–40.35 s | The exported font returns as a Library specimen. |
+| 40.35–44.15 s | The custom font appears alongside supporting type in a coral poster study: “Your font, in good company.” |
+| 44.15–48 s | A restrained selection outline precedes a layout-export file. Copy names Figma, Illustrator and InDesign and explains that text and shapes remain editable. |
+| 48–52 s | The approved four-second end card: icon, Typefield, “Your type, all together” and “For Mac.” |
 
-Revision 10 is the pacing midpoint between revisions 8 and 9: each presentation-time knot is the arithmetic mean of the corresponding 40-second and 52-second cuts. It retains six seconds of added reading time over revision 8, trimming each added pause from revision 9 by half. Pencil drawing runs for 2.12 seconds instead of 1.82, and the curve return runs for 1.55 seconds instead of 1.35; these remain the only active-motion slowdowns. Title entrances and shared-object transfers retain their existing durations. Forward/inverse timing and every pacing boundary are checked by the renderer. Motion uses smooth quintic easing with zero endpoint velocity and acceleration. Headlines rise 22 px over 340 ms; the closing group rises 16 px. Paper shadows are compact. The artificial highlight stroke is removed from paper edges; the final specimen-to-coral transition uses one interpolated fill, eliminating the exposed white hairline. The pencil finishes each stroke before lifting and moving to the next. The drawn p keeps its original shape across the editor handoff before the visible adjustment begins. The specimen metadata persists through the Library-to-poster transition.
+The Library retains revision 11's reading time. The new 10.55-second pairing passage replaces the 5.35-second composition passage. The drawing-to-Library loop is slightly tighter, and a 3.85-second export beat clarifies Typefield's place in a broader workflow. The longer runtime adds content rather than extending pauses. Quintic easing, shared object continuity and short title entrances remain. The timing map is monotonic and invertible; the renderer checks scene boundaries and transformed surface clearance.
 
-During app scenes, workspace names use equal 380 px columns centered at x=580, 960 and 1340. They are absent during the external drawing scene and on the final card. All three labels share a baseline and size. No pills, dot separators or uppercase marketing labels are used. Core Text supplies native kerning; alignment uses glyph bounds and explicit baselines. Transformed surfaces reserve the heading/subtitle area and stay above y=948 whenever navigation is visible.
+## Product accuracy
 
-## Product accuracy and asset provenance
+This is a stylized product film, not a screen recording or a pixel-exact interface demonstration. Revision 12's claims were independently reviewed against the implementation at `91b0267`:
 
-This is a stylized product film, not a screen recording or an exact interface demonstration. The core import/edit/export/Library/Spaces round trip was verified during revision 3 in the isolated Typefield Interaction QA app, version 0.59.6, with separate data. Revision 6's Library claims were checked against the current implementation: Name A–Z/Z–A, Most styles and Category sorting; named collections; session shortlists; and same-baseline font overlays. The film does not claim that a shortlist automatically becomes a saved collection.
+- **Library:** sorting by name, style count and category; named collections; session shortlists; same-baseline overlays. A shortlist is not presented as automatically becoming a saved collection.
+- **Pairing suggestions:** the local catalog supplies role-aware candidates with Safe, Balanced and Expressive modes and explained rankings. A suggestion can be applied to a heading/body role. The film's candidate fonts are illustrative choices, not a recorded ranking or match percentages. See `Sources/FontPairingSuggestions.swift`, `Sources/FontPairing.swift` and `Sources/StudioView.swift`.
+- **Comparison:** Spaces supports multiple canvases, duplication, layout editing and Quick A/B between compatible canvases. A/B/C in the film names three illustrative studies, not a separate formal A/B/C feature. The same content makes the pairing differences legible; visible later changes show manual experimentation.
+- **Figma:** Editable Figma Layout exports all canvases in a typeboard as a package with JSON and a local development importer. Running the importer creates editable frames, text and rectangle shapes. See `Sources/LibraryExtras.swift` and `Resources/FigmaImport/README.md`.
+- **Illustrator and InDesign:** selected canvases can export builder scripts, run manually in the target application to create editable documents. See `Sources/AdobeTypeSystem.swift` and the Typography Summary export controls in `Sources/StudioView.swift`.
 
-The drawing scene illustrates artwork made in an external drawing app using an iPad or a connected drawing tablet, exported as PNG and opened in the Mac Letterform Editor. PNG import is supported. These are examples of input tools, not an exclusive list of import sources. The film does not depict a Typefield iPad app, live synchronization or direct transfer of editable drawing-app layers.
+The export scene represents a file handoff, not live synchronization or one-click direct transfer. It does not claim preserved nested object groups. Fonts must be available in the destination; editable exports omit image artwork and can reflow text. The pictured poster uses text and vector shapes rather than embedded image artwork. No Spaces SVG-export claim is made.
 
-Original artwork comes from `tests/fixtures/font-lab-artwork/handwriting-nopij.svg`. The macro editing illustration uses smooth outlines derived from its strokes, with an animated shoulder adjustment; it is not a capture of the exact imported nodes. The spacing, file, returned Library specimen and final poster render `assets/v3/Ink.ttf`, the actual app-generated export of the SVG fixture from revision 3. The PNG illustration is not a separately captured app export. That font contains n, o, p, i, j and space; the film only uses supported letters. It is not a complete alphabet or a user's font. Core Graphics reads it without system-wide font registration.
+The drawing scene illustrates an external drawing app using an iPad or a connected drawing tablet, exported as PNG and opened in the Mac Letterform Editor. These are examples of input tools, not an exclusive list. It does not imply a Typefield iPad app or live tablet synchronization.
 
-Other specimens use the Mac's installed Helvetica Neue, Baskerville, Didot, Futura and Menlo. Marketing text uses Helvetica Neue. The 88 px scene headlines now use Helvetica Neue Medium, increased from Regular; captions remain Regular. All scene headlines, artwork titles and the closing tagline omit trailing periods. The renderer verifies the resolved headline PostScript name is `HelveticaNeue-Medium` and audits widths using that actual face. The end card uses the existing icon in `Resources/Assets.xcassets/AppIcon.appiconset/`. Older screenshot assets remain for revision 3 reproducibility; this renderer does not load them.
+## Asset provenance
+
+Original drawing artwork comes from `tests/fixtures/font-lab-artwork/handwriting-nopij.svg`. The editing macro uses smooth outlines derived from those strokes; it does not reproduce exact imported nodes. The spacing, file, returned Library specimen and poster render `assets/v3/Ink.ttf`, an actual app-generated export from the revision 3 isolated QA round trip. That font supports n, o, p, i, j and space; the film only uses supported letters. The PNG illustration is not a separate captured app export. No user font or production library data was used.
+
+Other specimens use installed Helvetica Neue, Baskerville, Didot, Futura and Menlo. Core Graphics loads the fixture font without system-wide registration. The icon is the existing asset in `Resources/Assets.xcassets/AppIcon.appiconset/`. Earlier screenshot assets remain for revision 3 reproducibility; this renderer does not use them.
 
 ## Reproduce and validate
 
@@ -57,10 +66,10 @@ Other specimens use the Mac's installed Helvetica Neue, Baskerville, Didot, Futu
 bash marketing/launch/render.sh
 ```
 
-Requires macOS, Swift/AppKit/CoreText and FFmpeg at `/opt/homebrew/bin/ffmpeg`. The script compiles the renderer, audits heading bounds, equal navigation columns, font glyph availability, timing and sampled composition clearance, renders 40 review frames and the 60 fps master, then creates the H.264/yuv420p 30 fps delivery. Actual transformed paper bounds are checked on every one of the 2,760 master frames. The script extracts an end-card poster and decodes the full delivery. Outputs are ignored by Git; rendering is deterministic.
+Requires macOS, Swift/AppKit/CoreText and FFmpeg at `/opt/homebrew/bin/ffmpeg`. The script compiles the renderer, audits font resolution, heading widths, equal navigation columns, fixture glyph availability, forward/inverse timing and sampled surface clearance. It renders 43 review frames, then the 60 fps master and H.264/yuv420p 30 fps delivery, extracts an end-card poster and decodes the complete delivery. Every master frame enforces heading/footer surface clearance. Outputs are ignored by Git.
 
-For one frame, run `marketing/launch/renders/render --frame 25`. `--stills` renders the predefined review set; `--audit` performs layout and font checks. The completed delivery is 1,380 frames at 30 fps, exactly 46 seconds. The master is 2,760 frames at 60 fps. Representative compositions, transition endpoints and decoded delivery samples receive visual review, including an independent read-only review. Revision 11 retains the 46-second pacing and updates only the closing alignment. Independent raster review found the three text midpoints within 0.5 px of one another and tagline insets of 51 px left / 52 px right, within raster rounding. All 37 pre-ending review frames are byte-identical to revision 10. Compilation, renderer audits, all-frame paper clearance, full delivery decode, duration, frame-count and no-audio checks passed. The encoded end card was visually reviewed. Review stills are sampled at equivalent choreography positions with filenames showing their presentation times. Private evidence is kept under `.context/qa-artifacts/launch-film-v11/`.
+For a single frame: `marketing/launch/renders/render --frame 19.5`. `--stills` renders the review set and `--audit` performs the renderer checks. Verified master: 3,120 frames at 60 fps. Delivery: 1,560 frames at 30 fps. Both are exactly 52 seconds, 1920 × 1080 and silent. Compilation, renderer checks, all-frame surface clearance, full delivery decode, frame counts and no-audio checks passed. Ten encoded samples were extracted and the new pairing/comparison/export compositions visually reviewed. Independent source and still review found no remaining blockers. Adjacent surface samples at the suggestion-to-studies and studies-to-tablet boundaries were pixel-identical; the poster-to-export boundary differed by only 0.0013 mean channel values out of 255. Private product-claim, visual and export evidence is kept under `.context/qa-artifacts/launch-film-v12/`.
 
 ## Scope
 
-Marketing files only. No application release, installation or data migration. Native app tests are not applicable because app code did not change. Production Library data and paused research edits are preserved. The user deferred music. Website, vertical adaptation and public posting remain separate work. Visual approval remains with the user.
+Marketing files only. No application release, installation or data migration. Native app tests are not applicable because app code did not change. Production Library data and paused research edits are preserved. Music remains deferred; website, vertical adaptation and public posting are separate work.

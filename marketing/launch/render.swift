@@ -2,13 +2,13 @@ import AppKit
 import CoreText
 import Foundation
 
-// Typefield launch film v11. Vector choreography, orthographic planes and shared objects.
+// Typefield launch film v12. Vector choreography, orthographic planes and shared objects.
 // No screenshots are drawn. Product capabilities follow the verified v3 QA round trip.
 let args=CommandLine.arguments
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
 let output=root.appendingPathComponent("marketing/launch/renders")
 try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
-let width=1920,height=1080,fps=60,duration=46.0
+let width=1920,height=1080,fps=60,duration=52.0
 let rgb=CGColorSpace(name:CGColorSpace.sRGB)!
 let paper="F7F7F5",ink="222326",stage="FFFFFF",muted="696B70",coral="DF805E",blue="2F6570"
 var c:CGContext!
@@ -191,36 +191,72 @@ func libraryStory(_ t:Double){
  }
  navigation(t,0)
 }
-func libraryToSpaces(_ t:Double){
- background()
- let p=progress(t,11,12.3)
- plane(Pose(x:960,y:615)){
-  stock(1280,650,paper)
-  let size=mix(228,224,p),wordWidth=bounds("Form",size,"serif").width
-  text("Form",mix(0,-574+wordWidth/2,p),mix(55,-15,p),size,ink,"serif","center")
-  formLayout(1280,650,progress(t,11.65,12.3))
- }
- title("From Library to Spaces",t-11,true,"Create a typeboard with your chosen fonts.")
- navigation(t,t<11.6 ? 0:1)
-}
-func layouts(_ t:Double){
- background()
- let poses=layoutPoses(t)
- let main=poses.0
- plane(main){stock(1280,650,paper);text("Form",-574,-15,224,ink,"serif");formLayout(1280,650,1)}
- let second=poses.1
- plane(second){stock(530,676,coral);text("Type studies",-217,-269,31);line(-217,-235,217,-235,"A35A43")
- text("F",0,206,510,ink,"serif","center");text("Form in practice.",-217,280,27)}
- layer(1){
-  if t<5.3 {title("From Library to Spaces",1,true,"Create a typeboard with your chosen fonts.")}else{title("Put it to work",t-5.3,true,"Compose with your fonts in Spaces.")}
-  navigation(t,1)
+let studyHeads=["serif","didot","medium"]
+let studyBodies=["sans","futura","mono"]
+let studyHeadNames=["Baskerville","Didot","Helvetica Neue"]
+let studyBodyNames=["Helvetica Neue","Futura","Menlo"]
+func suggestionRows(_ local:Double){
+ layer(progress(local,0.35,0.8)){text("Body suggestions",1390,302,23,muted,"sans","center")}
+ for i in 0..<3 {
+  let p=progress(local,0.35+Double(i)*0.10,0.80+Double(i)*0.10)
+  layer(p){plane(Pose(x:1390,y:395+Double(i)*210+18*(1-p))){
+   stock(470,160,paper,0.07)
+   text(studyBodyNames[i],-195,-28,28,ink,"medium")
+   text("The shape of ideas",-195,25,26,ink,studyBodies[i])
+   if i==0 {layer(progress(local,1.45,1.8)){line(-195,57,195,57,blue,2)}}
+  }}
  }
 }
-func layoutPoses(_ t:Double)->(Pose,Pose){
- let p=progress(t,5.3,6.45),out=0.0
- let main=Pose(x:mix(960,708,p)-out*500,y:mix(615,612,p),s:mix(1,0.82,p),yaw:mix(0,-8,p),pitch:mix(0,5,p),roll:mix(0,-4,p))
- let second=Pose(x:mix(2350,1470,p)-out*360,y:mix(632,612,p),s:mix(0.72,0.90,p)+out*3.6,yaw:mix(16,-3,p),pitch:4*(1-out),roll:mix(13,7,p)*(1-out))
- return (main,second)
+func studyCard(_ i:Int,_ pose:Pose,_ w:Double=500,_ h:Double=620,_ detail:Double=1,_ layout:Double=0,_ comparison:Bool=true,_ headingSize:Double?=nil,_ alternative:Double=0){
+ plane(pose){
+  stock(w,h,paper,0.10)
+  let size=headingSize ?? min(156,(w-84)*0.25),left = -w/2+42
+  // The same content and dimensions make differences in pairing easy to compare.
+  let headlineFaces=[("serif",1-alternative),(studyHeads[i],alternative)]
+  for (face,opacity) in headlineFaces {layer(opacity){
+   let x=mix(0,left+bounds("Form",size,face).width/2,layout)
+   text("Form",x,mix(55,-88,detail),size,ink,face,"center")
+  }}
+  layer(detail){
+   text(comparison ? ["A","B","C"][i]:"Baskerville",left,-h/2+48,25,ink,"medium")
+   text(comparison ? "Editorial study":"Heading",w/2-42,-h/2+48,22,muted,"sans","right")
+   line(left,-h/2+76,w/2-42,-h/2+76,"CDD0D4")
+   let subSize=size*0.53
+   for (face,opacity) in headlineFaces {layer(opacity){
+    text("& feeling",mix(0,left+bounds("& feeling",subSize,face).width/2,layout),-18,subSize,ink,face,"center")
+   }}
+   for (j,s) in ["An independent journal","on culture and design."].enumerated(){
+    text(s,mix(0,left+bounds(s,25,studyBodies[i]).width/2,layout),61+Double(j)*36,25,ink,studyBodies[i],"center")
+   }
+   rect(mix(-28,left,layout),132,56,4,coral)
+   text("Typography journal",mix(0,left+bounds("Typography journal",23,studyBodies[i]).width/2,layout),183,23,ink,studyBodies[i],"center")
+   layer(1-alternative){text("Baskerville",left,h/2-62,22,muted,"sans")}
+   layer(alternative){text(studyHeadNames[i],left,h/2-62,22,muted,"sans")}
+   text(studyBodyNames[i],left,h/2-30,22,muted,"sans")
+  }
+ }
+}
+func pairingSuggestions(_ local:Double){
+ background()
+ let p=progress(local,0,0.9),details=progress(local,0.5,1.1)
+ studyCard(0,Pose(x:mix(960,600,p),y:mix(615,620,p)),mix(1280,850,p),mix(650,610,p),details,0,false,mix(228,156,p))
+ suggestionRows(local)
+ title("Find a font pairing",local,true,"Pairing suggestions from your own library")
+ navigation(local,1)
+}
+func studySurfaces(_ local:Double){
+ let p=progress(local,0,0.8)
+ layer(1-progress(local,0,0.32)){suggestionRows(4)}
+ studyCard(0,Pose(x:mix(600,400,p),y:620),mix(850,500,p),mix(610,620,p),1,0,local>0.25)
+ for i in 1...2 {
+  let q=progress(local,0.12+Double(i-1)*0.18,0.87+Double(i-1)*0.18)
+  if q>0 {layer(q){studyCard(i,Pose(x:mix(2100+Double(i)*280,400+Double(i)*560,q),y:620),500,620,1,i==1 ? progress(local,3.7,4.4):0,true,nil,progress(local,i==1 ? 2.05:2.65,i==1 ? 2.45:3.05))}}
+ }
+}
+func pairingStudies(_ local:Double){
+ background();studySurfaces(local)
+ title("Try pairings in context",local,true,"Explore layouts side by side in Spaces")
+ navigation(local,1)
 }
 
 func handwritingPaths()->[CGPath] {
@@ -377,17 +413,15 @@ func tablet(_ t:Double,_ offset:Double=0){
   }}
  }
 }
-func spacesToTablet(_ t:Double){
+func spacesToTablet(_ local:Double){
  background()
- let p=progress(t,15.8,16.9),poses=layoutPoses(7.6)
- transform(-2100*p,0){
-  plane(poses.0){stock(1280,650,paper);text("Form",-574,-15,224,ink,"serif");formLayout(1280,650,1)}
-  plane(poses.1){stock(530,676,coral);text("Type studies",-217,-269,31);line(-217,-235,217,-235,"A35A43");text("F",0,206,510,ink,"serif","center");text("Form in practice.",-217,280,27)}
- }
- tablet(t,2100*(1-p))
- layer(1-progress(t,15.8,16.08)){title("Put it to work",1,true,"Compose with your fonts in Spaces.");navigation(t,1)}
- if t>16.2 {title("Draw your way",t-16.2,true,"Use an iPad or a connected drawing tablet.")}
+ let p=progress(local,0,1.1)
+ transform(-2100*p,0){studySurfaces(6.55)}
+ tablet(15.8+local,2100*(1-p))
+ layer(1-progress(local,0,0.28)){title("Try pairings in context",1,true,"Explore layouts side by side in Spaces");navigation(local,1)}
+ if local>0.4 {title("Draw your way",local-0.4,true,"Use an iPad or a connected drawing tablet.")}
 }
+
 func drawingScene(_ t:Double){
  background();tablet(t)
  if t<19.05 {title("Draw your way",1,true,"Use an iPad or a connected drawing tablet.")}
@@ -476,8 +510,39 @@ func finalLayout(_ t:Double){
   layer(progress(t,20.8,21.2)){formLayout(w,h,1,true)}
   text("pop",0,mix(55,115,p),mix(236,580,p),ink,"ink","center")
  }
- title("Your font, in Spaces",t-20.15)
+ title("Your font, in good company",t-20.15)
  navigation(t,t<20.65 ? 0:1)
+}
+func layoutHandoff(_ local:Double){
+ background()
+ let p=progress(local,0.25,1.1)
+ plane(Pose(x:mix(960,550,p),y:mix(590,620,p),s:mix(1.075,0.50,p))){
+  stock(1280,650,coral)
+  formLayout(1280,650,1,true)
+  text("pop",0,115,580,ink,"ink","center")
+  layer(progress(local,0,0.2)*(1-progress(local,1.0,1.3))){
+   c.setStrokeColor(color(blue));c.setLineWidth(1.5);c.stroke(CGRect(x:-644,y:-329,width:1288,height:658))
+   for x in [-644.0,644.0] {for y in [-329.0,329.0] {rect(x-3,y-3,6,6,blue)}}
+  }
+ }
+ let reveal=progress(local,0.65,1.15)
+ layer(reveal){
+  line(918,620,mix(918,1000,reveal),620,muted,2)
+  if reveal>0.8 {line(987,608,1000,620,muted,2);line(987,632,1000,620,muted,2)}
+  plane(Pose(x:1370+40*(1-reveal),y:620,s:mix(0.96,1,reveal))){
+   fileOutline(540,600,paper,52)
+   text("Layout export",-224,-236,28,ink,"medium")
+   line(-224,-206,224,-206,"CDD0D4")
+   text("Figma",0,-108,40,ink,"medium","center")
+   text("Illustrator",0,-28,40,ink,"medium","center")
+   text("InDesign",0,52,40,ink,"medium","center")
+   text("Editable text and shapes",0,236,25,muted,"sans","center")
+  }
+ }
+ title("Export your explorations",local)
+ layer(progress(local,0.85,1.1)){text("Continue in Figma, Illustrator or InDesign",960,253,28,muted,"sans","center")}
+ if local>0.85 {captionTop=280}
+ navigation(local,1)
 }
 func ending(_ t:Double){
  background()
@@ -505,18 +570,17 @@ func storyTime(_ outputTime:Double)->Double {
  }
  return timing.last!.story
 }
-// Presentation timing sits halfway between the 40-second and 52-second cuts.
-// Each added hold is halved; transfers and title entrances retain their speed.
-// Pencil drawing and the curve return retain half of their modest slowdown.
+// Preserve readable action timing while giving pairing exploration the central beat.
+// The final export is a file handoff, followed by the unchanged four-second ending.
 let pacing:[(scene:Double,output:Double)]=[
  (0,0),(2,2),(3,3.3),(4,4.3),(5.7,6.3),(6.85,7.45),
- (8.2,9.15),(9.1,10.05),(10.5,11.95),(11,12.45),(12.3,13.75),
- (13.2,14.9),(14.35,16.05),(15.8,17.8),(16.9,18.9),(17.05,19.05),
- (18.87,21.17),(19.05,21.85),(19.65,22.45),(20.02,22.82),(20.6,24),
- (21.6,25),(22.3,25.7),(22.7,26.1),(22.95,26.6),(24.3,28.15),
- (24.95,29.2),(25.45,29.7),(25.65,29.9),(26.7,30.95),(27.95,32.7),
- (28.65,33.4),(30,35.1),(30.75,35.85),(32.2,37.75),(33.4,38.95),
- (34.6,40.15),(35.35,40.9),(36,42),(40,46)
+ (8.2,9.15),(9.1,10.05),(10.5,11.95),(11,12.45),(12.3,16.45),
+ (15.8,23),(16.9,24.1),(17.05,24.25),(18.87,26.35),(19.05,27),
+ (19.65,27.6),(20.02,27.97),(20.6,28.8),(21.6,29.8),
+ (22.3,30.5),(22.7,30.9),(22.95,31.25),(24.3,32.6),(24.95,33.2),(25.45,33.7),
+ (25.65,33.9),(26.7,34.95),(27.95,36.2),(28.65,36.9),(30,38.1),
+ (30.75,38.85),(32.2,40.35),(33.4,41.55),(34.6,42.75),(35.35,43.5),
+ (36,44.15),(39.85,48),(43.85,52)
 ]
 func choreographyTime(_ outputTime:Double)->Double {
  for (a,b) in zip(pacing,pacing.dropFirst()) where outputTime<=b.output {
@@ -536,28 +600,29 @@ func frame(_ outputTime:Double)->CGContext {
  c=ctx;c.translateBy(x:0,y:1080);c.scaleBy(x:1,y:-1);c.setAllowsAntialiasing(true);c.setShouldAntialias(true);c.interpolationQuality = .high
  paperBounds=[];navVisible=false;captionTop=230
  if sceneTime<11 {libraryStory(sceneTime)}
- else if sceneTime<12.3 {libraryToSpaces(sceneTime)}
- else if sceneTime<15.8 {layouts(t)}
- else if sceneTime<16.9 {spacesToTablet(sceneTime)}
+ else if sceneTime<12.3 {pairingSuggestions(outputTime-12.45)}
+ else if sceneTime<15.8 {pairingStudies(outputTime-16.45)}
+ else if sceneTime<16.9 {spacesToTablet(outputTime-23)}
  else if sceneTime<21.6 {drawingScene(sceneTime)}
  else if sceneTime<25.45 {editing(t)}
  else if sceneTime<27.95 {spacing(t)}
  else if sceneTime<32.2 {exportAndReturn(t)}
  else if sceneTime<36 {finalLayout(t)}
- else {ending(sceneTime)}
+ else if sceneTime<39.85 {layoutHandoff(outputTime-44.15)}
+ else {ending(36+outputTime-48)}
  validateGeometry(outputTime)
  return ctx
 }
 func png(_ ctx:CGContext,_ url:URL)throws {try NSBitmapImageRep(cgImage:ctx.makeImage()!).representation(using:.png,properties:[:])!.write(to:url)}
-if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v11-%05.2f.png",t)))}
+if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v12-%05.2f.png",t)))}
 else if args.contains("--stills"){
- for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v11-%05.2f.png",t)))}
- print("Rendered 40 composition and transition frames.")
+ for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5,40.15,41.05,43.35]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v12-%05.2f.png",t)))}
+ print("Rendered 43 composition and transition frames.")
 }else if args.contains("--audit"){
  let resolvedHeadingFont=CTFontCopyPostScriptName(font(88,"medium")) as String
  precondition(resolvedHeadingFont=="HelveticaNeue-Medium")
  print("Heading font: \(resolvedHeadingFont)")
- let headings=["Find your type","Organize by project","Build your shortlist","Compare every detail","From Library to Spaces","Put it to work","Draw your way","Import your artwork","Make every curve yours","Down to the space between","Export your font","Add it to Library","Your font, in Spaces"]
+ let headings=["Find your type","Organize by project","Build your shortlist","Compare every detail","Find a font pairing","Try pairings in context","Draw your way","Import your artwork","Make every curve yours","Down to the space between","Export your font","Add it to Library","Your font, in good company","Export your explorations"]
  for h in headings {precondition(bounds(h,88,"medium").width<1760);print("Heading: \(h), \(Int(bounds(h,88,"medium").width)) px")}
  precondition(navCenters[1]==960 && navCenters[1]-navCenters[0]==navCenters[2]-navCenters[1])
  var letters=Array("pop".utf16),gs=[CGGlyph](repeating:0,count:3)
@@ -575,7 +640,7 @@ else if args.contains("--stills"){
 
 }else{
  let proc=Process();proc.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
- proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v11.mp4").path]
+ proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v12.mp4").path]
  let pipe=Pipe();proc.standardInput=pipe;try proc.run()
  for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / \(Int(duration))s");fflush(stdout)}}
  try pipe.fileHandleForWriting.close();proc.waitUntilExit();precondition(proc.terminationStatus==0);print("Master complete.")
