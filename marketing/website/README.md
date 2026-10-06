@@ -25,7 +25,7 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 
 ## Assets
 
-`typefield-film.mp4` and `film-poster.png` are the approved v16 launch assets from `marketing/launch/renders/`. The app screenshots are matched 2480 × 1764 Light mode captures from a disposable QA profile. Library uses only system fonts (Courier New, Georgia, Helvetica, and Times New Roman); Spaces uses the included Website canvas; Letterform Editor uses the app's synthetic handwriting example. Captures exclude the pointer and private projects. The site shows a focused crop on small screens and links to each complete capture.
+`typefield-film.mp4` and `film-poster.png` are the approved v16 launch assets from `marketing/launch/renders/`. The app screenshots are matched 2480 × 1764 Light mode captures from a disposable QA profile. Library uses only system fonts (Courier New, Georgia, Helvetica, and Times New Roman); Spaces uses the included Website canvas; Letterform Editor uses the app's synthetic handwriting example. Captures exclude the pointer and private projects. The site shows a focused crop on small screens.
 
 `website-layout.png` and `website-layout.pdf` are a real export of the included Spaces Website canvas. The validated source is stored privately under `.context/qa-artifacts/spaces-template-polish-0594/previews/`. Only the sample PNG and PDF are published. The Figma compatibility mark follows Figma's public brand guidance; Adobe product names are text because third-party use of Adobe product icons requires permission. No proprietary font binaries are distributed; the page uses system font stacks.
 
@@ -103,7 +103,7 @@ Cloudflare Pages project `typefield` is live at https://typefield.pages.dev/. It
 
 ## Showcase refinement, October 6, 2026
 
-- Replaced the three mismatched dark screenshots and synthetic window bar with matched Light mode captures. Each opens at full resolution; mobile previews focus on the relevant app content.
+- Replaced the three mismatched dark screenshots and synthetic window bar with matched Light mode captures. Mobile previews focus on the relevant app content.
 - Kept the three workspace actions in equal-width columns with shorter, more useful copy. Small screens stack them with equal spacing.
 - Added a real Spaces website-layout export as a full-size image preview with a separate vector PDF download, plus precise Figma, Illustrator, InDesign, PDF, and token handoff descriptions. The Figma importer and Adobe builder scripts are file-based workflows, not live sync.
 - Kept the latest approved launch film unchanged.

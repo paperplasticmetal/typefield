@@ -14,7 +14,7 @@ function selectWorkspace(key) {
   const img=document.querySelector('#workspace-image'); img.src='assets/'+d.image; img.alt=d.alt;
   document.querySelector('#workspace-features').textContent=d.features;
   document.querySelector('#workspace-actions').replaceChildren(...d.actions.map(action => { const item=document.createElement('li'); item.textContent=action; return item; }));
-  const imageLink=document.querySelector('#workspace-open'); imageLink.href='assets/'+d.image; imageLink.dataset.view=key; imageLink.setAttribute('aria-label','Open the full-size '+d.name+' screenshot');
+  document.querySelector('.app-preview').dataset.view=key;
   document.querySelector('#workspace-view').setAttribute('aria-labelledby','tab-'+key);
 }
 tabs.forEach((tab,index)=>{
