@@ -2,7 +2,7 @@ import AppKit
 import CoreText
 import Foundation
 
-// Typefield launch film v10. Vector choreography, orthographic planes and shared objects.
+// Typefield launch film v11. Vector choreography, orthographic planes and shared objects.
 // No screenshots are drawn. Product capabilities follow the verified v3 QA round trip.
 let args=CommandLine.arguments
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
@@ -483,11 +483,12 @@ func ending(_ t:Double){
  background()
  let p=progress(t,36,36.58)
  layer(p){transform(0,16*(1-p)){
-  image(icon,CGRect(x:860,y:282,width:200,height:200))
-  // Small optical corrections place the visible ink of each line on the icon's center axis.
-  text("Typefield",955,620,112,ink,"medium","center")
-  text("Your type, all together",955,692,36,muted,"sans","center")
-  text("For Mac",961,759,24,muted,"sans","center")
+  // Center visible glyph bounds on one shared axis, without separate optical offsets.
+  let center=Double(width)/2
+  image(icon,CGRect(x:center-100,y:282,width:200,height:200))
+  text("Typefield",center,620,112,ink,"medium","center")
+  text("Your type, all together",center,692,36,muted,"sans","center")
+  text("For Mac",center,759,24,muted,"sans","center")
  }}
 }
 // Revision 8 scene seconds mapped to the approved editor/export choreography.
@@ -548,9 +549,9 @@ func frame(_ outputTime:Double)->CGContext {
  return ctx
 }
 func png(_ ctx:CGContext,_ url:URL)throws {try NSBitmapImageRep(cgImage:ctx.makeImage()!).representation(using:.png,properties:[:])!.write(to:url)}
-if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v10-%05.2f.png",t)))}
+if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v11-%05.2f.png",t)))}
 else if args.contains("--stills"){
- for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v10-%05.2f.png",t)))}
+ for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v11-%05.2f.png",t)))}
  print("Rendered 40 composition and transition frames.")
 }else if args.contains("--audit"){
  let resolvedHeadingFont=CTFontCopyPostScriptName(font(88,"medium")) as String
@@ -574,7 +575,7 @@ else if args.contains("--stills"){
 
 }else{
  let proc=Process();proc.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
- proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v10.mp4").path]
+ proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v11.mp4").path]
  let pipe=Pipe();proc.standardInput=pipe;try proc.run()
  for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / \(Int(duration))s");fflush(stdout)}}
  try pipe.fileHandleForWriting.close();proc.waitUntilExit();precondition(proc.terminationStatus==0);print("Master complete.")
