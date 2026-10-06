@@ -2,13 +2,13 @@ import AppKit
 import CoreText
 import Foundation
 
-// Typefield launch film v8. Vector choreography, orthographic planes and shared objects.
+// Typefield launch film v9. Vector choreography, orthographic planes and shared objects.
 // No screenshots are drawn. Product capabilities follow the verified v3 QA round trip.
 let args=CommandLine.arguments
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
 let output=root.appendingPathComponent("marketing/launch/renders")
 try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
-let width=1920,height=1080,fps=60,duration=40.0
+let width=1920,height=1080,fps=60,duration=52.0
 let rgb=CGColorSpace(name:CGColorSpace.sRGB)!
 let paper="F7F7F5",ink="222326",stage="FFFFFF",muted="696B70",coral="DF805E",blue="2F6570"
 var c:CGContext!
@@ -490,7 +490,7 @@ func ending(_ t:Double){
   text("For Mac",961,759,24,muted,"sans","center")
  }}
 }
-// Actual output seconds mapped to the approved editor/export choreography.
+// Revision 8 scene seconds mapped to the approved editor/export choreography.
 let timing:[(story:Double,output:Double)]=[
  (4,12.3),(5.3,13.2),(6.45,14.35),(7.65,15.8),
  (11,21.6),(11.6,22.3),(12.25,22.95),(13.45,24.30),(14.05,24.95),(14.5,25.45),
@@ -504,28 +504,52 @@ func storyTime(_ outputTime:Double)->Double {
  }
  return timing.last!.story
 }
+// Presentation timing adds reading time after actions settle. Transfers and title
+// entrances retain their speed; pencil drawing and the curve return slow modestly.
+let pacing:[(scene:Double,output:Double)]=[
+ (0,0),(2,2),(3,3.6),(4,4.6),(5.7,6.9),(6.85,8.05),
+ (8.2,10.1),(9.1,11),(10.5,13.4),(11,13.9),(12.3,15.2),
+ (13.2,16.6),(14.35,17.75),(15.8,19.8),(16.9,20.9),(17.05,21.05),
+ (18.87,23.47),(19.05,24.65),(19.65,25.25),(20.02,25.62),(20.6,27.4),
+ (21.6,28.4),(22.3,29.1),(22.7,29.5),(22.95,30.25),(24.3,32),
+ (24.95,33.45),(25.45,33.95),(25.65,34.15),(26.7,35.2),(27.95,37.45),
+ (28.65,38.15),(30,40.2),(30.75,40.95),(32.2,43.3),(33.4,44.5),
+ (34.6,45.7),(35.35,46.45),(36,48),(40,52)
+]
+func choreographyTime(_ outputTime:Double)->Double {
+ for (a,b) in zip(pacing,pacing.dropFirst()) where outputTime<=b.output {
+  return mix(a.scene,b.scene,clamp((outputTime-a.output)/(b.output-a.output)))
+ }
+ return pacing.last!.scene
+}
+func presentationTime(_ sceneTime:Double)->Double {
+ for (a,b) in zip(pacing,pacing.dropFirst()) where sceneTime<=b.scene {
+  return mix(a.output,b.output,clamp((sceneTime-a.scene)/(b.scene-a.scene)))
+ }
+ return pacing.last!.output
+}
 func frame(_ outputTime:Double)->CGContext {
- let t=storyTime(outputTime)
+ let sceneTime=choreographyTime(outputTime),t=storyTime(sceneTime)
  let ctx=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:width*4,space:rgb,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
  c=ctx;c.translateBy(x:0,y:1080);c.scaleBy(x:1,y:-1);c.setAllowsAntialiasing(true);c.setShouldAntialias(true);c.interpolationQuality = .high
  paperBounds=[];navVisible=false;captionTop=230
- if outputTime<11 {libraryStory(outputTime)}
- else if outputTime<12.3 {libraryToSpaces(outputTime)}
- else if outputTime<15.8 {layouts(t)}
- else if outputTime<16.9 {spacesToTablet(outputTime)}
- else if outputTime<21.6 {drawingScene(outputTime)}
- else if outputTime<25.45 {editing(t)}
- else if outputTime<27.95 {spacing(t)}
- else if outputTime<32.2 {exportAndReturn(t)}
- else if outputTime<36 {finalLayout(t)}
- else {ending(outputTime)}
+ if sceneTime<11 {libraryStory(sceneTime)}
+ else if sceneTime<12.3 {libraryToSpaces(sceneTime)}
+ else if sceneTime<15.8 {layouts(t)}
+ else if sceneTime<16.9 {spacesToTablet(sceneTime)}
+ else if sceneTime<21.6 {drawingScene(sceneTime)}
+ else if sceneTime<25.45 {editing(t)}
+ else if sceneTime<27.95 {spacing(t)}
+ else if sceneTime<32.2 {exportAndReturn(t)}
+ else if sceneTime<36 {finalLayout(t)}
+ else {ending(sceneTime)}
  validateGeometry(outputTime)
  return ctx
 }
 func png(_ ctx:CGContext,_ url:URL)throws {try NSBitmapImageRep(cgImage:ctx.makeImage()!).representation(using:.png,properties:[:])!.write(to:url)}
-if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v8-%05.2f.png",t)))}
+if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v9-%05.2f.png",t)))}
 else if args.contains("--stills"){
- for t in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5]{try png(frame(t),output.appendingPathComponent(String(format:"v8-%05.2f.png",t)))}
+ for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v9-%05.2f.png",t)))}
  print("Rendered 40 composition and transition frames.")
 }else if args.contains("--audit"){
  let resolvedHeadingFont=CTFontCopyPostScriptName(font(88,"medium")) as String
@@ -537,14 +561,20 @@ else if args.contains("--stills"){
  var letters=Array("pop".utf16),gs=[CGGlyph](repeating:0,count:3)
  precondition(CTFontGetGlyphsForCharacters(font(100,"ink"),&letters,&gs,3) && gs.allSatisfy{$0>0})
  for (a,b) in zip(timing,timing.dropFirst()) {precondition(b.story>a.story && b.output>a.output)}
- for t in stride(from:0.0,to:40.0,by:0.2) {autoreleasepool{_ = frame(t)}}
- for t in [10.999,11,12.299,12.3,15.799,15.8,16.899,16.9,21.599,21.6,25.449,25.45,27.949,27.95,32.199,32.2,35.999,36,39.999] {autoreleasepool{_ = frame(t)}}
- print("Verified heading bounds, equal workspace columns, actual exported glyphs, monotonic timing and sampled composition clearance. Every rendered master frame also enforces clearance.")
+ for (a,b) in zip(pacing,pacing.dropFirst()) {precondition(b.scene>a.scene && b.output>a.output)}
+ precondition(pacing.last!.output==duration)
+ for t in stride(from:0.0,to:duration,by:0.2) {
+  precondition(abs(presentationTime(choreographyTime(t))-t)<0.000001)
+  autoreleasepool{_ = frame(t)}
+ }
+ for knot in pacing {for delta in [-0.001,0.0,0.001] {autoreleasepool{_ = frame(clamp((knot.output+delta)/duration)*duration)}}}
+ for t in [10.999,11,12.299,12.3,15.799,15.8,16.899,16.9,21.599,21.6,25.449,25.45,27.949,27.95,32.199,32.2,35.999,36,39.999] {autoreleasepool{_ = frame(presentationTime(t))}}
+ print("Verified heading bounds, equal workspace columns, actual exported glyphs, monotonic pacing and round-trip timing, and sampled composition clearance. Every rendered master frame also enforces clearance.")
 
 }else{
  let proc=Process();proc.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
- proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v8.mp4").path]
+ proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v9.mp4").path]
  let pipe=Pipe();proc.standardInput=pipe;try proc.run()
- for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / 40s");fflush(stdout)}}
+ for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / \(Int(duration))s");fflush(stdout)}}
  try pipe.fileHandleForWriting.close();proc.waitUntilExit();precondition(proc.terminationStatus==0);print("Master complete.")
 }
