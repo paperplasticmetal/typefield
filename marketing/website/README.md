@@ -53,3 +53,7 @@ App runtime files and paused letterform experiments are unchanged. Native app te
 ## Launch film revision 16
 
 The site video and poster are byte-identical to the revision 16 delivery and end-card files in `marketing/launch/renders/`. Video metadata: 59.5 seconds, 1920 × 1080, H.264, 30 fps, silent. Versioned asset URLs prevent reuse of the previous cached film. The UI rounds the duration to one minute.
+
+## Supporting-copy cleanup
+
+Preserved every h1, h2, and h3 verbatim. Removed decorative eyebrow lines, redundant hero workspace labels, section mottos, playground filler, closing support copy, and the footer slogan. Retained feature descriptions, actual workspace identifiers, and useful control instructions. Use fewer subheaders going forward; each supporting label should identify something or explain an action.

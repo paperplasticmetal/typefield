@@ -8,3 +8,6 @@ h1,h2,h3{text-wrap:balance}p{font-kerning:normal}.hero-bottom p{line-height:1.5;
 
 /* Keep the specimen row optically separated at intermediate widths. */
 .specimen-strip{font-size:clamp(60px,8.5vw,125px);gap:18px;padding:0 24px}.specimen-strip>span{flex-shrink:0}@media(max-width:800px){.specimen-strip{font-size:clamp(54px,14vw,100px);gap:12px;padding:0 20px}}@media(max-width:480px){.specimen-strip{font-size:clamp(48px,16vw,70px);gap:10px;padding:0 16px}}
+
+/* Remove empty spacing left by the supporting-copy cleanup. */
+.hero h1{margin-top:30px}.hero-bottom{justify-content:flex-start;gap:64px}.hero-bottom .pill{margin-left:auto}.hero .specimen-strip{border-bottom:0}.intro{row-gap:0}.play-heading{display:block}.detail-card h2{margin-top:0}.principles>div{margin-top:0}.faq h2{margin-top:0}.closing>div{justify-content:flex-end}#launch-dialog .dialog-head{justify-content:flex-end}@media(max-width:800px){.intro{row-gap:24px}.hero-bottom{gap:30px}}@media(max-width:480px){.hero h1{margin-top:20px}.hero-bottom{gap:18px}.hero-bottom .pill{margin-left:0}.closing>div{align-items:flex-start}}
