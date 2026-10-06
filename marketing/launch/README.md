@@ -1,6 +1,6 @@
-# Typefield launch film — landscape revision 9
+# Typefield launch film — landscape revision 10
 
-52 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v9.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v9.mp4`. Earlier local deliveries remain available. Revision 8 source is preserved in commit `e458bcc`.
+46 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v10.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v10.mp4`. Earlier local deliveries remain available. Revision 8 (40 seconds) is preserved in commit `e458bcc`; revision 9 (52 seconds) is preserved in `58d33ac`.
 
 ## Direction
 
@@ -21,23 +21,23 @@ No reference footage, artwork, music or other third-party media was copied into 
 
 | Time | Action |
 | --- | --- |
-| 0–3.6 s | Library specimens enter, sort alphabetically and hold for reading. |
-| 3.6–6.9 s | Three specimens gather into an Editorial collection and settle. |
-| 6.9–10.1 s | Two candidates move forward into a shortlist. |
-| 10.1–13.9 s | Candidates merge into a same-baseline A/B overlay. The comparison holds for 2.4 seconds before the candidate clears. |
-| 13.9–15.2 s | The same “Form” specimen expands into a Spaces editorial composition. |
-| 15.2–19.8 s | The first composition has more reading time before the second layout arrives; both then hold. |
-| 19.8–20.9 s | The layouts move left as the drawing surface enters from the right. |
-| 20.9–24.65 s | Pencil drawing is moderately slower. The completed artwork holds for 1.18 seconds before export. |
-| 24.65–28.4 s | The surface becomes Artwork.png. Fully visible import regions hold for 1.78 seconds before the file and other letters leave the first p in place. |
-| 28.4–33.95 s | The p enters the editor. Its shoulder adjustment pauses at the maximum bend, returns more slowly, then settles for 1.45 seconds before joining the word. |
-| 33.95–37.45 s | Spacing and kerning retain their action speed. The finished word holds for 2.25 seconds. |
-| 37.45–40.2 s | The word contracts into a TrueType file; the completed file holds for 2.05 seconds. |
-| 40.2–43.3 s | The file unfolds into an Ink Library specimen and holds for 2.35 seconds. |
-| 43.3–48 s | That specimen expands into the coral Spaces poster, with a longer final hold. |
-| 48–52 s | The unchanged four-second end card settles by 48.58 s. |
+| 0–3.3 s | Library specimens enter, sort alphabetically and hold for reading. |
+| 3.3–6.3 s | Three specimens gather into an Editorial collection and settle. |
+| 6.3–9.15 s | Two candidates move forward into a shortlist. |
+| 9.15–12.45 s | Candidates merge into a same-baseline A/B overlay. The comparison holds for 1.9 seconds before the candidate clears. |
+| 12.45–13.75 s | The same “Form” specimen expands into a Spaces editorial composition. |
+| 13.75–17.8 s | The first composition holds before the second layout arrives; both then hold. |
+| 17.8–18.9 s | The layouts move left as the drawing surface enters from the right. |
+| 18.9–21.85 s | Pencil drawing runs for 2.12 seconds. The completed artwork holds for 0.68 seconds before export. |
+| 21.85–25 s | The surface becomes Artwork.png. Fully visible import regions hold for 1.18 seconds before the file and other letters leave the first p in place. |
+| 25–29.7 s | The p enters the editor. Its shoulder adjustment pauses for 0.5 seconds at the maximum bend, returns, then settles for 1.05 seconds before joining the word. |
+| 29.7–32.7 s | Spacing and kerning retain their action speed. The finished word holds for 1.75 seconds. |
+| 32.7–35.1 s | The word contracts into a TrueType file; the completed file holds for 1.7 seconds. |
+| 35.1–37.75 s | The file unfolds into an Ink Library specimen and holds for 1.9 seconds. |
+| 37.75–42 s | That specimen expands into the coral Spaces poster. |
+| 42–46 s | The unchanged four-second end card settles by 42.58 s. |
 
-Revision 9 adds 12 seconds of reading time through a monotonic presentation-time map over the approved choreography. Added holds occur after actions finish, rather than stretching transitions. Pencil drawing runs for 2.42 seconds instead of 1.82, and the curve return runs for 1.75 seconds instead of 1.35; these are the only active-motion slowdowns. Title entrances and shared-object transfers retain their existing durations. Forward/inverse timing and every pacing boundary are checked by the renderer. Motion uses smooth quintic easing with zero endpoint velocity and acceleration. Headlines rise 22 px over 340 ms; the closing group rises 16 px. Paper shadows are compact. The artificial highlight stroke is removed from paper edges; the final specimen-to-coral transition uses one interpolated fill, eliminating the exposed white hairline. The pencil finishes each stroke before lifting and moving to the next. The drawn p keeps its original shape across the editor handoff before the visible adjustment begins. The specimen metadata persists through the Library-to-poster transition.
+Revision 10 is the pacing midpoint between revisions 8 and 9: each presentation-time knot is the arithmetic mean of the corresponding 40-second and 52-second cuts. It retains six seconds of added reading time over revision 8, trimming each added pause from revision 9 by half. Pencil drawing runs for 2.12 seconds instead of 1.82, and the curve return runs for 1.55 seconds instead of 1.35; these remain the only active-motion slowdowns. Title entrances and shared-object transfers retain their existing durations. Forward/inverse timing and every pacing boundary are checked by the renderer. Motion uses smooth quintic easing with zero endpoint velocity and acceleration. Headlines rise 22 px over 340 ms; the closing group rises 16 px. Paper shadows are compact. The artificial highlight stroke is removed from paper edges; the final specimen-to-coral transition uses one interpolated fill, eliminating the exposed white hairline. The pencil finishes each stroke before lifting and moving to the next. The drawn p keeps its original shape across the editor handoff before the visible adjustment begins. The specimen metadata persists through the Library-to-poster transition.
 
 During app scenes, workspace names use equal 380 px columns centered at x=580, 960 and 1340. They are absent during the external drawing scene and on the final card. All three labels share a baseline and size. No pills, dot separators or uppercase marketing labels are used. Core Text supplies native kerning; alignment uses glyph bounds and explicit baselines. Transformed surfaces reserve the heading/subtitle area and stay above y=948 whenever navigation is visible.
 
@@ -57,9 +57,9 @@ Other specimens use the Mac's installed Helvetica Neue, Baskerville, Didot, Futu
 bash marketing/launch/render.sh
 ```
 
-Requires macOS, Swift/AppKit/CoreText and FFmpeg at `/opt/homebrew/bin/ffmpeg`. The script compiles the renderer, audits heading bounds, equal navigation columns, font glyph availability, timing and sampled composition clearance, renders 40 review frames and the 60 fps master, then creates the H.264/yuv420p 30 fps delivery. Actual transformed paper bounds are checked on every one of the 3,120 master frames. The script extracts an end-card poster and decodes the full delivery. Outputs are ignored by Git; rendering is deterministic.
+Requires macOS, Swift/AppKit/CoreText and FFmpeg at `/opt/homebrew/bin/ffmpeg`. The script compiles the renderer, audits heading bounds, equal navigation columns, font glyph availability, timing and sampled composition clearance, renders 40 review frames and the 60 fps master, then creates the H.264/yuv420p 30 fps delivery. Actual transformed paper bounds are checked on every one of the 2,760 master frames. The script extracts an end-card poster and decodes the full delivery. Outputs are ignored by Git; rendering is deterministic.
 
-For one frame, run `marketing/launch/renders/render --frame 28.4`. `--stills` renders the predefined review set; `--audit` performs layout and font checks. The completed delivery is 1,560 frames at 30 fps, exactly 52 seconds. The master is 3,120 frames at 60 fps. Representative compositions, transition endpoints and decoded delivery samples receive visual review, including an independent read-only review. Revision 9 preserves the approved typography, layouts and white palette. Independent source review confirmed that every added hold is in a settled state and that the scene-time mapping preserves transfers and title entrances. The full export passed duration, frame-count, no-audio, surface-clearance and decode checks. Eleven equivalent scene samples are byte-identical PNGs to revision 8, confirming the visual composition is preserved. Six encoded samples of held states were extracted for review. Review stills are sampled at equivalent choreography positions with filenames showing their new presentation times. Private evidence is kept under `.context/qa-artifacts/launch-film-v9/`.
+For one frame, run `marketing/launch/renders/render --frame 25`. `--stills` renders the predefined review set; `--audit` performs layout and font checks. The completed delivery is 1,380 frames at 30 fps, exactly 46 seconds. The master is 2,760 frames at 60 fps. Representative compositions, transition endpoints and decoded delivery samples receive visual review, including an independent read-only review. Revision 10 preserves the approved typography, layouts and white palette. Independent source review verified that all 40 timing knots are exact midpoints and that active transfers keep their duration. The full export passed duration, frame-count, no-audio, surface-clearance and decode checks. Eleven equivalent scene PNGs are byte-identical to revision 9. Six encoded frames were extracted, with representative comparison, editor and end-card compositions visually reviewed. Review stills are sampled at equivalent choreography positions with filenames showing their new presentation times. Private evidence is kept under `.context/qa-artifacts/launch-film-v10/`.
 
 ## Scope
 
