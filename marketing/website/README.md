@@ -40,3 +40,12 @@ The Sites workflow uses the ignored `.sites-checkout/` deployment mirror so it d
 - Workspace click and keyboard selection, type editing, face selection, spacing, reset, film playback/pause, release dialog/Escape, and FAQ expansion checked in the browser.
 
 App runtime files and paused letterform experiments are unchanged. Native app tests are not applicable to this static website change.
+
+## Typography and copy refinement
+
+- Approved hero: “Quite the character.” Product description: “Organize your fonts. Try them in context. Make your own.”
+- Removed the earlier headline and closing slogans from page copy and metadata. The existing launch film remains the supplied v13 asset.
+- Enabled native font kerning; reduced excessive negative tracking, opened headline leading, and separated specimen pairs at narrow widths.
+- Raised small secondary labels to 12px and improved mobile button/body spacing.
+- Long live specimens now scale to remain visible; serif, sans, and mono controls retain independent tracking behavior.
+- Inspected 320px, 390px, 820px, and 1440px layouts. No horizontal document overflow or clipped heading boxes. Verified long mono sample, spacing reset, and approved copy in the rendered DOM.

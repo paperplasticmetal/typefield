@@ -27,4 +27,21 @@ const tracking=document.querySelector('#tracking');
 const fonts={serif:'Georgia, serif',sans:'"Helvetica Neue", Helvetica, Arial, sans-serif',mono:'"Courier New", monospace'};
 document.querySelectorAll('[name="face"]').forEach(radio=>radio.addEventListener('change',()=>{sample.style.fontFamily=fonts[radio.value];}));
 tracking.addEventListener('input',()=>{sample.style.letterSpacing=(Number(tracking.value)/100)+'em';document.querySelector('#tracking-value').textContent=tracking.value.replace('-','−');});
-document.querySelector('#reset-type').addEventListener('click',()=>{sample.value='Stay curious.';sample.style.fontFamily=fonts.serif;sample.style.letterSpacing='-.04em';document.querySelector('[name="face"][value="serif"]').checked=true;tracking.value='-4';document.querySelector('#tracking-value').textContent='−4';});
+document.querySelector('#reset-type').addEventListener('click',()=>{sample.value='Stay curious.';sample.style.fontFamily=fonts.serif;sample.style.letterSpacing='-.01em';document.querySelector('[name="face"][value="serif"]').checked=true;tracking.value='-1';document.querySelector('#tracking-value').textContent='−1';});
+
+// Keep long specimens visible inside the type study at every viewport width.
+function fitTypeSample() {
+  sample.style.fontSize = '';
+  const baseSize = parseFloat(getComputedStyle(sample).fontSize);
+  let size = baseSize;
+  while (sample.scrollHeight > sample.clientHeight + 1 && size > 24) {
+    size -= 2;
+    sample.style.fontSize = size + 'px';
+  }
+}
+sample.addEventListener('input', fitTypeSample);
+tracking.addEventListener('input', fitTypeSample);
+document.querySelectorAll('[name="face"]').forEach(radio => radio.addEventListener('change', fitTypeSample));
+document.querySelector('#reset-type').addEventListener('click', fitTypeSample);
+window.addEventListener('resize', fitTypeSample);
+fitTypeSample();
