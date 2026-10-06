@@ -2,13 +2,13 @@ import AppKit
 import CoreText
 import Foundation
 
-// Typefield launch film v13. Vector choreography, orthographic planes and shared objects.
+// Typefield launch film v14. Vector choreography, orthographic planes and shared objects.
 // No screenshots are drawn. Product capabilities follow the verified v3 QA round trip.
 let args=CommandLine.arguments
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
 let output=root.appendingPathComponent("marketing/launch/renders")
 try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
-let width=1920,height=1080,fps=60,duration=58.5
+let width=1920,height=1080,fps=60,duration=59.5
 let rgb=CGColorSpace(name:CGColorSpace.sRGB)!
 let paper="F7F7F5",ink="222326",stage="FFFFFF",muted="696B70",coral="DF805E",blue="2F6570"
 var c:CGContext!
@@ -547,18 +547,25 @@ func layoutHandoff(_ local:Double){
 struct MoreTile {
  let x:Double,y:Double,w:Double,h:Double
  let kind:String,title:String,subtitle:String,fill:String
+ var box:CGRect {CGRect(x:x,y:y,width:w,height:h)}
 }
+// A six-column grid with four distinct proportions, not a repeated card template.
 let moreTiles:[MoreTile]=[
- MoreTile(x:44,y:36,w:440,h:320,kind:"tokens",title:"Export type tokens",subtitle:"CSS, Tailwind and code starters",fill:"F2F4F4"),
- MoreTile(x:508,y:36,w:440,h:320,kind:"cost",title:"Web-font cost",subtitle:"Check exact WOFF2 sizes",fill:"F7F7F5"),
- MoreTile(x:972,y:36,w:440,h:320,kind:"similar",title:"Find similar fonts",subtitle:"Explore your local library",fill:"EEF1F1"),
- MoreTile(x:1436,y:36,w:440,h:320,kind:"health",title:"Font health",subtitle:"Inspect and repair copies",fill:"F7F7F5"),
- MoreTile(x:44,y:380,w:440,h:320,kind:"components",title:"Linked components",subtitle:"Reuse your own letterforms",fill:"F7F7F5"),
- MoreTile(x:1436,y:380,w:440,h:320,kind:"cleanup",title:"Simplify outlines",subtitle:"Preview cleaner curves",fill:"EEF1F1"),
- MoreTile(x:44,y:724,w:440,h:320,kind:"masters",title:"Alternate masters",subtitle:"Keep independent designs",fill:"EEF1F1"),
- MoreTile(x:508,y:724,w:440,h:320,kind:"proof",title:"Type proofing",subtitle:"Contrast and line lengths",fill:"F7F7F5"),
- MoreTile(x:972,y:724,w:440,h:320,kind:"return",title:"Bring layouts back",subtitle:"Import editable text and shapes",fill:"F7F7F5"),
- MoreTile(x:1436,y:724,w:440,h:320,kind:"rediscover",title:"Rediscover fonts",subtitle:"Based on your past use",fill:"F2F4F4")
+ MoreTile(x:40,y:42,w:600,h:234,kind:"tokens",title:"Export type tokens",subtitle:"CSS, Tailwind and code starters",fill:"EDF2F2"),
+ MoreTile(x:660,y:42,w:290,h:234,kind:"similar",title:"Find similar fonts",subtitle:"Explore your local library",fill:"F6F6F3"),
+ MoreTile(x:970,y:42,w:290,h:234,kind:"health",title:"Font health",subtitle:"Inspect and repair copies",fill:"F3F4F3"),
+ MoreTile(x:1280,y:42,w:600,h:488,kind:"components",title:"Linked components",subtitle:"Edit once, update linked glyphs",fill:"F3E9E2"),
+ MoreTile(x:40,y:296,w:290,h:234,kind:"cost",title:"Web-font cost",subtitle:"Check exact WOFF2 sizes",fill:"F5F5F2"),
+ MoreTile(x:350,y:296,w:290,h:234,kind:"coverage",title:"Character coverage",subtitle:"Check the text you need",fill:"EEF2F2"),
+ MoreTile(x:40,y:550,w:290,h:488,kind:"masters",title:"Alternate masters",subtitle:"Independent designs",fill:"EAF0F0"),
+ MoreTile(x:350,y:550,w:600,h:234,kind:"cleanup",title:"Simplify outlines",subtitle:"Preview cleaner curves",fill:"F3F4F2"),
+ MoreTile(x:970,y:550,w:600,h:234,kind:"return",title:"Bring layouts back",subtitle:"Editable text and shapes",fill:"EEF1F1"),
+ MoreTile(x:1590,y:550,w:290,h:234,kind:"folders",title:"Live folders",subtitle:"Keep local fonts in view",fill:"F5F5F2"),
+ MoreTile(x:350,y:804,w:290,h:234,kind:"proof",title:"Type proofing",subtitle:"Contrast and line lengths",fill:"F6F6F3"),
+ MoreTile(x:660,y:804,w:290,h:234,kind:"rediscover",title:"Rediscover fonts",subtitle:"Based on your past use",fill:"F0F3F3"),
+ MoreTile(x:970,y:804,w:290,h:234,kind:"variable",title:"Variable fonts",subtitle:"Fine-tune supported axes",fill:"F5F1ED"),
+ MoreTile(x:1280,y:804,w:290,h:234,kind:"duplicates",title:"Find duplicates",subtitle:"Compare copies and versions",fill:"F5F5F2"),
+ MoreTile(x:1590,y:804,w:290,h:234,kind:"activation",title:"Activate fonts",subtitle:"Across apps, for the session",fill:"EEF2F2")
 ]
 func rounded(_ box:CGRect,_ radius:Double,_ fill:String){
  c.setFillColor(color(fill));c.addPath(CGPath(roundedRect:box,cornerWidth:radius,cornerHeight:radius,transform:nil));c.fillPath()
@@ -636,19 +643,112 @@ func moreGraphic(_ kind:String,_ local:Double){
  default:break
  }
 }
+func raisedSheet(_ box:CGRect,_ radius:Double=12,_ fill:String="FFFFFF") {
+ save{c.setShadow(offset:CGSize(width:0,height:-5),blur:15,color:color("253638",0.10));rounded(box,radius,fill)}
+}
+func compactGraphic(_ kind:String,_ local:Double){
+ let p=progress(local,0.65,1.35)
+ switch kind {
+ case "coverage":
+  for (i,s) in ["Å","é","ß"].enumerated(){
+   let x=41+Double(i)*76
+   rounded(CGRect(x:x,y:32,width:57,height:70),9,"FFFFFF")
+   text(s,x+28.5,87,48,ink,"serif","center")
+   line(x+20,121,x+27,128,blue,2);line(x+27,128,x+39,114,blue,2)
+  }
+ case "folders":
+  rounded(CGRect(x:75,y:40,width:59,height:28),7,"B9CBCD")
+  rounded(CGRect(x:75,y:55,width:140,height:82),10,"CBDADC")
+  raisedSheet(CGRect(x:116,y:37,width:67,height:83),6)
+  text("Aa",149.5,94,40,ink,"serif","center")
+  rounded(CGRect(x:75,y:76,width:140,height:64),10,"B7CDD0")
+  line(178,102,178,124,"FFFFFF",2);line(167,113,189,113,"FFFFFF",2)
+ case "variable":
+  text("Aa",98,109,89,ink,"medium","center")
+  for i in 0..<2 {
+   let y=63+Double(i)*46,x=190.0
+   line(x,y,x+60,y,"C1B7AF",3)
+   dot(CGPoint(x:x+mix(16,Double(i==0 ? 48:27),p),y:y),6,blue)
+  }
+ case "duplicates":
+  for i in 0..<2 {
+   let x=71+Double(i)*65,y=32+Double(i)*13
+   raisedSheet(CGRect(x:x,y:y,width:81,height:99),8)
+   text("Aa",x+40.5,y+64,48,ink,"serif","center")
+   line(x+19,y+82,x+62,y+82,"CCD3D3",1.5)
+  }
+ case "activation":
+  for i in 0..<3 {
+   let x=59+Double(i)*67
+   rounded(CGRect(x:x,y:91,width:39,height:39),8,i==1 ? "C9DBDD":"DEE6E6")
+   line(x+19.5,91,x+19.5,74,"9EB6B8",1.5)
+  }
+  line(78.5,74,212.5,74,"9EB6B8",1.5)
+  raisedSheet(CGRect(x:116,y:20,width:59,height:65),7)
+  text("Aa",145.5,65,37,ink,"serif","center")
+ default:
+  // Compact supporting tiles retain a generous text zone below their illustration.
+  transform(20,5,250/440){moreGraphic(kind,local)}
+ }
+}
 func moreMosaic(_ local:Double){
+ let p=progress(local,0.65,1.35)
  for tile in moreTiles {
   transform(tile.x,tile.y){
-   rounded(CGRect(x:0,y:0,width:tile.w,height:tile.h),28,tile.fill)
-   moreGraphic(tile.kind,local)
-   text(tile.title,tile.w/2,260,32,ink,"medium","center")
-   text(tile.subtitle,tile.w/2,295,23,muted,"sans","center")
+   save{c.setShadow(offset:CGSize(width:0,height:-3),blur:10,color:color("253638",0.045));rounded(CGRect(x:0,y:0,width:tile.w,height:tile.h),24,tile.fill)}
+   switch tile.kind {
+   case "components":
+    text(tile.title,34,58,36,ink,"medium")
+    text(tile.subtitle,34,96,24,muted)
+    // A source letter and two floating, linked accents make this the hero tile.
+    raisedSheet(CGRect(x:37,y:159,width:221,height:268),16)
+    text("A",147.5,361,211,ink,"serif","center")
+    line(258,294,304,294,"ACB7B3",2)
+    line(304,225,304,365,"ACB7B3",2)
+    line(304,225,335,225,"ACB7B3",2);line(304,365,335,365,"ACB7B3",2)
+    for (i,glyph) in ["Á","Å"].enumerated(){
+     let y=156+Double(i)*157,dy=10*(1-p)
+     raisedSheet(CGRect(x:335,y:y+dy,width:216,height:137),12)
+     text(glyph,443,y+109+dy,109,blue,"serif","center")
+    }
+   case "tokens":
+    text("Export",32,70,32,ink,"medium")
+    text("type tokens",32,108,32,ink,"medium")
+    text("CSS, Tailwind",32,156,22,muted)
+    text("and code starters",32,185,22,muted)
+    raisedSheet(CGRect(x:294,y:27,width:279,height:181),13)
+    text("Aa",325,88,52,blue,"serif")
+    text("--font-heading",325,123,18,ink,"mono")
+    text("--font-body",325,152,18,ink,"mono")
+    line(325,180,325+113*p,180,coral,3)
+   case "masters":
+    text(tile.title,145,49,27,ink,"medium","center")
+    text(tile.subtitle,145,81,20,muted,"sans","center")
+    for i in 0..<3 {
+     let y=116+Double(i)*98,x=39+Double(i)*15
+     save{c.translateBy(x:x+91,y:y+72);c.rotate(by:Double(i-1)*0.045)
+      raisedSheet(CGRect(x:-91,y:-72,width:182,height:144),12,i==1 ? "F7F7F4":"FFFFFF")
+      text("a",0,44,122,ink,["serif","medium","didot"][i],"center")
+     }
+    }
+   case "cleanup":
+    text(tile.title,28,61,30,ink,"medium")
+    text("Preview cleaner curves",28,99,22,muted)
+    transform(293,26,0.66){moreGraphic(tile.kind,local)}
+   case "return":
+    text(tile.title,28,61,30,ink,"medium")
+    text("Import editable",28,99,22,muted)
+    text("text and shapes",28,128,22,muted)
+    transform(301,32,0.62){moreGraphic(tile.kind,local)}
+   default:
+    compactGraphic(tile.kind,local)
+    text(tile.title,145,182,27,ink,"medium","center")
+    text(tile.subtitle,145,214,19,muted,"sans","center")
+   }
   }
  }
- rounded(CGRect(x:508,y:380,width:904,height:320),28,"F3E5DE")
- let groupWidth=140+36+bounds("And more",100,"medium").width,left=960-groupWidth/2
- image(icon,CGRect(x:left,y:470,width:140,height:140))
- text("And more",left+176,570,100,ink,"medium")
+ // The open center provides hierarchy and breathing room within the dense wall.
+ text("And more",960,435,90,ink,"medium","center")
 }
 func moreFeatures(_ local:Double){
  background()
@@ -662,12 +762,11 @@ func ending(_ t:Double){
  background()
  let p=progress(t,36,36.58)
  layer(p){transform(0,16*(1-p)){
-  // Center visible glyph bounds on one shared axis, without separate optical offsets.
+  // The old tagline is removed. Keep the visible wordmark and platform on one axis.
   let center=Double(width)/2
-  image(icon,CGRect(x:center-100,y:282,width:200,height:200))
-  text("Typefield",center,620,112,ink,"medium","center")
-  text("Your type, all together",center,692,36,muted,"sans","center")
-  text("For Mac",center,759,24,muted,"sans","center")
+  image(icon,CGRect(x:center-100,y:322,width:200,height:200))
+  text("Typefield",center,660,112,ink,"medium","center")
+  text("For Mac",center,730,24,muted,"sans","center")
  }}
 }
 // Revision 8 scene seconds mapped to the approved editor/export choreography.
@@ -685,7 +784,7 @@ func storyTime(_ outputTime:Double)->Double {
  return timing.last!.story
 }
 // Preserve readable action timing while giving pairing exploration the central beat.
-// The export leads into a feature mosaic, followed by the unchanged four-second ending.
+// The export leads into a feature mosaic, followed by the four-second closing card.
 let pacing:[(scene:Double,output:Double)]=[
  (0,0),(2,2),(3,3.3),(4,4.3),(5.7,6.3),(6.85,7.45),
  (8.2,9.15),(9.1,10.05),(10.5,11.95),(11,12.45),(12.3,16.45),
@@ -694,7 +793,7 @@ let pacing:[(scene:Double,output:Double)]=[
  (22.3,30.5),(22.7,30.9),(22.95,31.25),(24.3,32.6),(24.95,33.2),(25.45,33.7),
  (25.65,33.9),(26.7,34.95),(27.95,36.2),(28.65,36.9),(30,38.1),
  (30.75,38.85),(32.2,40.35),(33.4,41.55),(34.6,42.75),(35.35,43.5),
- (36,44.15),(39.85,48),(46.35,54.5),(50.35,58.5)
+ (36,44.15),(39.85,48),(46.35,55.5),(50.35,59.5)
 ]
 func choreographyTime(_ outputTime:Double)->Double {
  for (a,b) in zip(pacing,pacing.dropFirst()) where outputTime<=b.output {
@@ -724,14 +823,14 @@ func frame(_ outputTime:Double)->CGContext {
  else if sceneTime<36 {finalLayout(t)}
  else if sceneTime<39.85 {layoutHandoff(outputTime-44.15)}
  else if sceneTime<46.35 {moreFeatures(outputTime-48)}
- else {ending(36+outputTime-54.5)}
+ else {ending(36+outputTime-55.5)}
  validateGeometry(outputTime)
  return ctx
 }
 func png(_ ctx:CGContext,_ url:URL)throws {try NSBitmapImageRep(cgImage:ctx.makeImage()!).representation(using:.png,properties:[:])!.write(to:url)}
-if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v13-%05.2f.png",t)))}
+if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v14-%05.2f.png",t)))}
 else if args.contains("--stills"){
- for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5,40.15,40.65,41.35,43.05,45.35,46.349,46.35,47.55,49.85]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v13-%05.2f.png",t)))}
+ for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5,40.15,40.65,41.35,43.05,45.35,46.349,46.35,47.55,49.85]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v14-%05.2f.png",t)))}
  print("Rendered 49 composition and transition frames.")
 }else if args.contains("--audit"){
  let resolvedHeadingFont=CTFontCopyPostScriptName(font(88,"medium")) as String
@@ -739,11 +838,20 @@ else if args.contains("--stills"){
  print("Heading font: \(resolvedHeadingFont)")
  let headings=["Find your type","Organize by project","Build your shortlist","Compare every detail","Find a font pairing","Try pairings in context","Draw your way","Import your artwork","Make every curve yours","Down to the space between","Export your font","Add it to Library","Your font, in good company","Export your explorations","And more"]
  for h in headings {precondition(bounds(h,88,"medium").width<1760);print("Heading: \(h), \(Int(bounds(h,88,"medium").width)) px")}
- for tile in moreTiles {
-  precondition(bounds(tile.title,32,"medium").width<tile.w-48)
-  precondition(bounds(tile.subtitle,23).width<tile.w-40)
+ for (i,tile) in moreTiles.enumerated() {
+  if tile.w==290 {
+   precondition(bounds(tile.title,27,"medium").width<tile.w-40)
+   precondition(bounds(tile.subtitle,tile.kind=="masters" ? 20:19).width<tile.w-28)
+  }
   precondition(tile.x>=40 && tile.y>=32 && tile.x+tile.w<=1880 && tile.y+tile.h<=1048)
+  for other in moreTiles.dropFirst(i+1) {precondition(!tile.box.insetBy(dx:-9,dy:-9).intersects(other.box.insetBy(dx:-9,dy:-9)))}
  }
+ precondition(moreTiles.count==15)
+ precondition(bounds("Linked components",36,"medium").width<532)
+ precondition(bounds("Edit once, update linked glyphs",24).width<532)
+ for label in ["Simplify outlines","Bring layouts back"] {precondition(bounds(label,30,"medium").width<270)}
+ precondition(bounds("Preview cleaner curves",22).width<270)
+ for label in ["and code starters","Import editable","text and shapes"] {precondition(bounds(label,22).width<248)}
  precondition(navCenters[1]==960 && navCenters[1]-navCenters[0]==navCenters[2]-navCenters[1])
  var letters=Array("pop".utf16),gs=[CGGlyph](repeating:0,count:3)
  precondition(CTFontGetGlyphsForCharacters(font(100,"ink"),&letters,&gs,3) && gs.allSatisfy{$0>0})
@@ -760,7 +868,7 @@ else if args.contains("--stills"){
 
 }else{
  let proc=Process();proc.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
- proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v13.mp4").path]
+ proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v14.mp4").path]
  let pipe=Pipe();proc.standardInput=pipe;try proc.run()
  for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / \(duration)s");fflush(stdout)}}
  try pipe.fileHandleForWriting.close();proc.waitUntilExit();precondition(proc.terminationStatus==0);print("Master complete.")

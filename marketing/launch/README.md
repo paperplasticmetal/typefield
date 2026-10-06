@@ -1,14 +1,14 @@
-# Typefield launch film — landscape revision 13
+# Typefield launch film — landscape revision 14
 
-58.5 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v13.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v13.mp4`. Earlier local deliveries remain available. Revision 12 is preserved in commit `3dc1584`. A separate feature-wall still is available at `renders/Typefield-Features-v13.png`.
+59.5 seconds, 1920 × 1080, silent. Delivery: `renders/Typefield-Launch-Landscape-v14.mp4` at 30 fps. Editing master: `renders/Typefield-Launch-Master-1080p60-v14.mp4`. Earlier local deliveries remain available. Revision 13 is preserved in commit `83ac3d3`. A separate feature-wall still is available at `renders/Typefield-Features-v14.png`.
 
 ## Direction
 
 Typefield is a place to discover fonts, explore pairings and layouts, and develop your own type alongside your existing design tools. Revision 12 replaced the finished-composition “Put it to work” section with a visible experiment: local body-font suggestions become three studies containing the same words. The studies initially share a Baskerville heading, then two heading faces change and one composition shifts to a left-aligned layout. The custom-font round trip returns to another pairing study, followed by an explicit layout-export handoff for Figma, Illustrator and InDesign.
 
-Revision 13 adds a 6.5-second “And more” feature wall before the closing card. The user-supplied Apple example informs the mosaic arrangement, with original vector illustrations and ten verified additional capabilities. It emphasizes distinctive combinations of tools without making unsupported market-exclusivity claims. The first 48 seconds retain revision 12’s content and pacing.
+Revision 14 expands the “And more” wall to fifteen verified capabilities. A six-column grid combines compact supporting tiles, wide handoff diagrams, a tall stack of alternate masters and a large linked-components illustration. Layered paper surfaces and restrained shadows add depth. The open center gives the title room to breathe. The wall now lasts 7.5 seconds, including over six seconds of settled reading time. The first 48 seconds retain revision 13’s content and pacing.
 
-The white stage, neutral cards, restrained coral artwork and native Core Text typography continue the approved visual direction. Every opening specimen reads “Form.” Headers use Helvetica Neue Medium at 88 px without trailing periods. Captions use Helvetica Neue Regular. Workspace names occupy equal 380 px columns centered at x=580, 960 and 1340, and disappear on the external drawing scene and final card. The end card preserves revision 11's shared x=960 center for the icon, wordmark, tagline and platform line.
+The white stage, neutral cards, restrained coral artwork and native Core Text typography continue the approved visual direction. Every opening specimen reads “Form.” Headers use Helvetica Neue Medium at 88 px without trailing periods. Captions use Helvetica Neue Regular. Workspace names occupy equal 380 px columns centered at x=580, 960 and 1340, and disappear on the external drawing scene and final card. The end card removes the previous tagline and rebalances the icon, wordmark and platform line. Their visible bounds share one center. “Find your type” was not adopted as a tagline because [72pt, another font app](https://72pt.app/), already uses it prominently; [Typface](https://typface.com/) also uses the phrase. This is an existing-use check, not a trademark-clearance opinion.
 
 Primary references consulted for revision 4, retained as direction for this original composition:
 
@@ -38,8 +38,8 @@ No reference footage, artwork, music or other third-party media was copied into 
 | 38.1–40.35 s | The exported font returns as a Library specimen. |
 | 40.35–44.15 s | The custom font appears alongside supporting type in a coral poster study: “Your font, in good company.” |
 | 44.15–48 s | A restrained selection outline precedes a layout-export file. Copy names Figma, Illustrator and InDesign and explains that text and shapes remain editable. |
-| 48–54.5 s | A full-screen mosaic of ten additional features enters in a continuous 650 ms horizontal move. Small diagrams settle by 49.35 s, leaving over five seconds to scan the complete wall. |
-| 54.5–58.5 s | The approved four-second end card: icon, Typefield, “Your type, all together” and “For Mac.” |
+| 48–55.5 s | A full-screen mosaic of fifteen additional features enters in a continuous 650 ms horizontal move. Small diagrams settle by 49.35 s, leaving over six seconds to scan the complete wall. |
+| 55.5–59.5 s | Four-second end card: icon, Typefield and “For Mac.” |
 
 The Library retains revision 11's reading time. The new 10.55-second pairing passage replaces the 5.35-second composition passage. The drawing-to-Library loop is slightly tighter, and a 3.85-second export beat clarifies Typefield's place in a broader workflow. The longer runtime adds content rather than extending pauses. Quintic easing, shared object continuity and short title entrances remain. The timing map is monotonic and invertible; the renderer checks scene boundaries and transformed surface clearance.
 
@@ -59,7 +59,7 @@ The drawing scene illustrates an external drawing app using an iPad or a connect
 
 ## Additional-feature wall
 
-All ten tiles represent shipped features absent from the main film. The short copy was checked against current app code; diagrams are illustrations, not measurements of a user's fonts.
+All fifteen tiles represent shipped features absent from the main film. The short copy was checked against current app code; diagrams are illustrations, not measurements of a user's fonts.
 
 | Tile | Evidence and scope |
 | --- | --- |
@@ -73,6 +73,11 @@ All ten tiles represent shipped features absent from the main film. The short co
 | Type proofing | `Sources/StudioView.swift`: contrast and rendered line measurements. Does not imply accessibility certification. |
 | Bring layouts back | `Sources/StudioView.swift` and `Sources/AdobeTypeSystem.swift`: editable text/shape return imports through explicit JSON handoffs. No native-file decoding or live synchronization. |
 | Rediscover fonts | `Sources/FontInspector.swift`: suggestions based on fonts never or least recently applied. Merely previewing a font does not count as use. |
+| Character coverage | `Sources/Features.swift` and `Sources/main.swift`: missing-character detection and filtering against preview text. Does not claim complete language shaping support. |
+| Live folders | `Sources/FolderWatching.swift`: scans watched local folders and subfolders while Typefield is open. Not cloud sync or an always-running background service. |
+| Variable fonts | `Sources/FontInspector.swift`: previews and preserves axes supported by the selected font, with CSS variation settings. Not variable-font authoring. |
+| Find duplicates | `Sources/LibraryTools.swift` and `Sources/ProModels.swift`: distinguishes identical file contents from repeated PostScript names. No automatic deletion or assumption that same-name files are identical. |
+| Activate fonts | `Sources/LibraryTools.swift`: session activation across apps; normal quit clears Typefield-owned activations. Not permanent installation or document-triggered activation. |
 
 The paused missing-letter generator and shelved font-combination feature are not advertised.
 
@@ -90,7 +95,7 @@ bash marketing/launch/render.sh
 
 Requires macOS, Swift/AppKit/CoreText and FFmpeg at `/opt/homebrew/bin/ffmpeg`. The script compiles the renderer, audits font resolution, heading widths, equal navigation columns, fixture glyph availability, forward/inverse timing and sampled surface clearance. It renders 49 review frames, then the 60 fps master and H.264/yuv420p 30 fps delivery, extracts end-card and feature-wall stills and decodes the complete delivery. Every master frame enforces heading/footer surface clearance. Outputs are ignored by Git.
 
-For a single frame: `marketing/launch/renders/render --frame 19.5`. `--stills` renders the review set and `--audit` performs the renderer checks. Verified master: 3,510 frames at 60 fps. Delivery: 1,755 frames at 30 fps. Both are exactly 58.5 seconds, 1920 × 1080 and silent. Compilation, font/heading/timing checks, feature-tile bounds, all-frame surface clearance, complete delivery decode and stream checks passed. Forty earlier scene samples and the shifted end-card sample are byte-identical to revision 12. Eight encoded samples cover the transition, settled mosaic and ending. Independent feature and visual review checked the claims and tile spacing. Private product-claim, visual and export evidence is kept under `.context/qa-artifacts/launch-film-v13/`.
+For a single frame: `marketing/launch/renders/render --frame 19.5`. `--stills` renders the review set and `--audit` performs the renderer checks. Verified master: 3,570 frames at 60 fps. Delivery: 1,785 frames at 30 fps. Both are exactly 59.5 seconds, 1920 × 1080 and silent. Compilation, font/heading/timing checks, feature-tile bounds, all-frame surface clearance, complete delivery decode and stream checks passed. Forty earlier scene samples are byte-identical to revision 13. Encoded samples cover the transition, settled mosaic and ending. Independent source review checked the five new feature claims. Independent raster review measured the visible wordmark and platform line at the same x959.0 midpoint, with the icon within 0.5 px; it found no clipping or unintended tile overlap. Private product-claim, visual and export evidence is kept under `.context/qa-artifacts/launch-film-v14/`.
 
 ## Scope
 
