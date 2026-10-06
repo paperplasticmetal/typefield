@@ -24,7 +24,7 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 
 ## Assets
 
-`typefield-film.mp4` and `film-poster.png` are the approved v13 launch assets from `marketing/launch/renders/`. App screenshots are the disposable v3 marketing fixtures, not private user libraries. The icon comes from the app asset catalog. No proprietary font binaries are distributed; the page uses system font stacks.
+`typefield-film.mp4` and `film-poster.png` are the approved v16 launch assets from `marketing/launch/renders/`. App screenshots are the disposable v3 marketing fixtures, not private user libraries. The icon comes from the app asset catalog. No proprietary font binaries are distributed; the page uses system font stacks.
 
 ## Hosting
 
@@ -44,8 +44,12 @@ App runtime files and paused letterform experiments are unchanged. Native app te
 ## Typography and copy refinement
 
 - Approved hero: “Quite the character.” Product description: “Organize your fonts. Try them in context. Make your own.”
-- Removed the earlier headline and closing slogans from page copy and metadata. The existing launch film remains the supplied v13 asset.
+- Removed the earlier headline and closing slogans from page copy and metadata. The launch film now uses revision 16, including the approved tagline.
 - Enabled native font kerning; reduced excessive negative tracking, opened headline leading, and separated specimen pairs at narrow widths.
 - Raised small secondary labels to 12px and improved mobile button/body spacing.
 - Long live specimens now scale to remain visible; serif, sans, and mono controls retain independent tracking behavior.
 - Inspected 320px, 390px, 820px, and 1440px layouts. No horizontal document overflow or clipped heading boxes. Verified long mono sample, spacing reset, and approved copy in the rendered DOM.
+
+## Launch film revision 16
+
+The site video and poster are byte-identical to the revision 16 delivery and end-card files in `marketing/launch/renders/`. Video metadata: 59.5 seconds, 1920 × 1080, H.264, 30 fps, silent. Versioned asset URLs prevent reuse of the previous cached film. The UI rounds the duration to one minute.
