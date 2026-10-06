@@ -1,0 +1,45 @@
+:root{--paper:#f0efe9;--ink:#20201e;--coral:#ff6046;--line:#cdcdc5;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--ink);background:var(--ink);font-kerning:normal}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;padding:10px}
+a{color:inherit;text-decoration:none}
+a:focus-visible{outline:3px solid var(--coral);outline-offset:5px}
+h1,h2,p{margin:0}
+.page{background:var(--paper);min-height:calc(100vh - 20px);border-radius:18px;overflow:hidden}
+.skip-link{position:fixed;z-index:10;top:-80px;left:20px;background:var(--paper);padding:15px}
+.skip-link:focus{top:20px}
+.site-header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:0 5.5%;padding:26px 0;border-bottom:1px solid var(--line)}
+.wordmark,footer>a{font-size:32px;line-height:1;font-weight:750;letter-spacing:-1.1px}
+.wordmark span,footer>a span{font-size:12px;font-weight:500;letter-spacing:0;vertical-align:top;display:inline-block;margin:4px 0 0 3px}
+.header-back{display:inline-flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--ink);font-size:14px;font-weight:600}
+.header-back:hover{color:var(--coral);border-color:var(--coral)}
+main{margin:0 5.5%}
+.opening{display:grid;grid-template-columns:1.5fr 1fr;align-items:end;gap:40px;padding:74px 0 80px}
+.opening h1{font-size:clamp(72px,9vw,150px);line-height:.96;font-weight:500;letter-spacing:-.052em;text-wrap:balance}
+.opening h1 span{color:var(--coral)}
+.opening>p{font-size:clamp(18px,1.9vw,27px);line-height:1.3;letter-spacing:-.025em;max-width:390px;padding-bottom:10px}
+.download-card{display:grid;grid-template-columns:.8fr 1.2fr;gap:7%;background:var(--ink);color:var(--paper);border-radius:14px;padding:55px}
+.app-identity{display:flex;align-items:center;gap:18px;align-self:start}
+.app-identity img{display:block;border-radius:17px;box-shadow:0 12px 32px #0005}
+.app-identity strong{display:block;font-size:24px;font-weight:550;letter-spacing:-.025em}
+.app-identity span{display:block;color:#babbb2;margin-top:6px;font-size:15px}
+.download-status{max-width:600px}
+.download-status h2{font-size:clamp(38px,4.1vw,68px);line-height:1.08;letter-spacing:-.04em;font-weight:500;max-width:560px;margin:0 0 24px;text-wrap:balance}
+.download-status>p{font-size:17px;line-height:1.5;color:#cacbc2;max-width:550px}
+.download-button{display:inline-flex;align-items:center;justify-content:space-between;gap:44px;background:#8d8e86;color:#20201e;border:0;border-radius:4px;padding:17px 20px;min-width:225px;margin:36px 0 14px;font:600 15px "Helvetica Neue",Helvetica,Arial,sans-serif;cursor:not-allowed}
+.download-button span{font-size:20px}
+.download-status .download-note{font-size:13px;color:#a8a99f}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px;border-bottom:1px solid var(--line);padding:64px 0 66px}
+.facts>div{border-top:1px solid var(--line);padding-top:19px}
+.facts h2{font-size:18px;letter-spacing:-.02em;font-weight:600;margin-bottom:14px}
+.facts p{font-size:16px;line-height:1.5;max-width:320px;color:#5e5e56}
+.install{display:grid;grid-template-columns:.8fr 1.2fr;gap:7%;padding:54px 0 100px}
+.install h2{font-size:clamp(30px,3vw,46px);font-weight:500;letter-spacing:-.035em}
+.install ol{counter-reset:steps;list-style:none;padding:0;margin:0;max-width:650px}
+.install li{counter-increment:steps;display:grid;grid-template-columns:42px 1fr;gap:20px;padding:19px 0;border-bottom:1px solid var(--line);font-size:17px;line-height:1.45}
+.install li:first-child{padding-top:0}
+.install li:before{content:counter(steps,decimal-leading-zero);font-size:14px;color:#6c6c63}
+footer{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:40px 5.5%;background:#deded3;font-size:14px}
+@media(max-width:900px){.opening,.download-card,.install{grid-template-columns:1fr}.opening{gap:26px;padding:60px 0}.opening>p{max-width:550px}.download-card{gap:38px;padding:40px}.facts{gap:22px}}
+@media(max-width:650px){body{padding:7px}.page{border-radius:12px}.site-header{margin:0 20px;padding:22px 0}.wordmark,footer>a{font-size:26px}.header-back{font-size:13px;gap:8px}main{margin:0 20px}.opening{padding:58px 0}.opening h1{font-size:clamp(57px,12.2vw,82px)}.download-card{padding:26px;border-radius:10px}.app-identity img{width:54px;height:54px;border-radius:13px}.app-identity strong{font-size:20px}.download-status h2{font-size:38px}.download-status>p{font-size:16px}.facts{grid-template-columns:1fr;gap:25px;padding:45px 0}.facts h2{margin-bottom:7px}.facts p{max-width:none}.install{padding:46px 0 65px;gap:26px}.install li{font-size:16px}footer{padding:32px 20px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
