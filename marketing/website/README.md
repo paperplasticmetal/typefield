@@ -91,3 +91,9 @@ Reproduction from repository root, using the locally downloaded source:
 ```
 
 Validation: JavaScript syntax, complete media decode, 59.5-second H.264/AAC stream checks, desktop and mobile player layout, play/pause, mute, seeking, fullscreen entry/exit, close/pause behavior, specimen typeface switching, and workspace transition tested. Browser error log was empty. Music selection used the source's genre metadata; automated playback was verified, but subjective audio audition is left to the user.
+
+## Website detail and Cloudflare deployment
+
+The workspace tabs now list specific tasks, and the page explains the file-based Figma, Illustrator, InDesign, PDF, and developer handoffs. Motion reveals content within each section, with restrained hover and focus responses. JavaScript and CSS both respect reduced motion.
+
+For Cloudflare Pages, use the existing repository, the `codex/typefield-website` branch as production, no build command, and `marketing/website/dist` as the output directory. The earlier owner-private Site remains a separate draft deployment. Connect `typefield.app` after the domain is purchased.
