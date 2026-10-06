@@ -2,13 +2,13 @@ import AppKit
 import CoreText
 import Foundation
 
-// Typefield launch film v12. Vector choreography, orthographic planes and shared objects.
+// Typefield launch film v13. Vector choreography, orthographic planes and shared objects.
 // No screenshots are drawn. Product capabilities follow the verified v3 QA round trip.
 let args=CommandLine.arguments
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
 let output=root.appendingPathComponent("marketing/launch/renders")
 try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
-let width=1920,height=1080,fps=60,duration=52.0
+let width=1920,height=1080,fps=60,duration=58.5
 let rgb=CGColorSpace(name:CGColorSpace.sRGB)!
 let paper="F7F7F5",ink="222326",stage="FFFFFF",muted="696B70",coral="DF805E",blue="2F6570"
 var c:CGContext!
@@ -544,6 +544,120 @@ func layoutHandoff(_ local:Double){
  if local>0.85 {captionTop=280}
  navigation(local,1)
 }
+struct MoreTile {
+ let x:Double,y:Double,w:Double,h:Double
+ let kind:String,title:String,subtitle:String,fill:String
+}
+let moreTiles:[MoreTile]=[
+ MoreTile(x:44,y:36,w:440,h:320,kind:"tokens",title:"Export type tokens",subtitle:"CSS, Tailwind and code starters",fill:"F2F4F4"),
+ MoreTile(x:508,y:36,w:440,h:320,kind:"cost",title:"Web-font cost",subtitle:"Check exact WOFF2 sizes",fill:"F7F7F5"),
+ MoreTile(x:972,y:36,w:440,h:320,kind:"similar",title:"Find similar fonts",subtitle:"Explore your local library",fill:"EEF1F1"),
+ MoreTile(x:1436,y:36,w:440,h:320,kind:"health",title:"Font health",subtitle:"Inspect and repair copies",fill:"F7F7F5"),
+ MoreTile(x:44,y:380,w:440,h:320,kind:"components",title:"Linked components",subtitle:"Reuse your own letterforms",fill:"F7F7F5"),
+ MoreTile(x:1436,y:380,w:440,h:320,kind:"cleanup",title:"Simplify outlines",subtitle:"Preview cleaner curves",fill:"EEF1F1"),
+ MoreTile(x:44,y:724,w:440,h:320,kind:"masters",title:"Alternate masters",subtitle:"Keep independent designs",fill:"EEF1F1"),
+ MoreTile(x:508,y:724,w:440,h:320,kind:"proof",title:"Type proofing",subtitle:"Contrast and line lengths",fill:"F7F7F5"),
+ MoreTile(x:972,y:724,w:440,h:320,kind:"return",title:"Bring layouts back",subtitle:"Import editable text and shapes",fill:"F7F7F5"),
+ MoreTile(x:1436,y:724,w:440,h:320,kind:"rediscover",title:"Rediscover fonts",subtitle:"Based on your past use",fill:"F2F4F4")
+]
+func rounded(_ box:CGRect,_ radius:Double,_ fill:String){
+ c.setFillColor(color(fill));c.addPath(CGPath(roundedRect:box,cornerWidth:radius,cornerHeight:radius,transform:nil));c.fillPath()
+}
+func moreGraphic(_ kind:String,_ local:Double){
+ let p=progress(local,0.65,1.35)
+ switch kind {
+ case "tokens":
+  text("{",74,160,102,blue,"mono","center")
+  text("Aa",192,151,95,ink,"serif","center")
+  text("}",324,160,102,blue,"mono","center")
+  for (i,w) in [118.0,78,98].enumerated(){rect(160,174+Double(i)*10,w*p,3,i==0 ? coral:"B6C2C3")}
+ case "cost":
+  for (i,w) in [252.0,188,120].enumerated(){
+   let y=66+Double(i)*48
+   rounded(CGRect(x:90,y:y,width:260,height:14),7,"E0E5E5")
+   rounded(CGRect(x:90,y:y,width:max(14,w*p),height:14),7,i==0 ? blue:(i==1 ? "7D9B9C":coral))
+  }
+  text("WOFF2",220,205,24,muted,"mono","center")
+ case "similar":
+  let names=["serif","didot","serif"]
+  for i in 0..<3 {layer(i==1 ? 1:0.55){text("Ag",100+Double(i)*120,151,i==1 ? 87:70,ink,names[i],"center")}}
+  line(190,187,250,187,blue,2)
+ case "health":
+  rounded(CGRect(x:137,y:40,width:148,height:164),12,"FFFFFF")
+  text("Aa",211,143,78,ink,"serif","center")
+  line(165,173,252,173,"CDD0D4",2)
+  let points=[CGPoint(x:266,y:181),CGPoint(x:284,y:199),CGPoint(x:320,y:155)]
+  c.setLineWidth(5);c.setLineCap(.round);c.setStrokeColor(color(blue));drawStroke(points,p)
+ case "components":
+  text("A",115,172,136,ink,"serif","center")
+  line(192,133,240,133,"9BADAE",2);line(240,81,240,171,"9BADAE",2)
+  line(240,81,260,81,"9BADAE",2);line(240,171,260,171,"9BADAE",2)
+  layer(p){text("Á",314,113,75,blue,"serif","center");text("Å",314,204,75,blue,"serif","center")}
+ case "cleanup":
+  for i in 0..<2 {
+   let x=i==0 ? 112.0:328.0
+   let path=CGPath(ellipseIn:CGRect(x:x-54,y:61,width:108,height:128),transform:nil)
+   c.addPath(path);c.setStrokeColor(color(ink));c.setLineWidth(3);c.strokePath()
+   let count=i==0 ? 20:4
+   for k in 0..<count {
+    let angle=Double(k)*2*Double.pi/Double(count),xx=x+54*cos(angle),yy=125+64*sin(angle)
+    rect(xx-3,yy-3,6,6,i==0 ? "819697":blue)
+   }
+  }
+  line(191,125,249,125,muted,2);line(238,115,249,125,muted,2);line(238,135,249,125,muted,2)
+ case "masters":
+  for i in 0..<3 {
+   let x=72+Double(i)*105
+   rounded(CGRect(x:x,y:42+Double(abs(i-1))*10,width:96,height:154),10,i==1 ? "FFFFFF":"E2E8E8")
+   text("a",x+48,151,91,ink,["serif","medium","didot"][i],"center")
+  }
+ case "proof":
+  rounded(CGRect(x:66,y:44,width:148,height:127),14,ink)
+  rounded(CGRect(x:226,y:44,width:148,height:127),14,"E4EBEB")
+  text("Aa",140,134,78,"FFFFFF","serif","center")
+  text("Aa",300,134,78,blue,"serif","center")
+  line(70,197,370,197,"9AADAE",2)
+  for x in stride(from:70.0,through:370.0,by:30){line(x,192,x,202,"9AADAE",1)}
+ case "return":
+  for (i,name) in ["Figma","Adobe"].enumerated(){
+   let x=58+Double(i)*181
+   rounded(CGRect(x:x,y:39,width:143,height:105),12,"E4EBEB")
+   text("Aa",x+71.5,110,68,ink,"serif","center")
+   text(name,x+71.5,174,23,muted,"sans","center")
+  }
+  line(130,190,130,209,blue,1.5);line(130,209,310,209,blue,1.5);line(310,190,310,209,blue,1.5)
+  line(220,209,220,226,blue,1.5);line(213,219,220,226,blue,1.5);line(227,219,220,226,blue,1.5)
+ case "rediscover":
+  text("Ag",220,159,108,ink,"serif","center")
+  let start=0.45,end=5.50
+  c.beginPath();c.addArc(center:CGPoint(x:220,y:127),radius:88,startAngle:start,endAngle:mix(start,end,p),clockwise:false)
+  c.setStrokeColor(color("8DA6A7"));c.setLineWidth(2);c.strokePath()
+  if p>0.95 {line(273,50,282,65,"8DA6A7",2);line(282,65,265,66,"8DA6A7",2)}
+ default:break
+ }
+}
+func moreMosaic(_ local:Double){
+ for tile in moreTiles {
+  transform(tile.x,tile.y){
+   rounded(CGRect(x:0,y:0,width:tile.w,height:tile.h),28,tile.fill)
+   moreGraphic(tile.kind,local)
+   text(tile.title,tile.w/2,260,32,ink,"medium","center")
+   text(tile.subtitle,tile.w/2,295,23,muted,"sans","center")
+  }
+ }
+ rounded(CGRect(x:508,y:380,width:904,height:320),28,"F3E5DE")
+ let groupWidth=140+36+bounds("And more",100,"medium").width,left=960-groupWidth/2
+ image(icon,CGRect(x:left,y:470,width:140,height:140))
+ text("And more",left+176,570,100,ink,"medium")
+}
+func moreFeatures(_ local:Double){
+ background()
+ let slide=progress(local,0,0.65)
+ if slide<1 {transform(-1920*slide,0){layoutHandoff(3.85)}}
+ transform(1920*(1-slide),0){moreMosaic(local)}
+ // This is a full-screen overview without scene captions or workspace navigation.
+ captionTop=0;navVisible=false
+}
 func ending(_ t:Double){
  background()
  let p=progress(t,36,36.58)
@@ -571,7 +685,7 @@ func storyTime(_ outputTime:Double)->Double {
  return timing.last!.story
 }
 // Preserve readable action timing while giving pairing exploration the central beat.
-// The final export is a file handoff, followed by the unchanged four-second ending.
+// The export leads into a feature mosaic, followed by the unchanged four-second ending.
 let pacing:[(scene:Double,output:Double)]=[
  (0,0),(2,2),(3,3.3),(4,4.3),(5.7,6.3),(6.85,7.45),
  (8.2,9.15),(9.1,10.05),(10.5,11.95),(11,12.45),(12.3,16.45),
@@ -580,7 +694,7 @@ let pacing:[(scene:Double,output:Double)]=[
  (22.3,30.5),(22.7,30.9),(22.95,31.25),(24.3,32.6),(24.95,33.2),(25.45,33.7),
  (25.65,33.9),(26.7,34.95),(27.95,36.2),(28.65,36.9),(30,38.1),
  (30.75,38.85),(32.2,40.35),(33.4,41.55),(34.6,42.75),(35.35,43.5),
- (36,44.15),(39.85,48),(43.85,52)
+ (36,44.15),(39.85,48),(46.35,54.5),(50.35,58.5)
 ]
 func choreographyTime(_ outputTime:Double)->Double {
  for (a,b) in zip(pacing,pacing.dropFirst()) where outputTime<=b.output {
@@ -609,21 +723,27 @@ func frame(_ outputTime:Double)->CGContext {
  else if sceneTime<32.2 {exportAndReturn(t)}
  else if sceneTime<36 {finalLayout(t)}
  else if sceneTime<39.85 {layoutHandoff(outputTime-44.15)}
- else {ending(36+outputTime-48)}
+ else if sceneTime<46.35 {moreFeatures(outputTime-48)}
+ else {ending(36+outputTime-54.5)}
  validateGeometry(outputTime)
  return ctx
 }
 func png(_ ctx:CGContext,_ url:URL)throws {try NSBitmapImageRep(cgImage:ctx.makeImage()!).representation(using:.png,properties:[:])!.write(to:url)}
-if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v12-%05.2f.png",t)))}
+if let k=args.firstIndex(of:"--frame"),args.count>k+1 {let t=Double(args[k+1])!;try png(frame(t),output.appendingPathComponent(String(format:"v13-%05.2f.png",t)))}
 else if args.contains("--stills"){
- for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5,40.15,41.05,43.35]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v12-%05.2f.png",t)))}
- print("Rendered 43 composition and transition frames.")
+ for scene in [0.0,1.4,2.6,3.5,4.8,5.9,6.8,7.8,8.6,9.5,10.7,11.7,12.5,14.6,15.9,16.3,16.8,17.5,18.6,19.4,20.2,20.8,21.59,21.61,22.6,24.1,25.35,25.5,26.9,28.2,29.3,30.4,31.5,32.19,32.21,33.5,35.4,36.3,37.2,39.5,40.15,40.65,41.35,43.05,45.35,46.349,46.35,47.55,49.85]{let t=presentationTime(scene);try png(frame(t),output.appendingPathComponent(String(format:"v13-%05.2f.png",t)))}
+ print("Rendered 49 composition and transition frames.")
 }else if args.contains("--audit"){
  let resolvedHeadingFont=CTFontCopyPostScriptName(font(88,"medium")) as String
  precondition(resolvedHeadingFont=="HelveticaNeue-Medium")
  print("Heading font: \(resolvedHeadingFont)")
- let headings=["Find your type","Organize by project","Build your shortlist","Compare every detail","Find a font pairing","Try pairings in context","Draw your way","Import your artwork","Make every curve yours","Down to the space between","Export your font","Add it to Library","Your font, in good company","Export your explorations"]
+ let headings=["Find your type","Organize by project","Build your shortlist","Compare every detail","Find a font pairing","Try pairings in context","Draw your way","Import your artwork","Make every curve yours","Down to the space between","Export your font","Add it to Library","Your font, in good company","Export your explorations","And more"]
  for h in headings {precondition(bounds(h,88,"medium").width<1760);print("Heading: \(h), \(Int(bounds(h,88,"medium").width)) px")}
+ for tile in moreTiles {
+  precondition(bounds(tile.title,32,"medium").width<tile.w-48)
+  precondition(bounds(tile.subtitle,23).width<tile.w-40)
+  precondition(tile.x>=40 && tile.y>=32 && tile.x+tile.w<=1880 && tile.y+tile.h<=1048)
+ }
  precondition(navCenters[1]==960 && navCenters[1]-navCenters[0]==navCenters[2]-navCenters[1])
  var letters=Array("pop".utf16),gs=[CGGlyph](repeating:0,count:3)
  precondition(CTFontGetGlyphsForCharacters(font(100,"ink"),&letters,&gs,3) && gs.allSatisfy{$0>0})
@@ -640,8 +760,8 @@ else if args.contains("--stills"){
 
 }else{
  let proc=Process();proc.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
- proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v12.mp4").path]
+ proc.arguments=["-hide_banner","-loglevel","error","-y","-f","rawvideo","-pixel_format","rgba","-video_size","1920x1080","-framerate","60","-i","pipe:0","-an","-vf","scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p","-c:v","libx264","-preset","medium","-crf","16","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart",output.appendingPathComponent("Typefield-Launch-Master-1080p60-v13.mp4").path]
  let pipe=Pipe();proc.standardInput=pipe;try proc.run()
- for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / \(Int(duration))s");fflush(stdout)}}
+ for i in 0..<Int(duration*Double(fps)){try autoreleasepool{let ctx=frame(Double(i)/Double(fps));try pipe.fileHandleForWriting.write(contentsOf:Data(bytesNoCopy:ctx.data!,count:width*height*4,deallocator:.none))};if i%(fps*4)==0{print("Rendered \(i/fps)s / \(duration)s");fflush(stdout)}}
  try pipe.fileHandleForWriting.close();proc.waitUntilExit();precondition(proc.terminationStatus==0);print("Master complete.")
 }
