@@ -1,10 +1,16 @@
 # Changelog
 
-## Unreleased — onboarding refinement
+## 0.59.16 (2026-10-07)
 
 - Replace the text-only tour with a typography playground: change typefaces, try your own words in layouts, and reshape a letter with a draggable point or accessible slider.
 - Add short, Reduce Motion-aware transitions, direct step navigation, and a smoother handoff into docked or detached workspaces.
 - Match sidebar shortcut motion to its buttons, remove duplicate About-sheet code, and avoid rebuilding an unchanged Dock icon.
+
+## 0.59.14 (2026-10-07)
+
+- Fix repeated object alignment enlarging Spaces canvases. Align against the current artboard, compose with existing content transforms, and preserve selected-object size. Keep unselected text stable at fractional scales and allow subsequent edge/corner resizing without false clipping failures.
+- Synchronize canvas, arrangement and floating-inspector selection so shape controls follow the selected layer reliably and multiselection cannot edit a stale single layer.
+- Make Arrangement collapsible, highlight its selected content on the canvas, and treat the entire row as a selection/reorder target. Keep the text cursor within editable canvas text.
 
 ## 0.59.13 (2026-10-07)
 

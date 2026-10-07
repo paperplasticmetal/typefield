@@ -538,7 +538,7 @@ enum CanvasBoardLayout {
         var fitted = canvas
         fitted.canvasScale = scale
         let plan = CanvasPlan(direction: fitted)
-        let bounds = textContentBounds(in: plan)
+        let bounds = textContentBounds(in: plan, padding: 0)
         let width = artboardSize.width * scale / originalScale
         let height = artboardSize.height * scale / originalScale
         if bounds.minX < 0 || bounds.minY < 0 || bounds.width > width + 0.5 || bounds.height > height + 0.5 || width > 10_000 || height > 10_000 {
@@ -573,7 +573,7 @@ enum CanvasBoardLayout {
             for _ in 0..<5 {
                 candidate.width = width
                 candidate.canvasWidth = importedWidth
-                let required = textContentBounds(in: CanvasPlan(direction: candidate)).width
+                let required = textContentBounds(in: CanvasPlan(direction: candidate)).width / scale
                 if canvas.canvas == .imported {
                     if required > 10_000 {
                         importedWidth = canvas.canvasWidth
@@ -598,7 +598,7 @@ enum CanvasBoardLayout {
         candidate.width = width
         candidate.canvasWidth = importedWidth
         if let requestedHeight = height {
-            let required = textContentBounds(in: CanvasPlan(direction: candidate)).height
+            let required = textContentBounds(in: CanvasPlan(direction: candidate)).height / scale
             if required > canvas.maximumCanvasHeight {
                 height = canvas.canvasHeight ?? baseHeight
                 warning = "Canvas height cannot be reduced without clipping text; resize was canceled."
@@ -615,7 +615,7 @@ enum CanvasBoardLayout {
             return value
         }()
         let fittedPlan = CanvasPlan(direction: fittedDirection)
-        let bounds = textContentBounds(in: fittedPlan)
+        let bounds = textContentBounds(in: fittedPlan, padding: 0)
         // A vertical gesture holds the rendered width, which can exceed the
         // stored template width when an unbreakable text run needs more room.
         // Imported legacy plans likewise use their already-expanded width.
@@ -653,7 +653,7 @@ enum CanvasBoardLayout {
             minY = min(minY, Double(used.minY))
             maxX = max(maxX, Double(element.rect.minX) + minimumTextFrameWidth(for: element))
         }
-        return TextContentBounds(minX: minX, minY: minY, width: ceil(maxX + padding), height: ceil(maxY + padding))
+        return TextContentBounds(minX: minX, minY: minY, width: padding == 0 ? maxX : ceil(maxX + padding), height: padding == 0 ? maxY : ceil(maxY + padding))
     }
     static func minimumTextFrameWidth(for element: CanvasElement) -> Double {
         guard let text = element.text, text.length > 0 else { return Double(element.rect.width) }
@@ -763,8 +763,8 @@ struct TypeBoardEditor: View {
     @State private var summaryCanvasIDs: Set<UUID>
     @State private var draggedSection: String?
     @State private var frameCanvasID: UUID?
-    @State private var interactionTool = CanvasInteractionTool.select
-    @State private var selectedObjects: Set<String> = []
+    var interactionTool: CanvasInteractionTool { get { editorSession.interactionTool } nonmutating set { editorSession.interactionTool = newValue } }
+    var selectedObjects: Set<String> { get { editorSession.selectedObjects } nonmutating set { editorSession.selectedObjects = newValue } }
     @State private var workspaceOffset: CGSize?
     @State private var frameInteraction: CanvasFrameInteraction?
     @State private var interactionZoom: Double?
@@ -791,15 +791,15 @@ struct TypeBoardEditor: View {
     var direction: TypeDirection { board.directions[directionIndex] }
     var visibleDirections: [TypeDirection] { board.directions.filter { shownCanvasIDs.contains($0.id) || $0.id == direction.id } }
     var showingAllCanvases: Bool { !board.directions.isEmpty && Set(board.directions.map(\.id)).isSubset(of: shownCanvasIDs) }
-    var importedLayerIndex: Int? { guard direction.canvas == .imported else { return nil }; return direction.importedLayout?.textLayerIndex(selectedID: selectedSection) }
+    var importedLayerIndex: Int? { guard direction.canvas == .imported, selectedObjects.count <= 1 else { return nil }; return direction.importedLayout?.textLayerIndex(selectedID: selectedSection) }
     var importedNonTextSelected: Bool { direction.canvas == .imported && importedLayerIndex == nil }
     var selectedImportedShapeIndex: Int? {
-        guard direction.canvas == .imported, let selectedSection else { return nil }
+        guard direction.canvas == .imported, selectedObjects.count <= 1, let selectedSection else { return nil }
         return direction.importedLayout?.layers.firstIndex { $0.id == selectedSection && $0.style == nil && $0.artworkData == nil }
     }
     var selectedImportedShape: ImportedLayer? { selectedImportedShapeIndex.flatMap { direction.importedLayout?.layers[$0] } }
     var selectedArtworkIndex: Int? {
-        guard let selectedSection else { return nil }
+        guard selectedObjects.count <= 1, let selectedSection else { return nil }
         return direction.artworkLayers?.firstIndex { $0.id == selectedSection && $0.artworkData != nil }
     }
     var selectedArtwork: ImportedLayer? { selectedArtworkIndex.flatMap { direction.artworkLayers?[$0] } }
@@ -1018,9 +1018,10 @@ struct TypeBoardEditor: View {
             } else { floatingInspector.close() }
         }
         .onChange(of: shownCanvasIDs) { _ in workspaceOffset = nil; soloViewport = nil }
-        .onChange(of: interactionTool) { tool in frameCanvasID = nil; if tool == .text || tool == .frame { selectedObjects = [] }; selectedSection = nil; selectedTextID = nil }
+        .onChange(of: interactionTool) { tool in frameCanvasID = nil; if tool == .frame { selectObjects([]) } }
         .onChange(of: direction.id) { id in selectedObjects = []; shownCanvasIDs.insert(id); if !(direction.artworkLayers ?? []).contains(where: { $0.id == selectedSection }) { selectedSection = nil }; selectedTextID = nil; draggedSection = nil; if frameCanvasID != id { frameCanvasID = nil }; if let other = board.directions.first(where: { $0.id == abID }), other.canvas != direction.canvas || other.width != direction.width || other.canvasWidth != direction.canvasWidth || other.canvasHeight != direction.canvasHeight || other.canvasScale != direction.canvasScale { abID = nil } }
-        .onChange(of: direction.canvas) { _ in abID = nil; selectedSection = nil; selectedTextID = nil }
+        .onChange(of: direction.canvas) { _ in abID = nil; selectObjects([]) }
+        .onChange(of: direction) { _ in if !selectedObjects.isEmpty { selectObjects(selectedObjects) } }
         .onChange(of: direction.width) { _ in abID = nil }
         .onDisappear { floatingInspector.close(); if focusCanvas { sidebarCollapsed = sidebarBeforeFocus; focusCanvas = false } }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldCanvasFocus"))) { _ in
@@ -1051,15 +1052,15 @@ struct TypeBoardEditor: View {
     }
     var interactionTools: some View {
         HStack(spacing: 5) {
-            Picker("Interaction tool", selection: $interactionTool) {
+            Picker("Interaction tool", selection: $editorSession.interactionTool) {
                 ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
                     Label(tool.rawValue, systemImage: tool.symbol).tag(tool)
                 }
             }.pickerStyle(.menu).labelsHidden().frame(width: 105).help("Interaction tool: Select objects, drag a Marquee, edit Text, or adjust Canvas boundaries")
             if interactionTool == .select || interactionTool == .marquee {
                 Menu {
-                    Button("Select all content") { selectedObjects = Set(CanvasPlanCache.plan(for: direction).elements.map(\.objectID)) }
-                    Button("Deselect") { selectedObjects = [] }
+                    Button("Select all content") { selectObjects(Set(CanvasPlanCache.plan(for: direction).elements.map(\.objectID))) }
+                    Button("Deselect") { selectObjects([]) }
                     Divider()
                     Button("Group selection") { groupObjects() }.disabled(selectedObjects.count < 2)
                     Button("Ungroup") { ungroupObjects() }.disabled(!(direction.objectGroups ?? []).contains { !$0.members.isDisjoint(with: selectedObjects) })
@@ -1069,6 +1070,16 @@ struct TypeBoardEditor: View {
                 .help("Shift-click adds objects. Drag the selection to move; drag its lower-right handle to scale. Escape cancels a drag.")
             }
         }
+    }
+    func selectObjects(_ ids: Set<String>) {
+        frameCanvasID = nil
+        editorSession.selectObjects(ids, in: direction)
+    }
+    func selectArrangementSection(_ id: String) {
+        let plan = CanvasPlanCache.plan(for: direction)
+        interactionTool = .select
+        editorSession.selectionRevealToken += 1
+        selectObjects(CanvasSelection.expanded(Set(plan.elements.filter { $0.sectionID == id }.map(\.objectID)), groups: direction.objectGroups ?? []))
     }
     func groupObjects() {
         guard selectedObjects.count > 1 else { return }
@@ -1361,8 +1372,8 @@ struct TypeBoardEditor: View {
     }
     func selectRole(_ item: TypeRole) {
         role = item; fontSearch = ""; inspectorTab = "Typography"
-        if let element = CanvasPlanCache.plan(for: direction).elements.first(where: { $0.role == item && $0.text != nil }) { selectedSection = element.sectionID; selectedTextID = element.textID }
-        else { selectedSection = nil; selectedTextID = nil }
+        if let element = CanvasPlanCache.plan(for: direction).elements.first(where: { $0.role == item && $0.text != nil }) { selectObjects([element.objectID]) }
+        else { selectObjects([]) }
     }
     func addRole(_ item: TypeRole, target: String?, before: Bool) {
         if direction.canvas == .imported {
@@ -1445,7 +1456,7 @@ struct TypeBoardEditor: View {
                     else if visibleDirections.count > 1 { Button("Only this") { showOnlyCurrent() }.buttonStyle(.borderless).font(.caption).fixedSize().help("Hide the other canvases") }
                 }
             }.frame(width: max(1,plan.artboardSize.width * zoom), height:24).clipped()
-            CanvasPreview(plan: plan, zoom: zoom, tool: interactionTool, objectSelection: direction.id == self.direction.id ? selectedObjects : [], objectGroups: direction.objectGroups ?? [], onObjectSelection: { ids in selectedObjects = ids; frameCanvasID = nil; selectedSection = nil; selectedTextID = nil }, onObjectTransform: { ids, anchor, factor, delta in transformObjects(ids, anchor: anchor, scale: factor, delta: delta) }, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, selectedTextID: direction.id == self.direction.id ? selectedTextID : nil, onSelect: { id in frameCanvasID = nil; selectedSection = id; selectedTextID = nil; inspectorTab = "Arrangement" }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.id == self.direction.id && direction.canvas == .imported ? moveLayer : nil, onArtworkTranslate: direction.id == self.direction.id ? moveLayer : nil, onImportArtwork: { url, point in importArtwork(url, onto: direction.id, at: point) }, onTextSelect: { element in frameCanvasID = nil; selectText(element) }, onTextEdit: direction.id == self.direction.id ? { element, text in editText(element, text, directionID: direction.id) } : nil, acceptsFont: { library.face(named: $0) != nil && !library.studio.readBlocked }, onDropFont: { name, element in dropFont(name, onto: element, directionID: direction.id) })
+            CanvasPreview(plan: plan, zoom: zoom, revealSelectionToken: editorSession.selectionRevealToken, tool: interactionTool, objectSelection: direction.id == self.direction.id ? selectedObjects : [], objectGroups: direction.objectGroups ?? [], onObjectSelection: selectObjects, onObjectTransform: { ids, anchor, factor, delta in transformObjects(ids, anchor: anchor, scale: factor, delta: delta) }, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, selectedTextID: direction.id == self.direction.id ? selectedTextID : nil, onSelect: { id in selectObjects(Set(plan.elements.filter { $0.sectionID == id }.map(\.objectID))); inspectorTab = "Arrangement" }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.id == self.direction.id && direction.canvas == .imported ? moveLayer : nil, onArtworkTranslate: direction.id == self.direction.id ? moveLayer : nil, onImportArtwork: { url, point in importArtwork(url, onto: direction.id, at: point) }, onTextSelect: { element in frameCanvasID = nil; selectText(element) }, onTextEdit: direction.id == self.direction.id ? { element, text in editText(element, text, directionID: direction.id) } : nil, acceptsFont: { library.face(named: $0) != nil && !library.studio.readBlocked }, onDropFont: { name, element in dropFont(name, onto: element, directionID: direction.id) })
                 .frame(width: plan.size.width * zoom, height: plan.size.height * zoom)
                 .overlay(alignment: .topLeading) {
                     canvasFrameControls(direction, size: CGSize(width: plan.artboardSize.width * zoom, height: plan.artboardSize.height * zoom), zoom: zoom)
@@ -1555,6 +1566,7 @@ struct TypeBoardEditor: View {
             }
     }
     func selectText(_ element: CanvasElement) {
+        selectObjects([element.objectID])
         selectedSection = element.sectionID
         selectedTextID = element.textID
         if let item = element.role { role = item }
@@ -1599,7 +1611,7 @@ struct TypeBoardEditor: View {
                 else {
                 if direction.canvas == .imported {
                     HStack { Text("Imported text layers").font(.caption.weight(.semibold)).foregroundStyle(.secondary); editingScopeInfoButton }
-                    ShelfDropdown(title: "Layer", selection: Binding(get: { importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id } ?? "" }, set: { selectedSection = $0 }), options: (direction.importedLayout?.layers.filter { $0.style != nil } ?? []).map { ($0.name, $0.id) }, showsTitle: false)
+                    ShelfDropdown(title: "Layer", selection: Binding(get: { importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id } ?? "" }, set: { id in selectObjects(Set(CanvasPlanCache.plan(for: direction).elements.filter { $0.sectionID == id }.map(\.objectID))) }), options: (direction.importedLayout?.layers.filter { $0.style != nil } ?? []).map { ($0.name, $0.id) }, showsTitle: false)
 
                 } else {
                 HStack(spacing: 8) {
@@ -1751,22 +1763,30 @@ struct TypeBoardEditor: View {
         }.padding(18).frame(width: 580, height: 540).background(Color(nsColor: .windowBackgroundColor)).onAppear { fontSearchFocused = true }.onExitCommand { showFontPicker = false }
     }
     var layoutSections: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack { Text("Arrangement").font(.caption.weight(.semibold)).foregroundStyle(.secondary); Spacer(); Menu { ForEach(TypeRole.allCases) { item in Button(item.rawValue) {
-                addRole(item, target: CanvasPlanCache.plan(for: direction).sections.last?.id, before: false)
-            } }; if !(direction.hiddenSections ?? []).isEmpty { Button("Restore removed sections") { board.directions[directionIndex].hiddenSections = nil; save() } } } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add section").accessibilityLabel("Add section") }
+        DisclosureGroup(isExpanded: $editorSession.arrangementExpanded) {
             let plan = CanvasPlanCache.plan(for: direction)
-            GeometryReader { geometry in
-                ZStack(alignment: .topTrailing) {
-                    CanvasPreview(plan: CanvasPlan(arrangement: plan.sections, width: geometry.size.width), directionID: direction.id, selectedSection: selectedSection, onSelect: { selectedSection = $0; selectedTextID = nil }, onMove: moveSection)
-                    VStack(spacing: 0) {
-                        ForEach(plan.sections) { section in
-                            Button { var hidden = direction.hiddenSections ?? []; hidden.insert(section.id); board.directions[directionIndex].hiddenSections = hidden; save("Remove Section") } label: { Image(systemName: "minus").frame(width: 28, height: 42) }.buttonStyle(.borderless).help("Remove " + section.title).accessibilityLabel("Remove " + section.title)
+            VStack(alignment: .leading, spacing: 8) {
+                GeometryReader { geometry in
+                    ZStack(alignment: .topTrailing) {
+                        CanvasPreview(plan: CanvasPlan(arrangement: plan.sections, width: geometry.size.width), directionID: direction.id, selectedSection: selectedSection, onSelect: selectArrangementSection, onMove: moveSection)
+                        VStack(spacing: 0) {
+                            ForEach(plan.sections) { section in
+                                Button { var hidden = direction.hiddenSections ?? []; hidden.insert(section.id); board.directions[directionIndex].hiddenSections = hidden; selectObjects([]); save("Remove Section") } label: { Image(systemName: "minus").frame(width: 28, height: 42) }.buttonStyle(.borderless).help("Remove " + section.title).accessibilityLabel("Remove " + section.title)
+                            }
                         }
                     }
-                }
-            }.frame(height: Double(plan.sections.count) * 42)
-            Text(direction.canvas == .imported ? "Drag to reorder or move layers. On a focused canvas, use arrows to select, ⌘⌥↑/↓ to reorder, or ⌥arrow to nudge." : "Drag to reorder sections. On a focused canvas, use arrows to select and ⌘⌥↑/↓ to reorder.").font(.caption2).foregroundStyle(.secondary)
+                }.frame(height: Double(plan.sections.count) * 42)
+                Text("Click a row to highlight its content on the canvas. Drag rows to reorder.").font(.caption2).foregroundStyle(.secondary)
+            }.padding(.top, 8)
+        } label: {
+            HStack {
+                Text("Arrangement").font(.caption.weight(.semibold))
+                Spacer()
+                Menu {
+                    ForEach(TypeRole.allCases) { item in Button(item.rawValue) { addRole(item, target: CanvasPlanCache.plan(for: direction).sections.last?.id, before: false) } }
+                    if !(direction.hiddenSections ?? []).isEmpty { Button("Restore removed sections") { board.directions[directionIndex].hiddenSections = nil; save() } }
+                } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add section").accessibilityLabel("Add section")
+            }
         }
     }
     @discardableResult func dropFont(_ name: String, onto element: CanvasElement, directionID: UUID) -> Bool {
@@ -2203,6 +2223,7 @@ enum CanvasPlanCache {
     }
 }
 struct CanvasPlan {
+    var isArrangement = false
     static func editorialSample(_ text: String, repetitions: Int) -> String {
         // Repeat short sample copy to fill a template, but never multiply a
         // user's long article. Keep the original text intact in every column.
@@ -2225,6 +2246,7 @@ struct CanvasPlan {
         if !result.isEmpty { accessibilityText = result }
     }
     init(arrangement: [CanvasSection], width: Double) {
+        isArrangement = true
         paper = .clear; ink = .labelColor; size = CGSize(width: width, height: Double(arrangement.count) * 42)
         artboardSize = size
         for (index, section) in arrangement.enumerated() {
@@ -2261,8 +2283,7 @@ struct CanvasPlan {
             }
             appendArtworkLayers(d.artworkLayers ?? [], hidden: d.hiddenSections ?? [])
             artboardSize = size
-            if !(d.objectTransforms ?? [:]).isEmpty { expandTextFramesForUnbreakableContent() }
-            applyObjectTransforms(d.objectTransforms ?? [:])
+            applyObjectTransforms(d.objectTransforms ?? [:], canvasScale: d.canvasScale ?? 1)
             applyCanvasScale(d.canvasScale ?? 1)
             expandTextFramesForUnbreakableContent(excluding: Set(d.objectTransforms?.keys.map { $0 } ?? []))
             applyArtboardBounds(width: d.width, importedWidth: d.canvasWidth, height: d.canvasHeight,
@@ -2861,8 +2882,7 @@ struct CanvasPlan {
             }
         }
         appendArtworkLayers(d.artworkLayers ?? [], hidden: d.hiddenSections ?? [])
-        if !(d.objectTransforms ?? [:]).isEmpty { expandTextFramesForUnbreakableContent() }
-        applyObjectTransforms(d.objectTransforms ?? [:])
+        applyObjectTransforms(d.objectTransforms ?? [:], canvasScale: d.canvasScale ?? 1)
         applyCanvasScale(d.canvasScale ?? 1)
         expandTextFramesForUnbreakableContent(excluding: Set(d.objectTransforms?.keys.map { $0 } ?? []))
         applyArtboardBounds(width: d.width, importedWidth: d.canvasWidth, height: d.canvasHeight,
@@ -2928,9 +2948,9 @@ struct CanvasPlan {
         let scale = contentScale
         let requestedWidth = importedWidth.map { $0 * scale } ?? (preserveImportedOverflow ? artboardSize.width : width * scale)
         let requestedHeight = (height.map { max(1, $0) } ?? artboardSize.height / max(0.01, scale)) * scale
-        let textBounds = CanvasBoardLayout.textContentBounds(in: self)
-        let finalWidth = max(requestedWidth, Double(textBounds.width))
-        let finalHeight = max(requestedHeight, Double(textBounds.height))
+        let textBounds = CanvasBoardLayout.textContentBounds(in: self, padding: 0)
+        let finalWidth = textBounds.width <= requestedWidth + 0.000001 ? requestedWidth : textBounds.width
+        let finalHeight = textBounds.height <= requestedHeight + 0.000001 ? requestedHeight : textBounds.height
         let boundedWidth = preserveImportedOverflow ? finalWidth : min(10_000, finalWidth)
         let boundedHeight = preserveImportedOverflow ? finalHeight : min(10_000, finalHeight)
         artboardSize = CGSize(width: boundedWidth, height: boundedHeight)
@@ -3044,6 +3064,7 @@ private final class CanvasAccessibilityItem: NSAccessibilityElement {
 final class CanvasNativeView: NSView {
     var plan: CanvasPlan
     var zoom = 1.0
+    var revealSelectionToken = 0
     var tool: CanvasInteractionTool = .text
     var objectSelection: Set<String> = []
     var objectGroups: [CanvasObjectGroup] = []
@@ -3079,7 +3100,12 @@ final class CanvasNativeView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func resetCursorRects() {
         guard directionID != nil else { return }
-        addCursorRect(bounds, cursor: tool == .marquee ? .crosshair : tool == .text ? .iBeam : .arrow)
+        addCursorRect(bounds, cursor: plan.isArrangement ? .arrow : tool == .marquee ? .crosshair : .arrow)
+        if tool == .text && !plan.isArrangement {
+            for element in plan.elements where element.text != nil {
+                addCursorRect(CGRect(x: element.rect.minX * zoom, y: element.rect.minY * zoom, width: element.rect.width * zoom, height: element.rect.height * zoom), cursor: .iBeam)
+            }
+        }
         if tool == .select, let box = CanvasSelection.bounds(objectSelection, in: plan) {
             addCursorRect(CGRect(x: box.maxX * zoom - 9, y: box.maxY * zoom - 9, width: 18, height: 18), cursor: .resizeLeftRight)
         }
@@ -3281,8 +3307,8 @@ final class CanvasNativeView: NSView {
         setAccessibilityChildren(ordered + (inlineEditor.map { [$0] } ?? []))
         setAccessibilityRole(.group)
         setAccessibilityLabel("Typography canvas, \(plan.sections.count) sections")
-        setAccessibilityValue("\(objectSelection.count) objects selected; \(tool.rawValue) tool")
-        setAccessibilityHelp(tool == .text ? "Double-click text to edit. Drag sections to reorder." : tool == .frame ? "Use the canvas boundary to select, move or resize its frame." : "Drag to select or move content. Shift-click extends selection. Arrow keys nudge, Command-A selects all, and Escape clears selection. Drag the lower-right handle to scale selected content.")
+        setAccessibilityValue(plan.isArrangement ? "Arrangement list" : "\(objectSelection.count) objects selected; \(tool.rawValue) tool")
+        setAccessibilityHelp(plan.isArrangement ? "Click a row to reveal and select its content on the canvas. Drag to reorder." : tool == .text ? "Double-click text to edit. Drag sections to reorder." : tool == .frame ? "Use the canvas boundary to select, move or resize its frame." : "Drag to select or move content. Shift-click extends selection. Arrow keys nudge, Command-A selects all, and Escape clears selection. Drag the lower-right handle to scale selected content.")
     }
     func section(at point: NSPoint) -> CanvasSection? {
         let local = NSPoint(x: point.x / max(0.01, zoom), y: point.y / max(0.01, zoom))
@@ -3314,7 +3340,7 @@ final class CanvasNativeView: NSView {
             let target = dropTarget(at: point)
             if next.type == .leftMouseUp {
                 let local = NSPoint(x: origin.x / zoom, y: origin.y / zoom)
-                if !moved, !artwork, let text = plan.text(at: local) {
+                if !moved, !artwork, onTextSelect != nil, let text = plan.text(at: local) {
                     onTextSelect?(text)
                     if event.clickCount >= 2, onTextEdit != nil { beginEditing(text) }
                 }
@@ -3513,6 +3539,7 @@ final class CanvasNativeView: NSView {
 struct CanvasPreview: NSViewRepresentable {
     let plan: CanvasPlan
     var zoom = 1.0
+    var revealSelectionToken = 0
     var tool: CanvasInteractionTool = .text
     var objectSelection: Set<String> = []
     var objectGroups: [CanvasObjectGroup] = []
@@ -3534,7 +3561,15 @@ struct CanvasPreview: NSViewRepresentable {
     final class Coordinator {}
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> CanvasNativeView { CanvasNativeView(plan: plan) }
-    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.tool = tool; view.objectSelection = objectSelection; view.objectGroups = objectGroups; view.onObjectSelection = onObjectSelection; view.onObjectTransform = onObjectTransform; view.window?.invalidateCursorRects(for: view); view.directionID = directionID; view.selectedSection = selectedSection; view.selectedTextID = selectedTextID; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onArtworkTranslate = onArtworkTranslate; view.onImportArtwork = onImportArtwork; view.onTextSelect = onTextSelect; view.onTextEdit = onTextEdit; view.acceptsFont = acceptsFont; view.onDropFont = onDropFont; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.synchronizeInlineEditor(); view.setAccessibilityElement(true); view.updateAccessibilityItems(); view.needsDisplay = true }
+    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.tool = tool; view.objectSelection = objectSelection; view.objectGroups = objectGroups; view.onObjectSelection = onObjectSelection; view.onObjectTransform = onObjectTransform; view.directionID = directionID; view.selectedSection = selectedSection; view.selectedTextID = selectedTextID; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onArtworkTranslate = onArtworkTranslate; view.onImportArtwork = onImportArtwork; view.onTextSelect = onTextSelect; view.onTextEdit = onTextEdit; view.acceptsFont = acceptsFont; view.onDropFont = onDropFont; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.synchronizeInlineEditor(); view.setAccessibilityElement(true); view.updateAccessibilityItems(); view.window?.invalidateCursorRects(for: view)
+        if view.revealSelectionToken != revealSelectionToken {
+            view.revealSelectionToken = revealSelectionToken
+            if let box = CanvasSelection.bounds(objectSelection, in: plan) {
+                _ = view.scrollToVisible(CGRect(x: box.minX * zoom, y: box.minY * zoom, width: box.width * zoom, height: box.height * zoom).insetBy(dx: -12, dy: -12))
+            }
+        }
+        view.needsDisplay = true
+    }
     static func dismantleNSView(_ view: CanvasNativeView, coordinator: Coordinator) { DispatchQueue.main.async { view.endInlineEditing(commit: true) } }
 }
 

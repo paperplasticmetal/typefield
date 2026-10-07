@@ -320,13 +320,12 @@ extension TypeBoardEditor {
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
-    var alignmentElement: CanvasElement? {
+    var alignmentObjectIDs: Set<String> {
+        if !selectedObjects.isEmpty { return selectedObjects }
         let plan = CanvasPlanCache.plan(for: direction)
-        if direction.canvas == .imported {
-            let id = selectedSection ?? importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id }
-            return plan.elements.first { $0.sectionID == id }
-        }
-        return selectedText
+        if let id = selectedTextID { return Set(plan.elements.filter { $0.textID == id }.map(\.objectID)) }
+        if let id = selectedSection { return Set(plan.elements.filter { $0.sectionID == id }.map(\.objectID)) }
+        return []
     }
     var canvasAlignmentPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -335,33 +334,21 @@ extension TypeBoardEditor {
                 ForEach(StudioCanvasAlignment.allCases) { alignment in
                     StudioInspectorIcon(title: alignment.rawValue + " to canvas", icon: alignment.icon) { alignElement(alignment) }
                 }
-            }.disabled(alignmentElement == nil)
-            Text(alignmentElement == nil ? "Select text on the canvas to align its frame." : "Moves the selected frame; paragraph alignment controls the text inside it.")
+            }.disabled(alignmentObjectIDs.isEmpty)
+            Text(alignmentObjectIDs.isEmpty ? "Select content on the canvas to align it." : "Moves the selection within the current canvas.")
                 .font(.caption2).foregroundStyle(.secondary)
-            if direction.canvas != .imported, let id = selectedTextID, direction.textPositions?[id] != nil {
-                Button("Reset frame position") { board.directions[directionIndex].textPositions?.removeValue(forKey: id); save("Reset Text Position") }.font(.caption)
+            if !alignmentObjectIDs.isEmpty {
+                Button("Reset frame position") {
+                    for id in alignmentObjectIDs { board.directions[directionIndex].objectTransforms?[id]?.x = 0; board.directions[directionIndex].objectTransforms?[id]?.y = 0; board.directions[directionIndex].textPositions?.removeValue(forKey: id) }
+                    save("Reset Object Position")
+                }.font(.caption)
             }
         }
     }
     func alignElement(_ alignment: StudioCanvasAlignment) {
-        guard let element = alignmentElement else { return }
-        let plan = CanvasPlanCache.plan(for: direction)
-        // The plan is uniformly scaled for presentation and export. Saved layer
-        // positions remain in the original canvas coordinate system.
-        let scale = direction.canvasScale ?? 1
-        let size = direction.canvas == .imported
-            ? CGSize(width: direction.width * scale, height: (direction.importedLayout?.height ?? plan.size.height / scale) * scale)
-            : plan.size
-        let origin = alignment.savedOrigin(for: element.rect, in: size, scale: scale)
-        if direction.canvas == .imported {
-            guard let index = direction.importedLayout?.layers.firstIndex(where: { $0.id == element.sectionID }) else { return }
-            board.directions[directionIndex].importedLayout?.layers[index].x = origin.x
-            board.directions[directionIndex].importedLayout?.layers[index].y = origin.y
-        } else if let id = element.textID {
-            var positions = direction.textPositions ?? [:]
-            positions[id] = CanvasTextPosition(x: origin.x, y: origin.y)
-            board.directions[directionIndex].textPositions = positions
-        } else { return }
+        let next = CanvasSelection.aligned(direction: direction, ids: alignmentObjectIDs, alignment: alignment)
+        guard next != direction else { return }
+        board.directions[directionIndex] = next
         save(alignment.rawValue)
     }
 }
