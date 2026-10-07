@@ -1,6 +1,6 @@
 # Build and verification status
 
-**0.59.17 (97), publication in progress.** Removes decorative onboarding subheaders and shortens demo instructions. Native, Figma, layout and website checks passed; installed app and matching DMG are verified. See [copy-cleanup QA](QA_2026-10-07_ONBOARDING_COPY.md).
+**Current public beta: 0.59.17 beta 1, build 97.** Removes decorative onboarding subheaders and shortens demo instructions. Native, Figma, layout and website checks passed; the installed app, [website download](https://typefield.app/download/) and [GitHub prerelease](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.17-beta.1) match the verified DMG. Saved-data and research hashes are unchanged; feedback configuration is healthy. See [copy-cleanup QA](QA_2026-10-07_ONBOARDING_COPY.md).
 
 **Previous public beta: 0.59.16 beta 1, build 96.** Installed interactive onboarding with type specimens, layout experiments and an editable letter; smoother tour-to-workspace handoffs, consistent sidebar motion and cached Dock icon updates. Integrates the verified Spaces and Letterform fixes. Native, window, Figma and disposable UI checks passed. The canonical installation, [website download](https://typefield.app/download/) and [GitHub prerelease](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.16-beta.1) match the verified DMG. Feedback configuration is healthy; all 29 saved-data hashes and both paused research hashes are unchanged. See [onboarding QA](QA_2026-10-07_ONBOARDING.md).
 
