@@ -1,7 +1,7 @@
 const workspaceData = {
-  library: {number:'01 / Library',title:'Good taste.<br>Great company.',description:'Bring your font collection into focus. Browse, compare, and shortlist the faces that feel right for your next idea.',image:'library.png',alt:'Typefield Library showing a font collection, live type previews, and font details',features:'Collections & tags / Live previews / Font comparison',name:'Library'},
-  spaces: {number:'02 / Spaces',title:'Room for<br>your next idea.',description:'Take type out of the dropdown and put it in context. Build typeboards, explore pairings, and see how your ideas hold together.',image:'spaces.png',alt:'Typefield Spaces showing an editorial typeboard, font roles, and a website layout',features:'Typeboards / Font pairings / Design & code handoffs',name:'Spaces'},
-  editor: {number:'03 / Letterforms',title:'Make your<br>own mark.',description:'Start with a drawing. Bring in your artwork, shape editable outlines, fine-tune the spacing, and export a font that is yours.',image:'editor.png',alt:'Typefield Letterform Editor showing an editable letter n with Bézier nodes and metrics',features:'Artwork import / Editable Bézier curves / TrueType export',name:'Letterforms'}
+  library: {number:'01 / Library',title:'Good taste.<br>Great company.',description:'See fonts side by side with your own preview text. Search by family, style, or tag, then keep the ones you want in favorites, shortlists, and collections.',image:'library-light.png',alt:'Typefield Library in Light mode comparing four font families with the same preview text',features:'Compare four fonts with the same preview text.',actions:['Preview your words in any font.','Compare typefaces side by side.','Keep favorites in collections.'],name:'Library'},
+  spaces: {number:'02 / Spaces',title:'Room for<br>your next idea.',description:'Place live text and shapes on a website, poster, or editorial canvas. Assign fonts to roles, adjust size and leading, then compare directions on a typeboard.',image:'spaces-light.png',alt:'Typefield Spaces in Light mode editing a website layout with typography controls',features:'Edit the layout and its typography together.',actions:['Build a typeboard with live text.','Set font roles for the whole layout.','Export PDFs, editable files, or tokens.'],name:'Spaces'},
+  editor: {number:'03 / Letterforms',title:'Make your<br>own mark.',description:'Draw contours or import original artwork. Edit Bézier nodes and spacing, proof the glyphs in words, then export a static TrueType font.',image:'letterforms-light.png',alt:'Typefield Letterform Editor in Light mode editing a handwritten o on the vector canvas',features:'Inspect a drawn glyph on the vector canvas.',actions:['Draw letters or import artwork.','Refine curves, spacing, and kerning.','Proof and export a TrueType font.'],name:'Letterforms'}
 };
 const tabs = [...document.querySelectorAll('[data-workspace]')];
 function selectWorkspace(key) {
@@ -13,15 +13,15 @@ function selectWorkspace(key) {
   document.querySelector('#workspace-description').textContent=d.description;
   const img=document.querySelector('#workspace-image'); img.src='assets/'+d.image; img.alt=d.alt;
   document.querySelector('#workspace-features').textContent=d.features;
-  document.querySelector('.window-bar span').textContent='Typefield / '+d.name;
+  document.querySelector('#workspace-actions').replaceChildren(...d.actions.map(action => { const item=document.createElement('li'); item.textContent=action; return item; }));
+  document.querySelector('.app-preview').dataset.view=key;
   document.querySelector('#workspace-view').setAttribute('aria-labelledby','tab-'+key);
 }
 tabs.forEach((tab,index)=>{
   tab.addEventListener('click',()=>selectWorkspace(tab.dataset.workspace));
   tab.addEventListener('keydown',e=>{let next;if(e.key==='ArrowRight')next=(index+1)%tabs.length;if(e.key==='ArrowLeft')next=(index+tabs.length-1)%tabs.length;if(e.key==='Home')next=0;if(e.key==='End')next=tabs.length-1;if(next!==undefined){e.preventDefault();tabs[next].focus();selectWorkspace(tabs[next].dataset.workspace);}});
 });
-document.querySelectorAll('[data-launch]').forEach(b=>b.addEventListener('click',()=>document.querySelector('#launch-dialog').showModal()));
-document.querySelectorAll('[data-film]').forEach(b=>b.addEventListener('click',()=>{document.querySelector('#launch-dialog').close();const dialog=document.querySelector('#film-dialog');dialog.showModal();dialog.querySelector('video').play().catch(()=>{});}));
+document.querySelectorAll('[data-film]').forEach(b=>b.addEventListener('click',()=>{const dialog=document.querySelector('#film-dialog');dialog.showModal();dialog.querySelector('video').play().catch(()=>{});}));
 document.querySelectorAll('dialog').forEach(dialog=>{dialog.querySelector('.close-dialog').addEventListener('click',()=>dialog.close());dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});dialog.addEventListener('close',()=>dialog.querySelector('video')?.pause());});
 const sample=document.querySelector('#type-sample');
 const tracking=document.querySelector('#tracking');
@@ -82,14 +82,37 @@ if (motionAllowed()) {
   document.querySelector('.hero h1').animate([{opacity:0,transform:'translateY(22px)'},{opacity:1,transform:'none'}],{duration:800,easing:'cubic-bezier(.16,1,.3,1)'});
   specimens.forEach((button,i) => button.animate([{opacity:0,transform:'translateY(35px) rotate(-8deg)'},{opacity:1,transform:'none'}],{duration:700,delay:160+i*60,easing:springEase,fill:'backwards'}));
 }
+// Give every section a rhythm of its own instead of moving whole panels as one.
+const revealGroups = [
+  ['.intro h2','.intro p'],
+  ['.workspace .section-head > div','.workspace .app-preview','.workspace-caption','.workspace-actions li'],
+  ['.play-heading h2','.type-stage','.type-controls'],
+  ['.detail-card h2','.collection-demo','.pairing-demo','.detail-card > p'],
+  ['.handoffs-intro h2','.handoffs-intro p','.handoff-list article','.export-example'],
+  ['.principles article'],
+  ['.faq h2','.faq details'],
+  ['.closing h2','.closing .pill'],
+  ['footer .wordmark','footer button']
+];
 const revealObserver = new IntersectionObserver(entries => {
   entries.forEach(entry => {
     if (!entry.isIntersecting) return;
-    if (motionAllowed()) entry.target.animate([{opacity:.25,transform:'translateY(28px)'},{opacity:1,transform:'none'}],{duration:750,easing:'cubic-bezier(.16,1,.3,1)'});
+    if (motionAllowed()) {
+      const elements = revealGroups[Number(entry.target.dataset.motionGroup)].flatMap(selector => [...entry.target.querySelectorAll(selector)]);
+      elements.forEach((element,index) => element.animate([
+        {opacity:0,transform:'translateY(24px)'},
+        {opacity:1,transform:'translateY(0)'}
+      ],{duration:650,delay:Math.min(index,7)*75,easing:'cubic-bezier(.16,1,.3,1)',fill:'backwards'}));
+      const image = entry.target.querySelector('.app-preview img');
+      if (image) image.animate([{transform:'scale(1.035)'},{transform:'scale(1)'}],{duration:1100,easing:'cubic-bezier(.16,1,.3,1)'});
+    }
     revealObserver.unobserve(entry.target);
   });
-},{threshold:.12});
-document.querySelectorAll('.intro,.workspace,.playground,.detail-card,.principles article,.faq,.closing').forEach(el => revealObserver.observe(el));
+},{threshold:.08});
+['.intro','.workspace','.playground','.details-grid','.handoffs','.principles','.faq','.closing','footer'].forEach((selector,index) => {
+  const section = document.querySelector(selector);
+  if (section) { section.dataset.motionGroup=String(index); revealObserver.observe(section); }
+});
 motionPreference.addEventListener('change', () => {
   if (motionPreference.matches) document.getAnimations().forEach(a=>a.cancel());
 });

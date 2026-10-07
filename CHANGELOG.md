@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.59.9 (2026-10-07)
+## 0.59.10 (2026-10-07)
 
 - Pop Spaces and Letterform Editor into movable, resizable, full-screen-capable windows. Use Pop out or drag the header grip beyond the window edge; Dock window or close returns the same editing session to the main window.
 - Open the Letterform pop-out directly in Focus editor: keep the glyph canvas, resizable character rail and expandable metrics, hide project navigation/header/proofing, and optionally hide the character rail for more drawing room. Full workspace restores the surrounding controls.
@@ -8,6 +8,12 @@
 - Move the Spaces editing-scope explanation into an info popover beside Type role.
 - Route editor shortcuts, Undo/Redo and full screen to the active window. Keep one shared library and one live view per editor to preserve editing history.
 - Make the matching public beta DMG and website update part of every app release.
+
+
+## 0.59.9 beta 1 (2026-10-07)
+
+- Export a variable weight TrueType font from two compatible Letterform Editor masters on the `wght` axis. Mismatched contours, vertical metrics or kerning are rejected rather than producing a misleading font.
+- Point the app's Feedback and Report a Bug actions to the Typefield feedback page, and use the canonical website address for beta download information.
 
 ## 0.59.8 (2026-10-06)
 

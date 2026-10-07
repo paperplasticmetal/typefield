@@ -1235,7 +1235,7 @@ struct FontLabView: View {
     private var compactMetricsExpanded: Bool { get { session.compactMetricsExpanded } nonmutating set { session.compactMetricsExpanded = newValue } }
 
     private struct ExportRequest {
-        enum Kind { case glyphSVG, selectedSVGs, allSVGs, trueType }
+        enum Kind { case glyphSVG, selectedSVGs, allSVGs, trueType, variableTrueType }
         let projectID: UUID
         let kind: Kind
         let characters: [String]
@@ -1516,6 +1516,9 @@ struct FontLabView: View {
                         Button("Export installable TrueType (.ttf)…") { prepareExport(.trueType, characters: trueTypeScope.mappedArtworkCharacters, project: project) }
                             .disabled(trueTypeScope.mappedArtworkCharacters.isEmpty || isExportingFont)
                             .help(trueTypeScope.mappedArtworkCharacters.isEmpty ? "Draw a supported, single-scalar character before exporting a TrueType font." : "Export the outlined characters that TrueType can map.")
+                        Button("Export variable TrueType (.ttf)…") { prepareExport(.variableTrueType, characters: trueTypeScope.mappedArtworkCharacters, project: project) }
+                            .disabled((project.masters?.count ?? 0) < 2 || isExportingFont)
+                            .help("Interpolate two compatible masters on a weight axis. Incompatible glyphs are rejected with a reason.")
                     } label: { Label("Export", systemImage: "square.and.arrow.up") }
                         .disabled(store.readBlocked)
                 }
@@ -2100,6 +2103,8 @@ struct FontLabView: View {
         case .trueType:
             let scope = FontLabTrueTypeExporter.exportScope(for: project)
             message = "Export a static TrueType font from the active master: \(scope.mappedArtworkCharacters.count) outlined \(scope.mappedArtworkCharacters.count == 1 ? "character" : "characters") mapped, plus a blank space. \(scope.skippedCharacters.count) empty or unsupported project \(scope.skippedCharacters.count == 1 ? "character is" : "characters are") omitted. Kerning uses the legacy kern table, which some apps ignore."
+        case .variableTrueType:
+            message = "Export one variable TrueType font with a weight axis between two compatible masters. Every mapped character must have corresponding contours and matching winding. Vertical metrics and kerning must match; incompatible masters are rejected before saving."
         }
         exportRequest = ExportRequest(projectID: project.id, kind: kind, characters: characters, message: message)
     }
@@ -2118,6 +2123,8 @@ struct FontLabView: View {
             exportGlyphSVGs(project, characters: request.characters)
         case .trueType:
             exportInstallableFont(project)
+        case .variableTrueType:
+            exportInstallableFont(project, variable: true)
         }
     }
 
@@ -2177,17 +2184,17 @@ struct FontLabView: View {
         }
     }
 
-    private func exportInstallableFont(_ project: FontLabProject) {
+    private func exportInstallableFont(_ project: FontLabProject, variable: Bool = false) {
         let scope = FontLabTrueTypeExporter.exportScope(for: project)
-        guard !scope.mappedArtworkCharacters.isEmpty else {
+        guard variable || !scope.mappedArtworkCharacters.isEmpty else {
             store.status = "Draw or import at least one supported, single-scalar character before exporting an installable font."
             return
         }
         let panel = NSSavePanel()
-        panel.title = "Export installable TrueType font"
+        panel.title = variable ? "Export variable TrueType font" : "Export installable TrueType font"
         panel.prompt = "Export Font"
-        panel.message = "\(scope.mappedArtworkCharacters.count) outlined characters will be mapped, plus a blank space; \(scope.skippedCharacters.count) empty or unsupported project characters will be omitted. Kerning uses the legacy kern table. Typefield validates the font with macOS before saving."
-        panel.nameFieldStringValue = safeFilename(project.name) + ".ttf"
+        panel.message = variable ? "Both masters must have compatible outlines for every mapped character. Typefield validates the variable font with macOS before saving." : "\(scope.mappedArtworkCharacters.count) outlined characters will be mapped, plus a blank space; \(scope.skippedCharacters.count) empty or unsupported project characters will be omitted. Kerning uses the legacy kern table. Typefield validates the font with macOS before saving."
+        panel.nameFieldStringValue = safeFilename(project.name) + (variable ? "-Variable.ttf" : ".ttf")
         panel.allowedContentTypes = [UTType(filenameExtension: "ttf") ?? .data]
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let destination = panel.url else { return }
@@ -2197,13 +2204,13 @@ struct FontLabView: View {
         store.status = "Building and validating \(project.name)…"
         let projectSnapshot = project
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try FontLabTrueTypeExporter.write(projectSnapshot, to: destination) }
+            let result = Result { try variable ? FontLabTrueTypeExporter.writeVariable(projectSnapshot, to: destination) : FontLabTrueTypeExporter.write(projectSnapshot, to: destination) }
             DispatchQueue.main.async {
                 isExportingFont = false
                 switch result {
                 case let .success(artifact):
                     let warning = artifact.warnings.isEmpty ? "" : " " + artifact.warnings.joined(separator: " ")
-                    store.status = "Exported \(artifact.exportedArtworkCharacterCount) outlined characters plus a blank space as \(destination.lastPathComponent); \(artifact.skippedCharacters.count) empty or unsupported project characters omitted. Kerning uses legacy kern." + warning
+                    store.status = "Exported \(artifact.exportedArtworkCharacterCount) outlined characters plus a blank space as \(destination.lastPathComponent); \(artifact.skippedCharacters.count) empty or unsupported project characters omitted. " + (variable ? "Weight axis is variable." : "Kerning uses legacy kern.") + warning
                     NSWorkspace.shared.activateFileViewerSelecting([destination])
                 case let .failure(error):
                     store.error = "The installable font could not be exported. " + error.localizedDescription

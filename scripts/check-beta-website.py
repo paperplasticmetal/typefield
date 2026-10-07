@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Fail a release when the website download and app versions diverge."""
+"""Check app identity against the public beta page and downloadable artifact."""
+import hashlib
 import pathlib
 import plistlib
 import re
@@ -10,10 +11,13 @@ store = plistlib.loads((root / 'Resources/Info-Store.plist').read_bytes())
 for key in ('CFBundleShortVersionString', 'CFBundleVersion'):
     assert app[key] == store[key], f'App plists disagree on {key}'
 version, build = app['CFBundleShortVersionString'], app['CFBundleVersion']
-html = (root / 'marketing/website/dist/index.html').read_text()
-links = re.findall(r'href="([^"]+\.dmg)"', html)
-expected = f'https://github.com/paperplasticmetal/typefield-feedback/releases/download/v{version}/Typefield-{version}-beta.dmg'
-assert len(links) >= 2 and all(link == expected for link in links), 'Missing, stale or inconsistent DMG links'
-assert f'Typefield {version} ({build})' in html, 'Missing version/build copy'
-assert 'Coming to Mac' not in html and 'first public release ready' not in html, 'Stale prelaunch copy'
-print(f'PASS: website downloads and both app plists match Typefield {version} ({build})')
+site = root / 'marketing/website/dist'
+html = (site / 'download/index.html').read_text()
+filename = f'Typefield-{version}-beta.dmg'
+assert f'class="download-button" href="../assets/{filename}"' in html, 'Stale primary DMG link'
+assert f'Version {version} beta 1 (build {build})' in html, 'Stale version/build copy'
+assert f'https://github.com/paperplasticmetal/typefield/releases/download/v{version}-beta.1/{filename}' in html, 'Stale GitHub link'
+digest = hashlib.sha256((site / 'assets' / filename).read_bytes()).hexdigest()
+assert html.count(digest) == 2, 'Download and latest history checksums must match the DMG'
+assert f'/assets/{filename}\n  Content-Type: application/x-apple-diskimage' in (site / '_headers').read_text(), 'Missing DMG headers'
+print(f'PASS: public downloads, checksum and both app plists match Typefield {version} ({build})')

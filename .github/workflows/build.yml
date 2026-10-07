@@ -2,7 +2,13 @@ name: macOS build
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'marketing/**'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - 'marketing/**'
+      - 'docs/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +29,10 @@ jobs:
         run: codesign --verify --deep --strict dist/Typefield.app
       - name: Figma importer contract tests
         run: node tests/figma-import.test.js
+      - name: Public beta download matches app version
+        run: python3 scripts/check-beta-website.py
       - name: Archive Store target without distribution signing
+        if: github.event_name == 'workflow_dispatch'
         run: >-
           xcodebuild -project Typefield.xcodeproj -scheme Typefield
           -configuration Release -derivedDataPath .build/xcode

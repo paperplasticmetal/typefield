@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 enum TypefieldSupportLinks {
-    static let feedback = URL(string: "https://github.com/paperplasticmetal/typefield-feedback/issues/new?template=beta_feedback.md")!
-    static let bugReport = URL(string: "https://github.com/paperplasticmetal/typefield-feedback/issues/new?template=bug_report.md")!
+    static let feedback = URL(string: "https://typefield.app/feedback/")!
+    static let bugReport = URL(string: "https://typefield.app/feedback/?category=bug")!
 }
 
 final class TypefieldSettingsSelection: ObservableObject {
