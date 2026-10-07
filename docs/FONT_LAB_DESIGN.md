@@ -16,7 +16,9 @@ Components can nest, with cycle, depth, geometry and expansion limits. The desti
 
 **Duplicate current as master** creates a separately editable design. The first duplication also preserves a Regular master. **Switch** saves the current outlines, components, metrics and kerning before loading the selected master. Names are editable. Export uses the active master and includes its name in the font family.
 
-These are independent static designs. They do not interpolate, generate intermediate weights, form a style-linked font family, or export a variable font. Up to 16 masters are supported. Glyph-set additions create empty glyphs in every master without replacing existing artwork.
+The **Export variable TrueType (.ttf)…** action makes a single `wght` font from exactly two compatible masters at different weights. It preserves the project and interpolates the corresponding outlines and advance widths at intermediate weights. The lower weight is the default instance. Both masters must draw the same supported characters with the same contour order, nodes/segments, winding and outline type. Vertical metrics and resolved kerning must match. Typefield reports the first incompatibility and does not save a partial variable font. Linked components are resolved for export; their source links stay in the project.
+
+You can still export each active master separately as a static font, and projects may store up to 16 masters. The variable action currently supports only two endpoints, one weight axis, fixed kerning and shared vertical metrics. It does not match or reorder contours automatically, interpolate differing kerning or metrics, or preview intermediate instances in the editor. Make small compatible changes to a duplicated master, then test the exported font in the target application. Glyph-set additions create empty glyphs in every master without replacing existing artwork.
 
 ## Kerning
 
@@ -24,7 +26,7 @@ Choose a first and second glyph, enter an adjustment and choose **Set pair**. Ne
 
 Specific glyph pairs override group rules, including a zero-valued exception. One-sided exceptions override group-to-group rules; if both one-sided exceptions match, the explicit first-glyph rule wins. Remove a group to remove its dependent rules. The word preview and export share this precedence. Groups are stored per master.
 
-TrueType export expands rules into horizontal legacy `kern` format 0 pairs and validates the result through Core Text. It currently supports at most 10,000 expanded pairs and does not emit GPOS, contextual or vertical kerning. Applications that ignore legacy `kern` may not display these adjustments. SVG glyph exports contain outlines, not pair layout rules.
+TrueType export expands rules into horizontal legacy `kern` format 0 pairs and validates the result through Core Text. Variable export requires the resolved pairs to agree at both endpoints and keeps them fixed across weights. It currently supports at most 10,000 expanded pairs and does not emit GPOS, contextual or vertical kerning. Applications that ignore legacy `kern` may not display these adjustments. SVG glyph exports contain outlines, not pair layout rules.
 
 ## Simplify outline
 
@@ -34,7 +36,7 @@ The fitter retains sharp corners, checks sampled deviation in both directions, p
 
 ## Verification and references
 
-`FontLabDesignChecks` covers nested source propagation, cycle/bounds rejection, independent decomposed identities, SVG/TrueType equivalence to resolved outlines, master switching/persistence, group exceptions, actual Core Text kerning and smoothing of a noisy two-contour ring. Native disposable-project checks exercise the design sheet separately from user projects.
+`FontLabDesignChecks` covers nested source propagation, cycle/bounds rejection, independent decomposed identities, SVG/TrueType equivalence to resolved outlines, master switching/persistence, group exceptions, actual Core Text kerning and smoothing of a noisy two-contour ring. `FontLabTrueTypeExporter.selfTest` also checks Core Text weight-axis discovery, intermediate outline and advance interpolation, byte-for-byte repeatability and incompatible-master rejection. `tests/variable-font-tables.py` independently parses the OpenType variation tables from its optional temporary fixture. Native disposable-project checks exercise the design sheet separately from user projects.
 
 Workflow references: [Glyphs components](https://handbook.glyphsapp.com/components/) and [kerning](https://handbook.glyphsapp.com/kerning/). The binary pair table follows the [OpenType kern specification](https://learn.microsoft.com/en-us/typography/opentype/spec/kern). No Glyphs code or assets are included.
 

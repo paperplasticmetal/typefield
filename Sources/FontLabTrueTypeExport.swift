@@ -139,6 +139,7 @@ enum FontLabTrueTypeExporter {
         case malformedFont(String)
         case coreTextRejectedFont
         case characterMissingAfterValidation(String)
+        case incompatibleMasters(String)
 
         var errorDescription: String? {
             switch self {
@@ -158,6 +159,8 @@ enum FontLabTrueTypeExporter {
                 return "macOS CoreText rejected the generated TrueType font."
             case let .characterMissingAfterValidation(character):
                 return "The generated font did not retain its mapping for \(character)."
+            case let .incompatibleMasters(reason):
+                return "These masters cannot make a variable font: \(reason)"
             }
         }
     }
@@ -251,6 +254,102 @@ enum FontLabTrueTypeExporter {
     @discardableResult
     static func write(_ project: FontLabProject, to destination: URL) throws -> FontLabTrueTypeArtifact {
         let artifact = try artifact(for: project)
+        try artifact.write(to: destination)
+        return artifact
+    }
+
+    /// A real two-endpoint `wght` font. The lower-weight master is the default
+    /// `glyf` instance; `gvar` moves its corresponding outline and phantom
+    /// points to the upper-weight master. No saved project data is rewritten.
+    static func variableArtifact(for original: FontLabProject) throws -> FontLabTrueTypeArtifact {
+        guard original.isValid else { throw ExportError.invalidProject }
+        var snapshot = original
+        snapshot.captureActiveMaster()
+        guard let masters = snapshot.masters, masters.count == 2 else {
+            throw ExportError.incompatibleMasters("Create exactly two masters with different weights. Export additional designs as static fonts.")
+        }
+        let endpoints = masters.sorted { $0.weight < $1.weight }
+        guard endpoints[0].weight < endpoints[1].weight else {
+            throw ExportError.incompatibleMasters("The master weights must be different.")
+        }
+        guard endpoints[0].metrics == endpoints[1].metrics else {
+            throw ExportError.incompatibleMasters("Vertical metrics differ. Match the masters’ metrics before export.")
+        }
+        func output(_ master: FontLabMaster) -> FontLabProject {
+            var copy = snapshot
+            copy.glyphs = master.glyphs; copy.metrics = master.metrics
+            copy.kerningGroups = master.groups; copy.kerningPairs = master.pairs
+            return copy.outputProject
+        }
+        let light = output(endpoints[0]), heavy = output(endpoints[1])
+        let lowerMappings = mappedGlyphs(light), upperMappings = mappedGlyphs(heavy)
+        guard lowerMappings.map(\.scalar) == upperMappings.map(\.scalar) else {
+            throw ExportError.incompatibleMasters("Draw the same supported characters in both masters. Missing artwork cannot be interpolated.")
+        }
+        guard lowerMappings.contains(where: { $0.glyph?.hasArtwork == true }) else { throw ExportError.noDrawnCharacters }
+        let mappedCharacters = Set(lowerMappings.map(\.character))
+        guard try light.resolvedKerning(characters: mappedCharacters) == heavy.resolvedKerning(characters: mappedCharacters) else {
+            throw ExportError.incompatibleMasters("Kerning differs between masters. Variable kerning is not exported; match the pairs or export static fonts.")
+        }
+
+        var lowerRecords = [notdefGlyph(), blankGlyph(advanceWidth: 0), blankGlyph(advanceWidth: 300)]
+        var upperRecords = lowerRecords
+        for (lower, upper) in zip(lowerMappings, upperMappings) {
+            if let lowerGlyph = lower.glyph, let upperGlyph = upper.glyph {
+                let pair = try compatibleGlyphRecords(lowerGlyph, upperGlyph, metrics: light.metrics)
+                lowerRecords.append(pair.0); upperRecords.append(pair.1)
+            } else {
+                lowerRecords.append(blankGlyph(advanceWidth: 300))
+                upperRecords.append(blankGlyph(advanceWidth: 300))
+            }
+        }
+
+        let weight0 = UInt16(endpoints[0].weight), weight1 = UInt16(endpoints[1].weight)
+        let defaultRevision = try fontRevision(for: light, weightClass: weight0)
+        var identity = BigEndianWriter()
+        identity.bytes(Data(defaultRevision.fingerprint.utf8))
+        for (master, records) in zip(endpoints, [lowerRecords, upperRecords]) {
+            identity.uint16(UInt16(master.weight))
+            identity.bytes(Data(master.name.utf8)); identity.uint8(0)
+            for record in records { identity.uint32(UInt32(truncatingIfNeeded: record.advanceWidth)); identity.bytes(record.data) }
+        }
+        let hash = identity.data.reduce(UInt64(0xcbf29ce484222325)) { ($0 ^ UInt64($1)) &* 1_099_511_628_211 }
+        let revision = FontRevision(fixed: defaultRevision.fixed, versionName: defaultRevision.versionName,
+                                    fingerprint: String(format: "%016llX", locale: Locale(identifier: "en_US_POSIX"), hash))
+        let familyName = uniqueFamilyName(original.name, projectID: original.id, fingerprint: revision.fingerprint)
+        let postScriptName = sanitizedPostScriptName(familyName)
+        var scalarMappings: [UInt32: UInt16] = [0x0000: 1, 0x0008: 1, 0x0009: 3, 0x000D: 2, 0x001D: 1, 0x00A0: 3]
+        for (index, item) in lowerMappings.enumerated() { scalarMappings[item.scalar] = UInt16(index + 3) }
+        let data = try buildFont(
+            project: light, familyName: familyName, postScriptName: postScriptName,
+            revision: revision, glyphs: lowerRecords, cmap: scalarMappings, weightClass: weight0,
+            extraTables: [
+                Table(tag: "STAT", data: statTable(weight0: weight0, weight1: weight1, defaultIsRegular: endpoints[0].name.lowercased() == "regular")),
+                Table(tag: "fvar", data: fvarTable(weight0: weight0, weight1: weight1)),
+                Table(tag: "gvar", data: try gvarTable(defaultGlyphs: lowerRecords, upperGlyphs: upperRecords))
+            ],
+            variableStyleName: endpoints[0].name,
+            extraNames: [(256, "Weight"), (257, endpoints[0].name), (258, endpoints[1].name)]
+        )
+        let scope = exportScope(in: light, mappings: lowerMappings)
+        var warnings: [String] = ["Kerning is the same at every weight; only compatible outlines and advance widths interpolate."]
+        if !scope.skippedCharacters.isEmpty {
+            warnings.append("\(scope.skippedCharacters.count) undrawn or unsupported characters were omitted from both masters.")
+        }
+        if original.remixProvenance != nil {
+            warnings.append("Font embedding is marked restricted because Typefield does not know the source fonts’ license permissions. Review both licenses before sharing or embedding this derivative font.")
+        }
+        let artifact = FontLabTrueTypeArtifact(data: data, familyName: familyName, postScriptName: postScriptName,
+                                               suggestedFilename: "\(safeFilename(postScriptName))-Variable.ttf",
+                                               mappedCharacters: lowerMappings.map(\.character),
+                                               skippedCharacters: scope.skippedCharacters, warnings: warnings)
+        _ = try validate(artifact)
+        return artifact
+    }
+
+    @discardableResult
+    static func writeVariable(_ project: FontLabProject, to destination: URL) throws -> FontLabTrueTypeArtifact {
+        let artifact = try variableArtifact(for: project)
         try artifact.write(to: destination)
         return artifact
     }
@@ -438,6 +537,106 @@ enum FontLabTrueTypeExporter {
               availableNames.contains(sameNameArtifact.postScriptName) else {
             throw ExportError.malformedFont("same-display-name fonts could not be registered and resolved independently")
         }
+        try variableSelfTest()
+    }
+
+    private static func variableSelfTest() throws {
+        func expectRejected(_ project: FontLabProject, reason: String) throws {
+            do {
+                _ = try variableArtifact(for: project)
+                throw ExportError.malformedFont("incompatible \(reason) masters were accepted")
+            } catch ExportError.incompatibleMasters { }
+        }
+        var project = FontLabProject(id: UUID(uuidString: "D1111111-2222-4333-8444-555555555555")!,
+                                     name: "Variable export test", characters: ["A", "O", "Z"])
+        let outline = FontLabVectorMath.rectangle(CGRect(x: 0.12, y: 0.2, width: 0.5, height: 0.6), ellipse: true)
+        project.glyphs["A"] = FontLabGlyph(character: "A", strokes: [FontLabStroke(vectorPaths: [outline])], contourDesignWidth: 0.62)
+        let outer = FontLabVectorMath.rectangle(CGRect(x: 0.1, y: 0.16, width: 0.68, height: 0.66), ellipse: true)
+        var inner = FontLabVectorMath.rectangle(CGRect(x: 0.28, y: 0.32, width: 0.32, height: 0.34), ellipse: true)
+        inner.reverse()
+        project.glyphs["O"] = FontLabGlyph(character: "O", strokes: [FontLabStroke(vectorPaths: [outer, inner])], contourDesignWidth: 0.62)
+        project.addMaster(name: "Bold", weight: 700)
+        let lightID = project.masters![0].id
+        project.glyphs["A"]?.strokes[0].vectorPaths?[0].nodes[0].point.x += 0.04
+        project.glyphs["A"]?.rightSideBearing += 0.07
+        project.glyphs["O"]?.strokes[0].vectorPaths?[0].nodes[0].point.x += 0.04
+        let untouched = project
+        let artifact = try variableArtifact(for: project)
+        guard try variableArtifact(for: project) == artifact, project == untouched,
+              artifact.mappedCharacters == [" ", "A", "O"], artifact.skippedCharacters == ["Z"],
+              tableData("fvar", in: artifact.data) != nil,
+              tableData("STAT", in: artifact.data) != nil,
+              tableData("gvar", in: artifact.data) != nil else {
+            throw ExportError.malformedFont("variable export was nondeterministic, rewrote the project, or omitted required variation data")
+        }
+        if let fixturePath = ProcessInfo.processInfo.environment["TYPEFIELD_VARIABLE_TEST_OUTPUT"] {
+            try artifact.write(to: URL(fileURLWithPath: fixturePath))
+        }
+        try verifyDirectoryAndChecksums(artifact.data)
+        try verifyRequiredControlGlyphs(artifact.data)
+        let provider = CGDataProvider(data: artifact.data as CFData)!
+        let font = CTFontCreateWithGraphicsFont(CGFont(provider)!, 1_000, nil, nil)
+        let axes = CTFontCopyVariationAxes(font) as? [[String: Any]] ?? []
+        guard axes.count == 1,
+              axes[0][kCTFontVariationAxisIdentifierKey as String] as? Int == 0x77676874,
+              axes[0][kCTFontVariationAxisMinimumValueKey as String] as? Double == 400,
+              axes[0][kCTFontVariationAxisDefaultValueKey as String] as? Double == 400,
+              axes[0][kCTFontVariationAxisMaximumValueKey as String] as? Double == 700 else {
+            throw ExportError.malformedFont("CoreText did not expose the 400–700 weight axis")
+        }
+        func instance(_ weight: Int) -> CTFont {
+            let variation: [NSNumber: NSNumber] = [NSNumber(value: 0x77676874): NSNumber(value: weight)]
+            let attributes: [CFString: Any] = [kCTFontVariationAttribute: variation]
+            let descriptor = CTFontDescriptorCreateWithAttributes(attributes as CFDictionary)
+            return CTFontCreateCopyWithAttributes(font, 1_000, nil, descriptor)
+        }
+        func glyph(_ character: UniChar, in font: CTFont) throws -> (CGRect, CGFloat) {
+            var character = character, glyphID: CGGlyph = 0, advance = CGSize.zero
+            guard CTFontGetGlyphsForCharacters(font, &character, &glyphID, 1),
+                  let path = CTFontCreatePathForGlyph(font, glyphID, nil) else {
+                throw ExportError.malformedFont("CoreText could not render a variable glyph")
+            }
+            _ = CTFontGetAdvancesForGlyphs(font, .horizontal, &glyphID, &advance, 1)
+            return (path.boundingBoxOfPath, advance.width)
+        }
+        let a400 = try glyph(65, in: instance(400)), a550 = try glyph(65, in: instance(550)), a700 = try glyph(65, in: instance(700))
+        guard a700.0 != a400.0, a550.0 != a400.0, a550.0 != a700.0,
+              a400.1 < a550.1, a550.1 < a700.1 else {
+            throw ExportError.malformedFont("CoreText did not interpolate outlines and advance widths across the weight axis")
+        }
+        let o400 = try glyph(79, in: instance(400)), o700 = try glyph(79, in: instance(700))
+        guard o400.0 != o700.0 else { throw ExportError.malformedFont("the counter glyph did not vary") }
+        var changed = project
+        changed.glyphs["A"]?.strokes[0].vectorPaths?[0].nodes[0].point.x += 0.01
+        guard try variableArtifact(for: changed).postScriptName != artifact.postScriptName else {
+            throw ExportError.malformedFont("a master edit reused the variable font identity")
+        }
+        var wrongNodes = project
+        wrongNodes.glyphs["A"]?.strokes[0].vectorPaths?[0].insertNode(segment: 0, t: 0.5)
+        try expectRejected(wrongNodes, reason: "node-count")
+        var reversed = project
+        reversed.glyphs["O"]?.strokes[0].vectorPaths?[1].reverse()
+        try expectRejected(reversed, reason: "winding")
+        var missing = project
+        missing.glyphs["O"]?.strokes = []
+        try expectRejected(missing, reason: "missing-glyph")
+        var wrongMetrics = project
+        wrongMetrics.metrics.baseline += 0.01
+        try expectRejected(wrongMetrics, reason: "vertical-metric")
+        var wrongKerning = project
+        wrongKerning.kerningPairs = [FontLabKerningPair(left: "A", right: "O", value: -20)]
+        try expectRejected(wrongKerning, reason: "kerning")
+        var sameWeight = project
+        sameWeight.masters?[0].weight = 700
+        try expectRejected(sameWeight, reason: "same-weight")
+        var three = project
+        three.addMaster(name: "Black", weight: 900)
+        try expectRejected(three, reason: "three-master")
+        var inactiveEdit = project
+        inactiveEdit.switchMaster(lightID)
+        guard try variableArtifact(for: inactiveEdit) == artifact else {
+            throw ExportError.malformedFont("switching the active master changed variable export")
+        }
     }
 
     // MARK: - Character selection
@@ -502,10 +701,11 @@ enum FontLabTrueTypeExporter {
         let yMax: Int
         let pointCount: Int
         let contourCount: Int
+        let contours: [[TTPoint]]
     }
 
     private static func blankGlyph(advanceWidth: Int) -> GlyphRecord {
-        GlyphRecord(data: Data(), advanceWidth: advanceWidth, leftSideBearing: 0, xMin: 0, yMin: 0, xMax: 0, yMax: 0, pointCount: 0, contourCount: 0)
+        GlyphRecord(data: Data(), advanceWidth: advanceWidth, leftSideBearing: 0, xMin: 0, yMin: 0, xMax: 0, yMax: 0, pointCount: 0, contourCount: 0, contours: [])
     }
 
     private static func notdefGlyph() -> GlyphRecord {
@@ -514,17 +714,17 @@ enum FontLabTrueTypeExporter {
         return try! glyphRecord(contours: [outer, inner], advanceWidth: 600)
     }
 
-    private static func glyphRecord(_ glyph: FontLabGlyph, metrics: FontLabMetrics) throws -> (record: GlyphRecord, simplifiedPointCount: Int) {
+    private static func glyphRecord(_ glyph: FontLabGlyph, metrics: FontLabMetrics, retainContours: Bool = false) throws -> (record: GlyphRecord, simplifiedPointCount: Int) {
         let sampled = try sampledStrokes(glyph)
         var outlineContours: [[TTPoint]] = []
         for stroke in sampled.strokes {
             outlineContours.append(contentsOf: contours(for: stroke, metrics: metrics, leftBearing: glyph.leftSideBearing, width: glyph.resolvedDesignWidth * Double(unitsPerEm)))
         }
         let advance = Int((glyph.resolvedDesignWidth * Double(unitsPerEm) + (glyph.leftSideBearing + glyph.rightSideBearing) * Double(unitsPerEm)).rounded())
-        return (try glyphRecord(contours: outlineContours, advanceWidth: advance), sampled.removedPointCount)
+        return (try glyphRecord(contours: outlineContours, advanceWidth: advance, retainContours: retainContours), sampled.removedPointCount)
     }
 
-    private static func glyphRecord(contours rawContours: [[TTPoint]], advanceWidth: Int) throws -> GlyphRecord {
+    private static func glyphRecord(contours rawContours: [[TTPoint]], advanceWidth: Int, retainContours: Bool = false) throws -> GlyphRecord {
         let contours = rawContours.compactMap(cleanContour)
         let points = contours.flatMap { $0 }
         guard points.count <= Int(UInt16.max), contours.count <= Int(Int16.max) else {
@@ -572,7 +772,8 @@ enum FontLabTrueTypeExporter {
             leftSideBearing: xMin,
             xMin: xMin, yMin: yMin, xMax: xMax, yMax: yMax,
             pointCount: points.count,
-            contourCount: contours.count
+            contourCount: contours.count,
+            contours: retainContours ? contours : []
         )
     }
 
@@ -784,6 +985,172 @@ enum FontLabTrueTypeExporter {
         return cleaned.count >= 3 ? cleaned : nil
     }
 
+    private static func compatibleGlyphRecords(_ lowerSource: FontLabGlyph, _ upperSource: FontLabGlyph, metrics: FontLabMetrics) throws -> (GlyphRecord, GlyphRecord) {
+        let character = lowerSource.character
+        guard lowerSource.strokes.count == upperSource.strokes.count else {
+            throw ExportError.incompatibleMasters("\(character) has a different number of outline parts.")
+        }
+        var lower = lowerSource, upper = upperSource
+        for index in lower.strokes.indices {
+            let a = lower.strokes[index], b = upper.strokes[index]
+            if let aPaths = a.vectorPaths, let bPaths = b.vectorPaths {
+                guard aPaths.count == bPaths.count else {
+                    throw ExportError.incompatibleMasters("\(character) has a different number of contours.")
+                }
+                var aContours: [[FontLabPoint]] = [], bContours: [[FontLabPoint]] = []
+                for (ap, bp) in zip(aPaths, bPaths) {
+                    guard ap.closed, bp.closed else { throw ExportError.openContours(character) }
+                    guard ap.nodes.count == bp.nodes.count,
+                          ap.nodes.indices.allSatisfy({ ap.isCurve($0) == bp.isCurve($0) }) else {
+                        throw ExportError.incompatibleMasters("\(character) needs corresponding nodes and curve segments in both masters.")
+                    }
+                    let sampled = synchronizedContours(ap, bp)
+                    aContours.append(sampled.0); bContours.append(sampled.1)
+                }
+                lower.strokes[index].vectorPaths = nil; lower.strokes[index].contours = aContours
+                upper.strokes[index].vectorPaths = nil; upper.strokes[index].contours = bContours
+            } else if let ac = a.contours, let bc = b.contours, a.vectorPaths == nil, b.vectorPaths == nil {
+                guard ac.count == bc.count,
+                      zip(ac, bc).allSatisfy({ pair in pair.0.count == pair.1.count }) else {
+                    throw ExportError.incompatibleMasters("\(character) has polygon contours with different point counts.")
+                }
+            } else if a.vectorPaths == nil, b.vectorPaths == nil, a.contours == nil, b.contours == nil {
+                guard a.points.count == b.points.count, a.resolvedNibStyle == b.resolvedNibStyle else {
+                    throw ExportError.incompatibleMasters("\(character) has pen strokes with different sample counts or nibs.")
+                }
+            } else {
+                throw ExportError.incompatibleMasters("\(character) mixes different outline types between masters.")
+            }
+        }
+        let a = try glyphRecord(lower, metrics: metrics, retainContours: true).record
+        let b = try glyphRecord(upper, metrics: metrics, retainContours: true).record
+        guard !a.contours.isEmpty,
+              a.contours.count == b.contours.count,
+              zip(a.contours, b.contours).allSatisfy({ pair in pair.0.count == pair.1.count }),
+              zip(a.contours, b.contours).allSatisfy({ pair in
+                  let aa = signedArea(pair.0), bb = signedArea(pair.1)
+                  return aa != 0 && bb != 0 && (aa > 0) == (bb > 0)
+              }) else {
+            throw ExportError.incompatibleMasters("\(character) changes contour topology, winding or export point correspondence.")
+        }
+        return (a, b)
+    }
+
+    /// Both cubics use the same subdivision tree. Independent adaptive
+    /// flattening can silently pair unrelated points after a small edit.
+    private static func synchronizedContours(_ a: FontLabVectorPath, _ b: FontLabVectorPath) -> ([FontLabPoint], [FontLabPoint]) {
+        var first = [a.nodes[0].point], second = [b.nodes[0].point]
+        func flatEnough(_ p: [FontLabPoint]) -> Bool {
+            let chord = hypot(p[3].x - p[0].x, p[3].y - p[0].y)
+            let polygon = hypot(p[1].x - p[0].x, p[1].y - p[0].y) +
+                hypot(p[2].x - p[1].x, p[2].y - p[1].y) + hypot(p[3].x - p[2].x, p[3].y - p[2].y)
+            return polygon - chord < 0.00003
+        }
+        func visit(_ pa: [FontLabPoint], _ pb: [FontLabPoint], _ depth: Int) {
+            if depth >= 12 || (flatEnough(pa) && flatEnough(pb)) {
+                first.append(pa[3]); second.append(pb[3]); return
+            }
+            let sa = FontLabVectorMath.split(pa, at: 0.5), sb = FontLabVectorMath.split(pb, at: 0.5)
+            visit(sa.0, sb.0, depth + 1); visit(sa.1, sb.1, depth + 1)
+        }
+        for segment in 0..<a.segmentCount {
+            if a.isCurve(segment) { visit(a.controls(segment), b.controls(segment), 0) }
+            else { first.append(a.controls(segment)[3]); second.append(b.controls(segment)[3]) }
+        }
+        first.removeLast(); second.removeLast() // closed path repeats its first point
+        return (first, second)
+    }
+
+    private static func signedArea(_ contour: [TTPoint]) -> Double {
+        guard contour.count >= 3 else { return 0 }
+        var sum = 0.0
+        for i in contour.indices {
+            let next = contour[(i + 1) % contour.count]
+            sum += Double(contour[i].x) * Double(next.y) - Double(next.x) * Double(contour[i].y)
+        }
+        return sum
+    }
+
+    private static func fvarTable(weight0: UInt16, weight1: UInt16) -> Data {
+        var out = BigEndianWriter()
+        out.uint16(1); out.uint16(0); out.uint16(16); out.uint16(2)
+        out.uint16(1); out.uint16(20); out.uint16(2); out.uint16(8)
+        out.tag("wght"); out.uint32(UInt32(weight0) << 16); out.uint32(UInt32(weight0) << 16)
+        out.uint32(UInt32(weight1) << 16); out.uint16(0); out.uint16(256)
+        out.uint16(257); out.uint16(0); out.uint32(UInt32(weight0) << 16)
+        out.uint16(258); out.uint16(0); out.uint32(UInt32(weight1) << 16)
+        return out.data
+    }
+
+    private static func statTable(weight0: UInt16, weight1: UInt16, defaultIsRegular: Bool) -> Data {
+        var out = BigEndianWriter()
+        out.uint16(1); out.uint16(2); out.uint16(8); out.uint16(1); out.uint32(20)
+        out.uint16(2); out.uint32(28); out.uint16(2) // fallback name ID: default subfamily
+        out.tag("wght"); out.uint16(256); out.uint16(0)
+        out.uint16(4); out.uint16(16) // offsets from the start of this array
+        out.uint16(1); out.uint16(0); out.uint16(defaultIsRegular ? 2 : 0); out.uint16(257); out.uint32(UInt32(weight0) << 16)
+        out.uint16(1); out.uint16(0); out.uint16(0); out.uint16(258); out.uint32(UInt32(weight1) << 16)
+        return out.data
+    }
+
+    private static func gvarTable(defaultGlyphs: [GlyphRecord], upperGlyphs: [GlyphRecord]) throws -> Data {
+        guard defaultGlyphs.count == upperGlyphs.count else { throw ExportError.malformedFont("variable glyph count differs") }
+        var contents = BigEndianWriter(), offsets: [UInt32] = []
+        for (a, b) in zip(defaultGlyphs, upperGlyphs) {
+            guard contents.data.count <= Int(UInt32.max) else { throw ExportError.valueOutOfRange("gvar size") }
+            offsets.append(UInt32(contents.data.count))
+            let basePoints = a.contours.flatMap { $0 }, alternatePoints = b.contours.flatMap { $0 }
+            guard basePoints.count == alternatePoints.count else { throw ExportError.malformedFont("variable point count differs") }
+            var x: [Int] = [], y: [Int] = []
+            x.reserveCapacity(basePoints.count + 4); y.reserveCapacity(basePoints.count + 4)
+            for (p, q) in zip(basePoints, alternatePoints) { x.append(q.x - p.x); y.append(q.y - p.y) }
+            // Four phantom points follow every simple glyph. In this exporter
+            // LSB equals xMin, so the first x phantom stays at zero; the second
+            // carries the interpolated advance. Vertical metrics are fixed.
+            x.append(contentsOf: [0, b.advanceWidth - a.advanceWidth, 0, 0])
+            y.append(contentsOf: [0, 0, 0, 0])
+            guard x.contains(where: { $0 != 0 }) || y.contains(where: { $0 != 0 }) else { continue }
+            let xd = try packedDeltas(x), yd = try packedDeltas(y)
+            let size = 1 + xd.count + yd.count // 0 means all point numbers
+            guard size <= Int(UInt16.max) else { throw ExportError.valueOutOfRange("gvar deltas for one glyph") }
+            contents.uint16(1); contents.uint16(10) // one tuple, data begins after embedded peak
+            contents.uint16(UInt16(size)); contents.uint16(0xA000) // embedded peak, private points
+            contents.int16(0x4000) // positive end of the normalized weight axis
+            contents.uint8(0); contents.bytes(xd); contents.bytes(yd)
+            contents.pad(toMultipleOf: 2)
+        }
+        guard contents.data.count <= Int(UInt32.max) else { throw ExportError.valueOutOfRange("gvar size") }
+        offsets.append(UInt32(contents.data.count))
+        let arrayOffset = 20 + 4 * offsets.count
+        var out = BigEndianWriter()
+        out.uint16(1); out.uint16(0); out.uint16(1); out.uint16(0)
+        out.uint32(UInt32(arrayOffset)); out.uint16(UInt16(defaultGlyphs.count)); out.uint16(1)
+        out.uint32(UInt32(arrayOffset))
+        for offset in offsets { out.uint32(offset) }
+        out.bytes(contents.data)
+        return out.data
+    }
+
+    private static func packedDeltas(_ values: [Int]) throws -> Data {
+        guard values.allSatisfy({ (Int(Int16.min)...Int(Int16.max)).contains($0) }) else {
+            throw ExportError.valueOutOfRange("gvar coordinate delta")
+        }
+        var out = BigEndianWriter(), index = 0
+        while index < values.count {
+            let end = min(index + 64, values.count), run = values[index..<end]
+            if run.allSatisfy({ $0 == 0 }) { out.uint8(0x80 | UInt8(run.count - 1)) }
+            else if run.allSatisfy({ (-128...127).contains($0) }) {
+                out.uint8(UInt8(run.count - 1))
+                for value in run { out.uint8(UInt8(bitPattern: Int8(value))) }
+            } else {
+                out.uint8(0x40 | UInt8(run.count - 1))
+                for value in run { out.int16(Int16(value)) }
+            }
+            index = end
+        }
+        return out.data
+    }
+
     // MARK: - sfnt tables
 
     private struct Table {
@@ -798,7 +1165,10 @@ enum FontLabTrueTypeExporter {
         revision: FontRevision,
         glyphs: [GlyphRecord],
         cmap: [UInt32: UInt16],
-        weightClass: UInt16
+        weightClass: UInt16,
+        extraTables: [Table] = [],
+        variableStyleName: String? = nil,
+        extraNames: [(UInt16, String)] = []
     ) throws -> Data {
         guard glyphs.count <= Int(UInt16.max) else { throw ExportError.valueOutOfRange("glyph count") }
         let glyfAndLoca = try glyfAndLocaTables(glyphs)
@@ -818,10 +1188,11 @@ enum FontLabTrueTypeExporter {
             Table(tag: "hmtx", data: try hmtxTable(glyphs)),
             Table(tag: "loca", data: glyfAndLoca.loca),
             Table(tag: "maxp", data: try maxpTable(glyphs)),
-            Table(tag: "name", data: try nameTable(project: project, familyName: familyName, postScriptName: postScriptName, revision: revision)),
+            Table(tag: "name", data: try nameTable(project: project, familyName: familyName, postScriptName: postScriptName, revision: revision, variableStyleName: variableStyleName, extraNames: extraNames)),
             Table(tag: "post", data: postTable())
         ]
         if let kern = try kerningTable(project: project, cmap: cmap) { tables.append(Table(tag: "kern", data: kern)) }
+        tables.append(contentsOf: extraTables)
         tables.sort { $0.tag < $1.tag }
 
         let numberOfTables = tables.count
@@ -1014,12 +1385,17 @@ enum FontLabTrueTypeExporter {
         return writer.data
     }
 
-    private static func nameTable(project: FontLabProject, familyName: String, postScriptName: String, revision: FontRevision) throws -> Data {
+    private static func nameTable(project: FontLabProject, familyName: String, postScriptName: String, revision: FontRevision, variableStyleName: String? = nil, extraNames: [(UInt16, String)] = []) throws -> Data {
         let uniqueID = "Typefield:\(postScriptName):\(project.id.uuidString.lowercased()):\(revision.fingerprint)"
         var names: [(UInt16, String)] = [
-            (1, familyName), (2, "Regular"), (3, uniqueID), (4, familyName),
+            (1, familyName), (2, variableStyleName ?? "Regular"), (3, uniqueID),
+            (4, variableStyleName.map { familyName + " " + $0 } ?? familyName),
             (5, revision.versionName), (6, postScriptName)
         ]
+        if let variableStyleName {
+            names.append((16, familyName)); names.append((17, variableStyleName))
+        }
+        names.append(contentsOf: extraNames)
         if let provenance = project.remixProvenance {
             names.append((10, "Typefield derivative remix of " + provenance.sourcePostScriptNames.joined(separator: " + ") + "."))
             names.append((13, provenance.distributionNotice))

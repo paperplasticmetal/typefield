@@ -58,7 +58,7 @@ struct FontLabDesignView: View {
     private var masterControls: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Keep separate designs for Regular, Bold or other styles. Switching preserves the current outlines, components, metrics and kerning.").foregroundStyle(.secondary)
-            Text("Each master exports as a separate static font. Automatic interpolation and variable-font export are not available yet.").font(.caption).foregroundStyle(.secondary)
+            Text("Export the active master as a static font, or export two compatible masters as one variable weight font. Corresponding outlines, vertical metrics and kerning must match; Typefield reports any incompatibility.").font(.caption).foregroundStyle(.secondary)
             if project.masters?.isEmpty != false { Text("Current design: Regular").font(.headline) }
             ForEach(project.masters ?? []) { master in
                 HStack {
