@@ -432,8 +432,13 @@ enum FontLabArtworkEngine {
     }
 
     static func project(from scan: FontLabArtworkScan, name: String, existing: FontLabProject? = nil, replace: Bool = false, fitCurves: Bool = true) throws -> FontLabProject {
-        let selected = scan.regions.filter(\.included)
-        let characters = selected.map { $0.character.trimmingCharacters(in: .whitespacesAndNewlines) }
+        try Task.checkCancellation()
+        let selected = scan.regions.filter(\.included).map { region in
+            var region = region
+            region.character = region.character.trimmingCharacters(in: .whitespacesAndNewlines)
+            return region
+        }
+        let characters = selected.map(\.character)
         guard !selected.isEmpty, characters.allSatisfy({ $0.count == 1 }), Set(characters).count == characters.count else {
             throw FontLabArtworkError.message("Assign one unique character to each included region. Uncheck unwanted marks or duplicate letters.")
         }
@@ -466,6 +471,7 @@ enum FontLabArtworkEngine {
         }
         var imported = 0
         for (region, character) in zip(selected, characters) {
+            try Task.checkCancellation()
             if !replace, project.glyphs[character]?.hasArtwork == true { continue }
             var glyph = FontLabGlyph(character: character)
             glyph.leftSideBearing = 0.045; glyph.rightSideBearing = 0.045
@@ -478,6 +484,9 @@ enum FontLabArtworkEngine {
             // Keep the raw scan for the review UI; save a compact, bounded
             // curve fit when it passes shape and topology validation.
             if fitCurves { glyph = (try? FontLabTraceSmoothing.fit(glyph, units: min(3, max(1, scale * 1500)))) ?? glyph }
+            // Conservative fitting may fall back to the raw trace, but a
+            // cancelled import must never finish and save that fallback.
+            try Task.checkCancellation()
             glyph.importedFrom = scan.source.filename; glyph.importFormat = scan.source.format
             guard glyph.isValid else { throw FontLabArtworkError.message("A traced outline is too complex. Increase speck removal or import a simpler drawing.") }
             if !project.characters.contains(character) { project.characters.append(character) }

@@ -460,6 +460,7 @@ final class FontLabStore: ObservableObject {
     private var backgroundSaveInFlight = false
     private var deferredSnapshotSave: SnapshotSave?
     private var persistenceErrorMessage: String?
+    var canRetrySave: Bool { !readBlocked && persistenceErrorMessage != nil }
 
     init(url: URL, recoveryError: String? = nil) {
         self.url = url
@@ -774,7 +775,10 @@ final class FontLabStore: ObservableObject {
     }
 
     func flushPendingSave() {
-        guard pendingSave != nil || finishedSaveRevision < queuedSaveRevision else { return }
+        // A failed background write has finished, but its artwork is still only
+        // in memory. Navigation/termination must retry it, even after the error
+        // banner has been dismissed or another operation changed its text.
+        guard pendingSave != nil || finishedSaveRevision < queuedSaveRevision || persistenceErrorMessage != nil else { return }
         _ = save()
     }
 
@@ -795,6 +799,9 @@ final class FontLabStore: ObservableObject {
     /// Deterministic model, round-trip, atomic-save, and corrupt-file-preservation checks.
     /// The fixture is isolated in the temporary directory and never reads user fonts.
     static func selfTest() throws {
+        try FontLabPersistenceChecks.run()
+        try FontLabSketchReshape.selfTest()
+        try FontLabEditorStateChecks.run()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-FontLabSelfTest-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
         try? FileManager.default.removeItem(at: root)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1285,7 +1292,8 @@ struct FontLabView: View {
                 selectedCharacter: selectedCharacter,
                 canSketch: project?.glyphs[selectedCharacter]?.components?.isEmpty != false,
                 onSelectCharacter: { selectedCharacter = $0 },
-                onSelectMode: { vectorEditing = $0 }
+                onSelectMode: { vectorEditing = $0 },
+                onVectorCommand: { performVectorWorkspaceCommand($0) }
             )
             .frame(width: 1, height: 1)
             .allowsHitTesting(false)
@@ -1530,7 +1538,12 @@ struct FontLabView: View {
             .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
             .padding(.leading, sidebarCollapsed && !session.focusEditor ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             if !store.error.isEmpty {
-                Text(store.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                HStack(alignment: .top) {
+                    Text(store.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                    if store.canRetrySave {
+                        Button("Retry save") { _ = store.save() }.controlSize(.small)
+                    }
+                }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             } else if !store.status.isEmpty {
@@ -1832,7 +1845,7 @@ struct FontLabView: View {
                         .help("Set up Apple Pencil with Sidecar or a macOS drawing tablet")
                         .popover(isPresented: $showInputHelp, arrowEdge: .bottom) { FontLabInputHelp() }
                     }
-                    Text(drawingTool == .reshape ? "Drag a blue outline point to reshape the glyph. ⌘Z undoes the last canvas edit." : drawingTool == .pen ? "Draw with a mouse, trackpad, Apple Pencil through Sidecar, or a macOS-compatible pen tablet. ⌘Z undoes the last canvas edit." : "Drag across a line or filled shape to erase it. ⌘Z restores the last canvas edit.")
+                    Text(drawingTool == .reshape ? "Drag a blue point to reshape a stroke or outline. Use Vector editor for curve handles. ⌘Z undoes the last canvas edit." : drawingTool == .pen ? "Draw with a mouse, trackpad, Apple Pencil through Sidecar, or a macOS-compatible pen tablet. ⌘Z undoes the last canvas edit." : "Drag across a line or filled shape to erase it. ⌘Z restores the last canvas edit.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(10)
@@ -2059,16 +2072,35 @@ struct FontLabView: View {
         })
     }
 
-    private func recordGlyphEdit(_ edited: FontLabGlyph, projectID: UUID) {
-        let previous = store.selectedProject?.glyphs[edited.character] ?? FontLabGlyph(character: edited.character)
-        guard edited != previous else { return }
-        if var candidate = store.selectedProject {
-            candidate.glyphs[edited.character] = edited
-            guard candidate.isValid else { store.error = "This edit would move a linked component outside its glyph. Adjust or decompose the component first."; glyphEditRevision = UUID(); return }
+    private func performVectorWorkspaceCommand(_ command: FontLabShortcutAction) -> Bool {
+        guard command.isVectorCommand, !store.readBlocked, let project = store.selectedProject else { return false }
+        let glyph = project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
+        guard vectorEditing || glyph.components?.isEmpty == false else { return false }
+        let editor = session.vector(for: project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString,
+                                    glyph: glyph, metrics: project.metrics)
+        editor.receive(glyph)
+        editor.metrics = project.metrics
+        editor.onCommit = { edited in recordGlyphEdit(edited, projectID: project.id) }
+        switch command {
+        case .copyContours: editor.copyPaths()
+        case .pasteContours: editor.pastePaths()
+        case .selectAllContours: editor.selectAll()
+        default: return false
         }
-        editHistory.record(previous)
+        return true
+    }
+
+    @discardableResult private func recordGlyphEdit(_ edited: FontLabGlyph, projectID: UUID) -> Bool {
+        guard !store.readBlocked, var candidate = store.selectedProject, candidate.id == projectID else { return false }
+        let previous = candidate.glyphs[edited.character] ?? FontLabGlyph(character: edited.character)
+        guard edited != previous else { return true }
+        candidate.glyphs[edited.character] = edited
+        guard candidate.isValid else { store.error = "This edit would move a linked component outside its glyph. Adjust or decompose the component first."; glyphEditRevision = UUID(); return false }
         store.setGlyph(edited, in: projectID, save: false)
+        guard store.selectedProject?.glyphs[edited.character] == edited else { return false }
+        editHistory.record(previous)
         store.scheduleSave(after: 0.4)
+        return true
     }
 
     private func undoStroke(_ glyph: FontLabGlyph, projectID: UUID) {
@@ -2093,14 +2125,16 @@ struct FontLabView: View {
     }
 
     private func clearGlyph(_ glyph: FontLabGlyph, projectID: UUID) {
-        var edited = glyph
-        editHistory.record(glyph)
+        guard let project = store.selectedProject, project.id == projectID,
+              let current = project.glyphs[glyph.character], current == glyph else { return }
+        var edited = current
         edited.strokes = []
         edited.components = nil
         edited.importedFrom = nil
         edited.importFormat = nil
         edited.starterOrigin = nil
         store.setGlyph(edited, in: projectID, save: true)
+        if store.selectedProject?.glyphs[edited.character] == edited, edited != current { editHistory.record(current) }
     }
 
     private func syncMenuHistory() {
@@ -2233,7 +2267,7 @@ struct FontLabView: View {
                 switch result {
                 case let .success(artifact):
                     let warning = artifact.warnings.isEmpty ? "" : " " + artifact.warnings.joined(separator: " ")
-                    store.status = "Exported \(artifact.exportedArtworkCharacterCount) outlined characters plus a blank space as \(destination.lastPathComponent); \(artifact.skippedCharacters.count) empty or unsupported project characters omitted. " + (variable ? "Weight axis is variable." : "Kerning uses legacy kern.") + warning
+                    store.status = "Exported \(artifact.exportedArtworkCharacterCount) outlined characters plus a blank space as \(destination.lastPathComponent). " + (variable ? "Weight axis is variable." : "Kerning uses legacy kern.") + warning
                     NSWorkspace.shared.activateFileViewerSelecting([destination])
                 case let .failure(error):
                     store.error = "The installable font could not be exported. " + error.localizedDescription
@@ -2493,7 +2527,7 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
         view.onRedo = onRedo
         view.onSelectTool = onSelectTool
         context.coordinator.onCommit = onCommit
-        if !view.isDrawing, view.glyph != glyph { view.replaceGlyph(glyph) }
+        if view.glyph.character != glyph.character || (!view.isDrawing && view.glyph != glyph) { view.replaceGlyph(glyph) }
         view.metrics = metrics
         view.strokeWidth = strokeWidth
         view.tool = tool
@@ -2513,11 +2547,11 @@ private struct FontLabGlyphCanvas: NSViewRepresentable {
     }
 }
 
-private final class FontLabDrawingNSView: NSView {
+final class FontLabDrawingNSView: NSView {
     var glyph = FontLabGlyph(character: "A") { didSet { needsDisplay = true } }
     var metrics = FontLabMetrics() { didSet { needsDisplay = true } }
     var strokeWidth = 0.026
-    var tool = FontLabDrawingTool.pen
+    var tool = FontLabDrawingTool.pen { willSet { if newValue != tool { finishGesture() } } }
     var nibStyle = FontLabNibStyle.round
     var smoothing = FontLabSmoothingLevel.gentle
     var usesTabletPressure = true
@@ -2528,11 +2562,38 @@ private final class FontLabDrawingNSView: NSView {
     var onCommit: ((FontLabGlyph) -> Void)?
     private(set) var isDrawing = false
     private var gestureChangedGlyph = false
+    private var gestureStart: FontLabGlyph?
     private var reportedTabletInput = false
-    private var nodeSelection: (stroke: Int, contour: Int, point: Int)?
+    private var nodeSelection: FontLabSketchReshape.Target?
 
     func replaceGlyph(_ value: FontLabGlyph) {
+        cancelGesture()
         glyph = value
+    }
+
+    private func finishGesture() {
+        guard isDrawing else { return }
+        isDrawing = false
+        let changed = gestureChangedGlyph && glyph != gestureStart
+        gestureStart = nil; gestureChangedGlyph = false; nodeSelection = nil
+        if changed { onCommit?(glyph) }
+        needsDisplay = true
+    }
+
+    private func cancelGesture() {
+        if let before = gestureStart { glyph = before }
+        isDrawing = false; gestureStart = nil; gestureChangedGlyph = false; nodeSelection = nil
+        needsDisplay = true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        finishGesture()
+        return super.resignFirstResponder()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { finishGesture() }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -2573,13 +2634,9 @@ private final class FontLabDrawingNSView: NSView {
         fontLabDrawStrokes(glyph.strokes, in: rect, color: .labelColor)
         if tool == .reshape {
             NSColor.systemBlue.setFill()
-            for stroke in glyph.strokes {
-                for contour in stroke.contours ?? [] {
-                    for point in contour {
-                        NSBezierPath(ovalIn: NSRect(x: rect.minX + point.x * rect.width - 2,
-                            y: rect.minY + point.y * rect.height - 2, width: 4, height: 4)).fill()
-                    }
-                }
+            FontLabSketchReshape.visitPoints(in: glyph) { _, point in
+                NSBezierPath(ovalIn: NSRect(x: rect.minX + point.x * rect.width - 2,
+                    y: rect.minY + point.y * rect.height - 2, width: 4, height: 4)).fill()
             }
         }
         drawHorizontalLabel("Baseline", at: metrics.baseline, color: .systemOrange)
@@ -2590,28 +2647,21 @@ private final class FontLabDrawingNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        finishGesture()
         window?.makeFirstResponder(self)
         guard let point = sampledPoint(for: event) else { return }
+        gestureStart = glyph
         isDrawing = true
         gestureChangedGlyph = false
         switch tool {
         case .pen:
-            guard glyph.strokes.count < 10_000 else { isDrawing = false; return }
+            guard glyph.strokes.count < 10_000 else { cancelGesture(); return }
             glyph.strokes.append(FontLabStroke(points: [point], width: min(max(strokeWidth, 0.002), 0.2), nibStyle: nibStyle))
             gestureChangedGlyph = true
         case .eraser:
             erase(at: point)
         case .reshape:
-            nodeSelection = nil
-            var distance = 12.0
-            for (s, stroke) in glyph.strokes.enumerated() {
-                for (c, contour) in (stroke.contours ?? []).enumerated() {
-                    for (p, candidate) in contour.enumerated() {
-                        let d = hypot((candidate.x - point.x) * drawingRect.width, (candidate.y - point.y) * drawingRect.height)
-                        if d < distance { distance = d; nodeSelection = (s, c, p) }
-                    }
-                }
-            }
+            nodeSelection = FontLabSketchReshape.nearest(to: point, in: glyph, displaySize: drawingRect.size)
         }
         needsDisplay = true
     }
@@ -2633,8 +2683,8 @@ private final class FontLabDrawingNSView: NSView {
         case .eraser:
             erase(at: sampled)
         case .reshape:
-            if let node = nodeSelection {
-                glyph.strokes[node.stroke].contours?[node.contour][node.point] = FontLabPoint(x: sampled.x, y: sampled.y)
+            if let node = nodeSelection, let changed = FontLabSketchReshape.moving(node, to: sampled, in: glyph), changed != glyph {
+                glyph = changed
                 gestureChangedGlyph = true
             }
         }
@@ -2642,15 +2692,11 @@ private final class FontLabDrawingNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard isDrawing else { return }
-        isDrawing = false
-        if gestureChangedGlyph { onCommit?(glyph) }
-        nodeSelection = nil
-        gestureChangedGlyph = false
-        needsDisplay = true
+        finishGesture()
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, isDrawing { cancelGesture(); return }
         if handleUndoShortcut(event) { return }
         if handleToolShortcut(event) { return }
         super.keyDown(with: event)
@@ -2665,17 +2711,18 @@ private final class FontLabDrawingNSView: NSView {
         let editingModifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard event.charactersIgnoringModifiers?.lowercased() == "z" else { return false }
         if editingModifiers == [.command, .shift], let onRedo {
+            finishGesture()
             onRedo()
             return true
         }
         guard editingModifiers == .command, let onUndo else { return false }
+        finishGesture()
         onUndo()
         return true
     }
 
     private func handleToolShortcut(_ event: NSEvent) -> Bool {
-        guard !isDrawing,
-              event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+        guard event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
               let onSelectTool else { return false }
         let tool: FontLabDrawingTool
         switch event.charactersIgnoringModifiers?.lowercased() {
@@ -2684,6 +2731,7 @@ private final class FontLabDrawingNSView: NSView {
         case "v": tool = .reshape
         default: return false
         }
+        finishGesture()
         onSelectTool(tool)
         return true
     }

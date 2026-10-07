@@ -6,6 +6,13 @@
 - Add short, Reduce Motion-aware transitions, direct step navigation, and a smoother handoff into docked or detached workspaces.
 - Match sidebar shortcut motion to its buttons, remove duplicate About-sheet code, and avoid rebuilding an unchanged Dock icon.
 
+## 0.59.15 (2026-10-07)
+
+- Refine Letterform object/node selection, curve handles, snapping, resize boundaries, interrupted drawing and undo/redo. Preserve complete compound outlines and counters across editing, copy/paste, smoothing and font export.
+- Make clipboard geometry retain physical size and baseline across glyphs, expose working editor shortcuts after glyph navigation, and clear stale numeric validation feedback.
+- Extend Sketch Reshape to pen strokes and current vector outlines. Keep import curve fitting cancellable, preserve small marks and reserve sufficient export points for every stroke.
+- Retry failed background saves reliably and keep undo history consistent with accepted edits. Add event-level, persistence, clipboard, fill and native TrueType regression checks.
+
 ## 0.59.14 (2026-10-07)
 
 - Fix repeated object alignment enlarging Spaces canvases. Align against the current artboard, compose with existing content transforms, and preserve selected-object size. Keep unselected text stable at fractional scales and allow subsequent edge/corner resizing without false clipping failures.

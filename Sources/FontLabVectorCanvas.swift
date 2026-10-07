@@ -4,7 +4,9 @@ final class FontLabVectorNSView: NSView {
     let editor: FontLabVectorEditor
     private var start = CGPoint.zero
     private var previousGlyph: FontLabGlyph?
+    private var gestureGlyph: FontLabGlyph?
     private var originalPaths: [FontLabVectorPath] = []
+    private var draggedNodeID: UUID?
     private var initialSelection = Set<UUID>()
     private var initialActivePath: UUID?
     private var marquee: CGRect?
@@ -27,7 +29,15 @@ final class FontLabVectorNSView: NSView {
     override var acceptsFirstResponder:Bool {true}
     override func acceptsFirstMouse(for event:NSEvent?)->Bool {true}
     override func becomeFirstResponder() -> Bool { needsDisplay = true; return super.becomeFirstResponder() }
-    override func resignFirstResponder()->Bool {spaceDown=false;needsDisplay=true;return super.resignFirstResponder()}
+    override func resignFirstResponder()->Bool {
+        endGesture(commit: true)
+        spaceDown=false;needsDisplay=true
+        return super.resignFirstResponder()
+    }
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window { endGesture(commit: true); spaceDown=false }
+        super.viewWillMove(toWindow: newWindow)
+    }
     override func accessibilityChildren() -> [Any]? {
         let paths = editor.paths
         let pathIDs = Set(paths.map(\.id))
@@ -186,10 +196,14 @@ final class FontLabVectorNSView: NSView {
         let paths=editor.paths
         let pens=editor.glyph.strokes.filter {$0.contours == nil && $0.vectorPaths == nil}
         fontLabDrawStrokes(pens,in:r,color:NSColor(editor.inkColor))
-        if editor.fill {FontLabVectorMath.draw(paths,in:r,color:NSColor(editor.inkColor))}
+        if editor.fill {
+            // Counters share winding within their source stroke. Independent
+            // imported/drawn strokes paint separately, just as in the proof.
+            fontLabDrawStrokes(editor.glyph.strokes.filter { $0.contours != nil || $0.vectorPaths != nil },in:r,color:NSColor(editor.inkColor))
+        }
         for path in paths {
             NSColor.systemBlue.withAlphaComponent(0.75).setStroke();let outline=path.bezier(in:r);outline.lineWidth=1;outline.stroke()
-            if editor.objectSelection && editor.tool == .select { continue }
+            if editor.objectSelection && editor.tool == .select && path.nodes.count > 1 { continue }
             for (index,node) in path.nodes.enumerated() {
                 let p=screen(node.point)
                 if editor.selection.contains(node.id) {
@@ -236,7 +250,8 @@ final class FontLabVectorNSView: NSView {
         for a in paths.indices.reversed() {for b in paths[a].nodes.indices where editor.selection.contains(paths[a].nodes[b].id) {
             let node=paths[a].nodes[b]
             for (outgoing,h) in [(false,node.incoming),(true,node.outgoing)] {
-                if let h,hypot(screen(h).x-p.x,screen(h).y-p.y)<7 {return (a,b,outgoing)}
+                if let h, hypot(screen(h).x-screen(node.point).x,screen(h).y-screen(node.point).y)>0.5,
+                   hypot(screen(h).x-p.x,screen(h).y-p.y)<7 {return (a,b,outgoing)}
             }
         }}
         for a in paths.indices.reversed() {for b in paths[a].nodes.indices.reversed() {
@@ -270,8 +285,9 @@ final class FontLabVectorNSView: NSView {
         return best
     }
     override func mouseDown(with event:NSEvent) {
+        endGesture(commit: true)
         window?.makeFirstResponder(self)
-        start=convert(event.locationInWindow,from:nil);previousGlyph=editor.glyph;originalPaths=editor.paths;initialSelection=editor.selection;initialActivePath=editor.activePath
+        start=convert(event.locationInWindow,from:nil);previousGlyph=editor.glyph;gestureGlyph=editor.glyph;originalPaths=editor.paths;initialSelection=editor.selection;initialActivePath=editor.activePath
         if spaceDown || editor.tool == .hand {drag = .pan;panStart=editor.pan;return}
         let point=snapped(design(start),event:event)
         switch editor.tool {
@@ -293,10 +309,19 @@ final class FontLabVectorNSView: NSView {
                 if let box = selectionBox, let corner = corners(box).firstIndex(where: { hypot($0.x-start.x,$0.y-start.y)<9 }) {
                     drag = .resize(corner); resizeBox = box; return
                 }
-                let hit = hitSegment(start)?.0 ?? originalPaths.indices.reversed().first { originalPaths[$0].closed && originalPaths[$0].bezier(in:designRect).contains(start) }
+                let hit = hitSegment(start)?.0 ?? originalPaths.indices.reversed().first {
+                    (originalPaths[$0].closed && originalPaths[$0].bezier(in:designRect).contains(start)) ||
+                    (originalPaths[$0].nodes.count == 1 && hypot(screen(originalPaths[$0].nodes[0].point).x-start.x,screen(originalPaths[$0].nodes[0].point).y-start.y)<8)
+                }
                 if let hit {
                     navigatedID = originalPaths[hit].id
                     let alreadySelected = originalPaths[hit].nodes.allSatisfy { editor.selection.contains($0.id) }
+                    if alreadySelected && event.modifierFlags.contains(.shift) {
+                        let retained = editor.selection
+                        editor.selectObject(hit, adding: false)
+                        editor.selection = retained.subtracting(editor.selection)
+                        drag = .none;needsDisplay=true;return
+                    }
                     if !alreadySelected || event.modifierFlags.contains(.shift) { editor.selectObject(hit, adding:event.modifierFlags.contains(.shift)) }
                     drag = .nodes; needsDisplay = true; return
                 }
@@ -306,6 +331,7 @@ final class FontLabVectorNSView: NSView {
             if let (a,b,handle)=hitNode(start) {
                 if let handle {drag = .handle(a,b,handle);return}
                 let id=originalPaths[a].nodes[b].id
+                draggedNodeID = id
                 navigatedID = id
                 if event.clickCount==2 {editor.selection=[id];editor.smooth(!originalPaths[a].nodes[b].smooth);drag = .none;return}
                 if event.modifierFlags.contains(.shift) {if editor.selection.contains(id) {editor.selection.remove(id)} else {editor.selection.insert(id)}}
@@ -324,9 +350,13 @@ final class FontLabVectorNSView: NSView {
             }
         case .hand:break
         }
+        gestureGlyph = editor.glyph
         needsDisplay=true
     }
     override func mouseDragged(with event:NSEvent) {
+        // A glyph switch or an external undo can replace the document while the
+        // mouse is still down. Never replay the old gesture into that document.
+        guard gestureGlyph == editor.glyph else { endGesture(commit: false); return }
         let end=convert(event.locationInWindow,from:nil)
         switch drag {
         case .none:break
@@ -340,14 +370,32 @@ final class FontLabVectorNSView: NSView {
         case .pan:editor.pan=CGPoint(x:panStart.x+end.x-start.x,y:panStart.y+end.y-start.y)
         case .marquee:
             marquee=CGRect(x:min(start.x,end.x),y:min(start.y,end.y),width:abs(end.x-start.x),height:abs(end.y-start.y))
-            let ids=Set(editor.paths.flatMap(\.nodes).filter {marquee!.contains(screen($0.point))}.map(\.id))
-            editor.selection=event.modifierFlags.contains(.shift) ? initialSelection.union(ids):ids
+            let paths = editor.paths
+            let ids=Set(paths.flatMap(\.nodes).filter {marquee!.contains(screen($0.point))}.map(\.id))
+            editor.selection=event.modifierFlags.contains(.shift) ? initialSelection:[]
+            if editor.objectSelection {
+                // Expand every touched anchor through the same compound-object
+                // selection used by clicks so a counter cannot be left behind.
+                for index in paths.indices where paths[index].nodes.contains(where: { ids.contains($0.id) }) {
+                    if !paths[index].nodes.allSatisfy({ editor.selection.contains($0.id) }) { editor.selectObject(index, adding: true) }
+                }
+            } else { editor.selection.formUnion(ids) }
         case .nodes:
             let a=design(start,clamp:false),b=design(end,clamp:false)
             var dx=b.x-a.x,dy=b.y-a.y
-            if event.modifierFlags.contains(.shift) {if abs(dx*designRect.width)>abs(dy*designRect.height) {dy=0} else {dx=0}}
-            if let reference=originalPaths.flatMap(\.nodes).first(where:{editor.selection.contains($0.id)}) {
+            let horizontal = abs(dx*designRect.width)>abs(dy*designRect.height)
+            let selected = originalPaths.flatMap(\.nodes).filter { editor.selection.contains($0.id) }
+            if let reference=selected.first(where: { $0.id == draggedNodeID }) ?? selected.first {
                 let p=snapped(.init(x:reference.point.x+dx,y:reference.point.y+dy),event:event);dx=p.x-reference.point.x;dy=p.y-reference.point.y
+            }
+            if event.modifierFlags.contains(.shift) {if horizontal {dy=0} else {dx=0}}
+            // Stop the complete selection at the edge, including its handles,
+            // instead of rejecting frames and leaving it stuck short of the edge.
+            for node in selected {
+                dx=min(1-node.point.x,max(-node.point.x,dx));dy=min(1-node.point.y,max(-node.point.y,dy))
+                for handle in [node.incoming,node.outgoing].compactMap({$0}) {
+                    dx=min(3-handle.x,max(-2-handle.x,dx));dy=min(3-handle.y,max(-2-handle.y,dy))
+                }
             }
             var paths=originalPaths
             for p in paths.indices {for n in paths[p].nodes.indices where editor.selection.contains(paths[p].nodes[n].id) {
@@ -365,12 +413,17 @@ final class FontLabVectorNSView: NSView {
             if outgoing {paths[a].nodes[b].outgoing=handle} else {paths[a].nodes[b].incoming=handle}
             if event.modifierFlags.contains(.option) {paths[a].nodes[b].smooth=false}
             else if paths[a].nodes[b].smooth {
-                let other=outgoing ? paths[a].nodes[b].incoming:paths[a].nodes[b].outgoing
+                let original = originalPaths[a].nodes[b]
+                let other=outgoing ? original.incoming:original.outgoing
                 if let other {
                     let w=editor.glyph.resolvedDesignWidth,dx=(handle.x-point.x)*w,dy=handle.y-point.y
                     let length=hypot((other.x-point.x)*w,other.y-point.y),denom=max(1e-9,hypot(dx,dy))
-                    let h=FontLabPoint(x:point.x-dx/denom*length/w,y:point.y-dy/denom*length)
-                    if outgoing {paths[a].nodes[b].incoming=h} else {paths[a].nodes[b].outgoing=h}
+                    // At zero length there is no direction. Keep the opposing
+                    // handle until the pointer establishes a direction again.
+                    if hypot(dx,dy)>1e-9 {
+                        let h=FontLabPoint(x:point.x-dx/denom*length/w,y:point.y-dy/denom*length)
+                        if outgoing {paths[a].nodes[b].incoming=h} else {paths[a].nodes[b].outgoing=h}
+                    }
                 }
             }
             _=editor.apply(paths,commit:false)
@@ -387,24 +440,33 @@ final class FontLabVectorNSView: NSView {
                 b.x=a.x+(b.x<a.x ? -1:1)*side/editor.glyph.resolvedDesignWidth;b.y=a.y+(b.y<a.y ? -1:1)*side
             }
             let r=CGRect(x:min(a.x,b.x),y:min(a.y,b.y),width:abs(b.x-a.x),height:abs(b.y-a.y))
-            guard r.width>0.001,r.height>0.001 else {return}
+            guard r.width>0.001,r.height>0.001 else {
+                if let previousGlyph { editor.receive(previousGlyph); editor.selection=initialSelection }
+                gestureGlyph=editor.glyph;needsDisplay=true;return
+            }
             let path=FontLabVectorMath.rectangle(r,ellipse:editor.tool == .ellipse)
             if editor.apply(originalPaths+[path],commit:false) {editor.selection=Set(path.nodes.map(\.id))}
         }
+        gestureGlyph=editor.glyph
         needsDisplay=true
     }
     private func endGesture(commit: Bool) {
-        switch drag {
+        let completedDrag = drag, before = previousGlyph
+        let restoreSelection = initialSelection, restoreActivePath = initialActivePath, restorePan = panStart
+        let isCurrentGlyph = gestureGlyph == editor.glyph
+        // Commits can synchronously rebuild or detach the view. Clear our
+        // transaction first so a responder callback cannot commit it twice.
+        previousGlyph=nil;gestureGlyph=nil;originalPaths=[];draggedNodeID=nil;initialSelection=[];initialActivePath=nil;marquee=nil;drag = .none;needsDisplay=true
+        if isCurrentGlyph { switch completedDrag {
         case .nodes, .handle, .pen, .shape, .resize:
-            if let previousGlyph {
-                if commit { editor.finishGesture(from: previousGlyph) }
-                else { editor.receive(previousGlyph); editor.selection = initialSelection; editor.activePath = initialActivePath }
+            if let before {
+                if commit { editor.finishGesture(from: before) }
+                else { editor.receive(before); editor.selection = restoreSelection; editor.activePath = restoreActivePath }
             }
-        case .pan: if !commit { editor.pan = panStart }
-        case .marquee: if !commit { editor.selection = initialSelection }
+        case .pan: if !commit { editor.pan = restorePan }
+        case .marquee: if !commit { editor.selection = restoreSelection }
         case .none: break
-        }
-        previousGlyph=nil;originalPaths=[];initialSelection=[];initialActivePath=nil;marquee=nil;drag = .none;needsDisplay=true
+        } }
     }
     override func mouseUp(with event:NSEvent) { endGesture(commit: true) }
     override func cancelOperation(_ sender: Any?) {
@@ -422,6 +484,7 @@ final class FontLabVectorNSView: NSView {
         }
         guard modifiers.isEmpty || modifiers == .shift else {super.keyDown(with:event);return}
         let key=event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if key == " ", spaceDown { return }
         guard [UInt16(51), 117, 36, 123, 124, 125, 126].contains(event.keyCode) || [" ", "v", "p", "r", "o", "h"].contains(key) else {
             super.keyDown(with: event); return
         }
@@ -448,6 +511,9 @@ final class FontLabVectorNSView: NSView {
         }
     }
     override func keyUp(with event:NSEvent) {if event.keyCode==49 {spaceDown=false} else {super.keyUp(with:event)}}
+    @objc func copy(_ sender: Any?) { endGesture(commit: true); editor.copyPaths() }
+    @objc func paste(_ sender: Any?) { endGesture(commit: true); editor.pastePaths() }
+    override func selectAll(_ sender: Any?) { endGesture(commit: true); editor.selectAll(); needsDisplay=true }
     override func performKeyEquivalent(with event:NSEvent)->Bool {
         if window?.firstResponder === self,handleCommandShortcut(event) {return true}
         return super.performKeyEquivalent(with:event)
@@ -473,6 +539,7 @@ final class FontLabVectorNSView: NSView {
         return true
     }
     func focusSelection() {
+        endGesture(commit: true)
         guard !editor.selection.isEmpty,
               let transform = FontLabVectorEditor.focusTransform(
                 selectionBounds: editor.selectedFocusBounds,
@@ -484,10 +551,11 @@ final class FontLabVectorNSView: NSView {
         needsDisplay = true
     }
     override func scrollWheel(with event:NSEvent) {
+        endGesture(commit: true)
         if event.modifierFlags.contains(.option) {zoom(by:exp(-event.scrollingDeltaY*0.015),at:convert(event.locationInWindow,from:nil))}
         else {editor.pan=CGPoint(x:editor.pan.x-event.scrollingDeltaX,y:editor.pan.y+event.scrollingDeltaY)}
     }
-    override func magnify(with event:NSEvent) {zoom(by:1+event.magnification,at:convert(event.locationInWindow,from:nil))}
+    override func magnify(with event:NSEvent) {endGesture(commit: true);zoom(by:1+event.magnification,at:convert(event.locationInWindow,from:nil))}
     private func zoom(by factor:Double,at point:CGPoint) {
         let before=design(point,clamp:false);editor.zoom=min(8,max(0.1,editor.zoom*factor));let after=screen(before)
         editor.pan=CGPoint(x:editor.pan.x+point.x-after.x,y:editor.pan.y+point.y-after.y)

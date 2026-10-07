@@ -50,7 +50,55 @@ enum FontLabVectorTool: String, CaseIterable, Identifiable {
     var icon: String { switch self { case .select:return "cursorarrow";case .pen:return "point.topleft.down.to.point.bottomright.curvepath";case .rectangle:return "rectangle";case .ellipse:return "circle";case .hand:return "hand.draw" } }
 }
 
+/// Clipboard coordinates retain their physical em size and distance from the
+/// baseline when moving artwork between glyphs or projects.
+struct FontLabVectorClipboard: Codable {
+    var version = 1
+    let designWidth: Double
+    let baseline: Double
+    let paths: [FontLabVectorPath]
+    var groups: [[UUID]]? = nil
+
+    var isValid: Bool {
+        version == 1 && designWidth.isFinite && (0.02...3).contains(designWidth) &&
+        baseline.isFinite && (0...1).contains(baseline) && !paths.isEmpty &&
+        paths.count <= 256 && Set(paths.map(\.id)).count == paths.count &&
+        paths.reduce(0, { $0 + $1.nodes.count }) <= 30_000 && paths.allSatisfy(\.isValid) &&
+        (groups.map { groups in
+            let ids = groups.flatMap { $0 }
+            return groups.allSatisfy { !$0.isEmpty } && ids.count == paths.count && Set(ids) == Set(paths.map(\.id))
+        } ?? true)
+    }
+
+    func mapped(toWidth width: Double, baseline targetBaseline: Double) -> [FontLabVectorPath]? {
+        guard isValid, width.isFinite, (0.02...3).contains(width), targetBaseline.isFinite else { return nil }
+        func boundary(_ value: Double, _ limits: ClosedRange<Double>) -> Double {
+            if value < limits.lowerBound, value >= limits.lowerBound - 1e-12 { return limits.lowerBound }
+            if value > limits.upperBound, value <= limits.upperBound + 1e-12 { return limits.upperBound }
+            return value
+        }
+        func point(_ value: FontLabPoint, anchor: Bool) -> FontLabPoint {
+            var result = value
+            result.x *= designWidth / width
+            result.y += targetBaseline - baseline
+            // A mathematically exact fit can land one floating-point step
+            // outside the box after converting between physical em frames.
+            let limits = anchor ? 0.0...1.0 : -2.0...3.0
+            result.x = boundary(result.x, limits);result.y = boundary(result.y, limits)
+            return result
+        }
+        var result = paths
+        for p in result.indices { for n in result[p].nodes.indices {
+            result[p].nodes[n].point = point(result[p].nodes[n].point,anchor:true)
+            result[p].nodes[n].incoming = result[p].nodes[n].incoming.map { point($0,anchor:false) }
+            result[p].nodes[n].outgoing = result[p].nodes[n].outgoing.map { point($0,anchor:false) }
+        } }
+        return result.allSatisfy(\.isValid) ? result : nil
+    }
+}
+
 final class FontLabVectorEditor: ObservableObject {
+    static let defaultMessage = "V: Select, P: Bézier, R: Rectangle, O: Ellipse. Hold Space and drag to pan."
     @Published var glyph: FontLabGlyph {
         didSet { cachedPaths = nil }
     }
@@ -59,16 +107,20 @@ final class FontLabVectorEditor: ObservableObject {
     private var cachedPaths: [FontLabVectorPath]?
     @Published var componentStrokes: [FontLabStroke] = []
     @Published var metrics: FontLabMetrics
-    @Published var tool = FontLabVectorTool.select
+    @Published var tool = FontLabVectorTool.select {
+        didSet { if tool == .select && oldValue != .select && objectSelection { selectCompleteObjects() } }
+    }
     @Published var selection = Set<UUID>()
     @Published var zoom = 1.0
     @Published var pan = CGPoint.zero
     @Published var grid = true
     @Published var snap = true
     @Published var fill = true
-    @Published var objectSelection = true
+    @Published var objectSelection = true {
+        didSet { if objectSelection && !oldValue { selectCompleteObjects() } }
+    }
     @Published var inkColor = Color(nsColor: .labelColor)
-    @Published var message = "V: Select, P: Bézier, R: Rectangle, O: Ellipse. Hold Space and drag to pan."
+    @Published var message = FontLabVectorEditor.defaultMessage
     var onCommit: (FontLabGlyph) -> Void = { _ in }
     var onUndo: () -> Void = {}
     var onRedo: () -> Void = {}
@@ -112,14 +164,15 @@ final class FontLabVectorEditor: ObservableObject {
         glyph=value;selection.formIntersection(Set(paths.flatMap(\.nodes).map(\.id)))
         if !paths.contains(where:{$0.id == activePath}) { activePath=nil }
     }
-    @discardableResult func apply(_ value: [FontLabVectorPath], commit: Bool = true) -> Bool {
+    @discardableResult func apply(_ value: [FontLabVectorPath], commit: Bool = true, pathGroups: [[UUID]] = []) -> Bool {
         guard value.count <= 256, value.reduce(0,{$0+$1.nodes.count}) <= 30_000, value.allSatisfy(\.isValid) else {
             message="Keep anchors inside the design box and use fewer than 30,000 nodes.";return false
         }
-        guard value != paths else { return false }
-        let next=FontLabVectorMath.replacingPaths(in:glyph,with:value)
+        guard value != paths || !pathGroups.isEmpty else { return false }
+        let next=FontLabVectorMath.replacingPaths(in:glyph,with:value,pathGroups:pathGroups)
         guard next.isValid else { message="That edit is outside the glyph limits.";return false }
         guard next != glyph else { return false }
+        if message != Self.defaultMessage { message=Self.defaultMessage }
         glyph=next
         selection.formIntersection(Set(value.flatMap(\.nodes).map(\.id)))
         if commit { onCommit(next) }
@@ -127,6 +180,14 @@ final class FontLabVectorEditor: ObservableObject {
     }
     func finishGesture(from before: FontLabGlyph) { if glyph != before { onCommit(glyph) } }
     func selectAll() { selection=Set(paths.flatMap(\.nodes).map(\.id)) }
+    private func selectCompleteObjects() {
+        let partial = selection, value = paths
+        guard !partial.isEmpty else { return }
+        selection=[]
+        for index in value.indices where value[index].nodes.contains(where: { partial.contains($0.id) }) {
+            if !value[index].nodes.allSatisfy({ selection.contains($0.id) }) { selectObject(index,adding:true) }
+        }
+    }
     func fit() { zoom=1;pan = .zero }
     func requestFocusSelection() { onFocusSelectionRequested() }
     func selectObject(_ index: Int, adding: Bool) {
@@ -196,9 +257,13 @@ final class FontLabVectorEditor: ObservableObject {
         }
     }
     func setCoordinate(_ value: Double, x: Bool) {
-        guard value.isFinite, !selection.isEmpty else { return }
+        guard value.isFinite else { message="Enter a finite coordinate in font units."; return }
+        guard !selection.isEmpty else { return }
+        if message != Self.defaultMessage { message=Self.defaultMessage }
         let b=selectedBounds
-        move(dx:x ? value/(glyph.resolvedDesignWidth*1000)-b.minX : 0, dy:x ? 0 : value/1000+metrics.baseline-b.minY)
+        let dx=x ? value/(glyph.resolvedDesignWidth*1000)-b.minX : 0,dy=x ? 0 : value/1000+metrics.baseline-b.minY
+        guard abs(dx)>1e-12 || abs(dy)>1e-12 else { return }
+        move(dx:dx,dy:dy)
     }
     func smooth(_ enabled: Bool) {
         var value=paths
@@ -216,6 +281,19 @@ final class FontLabVectorEditor: ObservableObject {
         } }
         _=apply(value)
     }
+
+    private func hasSelectedSegment(where predicate: (FontLabVectorPath, Int) -> Bool) -> Bool {
+        paths.contains { path in
+            (0..<path.segmentCount).contains { index in
+                selection.contains(path.nodes[index].id) && selection.contains(path.nodes[(index + 1) % path.nodes.count].id) && predicate(path, index)
+            }
+        }
+    }
+    var canStraightenSegments: Bool { hasSelectedSegment { $0.isCurve($1) } }
+    var canCurveSegments: Bool { hasSelectedSegment { !$0.isCurve($1) } }
+    var canInsertMidpoints: Bool { hasSelectedSegment { _, _ in true } }
+    var canCloseContours: Bool { paths.contains { !$0.closed && $0.nodes.count >= 3 && $0.nodes.contains { selection.contains($0.id) } } }
+    var canOpenContours: Bool { paths.contains { $0.closed && $0.nodes.contains { selection.contains($0.id) } } }
     func curves() {
         var value=paths
         for p in value.indices { for n in 0..<value[p].segmentCount {
@@ -310,7 +388,7 @@ final class FontLabVectorEditor: ObservableObject {
             }
         }
         guard !inserted.isEmpty else { message = "Select both ends of a segment to insert a midpoint."; return }
-        if apply(value) { selection = inserted; message = "Inserted \(inserted.count) midpoint(s); the original curve shape is unchanged." }
+        if apply(value) { objectSelection = false; selection = inserted; message = "Inserted \(inserted.count) \(inserted.count == 1 ? "midpoint" : "midpoints"); the original curve shape is unchanged." }
     }
 
     /// Nested contours (including counters) move as one object. Node tools
@@ -381,6 +459,8 @@ final class FontLabVectorEditor: ObservableObject {
     }
     func pathCommand(_ command: String) {
         var value=paths
+        var regrouping: [Set<UUID>] = []
+        let sourceGroups = FontLabVectorMath.pathGroups(in:glyph).map { Set($0) }
         for p in value.indices where value[p].nodes.contains(where:{selection.contains($0.id)}) {
             if command == "reverse" { value[p].reverse() }
             if command == "counter",value[p].closed,let first=value[p].nodes.first {
@@ -388,15 +468,26 @@ final class FontLabVectorEditor: ObservableObject {
                     let points=path.flattened();guard points.count>=3 else {return 0}
                     return points.indices.reduce(0) { sum,i in let a=points[i],b=points[(i+1)%points.count];return sum+a.x*b.y-b.x*a.y }
                 }
-                let parents=value.indices.filter { $0 != p && value[$0].closed && value[$0].cgPath.contains(CGPoint(x:first.point.x*1000,y:first.point.y*1000)) }
+                let child=value[p].cgPath, samples=value[p].flattened()
+                let parents=value.indices.filter { index in
+                    guard index != p, value[index].closed else { return false }
+                    let outline=value[index].cgPath
+                    return outline.boundingBoxOfPath.contains(child.boundingBoxOfPath) &&
+                        outline.contains(CGPoint(x:first.point.x*1000,y:first.point.y*1000)) &&
+                        samples.allSatisfy { outline.contains(CGPoint(x:$0.x*1000,y:$0.y*1000)) }
+                }
                 if let parent=parents.min(by:{abs(area(value[$0]))<abs(area(value[$1]))}) {
                     if area(value[parent])*area(value[p])>0 {value[p].reverse()}
+                    var joined = Set([value[parent].id,value[p].id])
+                    for group in sourceGroups where !group.isDisjoint(with: joined) { joined.formUnion(group) }
+                    for group in regrouping where !group.isDisjoint(with: joined) { joined.formUnion(group) }
+                    regrouping.removeAll { !$0.isDisjoint(with: joined) };regrouping.append(joined)
                 } else {message="A counter needs a closed contour inside another contour."}
             }
             if command == "close", value[p].nodes.count >= 3 { value[p].closed=true }
             if command == "open" { value[p].closed=false }
         }
-        if apply(value) { activePath=nil }
+        if apply(value,pathGroups:regrouping.map { Array($0) }) { activePath=nil }
     }
     func deleteSelection() {
         var value=paths
@@ -428,9 +519,17 @@ final class FontLabVectorEditor: ObservableObject {
             if copies[p].nodes[n].incoming != nil { copies[p].nodes[n].incoming!.x += 0.025 }
             if copies[p].nodes[n].outgoing != nil { copies[p].nodes[n].outgoing!.x += 0.025 }
         } }
-        if apply(paths+copies) { selection=Set(copies.flatMap(\.nodes).map(\.id)) }
+        let copyIDs = Dictionary(uniqueKeysWithValues: zip(chosen,copies).map { ($0.0.id,$0.1.id) })
+        let groups = FontLabVectorMath.pathGroups(in:glyph).map { $0.compactMap { copyIDs[$0] } }.filter { !$0.isEmpty }
+        if apply(paths+copies,pathGroups:groups) { selection=Set(copies.flatMap(\.nodes).map(\.id)) }
     }
     func transform(scaleX:Double=1,scaleY:Double=1,angle:Double=0) {
+        guard scaleX.isFinite, scaleY.isFinite, angle.isFinite, scaleX != 0, scaleY != 0 else {
+            message="Use a finite rotation and a nonzero scale."; return
+        }
+        guard !selection.isEmpty else { return }
+        if message != Self.defaultMessage { message=Self.defaultMessage }
+        guard scaleX != 1 || scaleY != 1 || angle != 0 else { return }
         let b=selectedBounds,w=glyph.resolvedDesignWidth
         let c=cos(angle),s=sin(angle)
         func convert(_ p:FontLabPoint)->FontLabPoint {
@@ -471,8 +570,16 @@ final class FontLabVectorEditor: ObservableObject {
         guard !chosen.isEmpty, chosen.allSatisfy(\.closed) else {message="Close the selected contours before combining shapes.";return}
         let result: CGPath
         if operation == "overlap" {
-            let combined=CGMutablePath();chosen.forEach {combined.addPath($0.cgPath)}
-            result=combined.normalized(using:.winding)
+            let groups = FontLabVectorMath.pathGroups(in:glyph)
+            var combined: CGPath?
+            for group in groups {
+                let compound=CGMutablePath()
+                chosen.filter { group.contains($0.id) }.forEach {compound.addPath($0.cgPath)}
+                guard !compound.isEmpty else { continue }
+                let normalized=compound.normalized(using:.winding)
+                combined = combined.map { $0.union(normalized,using:.winding) } ?? normalized
+            }
+            result=combined ?? CGMutablePath()
         } else {
             guard chosen.count>=2 else {message="Select at least two closed contours.";return}
             var combined=chosen[0].cgPath
@@ -482,19 +589,45 @@ final class FontLabVectorEditor: ObservableObject {
             result=combined
         }
         let replacement=FontLabVectorPath.from(result),ids=Set(chosen.map(\.id))
-        if apply(paths.filter {!ids.contains($0.id)}+replacement) {selection=Set(replacement.flatMap(\.nodes).map(\.id));message="Contours combined. Undo restores the original shapes."}
+        // Retain unselected counters alongside the replacement for their
+        // original compound, rather than leaving a detached counter as ink.
+        let siblings=FontLabVectorMath.pathGroups(in:glyph).filter { $0.contains { ids.contains($0) } }.flatMap { $0 }.filter { !ids.contains($0) }
+        if apply(paths.filter {!ids.contains($0.id)}+replacement,pathGroups:[replacement.map(\.id)+siblings]) {selection=Set(replacement.flatMap(\.nodes).map(\.id));message="Contours combined. Undo restores the original shapes."}
     }
     func copyPaths() {
         let selected=paths.filter { $0.nodes.contains { selection.contains($0.id) } }
-        guard !selected.isEmpty, let data=try? JSONEncoder().encode(selected) else {return}
+        let selectedIDs = Set(selected.map(\.id))
+        let groups = FontLabVectorMath.pathGroups(in:glyph).map { $0.filter { selectedIDs.contains($0) } }.filter { !$0.isEmpty }
+        let clipboard = FontLabVectorClipboard(designWidth: glyph.resolvedDesignWidth, baseline: metrics.baseline, paths: selected, groups:groups)
+        guard clipboard.isValid, let data=try? JSONEncoder().encode(clipboard) else {return}
         NSPasteboard.general.clearContents();NSPasteboard.general.setData(data,forType:.init("local.fontshelf.vector-paths"))
-        message="Copied \(selected.count) contours. Paste into any glyph."
+        message="Copied \(selected.count) \(selected.count == 1 ? "contour" : "contours"). Paste into any glyph."
     }
     func pastePaths() {
-        guard let data=NSPasteboard.general.data(forType:.init("local.fontshelf.vector-paths")),data.count<8_000_000,
-              var added=try? JSONDecoder().decode([FontLabVectorPath].self,from:data),added.allSatisfy(\.isValid) else {message="Copy vector contours from a Letterform Editor glyph first.";return}
-        for p in added.indices {added[p].id=UUID();for n in added[p].nodes.indices {added[p].nodes[n].id=UUID()}}
-        if apply(paths+added) {selection=Set(added.flatMap(\.nodes).map(\.id))}
+        guard let data=NSPasteboard.general.data(forType:.init("local.fontshelf.vector-paths")) else {message="Copy vector contours from a Letterform Editor glyph first.";return}
+        pastePaths(data: data)
+    }
+    func pastePaths(data: Data) {
+        guard data.count < 8_000_000 else { message="The copied artwork exceeds the clipboard size limit.";return }
+        var added: [FontLabVectorPath], groups: [[UUID]] = []
+        if let clipboard = try? JSONDecoder().decode(FontLabVectorClipboard.self, from: data) {
+            guard clipboard.isValid else { message="The copied contours are invalid or use an unsupported format.";return }
+            guard let mapped = clipboard.mapped(toWidth: glyph.resolvedDesignWidth, baseline: metrics.baseline) else {
+                message="Copied contours do not fit this glyph’s design box. Scale or reposition the source before copying; its proportions were preserved."
+                return
+            }
+            added = mapped
+            groups = clipboard.groups ?? []
+        } else if let legacy = try? JSONDecoder().decode([FontLabVectorPath].self, from: data), !legacy.isEmpty, legacy.allSatisfy(\.isValid) {
+            // Older versions did not record their source coordinate frame.
+            added = legacy
+        } else { message="Copy vector contours from a Letterform Editor glyph first.";return }
+        for p in added.indices {
+            let originalID = added[p].id;added[p].id=UUID()
+            for g in groups.indices { groups[g] = groups[g].map { $0 == originalID ? added[p].id : $0 } }
+            for n in added[p].nodes.indices {added[p].nodes[n].id=UUID()}
+        }
+        if apply(paths+added,pathGroups:groups) {selection=Set(added.flatMap(\.nodes).map(\.id)); activePath=nil; message="Pasted \(added.count) \(added.count == 1 ? "contour" : "contours"). Undo restores the previous outline."}
     }
 }
 
@@ -553,14 +686,14 @@ struct FontLabVectorEditorView: View {
                 vectorZoomControls
             }.font(.caption).controlSize(.small)
             .popover(isPresented: $showCanvasAppearance) { canvasAppearance.padding(16).frame(width: 310) }
-            Text(editor.openCount > 0 ? "\(editor.openCount) open contour(s). \(editor.message)" : editor.message)
+            Text(editor.openCount > 0 ? "\(editor.openCount) open \(editor.openCount == 1 ? "contour" : "contours"). \(editor.message)" : editor.message)
                 .font(.caption2).foregroundStyle(editor.openCount > 0 ? .orange : .secondary).fixedSize(horizontal: false, vertical: true)
                 .help("Objects: edit whole shapes. Nodes: edit points and handles. Paths contains contour operations. Selection contains coordinates and transforms.")
         }
         .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
         .onAppear { editor.receive(glyph); editor.metrics=metrics; editor.componentStrokes=componentStrokes; updateCoordinates() }
         .onChange(of:componentStrokes) {editor.componentStrokes=$0}
-        .onChange(of:metrics) {editor.metrics=$0}
+        .onChange(of:metrics) {editor.metrics=$0;updateCoordinates()}
         .onChange(of:editor.selection) {_ in updateCoordinates()}
         .onChange(of:editor.glyph) {_ in updateCoordinates()}
         .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
@@ -574,9 +707,9 @@ struct FontLabVectorEditorView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("Selection").font(.headline); Spacer(); Button("Select all") { editor.selectAll() }; Button("Done") { showSelectionInspector = false } }
             HStack(spacing:6) {
-                Text("\(editor.selection.count) nodes").foregroundStyle(.secondary).frame(width:65,alignment:.leading)
-                Text("X");TextField("X",text:$x).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection X in font units").onSubmit {if let v=Double(x) {editor.setCoordinate(v,x:true)}}
-                Text("Y");TextField("Y",text:$y).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection Y above baseline in font units").onSubmit {if let v=Double(y) {editor.setCoordinate(v,x:false)}}
+                Text("\(editor.selection.count) \(editor.selection.count == 1 ? "node" : "nodes")").foregroundStyle(.secondary).frame(width:65,alignment:.leading)
+                Text("X");TextField("X",text:$x).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection X in font units").onSubmit {submitCoordinate(x, horizontal:true)}
+                Text("Y");TextField("Y",text:$y).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection Y above baseline in font units").onSubmit {submitCoordinate(y, horizontal:false)}
                 Spacer(minLength:0)
                 Menu("Transform") {
                     Button(editor.objectSelection ? "Align objects horizontally" : "Align nodes horizontally") {editor.align(horizontal:true)}.disabled(!editor.canAlign)
@@ -588,16 +721,38 @@ struct FontLabVectorEditorView: View {
                 }.disabled(editor.selection.isEmpty).fixedSize()
             }.textFieldStyle(.roundedBorder).font(.caption)
             HStack(spacing:6) {
-                Text("Scale %");TextField("100",text:$scale).frame(width:50)
-                Button("Scale") {if let v=Double(scale),v>0,v<=1000 {editor.transform(scaleX:v/100,scaleY:v/100)}}.disabled(editor.selection.isEmpty)
+                Text("Scale %");TextField("100",text:$scale).frame(width:50).disabled(editor.selection.isEmpty).onSubmit {submitScale()}
+                Button("Scale") {submitScale()}.disabled(editor.selection.isEmpty)
                 Spacer(minLength: 0)
             }.textFieldStyle(.roundedBorder).font(.caption)
             HStack(spacing: 6) {
-                Text("Rotate °");TextField("0",text:$angle).frame(width:45)
-                Button("Rotate") {if let v=Double(angle),v.isFinite {editor.transform(angle:v * .pi/180)}}.disabled(editor.selection.isEmpty)
+                Text("Rotate °");TextField("0",text:$angle).frame(width:45).disabled(editor.selection.isEmpty).onSubmit {submitRotation()}
+                Button("Rotate") {submitRotation()}.disabled(editor.selection.isEmpty)
                 Spacer(minLength:0)
             }.textFieldStyle(.roundedBorder).font(.caption)
+            Text(editor.message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
         }
+    }
+    private func submitCoordinate(_ text: String, horizontal: Bool) {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)), value.isFinite else {
+            editor.message="Enter a finite coordinate in font units.";updateCoordinates();return
+        }
+        editor.setCoordinate(value, x:horizontal)
+        // Rejected out-of-bounds edits leave the outline unchanged; show its
+        // actual position instead of retaining a value that was never applied.
+        updateCoordinates()
+    }
+    private func submitScale() {
+        guard let value = Double(scale.trimmingCharacters(in: .whitespacesAndNewlines)), value.isFinite, value > 0, value <= 1000 else {
+            editor.message="Enter a scale greater than 0 and at most 1,000 percent.";return
+        }
+        editor.transform(scaleX:value/100,scaleY:value/100)
+    }
+    private func submitRotation() {
+        guard let value = Double(angle.trimmingCharacters(in: .whitespacesAndNewlines)), value.isFinite else {
+            editor.message="Enter a finite rotation in degrees.";return
+        }
+        editor.transform(angle:value.truncatingRemainder(dividingBy:360) * .pi/180)
     }
     private var canvasAppearance: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -631,14 +786,14 @@ struct FontLabVectorEditorView: View {
         Menu("Paths") {
                     Button("Smooth nodes") {editor.smooth(true)}.disabled(editor.selection.isEmpty)
                     Button("Corner nodes") {editor.smooth(false)}.disabled(editor.selection.isEmpty)
-                    Button("Make selected segments straight") {editor.lines()}.disabled(editor.selection.count<2)
-                    Button("Add curve handles") {editor.curves()}.disabled(editor.selection.count<2)
-                    Button("Insert segment midpoints") {editor.insertMidpoints()}.disabled(editor.selection.count<2)
+                    Button("Make selected segments straight") {editor.lines()}.disabled(!editor.canStraightenSegments)
+                    Button("Add curve handles") {editor.curves()}.disabled(!editor.canCurveSegments)
+                    Button("Insert segment midpoints") {editor.insertMidpoints()}.disabled(!editor.canInsertMidpoints)
                     Button("Split at selected node") {editor.splitAtNode()}.disabled(!editor.canSplitNode)
                     Button("Join selected endpoints") {editor.joinEndpoints()}.disabled(!editor.canJoinEndpoints)
                     Divider()
-                    Button("Close contours") {editor.pathCommand("close")}.disabled(editor.selection.isEmpty)
-                    Button("Open contours") {editor.pathCommand("open")}.disabled(editor.selection.isEmpty)
+                    Button("Close contours") {editor.pathCommand("close")}.disabled(!editor.canCloseContours)
+                    Button("Open contours") {editor.pathCommand("open")}.disabled(!editor.canOpenContours)
                     Button("Make counter") {editor.pathCommand("counter")}.disabled(editor.selection.isEmpty)
                     Button("Reverse contours") {editor.pathCommand("reverse")}.disabled(editor.selection.isEmpty)
                     Button("Remove overlaps") {editor.boolean("overlap")}.disabled(editor.paths.isEmpty)
