@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.59.7 (2026-10-06)
+
+- Add Feedback and Report a Bug links in the app for invited beta testers. Reports open the private Typefield GitHub issue templates.
+- Prepare an ad hoc signed Apple silicon beta DMG for collaborator-only distribution outside the Mac App Store. Testers can use macOS Privacy & Security to allow the first launch after confirming the download source.
+
 ## 0.59.6 — 2026-10-05
 
 - Preserve saved searches when collections are renamed, and cancel obsolete glyph scans during rapid navigation.

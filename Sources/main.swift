@@ -1380,6 +1380,13 @@ private struct TypefieldAbout: View {
                     Text("Folder access is granted through the macOS picker. Browsing or downloading Google Fonts contacts GitHub for public previews, font files, and licenses; GitHub receives normal connection data. Exports go only where you choose.")
                     Text("Use or export only fonts and artwork you have the rights to use. Typefield cannot verify redistribution, web embedding, or commercial licensing. Review each font’s license before sharing a font, typeboard, or developer handoff.")
                     Text("Figma and Adobe handoffs are local files that you import or run yourself. They do not include font binaries.").foregroundStyle(.secondary)
+                    Divider()
+                    Text("Beta feedback").font(.headline)
+                    Text("Tell us what worked, what was confusing, or what went wrong.")
+                    HStack(spacing: 18) {
+                        Link("Send Feedback", destination: TypefieldSupportLinks.feedback)
+                        Link("Report a Bug", destination: TypefieldSupportLinks.bugReport)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1517,6 +1524,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let helpMenu = addMenu("Help", to: menu)
         addCommand("Getting Started Tour…", "tour", to: helpMenu)
         addCommand("Keyboard Shortcuts…", "shortcuts", to: helpMenu, key: "/")
+        helpMenu.addItem(.separator())
+        addCommand("Send Feedback…", "feedback", to: helpMenu)
+        addCommand("Report a Bug…", "bugReport", to: helpMenu)
         NSApp.helpMenu = helpMenu
         NSApp.mainMenu = menu
         NSApp.activate(ignoringOtherApps: true)
@@ -1551,7 +1561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return NSApp.isActive && window.attachedSheet == nil
         }
         guard let command = item.representedObject as? String else { return true }
-        if ["settings", "about", "privacy", "shortcuts"].contains(command) { return true }
+        if ["settings", "about", "privacy", "shortcuts", "feedback", "bugReport"].contains(command) { return true }
         let inspectorIsKey = NSApp.keyWindow?.title == "Typefield: Inspector" && library.workspace == .spaces
         if command == "dockInspector" { return NSApp.isActive && inspectorIsKey && window.attachedSheet == nil }
         guard NSApp.isActive, window.attachedSheet == nil, window.isKeyWindow || inspectorIsKey else { return false }
@@ -1615,6 +1625,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "about": settingsWindow.show(library: library, page: .about)
         case "privacy": settingsWindow.show(library: library, page: .privacy)
         case "shortcuts": settingsWindow.show(library: library, page: .shortcuts)
+        case "feedback": NSWorkspace.shared.open(TypefieldSupportLinks.feedback)
+        case "bugReport": NSWorkspace.shared.open(TypefieldSupportLinks.bugReport)
         case "Folders": settingsWindow.show(library: library, page: .folders)
         case "tour":
             window.makeKeyAndOrderFront(nil)

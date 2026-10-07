@@ -1,6 +1,11 @@
 import SwiftUI
 import AppKit
 
+enum TypefieldSupportLinks {
+    static let feedback = URL(string: "https://github.com/paperplasticmetal/typefield/issues/new?template=beta_feedback.md")!
+    static let bugReport = URL(string: "https://github.com/paperplasticmetal/typefield/issues/new?template=bug_report.md")!
+}
+
 final class TypefieldSettingsSelection: ObservableObject {
     @Published var page: TypefieldSettingsPage = .appearance
 }
@@ -221,6 +226,11 @@ struct TypefieldSettingsView: View {
             }
             Button("Keyboard Shortcuts") { selection.page = .shortcuts }
             Button("Privacy & Permissions") { selection.page = .privacy }
+            Divider()
+            Text("Trying the beta? Tell us what worked, what was confusing, or what went wrong.")
+                .font(.callout).foregroundStyle(.secondary)
+            Link("Send Feedback", destination: TypefieldSupportLinks.feedback)
+            Link("Report a Bug", destination: TypefieldSupportLinks.bugReport)
             Spacer()
         }
     }

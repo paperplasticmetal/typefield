@@ -35,7 +35,7 @@ Migration refuses an occupied Store container and invalid project files. Use **E
 
 1. Confirm Apple Developer team membership, registered bundle ID, App Store Connect app record and Xcode signing access for the team.
 2. Run `bash build.sh`, `node tests/figma-import.test.js`, then `TEAM_ID=… APP_BUNDLE_ID=… ./archive-store.sh`. The script leaves the team-signed archive in `dist/Typefield.xcarchive` and checks its code signature, team, entitlements, version and privacy manifest.
-3. In Xcode Organizer, run **Validate App**, then upload to App Store Connect. TestFlight and App Store builds do not need Developer ID notarization; direct-download releases require separate Developer ID signing and notarization.
+3. In Xcode Organizer, run **Validate App**, then upload to App Store Connect. TestFlight and App Store builds do not need Developer ID notarization. A normal direct-download release needs separate Developer ID signing and notarization so Gatekeeper can verify it without a manual exception. The private 0.59.7 beta instead uses an ad hoc signature and requires testers to approve its first launch in macOS Privacy & Security.
 4. Install the TestFlight build on a clean second Mac and the declared macOS 13 minimum. Check first launch, font listing, all three workspaces, folder denial/regrant, migration, export, activation cleanup, offline behavior and recovery from a corrupt saved file using disposable fixtures.
 
 Session activation and font export should be checked with representative installed and imported fonts under the final signed entitlement set.

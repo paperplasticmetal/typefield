@@ -1,6 +1,8 @@
 # Build and verification status
 
-**Current local build: 0.59.6, build 86.** Deeper interaction review repairs collection-scoped saved searches after rename, cancelled glyph scans, interrupted vector gestures, accessibility enabled state and Spaces Undo/Redo after failed saves. Dense object selection reuses contour paths; redundant navigation writes and drag snapshots are removed. Live checks used disposable projects and a separate sandbox. See [0.59.6 interaction matrix and limits](QA_2026-10-05_0.59.6.md). Missing-letter research remains paused.
+**Current local build: 0.59.7, build 87.** Feedback and bug-report links open private GitHub issue templates for invited collaborators. An ad hoc signed Apple silicon DMG is prepared for private beta testing; macOS may require each tester to approve its first launch in Privacy & Security. This beta has no Typefield license gate. It has not received Developer ID signing, notarization, App Store review or second-Mac verification. The 0.59.6 interaction coverage remains the last broad UI pass; see the [0.59.7 beta verification](QA_2026-10-06_0.59.7-beta.md) for distribution checks.
+
+**Previous local build: 0.59.6, build 86.** Deeper interaction review repairs collection-scoped saved searches after rename, cancelled glyph scans, interrupted vector gestures, accessibility enabled state and Spaces Undo/Redo after failed saves. Dense object selection reuses contour paths; redundant navigation writes and drag snapshots are removed. Live checks used disposable projects and a separate sandbox. See [0.59.6 interaction matrix and limits](QA_2026-10-05_0.59.6.md). Missing-letter research remains paused.
 
 **Previous local build: 0.59.5, build 85.** Performance cleanup reuses Library filtering, editable outline conversion and Figma font resolution; reduces glyph redraw and dense geometry-validation work; bounds retained canvas artwork at 128 MiB; cancels obsolete artwork scans; and prevents exponential empty linked-component expansion. The optimized native suite, Figma mock bridge, canonical installation, strict signature and executable identity checks passed. Six saved JSON hashes and the pre-existing research diff remained unchanged. See [0.59.5 performance QA and measured limits](QA_2026-10-05_0.59.5.md). Missing-letter suggestions remain paused and hidden.
 
@@ -112,7 +114,7 @@ Not complete Typeface parity: native Adobe-file decoding/live sync, full native 
 
 Web-font costs are exact only for unambiguously matched WOFF2 files. Installed desktop fonts can supply labeled coverage and layout information but are not silently treated as equivalent web assets; missing and duplicate matches remain visible and are excluded from known-byte totals.
 
-Local bundles are ad-hoc signed. They are not notarized downloads and are not App Store packages. A passing CI run does not guarantee App Review approval.
+Local bundles and the private 0.59.7 beta DMG are ad hoc signed. They are not notarized or App Store packages; testers must approve the beta's first launch in macOS Privacy & Security. A passing CI run does not guarantee App Review approval.
 
 ## 0.34.1 focused refinement
 
