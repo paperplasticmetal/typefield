@@ -48,6 +48,14 @@ enum CanvasSelection {
         }) else { return direction }
         return result
     }
+    static func aligned(direction: TypeDirection, ids: Set<String>, alignment: StudioCanvasAlignment) -> TypeDirection {
+        let plan = CanvasPlanCache.plan(for: direction)
+        guard let bounds = bounds(ids, in: plan) else { return direction }
+        let target = alignment.origin(for: bounds, in: plan.artboardSize)
+        let delta = CGSize(width: target.x - bounds.minX, height: target.y - bounds.minY)
+        if abs(delta.width) < 0.0001 && abs(delta.height) < 0.0001 { return direction }
+        return change(direction: direction, ids: ids, anchor: .zero, scale: 1, delta: delta)
+    }
     static func transformed(_ source: CanvasElement, by transform: CanvasObjectTransform) -> CanvasElement {
         var element = source
         let factor = transform.scale
@@ -70,7 +78,7 @@ enum CanvasSelection {
     }
 }
 extension CanvasPlan {
-    mutating func applyObjectTransforms(_ transforms: [String: CanvasObjectTransform]) {
+    mutating func applyObjectTransforms(_ transforms: [String: CanvasObjectTransform], canvasScale: Double = 1) {
         var counts: [String: Int] = [:]
         for i in elements.indices {
             let element = elements[i]
@@ -79,7 +87,15 @@ extension CanvasPlan {
             let ordinal = counts[key, default: 0]; counts[key] = ordinal + 1
             let id = element.textID ?? key + "|\(ordinal)"
             elements[i].objectID = id
-            if let transform = transforms[id], transform.isValid { elements[i] = CanvasSelection.transformed(elements[i], by: transform) }
+            if let transform = transforms[id], transform.isValid {
+                // Match this object's pre-transform rendered frame without rounding
+                // or relaying out any unselected object at a different scale.
+                if elements[i].text != nil {
+                    let rendered = CanvasSelection.transformed(elements[i], by: CanvasObjectTransform(scale: canvasScale))
+                    elements[i].rect.size.width = max(elements[i].rect.width, CanvasBoardLayout.minimumTextFrameWidth(for: rendered) / canvasScale)
+                }
+                elements[i] = CanvasSelection.transformed(elements[i], by: transform)
+            }
         }
         if !transforms.isEmpty {
             for i in sections.indices {

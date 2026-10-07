@@ -2018,6 +2018,11 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     if CommandLine.arguments.contains("--window-qa") {
         let fixture = Library(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-window-qa-" + UUID().uuidString + "/library.json"))
         _ = fixture.studio.createBoard(in: nil, defaultSpaceName: "Window QA", fonts: ["Helvetica", "Times-Roman"])
+        if CommandLine.arguments.contains("--spaces-interaction-qa"), let space = fixture.studio.state.spaces.first, var board = space.boards.first {
+            board.directions = [SpacesInteractionChecks.importedFixture()]
+            board.selectedDirection = board.directions[0].id
+            _ = fixture.studio.update(space: space.id, board: board)
+        }
         _ = fixture.fontLab.addProject(name: "Window QA")
         fixture.comparison = ["Helvetica", "Times"]
         fixture.workspace = .spaces

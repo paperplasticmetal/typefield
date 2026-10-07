@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.14 (2026-10-07)
+
+- Fix repeated object alignment enlarging Spaces canvases. Align against the current artboard, compose with existing content transforms, and preserve selected-object size. Keep unselected text stable at fractional scales and allow subsequent edge/corner resizing without false clipping failures.
+- Synchronize canvas, arrangement and floating-inspector selection so shape controls follow the selected layer reliably and multiselection cannot edit a stale single layer.
+- Make Arrangement collapsible, highlight its selected content on the canvas, and treat the entire row as a selection/reorder target. Keep the text cursor within editable canvas text.
+
 ## 0.59.13 (2026-10-07)
 
 - Separate Select, Marquee, Text and Canvas interaction tools. Canvas outlines and resize handles appear only after explicit boundary selection in Canvas mode.

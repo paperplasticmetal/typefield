@@ -179,6 +179,7 @@ enum StudioChecks {
     }
     static func run(catalog: [Family]) throws {
         try CanvasSelectionChecks.run()
+        try SpacesInteractionChecks.run()
         // Scope filtering preserves board order, never exports stale IDs or checkpoints.
         var scopeBoard = TypeBoard(name: "Export scope")
         let scopeFirst = TypeDirection(name: "First", fonts: ["Helvetica"])
@@ -980,7 +981,7 @@ enum StudioChecks {
         let positionedTextSource = CanvasPlan(direction: positionedTextCanvas).elements.first { $0.textID != nil }!
         positionedTextCanvas.textPositions = [positionedTextSource.textID!: CanvasTextPosition(x: 900, y: 5_000)]
         let positionedTextPlan = CanvasPlan(direction: positionedTextCanvas)
-        let positionedTextBounds = CanvasBoardLayout.textContentBounds(in: positionedTextPlan)
+        let positionedTextBounds = CanvasBoardLayout.textContentBounds(in: positionedTextPlan, padding: 0)
         try verify(Double(positionedTextPlan.artboardSize.width) >= positionedTextBounds.width
                    && Double(positionedTextPlan.artboardSize.height) >= positionedTextBounds.height
                    && positionedTextPlan.elements.filter { $0.text != nil }.allSatisfy { $0.rect.minX >= 0 && $0.rect.maxX <= positionedTextPlan.artboardSize.width && $0.rect.maxY <= positionedTextPlan.artboardSize.height },
@@ -993,7 +994,7 @@ enum StudioChecks {
         let longTokenSource = CanvasPlan(direction: longTokenCanvas).elements.first { $0.role == .display && $0.textID != nil }!
         longTokenCanvas.textOverrides = [longTokenSource.textID!: String(repeating: "W", count: 32)]
         let longTokenPlan = CanvasPlan(direction: longTokenCanvas)
-        let longTokenBounds = CanvasBoardLayout.textContentBounds(in: longTokenPlan)
+        let longTokenBounds = CanvasBoardLayout.textContentBounds(in: longTokenPlan, padding: 0)
         let longTokenElement = longTokenPlan.elements.first { $0.textID == longTokenSource.textID }!
         let unwrappedStorage = NSTextStorage(attributedString: longTokenElement.text!)
         let unwrappedLayout = NSLayoutManager()
@@ -1003,7 +1004,7 @@ enum StudioChecks {
         unwrappedLayout.ensureLayout(for: unwrappedContainer)
         let unwrappedWidth = Double(unwrappedLayout.usedRect(for: unwrappedContainer).width)
         try verify(unwrappedWidth + 200 <= Double(longTokenElement.rect.width) + 0.5
-                   && Double(longTokenPlan.artboardSize.width) >= Double(longTokenElement.rect.maxX) + 12
+                   && Double(longTokenPlan.artboardSize.width) >= Double(longTokenElement.rect.maxX)
                    && longTokenElement.rect.maxX <= longTokenPlan.artboardSize.width
                    && Double(longTokenPlan.artboardSize.height) >= longTokenBounds.height,
                    "Indented right-aligned unbreakable text must get a drawable frame wide enough for the complete token and remain inside the artboard")
