@@ -35,7 +35,7 @@ main{margin:0 5.5%}
 .download-button:hover{background:var(--paper);transform:translateY(-2px)}
 .download-button:focus-visible{outline:3px solid var(--coral);outline-offset:5px}
 .download-button-label{display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
-.download-button-label svg{flex:none}
+.apple-mark{display:inline-block;min-width:18px;text-align:center;flex:none;font:20px/1 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
 .download-button-arrow{font-size:20px;line-height:1}
 .download-status .download-note{font-size:13px;color:#a8a99f}
 .download-status .download-alternate{font-size:13px;color:#cacbc2;margin-top:11px}
