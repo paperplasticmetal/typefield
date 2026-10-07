@@ -20,7 +20,7 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 - Editable type study with system serif/sans/mono, letter spacing, and reset. This is a browser demonstration, not an embedded app.
 - Native dialog for the launch film; closing the film pauses playback.
 - FAQ disclosures, reduced-motion support, keyboard focus states, and responsive layouts.
-- One-action header navigation and a dedicated `/download/` page. The beta download is explicitly pending until a Developer ID signed and notarized DMG exists.
+- One-action header navigation and a dedicated `/download/` page. The private beta uses a direct GitHub Release asset link and explains macOS's per-app Open Anyway flow.
 - No public download, price, email collection, or invented signup backend.
 
 ## Assets
@@ -111,9 +111,9 @@ Cloudflare Pages project `typefield` is live at https://typefield.pages.dev/. It
 
 ## Private beta download
 
-The header and closing action lead to `/download/`. The page states that no DMG is available yet. The current local app is 0.59.6 (86), built for Apple silicon and macOS 13+, with an ad hoc signature. This Mac has no valid Developer ID signing identity. The app has no account or license-key gate, but an ordinary direct download needs a Developer ID signed and notarized DMG. Never publish the local ad hoc build as an installable beta.
+The header and closing action lead to `/download/`. The beta is an ad hoc signed macOS app distributed without Developer ID signing or notarization. The page links directly to its versioned private GitHub Release DMG and explains the first-open flow: try to open the installed app, then use System Settings → Privacy & Security → Open Anyway if macOS blocks it. Apple documents this per-app exception at https://support.apple.com/en-us/102445. The app itself has no account or license-key gate.
 
-The `paperplasticmetal/typefield` GitHub repository is private. Invited testers must have GitHub access; a website link cannot bypass repository authentication. When a signed and notarized DMG is ready, upload it as a GitHub Release asset. Update the download page with the exact asset URL, app version and SHA-256, enable the link, then redeploy Cloudflare Pages. Verify the direct link while signed in as an invited tester, including on a clean Mac. Keep the release private; do not change repository visibility to make the asset downloadable without authentication.
+The `paperplasticmetal/typefield` GitHub repository is private. Invited testers must have GitHub access; a website link cannot bypass repository authentication. The feedback and bug-report links on the site open separate issue templates in that repository. For each new beta, update the download page with the exact asset URL and release details, then redeploy Cloudflare Pages. Verify the direct link while signed in as an invited tester, including on a clean Mac. Keep the release private; do not change repository visibility to make the asset downloadable without authentication.
 
 ## Social sharing preview
 
