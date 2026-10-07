@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f0efe9">
+  <meta name="description" content="Send Typefield beta feedback or report a bug without creating an account.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Typefield">
+  <meta property="og:url" content="https://typefield.pages.dev/feedback/">
+  <meta property="og:title" content="Feedback for Typefield">
+  <meta property="og:description" content="Send Typefield beta feedback or report a bug without creating an account.">
+  <meta property="og:image" content="https://typefield.pages.dev/assets/social-preview-v1.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Typefield. Quite the character.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Feedback for Typefield">
+  <meta name="twitter:description" content="Send Typefield beta feedback or report a bug without creating an account.">
+  <meta name="twitter:image" content="https://typefield.pages.dev/assets/social-preview-v1.png">
+  <meta name="twitter:image:alt" content="Typefield. Quite the character.">
+  <title>Feedback for Typefield</title>
+  <link rel="icon" href="../assets/typefield-icon.png">
+  <link rel="stylesheet" href="../download/download.css?v=6">
+  <link rel="stylesheet" href="feedback.css?v=1">
+  <script type="module" src="feedback.js?v=1"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page">
+    <header class="site-header">
+      <a class="wordmark" href="../" aria-label="Typefield home">typefield<span>™</span></a>
+      <nav class="site-nav" aria-label="Site navigation"><a class="nav-features" href="../features/">Features</a><a class="nav-download" href="../download/">Download <span aria-hidden="true">↗</span></a></nav>
+    </header>
+    <main id="main">
+      <div class="opening feedback-opening">
+        <h1>Tell us<br>what you think<span>.</span></h1>
+        <p>Share an idea or tell us what broke in the Typefield beta. No account needed.</p>
+      </div>
+      <section class="feedback-layout" aria-labelledby="form-heading">
+        <div class="feedback-intro">
+          <h2 id="form-heading">Send a report.</h2>
+          <p>Specific details help us understand what happened. If something broke, tell us how to reproduce it.</p>
+          <div class="privacy-note"><h3>What you share</h3><p>We store the text you submit and your email only if you provide it, so we can review the report and reply if needed. Cloudflare Turnstile checks submissions for abuse. Please do not include private fonts, font files, passwords, or other sensitive information. File uploads are not accepted.</p></div>
+        </div>
+        <form id="feedback-form" class="feedback-form" action="/api/feedback" method="post" novalidate>
+          <div class="form-field">
+            <label for="category">Category <span aria-hidden="true">*</span></label>
+            <select id="category" name="category" required aria-describedby="category-hint"><option value="feedback">General feedback</option><option value="bug">Bug report</option></select>
+            <p class="field-hint" id="category-hint">Choose bug report if something did not work as expected.</p>
+          </div>
+          <div class="form-field">
+            <label for="title">Subject <span aria-hidden="true">*</span></label>
+            <input id="title" name="title" type="text" required minlength="5" maxlength="120" autocomplete="off" aria-describedby="title-hint">
+            <p class="field-hint" id="title-hint">A short summary, 5 to 120 characters.</p>
+          </div>
+          <div class="form-field">
+            <label for="description">What happened or what would you like to see? <span aria-hidden="true">*</span></label>
+            <textarea id="description" name="description" rows="7" required minlength="20" maxlength="4000" aria-describedby="description-hint"></textarea>
+            <p class="field-hint" id="description-hint">20 to 4,000 characters. Please describe the behavior or idea in your own words.</p>
+          </div>
+          <div class="form-field">
+            <label for="steps">Steps to reproduce <span id="steps-required" class="required-note" hidden>(required for bugs)</span></label>
+            <textarea id="steps" name="steps" rows="4" maxlength="2000" aria-describedby="steps-hint"></textarea>
+            <p class="field-hint" id="steps-hint">For a bug, include what you did, what you expected, and what happened. If you are unsure, say so.</p>
+          </div>
+          <div class="form-field">
+            <label for="email">Email <span class="optional-note">optional</span></label>
+            <input id="email" name="email" type="email" maxlength="254" autocomplete="email" aria-describedby="email-hint">
+            <p class="field-hint" id="email-hint">Only add this if you would like a reply.</p>
+          </div>
+          <div class="verification"><div id="turnstile-widget" aria-label="Submission verification"></div><p id="verification-hint">Verification is needed before sending.</p></div>
+          <div id="form-status" class="form-status" role="status" aria-live="polite" tabindex="-1"></div>
+          <button id="submit-feedback" type="submit" disabled>Send report <span aria-hidden="true">→</span></button>
+          <noscript><p class="no-script">JavaScript is required to verify and send this form.</p></noscript>
+        </form>
+      </section>
+    </main>
+    <footer><a href="../">typefield<span>™</span></a><a href="../download/">Get the beta</a></footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,35 @@
+.feedback-opening{grid-template-columns:1.3fr .7fr}
+.feedback-opening h1{font-size:clamp(67px,8.2vw,132px)}
+.feedback-layout{display:grid;grid-template-columns:.75fr 1.25fr;gap:8%;padding:0 0 100px}
+.feedback-intro{border-top:1px solid var(--line);padding-top:25px}
+.feedback-intro h2{font-size:clamp(31px,3.2vw,48px);font-weight:500;letter-spacing:-.035em;line-height:1.1}
+.feedback-intro>p{max-width:360px;margin-top:20px;font-size:17px;line-height:1.5;color:#5e5e56}
+.privacy-note{margin-top:53px;padding:24px;background:#deded3;border-radius:9px}
+.privacy-note h3{margin:0 0 12px;font-size:16px;font-weight:650}
+.privacy-note p{font-size:14px;line-height:1.55;color:#494940}
+.feedback-form{background:#faf9f3;border:1px solid var(--line);border-radius:12px;padding:35px 38px 40px}
+.form-field{margin-bottom:25px}
+.form-field label{display:block;margin-bottom:10px;font-size:15px;font-weight:650;line-height:1.4}
+.form-field label>span[aria-hidden]{color:#b23e29}
+.optional-note,.required-note{font-size:13px;font-weight:400;color:#66665d}
+.form-field input,.form-field select,.form-field textarea{display:block;width:100%;border:1px solid #adada5;border-radius:5px;background:#fff;color:var(--ink);font:inherit;font-size:16px;padding:13px 14px;line-height:1.4}
+.form-field textarea{resize:vertical;min-height:100px}
+.form-field select{min-height:50px}
+.form-field input:focus-visible,.form-field select:focus-visible,.form-field textarea:focus-visible{outline:3px solid var(--coral);outline-offset:2px}
+.form-field [aria-invalid="true"]{border-color:#b23e29}
+.field-hint,.verification p{margin-top:8px;font-size:13px;line-height:1.45;color:#65655d}
+.verification{margin:5px 0 18px}
+#turnstile-widget{min-height:65px;max-width:100%}
+.form-status{min-height:24px;margin:0 0 16px;font-size:14px;line-height:1.5;color:#55554d}
+.form-status:empty{margin-bottom:0}
+.form-status.is-error{color:#9c321f;font-weight:600}
+.form-status.is-success{color:#276447;font-weight:600}
+.form-status:focus{outline:none}
+.feedback-form button{display:inline-flex;align-items:center;justify-content:space-between;gap:55px;min-width:220px;border:0;border-radius:4px;background:var(--coral);color:var(--ink);padding:17px 20px;font:600 15px "Helvetica Neue",Helvetica,Arial,sans-serif;cursor:pointer}
+.feedback-form button span{font-size:20px;line-height:1}
+.feedback-form button:hover:not(:disabled){background:#ff8069}
+.feedback-form button:focus-visible{outline:3px solid var(--ink);outline-offset:4px}
+.feedback-form button:disabled{cursor:not-allowed;opacity:.55}
+.no-script{color:#9c321f;font-size:14px}
+@media(max-width:900px){.feedback-layout{grid-template-columns:1fr;gap:32px}.privacy-note{margin-top:27px}.feedback-intro>p{max-width:620px}}
+@media(max-width:650px){.feedback-opening h1{font-size:clamp(56px,12vw,80px)}.feedback-layout{padding-bottom:70px}.feedback-form{padding:24px 20px}.feedback-form button{width:100%}}
