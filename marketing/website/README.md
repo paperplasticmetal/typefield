@@ -46,7 +46,7 @@ App runtime files and paused letterform experiments are unchanged. Native app te
 
 ## Feature inventory
 
-`/features/` groups verified capabilities into Library, Spaces, Letterform Editor, handoffs and Mac specs, with original inline SVG icons. Its copy is grounded in the app README and current feature documentation. It names the file-based Figma and Adobe workflows, static TrueType export, artwork-import limitations and exact WOFF2 matching rules. Missing-letter generation remains paused and hidden, so it is not advertised as an available feature.
+`/features/` groups verified capabilities into Library, Spaces, Letterform Editor, handoffs and Mac specs, with original inline SVG icons. Its copy is grounded in the app README and current feature documentation. It names the file-based Figma and Adobe workflows, static TrueType and two-master variable weight export, artwork-import limitations and exact WOFF2 matching rules. Missing-letter generation remains paused and hidden, so it is not advertised as an available feature.
 
 ## Typography and copy refinement
 
