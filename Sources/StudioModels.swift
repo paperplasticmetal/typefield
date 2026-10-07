@@ -156,6 +156,8 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var importWarnings: [String]?
     var textOverrides: [String: String]?
     var textPositions: [String: CanvasTextPosition]?
+    var objectTransforms: [String: CanvasObjectTransform]?
+    var objectGroups: [CanvasObjectGroup]?
     var canvasDisplayName: String { canvas == .imported ? (importedSource ?? .figma).displayName : canvas.rawValue }
     var canvasUnitLabel: String { canvas == .imported ? (importedSource ?? .figma).unitLabel : "px" }
     var artworkLayersAreValid: Bool {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.13 (2026-10-07)
+
+- Separate Select, Marquee, Text and Canvas interaction tools. Canvas outlines and resize handles appear only after explicit boundary selection in Canvas mode.
+- Preserve workspace origin and zoom after canvas moves, avoiding release-time recentering and Fit-width jumps.
+- Add Shift-click and drag-box content selection, bulk move and proportional scaling, persistent groups, ungroup/reset actions, and selection-aware arrow-key nudging. Keep content transformations separate from canvas dimensions, with one undoable save per completed gesture.
+
 ## 0.59.12 (2026-10-07)
 
 - Replace the text-heavy Spaces export popup with a full configuration window: format and scope dropdowns, selectable canvases, structured typography preview, file/detail options and compact compatibility information. Preview PDF supports one page per chosen canvas; Figma and developer handoff respect the same selection.

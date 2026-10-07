@@ -178,6 +178,7 @@ enum StudioChecks {
         print("PASS: live recursive watcher, original-file preview, temporary activation visible to a separate process, deactivation and removal reconciliation.")
     }
     static func run(catalog: [Family]) throws {
+        try CanvasSelectionChecks.run()
         // Scope filtering preserves board order, never exports stale IDs or checkpoints.
         var scopeBoard = TypeBoard(name: "Export scope")
         let scopeFirst = TypeDirection(name: "First", fonts: ["Helvetica"])
@@ -340,10 +341,10 @@ enum StudioChecks {
         visible = CanvasVisibility.selecting(canvasB, from: canvasA, shown: visible)
         visible = CanvasVisibility.selecting(canvasC, from: canvasB, shown: visible)
         try verify(visible == [canvasA, canvasB, canvasC], "Selecting another canvas must preserve the visible comparison set")
-        try verify(CanvasBoardLayout.frameControlsAreActive(canvasID: canvasC, selectedDirectionID: canvasC, frameCanvasID: nil)
+        try verify(!CanvasBoardLayout.frameControlsAreActive(canvasID: canvasC, selectedDirectionID: canvasC, frameCanvasID: nil)
                    && !CanvasBoardLayout.frameControlsAreActive(canvasID: canvasA, selectedDirectionID: canvasC, frameCanvasID: nil)
                    && CanvasBoardLayout.frameControlsAreActive(canvasID: canvasA, selectedDirectionID: canvasC, frameCanvasID: canvasA),
-                   "Normal canvas selection must show resize handles, and explicit frame selection must remain active")
+                   "Only explicit frame selection must show resize handles")
         visible.remove(canvasA)
         try verify(CanvasVisibility.prune(visible, valid: [canvasA, canvasC], selected: canvasC) == [canvasC] && CanvasVisibility.solo(canvasB) == [canvasB], "Canvas hide, prune and solo state")
         var tallLegacyImport = TypeDirection(name: "Tall legacy import")
