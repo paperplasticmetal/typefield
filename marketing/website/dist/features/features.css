@@ -34,8 +34,9 @@ h1,h2,h3{text-wrap:balance}
 .feature-section.tinted{background:#deded3}
 .section-intro{align-self:start;position:sticky;top:30px}
 .icon-tile{width:110px;height:110px;border-radius:15px;display:grid;place-items:center;margin-bottom:27px;border:1px solid #20201e1a;transform:rotate(-5deg);box-shadow:8px 8px 0 #20201e12}
-.icon-tile svg{width:76px;height:76px;fill:none;stroke:var(--ink);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
-.icon-tile.olive{background:#c9ceae}.icon-tile.coral{background:var(--coral)}.icon-tile.paper{background:#f9f9f5}
+.icon-tile svg{width:76px;height:76px;fill:none;stroke:var(--ink);stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+.icon-tile.olive{--tile-color:#c9ceae;background:var(--tile-color)}.icon-tile.coral{--tile-color:var(--coral);background:var(--tile-color)}.icon-tile.paper{--tile-color:#f9f9f5;background:var(--tile-color)}
+.icon-tile .icon-sheet{fill:#f9f9f5}.icon-tile .icon-accent{fill:var(--tile-color);stroke:none}.icon-tile .icon-cutout{fill:var(--tile-color)}.icon-tile .icon-guide{stroke-width:1.8;opacity:.45}
 .section-number{display:block;margin-bottom:13px;font-size:13px;font-weight:600;color:#66665d}
 .section-intro h2{font-size:clamp(39px,4.5vw,69px);font-weight:500;letter-spacing:-.04em;line-height:1.05}
 .section-intro p{margin-top:20px;max-width:340px;font-size:18px;line-height:1.45;color:var(--muted)}
@@ -51,9 +52,9 @@ h1,h2,h3{text-wrap:balance}
 .feature-proof figcaption p{max-width:590px;font-size:14px;line-height:1.5;color:var(--muted)}
 .feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 38px;border-top:1px solid #20201e3b}
 .feature-grid article{position:relative;min-width:0;padding:28px 0 32px;border-bottom:1px solid #20201e3b}
-.feature-mark{display:block;width:43px;height:43px;margin-bottom:18px;padding:7px;border:1px solid #20201e30;border-radius:9px;background:#f7f6ef;fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.feature-grid article:nth-child(3n+2) .feature-mark{background:#c9ceae}
-.feature-grid article:nth-child(3n) .feature-mark{background:#ffd2c9}
+.feature-mark{--icon-fill:#f7f6ef;display:block;width:44px;height:44px;margin-bottom:18px;padding:6px;border:1px solid #20201e30;border-radius:9px;background:var(--icon-fill);fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.feature-grid article:nth-child(3n+2) .feature-mark{--icon-fill:#c9ceae}
+.feature-grid article:nth-child(3n) .feature-mark{--icon-fill:#ffd2c9}
 .feature-mark text{fill:var(--ink);stroke:none;font:700 18px "Helvetica Neue",Helvetica,Arial,sans-serif}
 .feature-grid h3{font-size:21px;font-weight:600;letter-spacing:-.025em;line-height:1.2}
 .feature-grid p{font-size:15px;line-height:1.55;color:var(--muted);margin-top:11px;max-width:390px;text-wrap:pretty}
