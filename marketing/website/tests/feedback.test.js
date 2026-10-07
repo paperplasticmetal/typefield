@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { onRequest } from '../functions/api/feedback.js';
 import { validateDraft } from '../dist/feedback/feedback.js';
 
-const API_URL = 'https://typefield.pages.dev/api/feedback';
+const API_URL = 'https://typefield.app/api/feedback';
 const valid = {
   category: 'bug',
   title: 'Export loses a counter',
@@ -36,14 +36,14 @@ function context(body = valid, options = {}) {
     method: options.method || 'POST',
     headers: {
       'content-type': options.contentType || 'application/json',
-      origin: options.origin || 'https://typefield.pages.dev',
+      origin: options.origin || 'https://typefield.app',
     },
     body: JSON.stringify(body),
   });
   return { request, env: { FEEDBACK_DB: db, TURNSTILE_SITE_KEY: 'public-key', TURNSTILE_SECRET_KEY: 'private-key' }, db };
 }
 
-function mockVerification(t, result = { success: true, action: 'feedback', hostname: 'typefield.pages.dev' }) {
+function mockVerification(t, result = { success: true, action: 'feedback', hostname: 'typefield.app' }) {
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     calls++;
@@ -122,8 +122,8 @@ test('requires same origin and matching Turnstile action and hostname', async t 
 
 test('rejects failed verification, wrong action and wrong hostname independently', async t => {
   const results = [
-    { success: false, action: 'feedback', hostname: 'typefield.pages.dev' },
-    { success: true, action: 'login', hostname: 'typefield.pages.dev' },
+    { success: false, action: 'feedback', hostname: 'typefield.app' },
+    { success: true, action: 'login', hostname: 'typefield.app' },
     { success: true, action: 'feedback', hostname: 'other.example' },
   ];
   t.mock.method(globalThis, 'fetch', async () => Response.json(results.shift()));
@@ -142,13 +142,16 @@ test('database failure returns a retryable error without claiming success', asyn
   assert.match((await response.json()).error, /could not be saved/);
 });
 
-test('site links, privacy copy and published beta checksum stay aligned', () => {
+test('site links, privacy copy and release assets stay aligned', () => {
   for (const page of ['index.html', 'features/index.html', 'download/index.html']) {
     const html = readFileSync(new URL(`../dist/${page}`, import.meta.url), 'utf8');
     assert.doesNotMatch(html, /typefield-feedback\/issues\/new/);
     assert.match(html, /href="\/feedback\//);
+    assert.match(html, /<link rel="canonical" href="https:\/\/typefield\.app\//);
+    assert.match(html, /<meta property="og:image" content="https:\/\/typefield\.app\/assets\/social-preview-v1\.png">/);
   }
   const feedback = readFileSync(new URL('../dist/feedback/index.html', import.meta.url), 'utf8');
+  assert.match(feedback, /<link rel="canonical" href="https:\/\/typefield\.app\/feedback\/">/);
   for (const name of ['category', 'title', 'description', 'steps', 'email']) {
     assert.match(feedback, new RegExp(`name="${name}"`));
     assert.match(feedback, new RegExp(`for="${name}"`));
@@ -156,12 +159,22 @@ test('site links, privacy copy and published beta checksum stay aligned', () => 
   assert.match(feedback, /Cloudflare Turnstile checks submissions/);
   assert.doesNotMatch(feedback, /type="file"/);
   const download = readFileSync(new URL('../dist/download/index.html', import.meta.url), 'utf8');
-  const expectedHash = 'b88c47307013e4e255ad9a37cd586344d53354e7ce2a0f6675843ef570b7c79f';
-  const actualHash = createHash('sha256').update(readFileSync(new URL('../dist/assets/Typefield-0.59.8-beta.dmg', import.meta.url))).digest('hex');
-  assert.equal(actualHash, expectedHash);
-  assert.match(download, /0\.59\.8 beta 1 \(build 88\)/);
+  const currentHash = 'a89450c4d8010d9dcd3c6b3de6f596cfd1ed3aa454205fb2edc560762951518a';
+  const actualCurrentHash = createHash('sha256').update(readFileSync(new URL('../dist/assets/Typefield-0.59.9-beta.dmg', import.meta.url))).digest('hex');
+  assert.equal(actualCurrentHash, currentHash);
+  const priorHash = 'b88c47307013e4e255ad9a37cd586344d53354e7ce2a0f6675843ef570b7c79f';
+  const actualPriorHash = createHash('sha256').update(readFileSync(new URL('../dist/assets/Typefield-0.59.8-beta.dmg', import.meta.url))).digest('hex');
+  assert.equal(actualPriorHash, priorHash);
+  assert.match(download, /Version 0\.59\.9 beta 1 \(build 89\)/);
+  assert.match(download, /class="download-button" href="\.\.\/assets\/Typefield-0\.59\.9-beta\.dmg"/);
+  assert.match(download, /releases\/tag\/v0\.59\.9-beta\.1/);
+  assert.match(download, /releases\/download\/v0\.59\.9-beta\.1\/Typefield-0\.59\.9-beta\.dmg/);
+  assert.doesNotMatch(download, /class="download-button" href="\.\.\/assets\/Typefield-0\.59\.8-beta\.dmg"/);
   assert.match(download, /releases\/tag\/v0\.59\.8-beta\.1/);
   assert.match(download, /releases\/tag\/v0\.59\.7-beta\.1/);
   assert.match(download, /8b315a9c9f9a12ee75bf415831fbac3fe9cd8fc6dae8c4d4c8cf3612de79279c/);
-  assert.match(download, /releases\/download\/v0\.59\.8-beta\.1\/Typefield-0\.59\.8-beta\.dmg/);
+  assert.match(download, new RegExp(priorHash));
+  assert.equal(download.match(new RegExp(currentHash, 'g')).length, 2);
+  const headers = readFileSync(new URL('../dist/_headers', import.meta.url), 'utf8');
+  assert.match(headers, /\/assets\/Typefield-0\.59\.9-beta\.dmg\n  Content-Type: application\/x-apple-diskimage\n  Content-Disposition: attachment; filename="Typefield-0\.59\.9-beta\.dmg"/);
 });

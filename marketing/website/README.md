@@ -31,7 +31,7 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 
 ## Hosting
 
-The existing Site identity is in `.openai/hosting.json`. Keep it unchanged. The draft is owner-private. The future `typefield.app` domain is not connected.
+The existing Site identity is in `.openai/hosting.json`. Keep it unchanged. That draft is owner-private; the public canonical domain is `https://typefield.app/` on Cloudflare Pages.
 
 The Sites workflow uses the ignored `.sites-checkout/` deployment mirror so it does not change this app repository's Git metadata. For later edits, open that same Site using its persisted ID, reconcile its source, and keep the canonical files here synchronized before publishing. Never create a second Site for this draft.
 
@@ -103,7 +103,7 @@ Validation: JavaScript syntax, complete media decode, 59.5-second H.264/AAC stre
 
 The workspace tabs now list specific tasks, and the page explains the file-based Figma, Illustrator, InDesign, PDF, and developer handoffs. Motion reveals content within each section, with restrained hover and focus responses. JavaScript and CSS both respect reduced motion.
 
-Cloudflare Pages project `typefield` is live at https://typefield.pages.dev/. Cloudflare has no Git connection to this repository. The feedback API lives in `functions/`, beside `dist/`; Pages Functions require a Wrangler deployment from `marketing/website`, because dashboard direct upload does not deploy Functions. Run the relevant checks, commit and push the website branch, then deploy `dist` to the same Pages project with Wrangler and verify the live site. The earlier owner-private Site remains a separate draft deployment. Do not switch metadata to `typefield.app` until its DNS and HTTPS are confirmed active.
+Cloudflare Pages project `typefield` is live at https://typefield.app/; `https://typefield.pages.dev/` remains its Pages address. Cloudflare has no Git connection to this repository. The feedback API lives in `functions/`, beside `dist/`; Pages Functions require a Wrangler deployment from `marketing/website`, because dashboard direct upload does not deploy Functions. Run the relevant checks, commit and push the website branch, then deploy `dist` to the same Pages project with Wrangler and verify the live site. The earlier owner-private Site remains a separate draft deployment.
 
 ## Showcase refinement, October 6, 2026
 
@@ -117,25 +117,25 @@ Cloudflare Pages project `typefield` is live at https://typefield.pages.dev/. Cl
 
 The header and closing action lead to `/download/`. The versioned beta DMG lives in `dist/assets/` and is served by the same Cloudflare Pages project as the site. A separate link downloads the same build from the public GitHub Release. Visitors do not need a GitHub account. The app has no account or license-key gate. The page explains the first-open flow: try to open the installed app, then use System Settings → Privacy & Security → Open Anyway if macOS blocks it. Apple documents this per-app exception at https://support.apple.com/en-us/102445.
 
-The download page records the actual 0.59.8 beta 1 release (build 88) and the superseded 0.59.7 beta 1 release. It links the current GitHub release and DMG. The feedback links lead to the first-party `/feedback/` page. For each new beta, add the new versioned DMG to `dist/assets/`, update the download page's version, release-history entry, filenames, GitHub Release URL and SHA-256, update its `_headers` rule, then redeploy Cloudflare Pages. Verify both download links without GitHub authentication, compare the two asset checksums, and test first launch on a clean Mac. Never replace an existing versioned DMG in place because it uses immutable browser caching.
+The download page is prepared for 0.59.9 beta 1 (build 89). Its primary button serves the verified versioned same-origin DMG at `dist/assets/Typefield-0.59.9-beta.dmg`; the alternate points to the exact GitHub asset path `v0.59.9-beta.1/Typefield-0.59.9-beta.dmg`. The verified SHA-256 is `a89450c4d8010d9dcd3c6b3de6f596cfd1ed3aa454205fb2edc560762951518a`. Its release history retains 0.59.8 beta 1 and the superseded 0.59.7 beta 1. Do not deploy this page until the 0.59.9 GitHub release and asset are public. The feedback links lead to the first-party `/feedback/` page. For each later beta, repeat the version, history, asset, URL, hash and `_headers` updates. Verify both download links without GitHub authentication, compare the two asset checksums, and test first launch on a clean Mac. Never replace an existing versioned DMG in place because it uses immutable browser caching.
 
 ## Social sharing preview
 
 The 1200 × 630 `dist/assets/social-preview-v1.png` follows the supplied Typefield composition: paper background, upper-left wordmark, large two-line headline, and coral period. The image is generated with the system Helvetica Neue font; no font binary is bundled. To regenerate on macOS with Pillow installed, run `python3 marketing/website/render-social-preview.py` from the repository root.
 
-The homepage, features, download, and feedback pages use absolute Open Graph and X large-card image URLs. The revisioned image filename helps when sharing services cache a previous preview. Update every page's image URL and `og:url` together when `typefield.app` becomes the verified canonical domain.
+The homepage, features, download, and feedback pages use `https://typefield.app/` canonical URLs and absolute Open Graph and X image URLs. The revisioned image filename helps when sharing services cache a previous preview. Keep canonical, Open Graph and image URLs aligned across all four pages.
 
 ## First-party feedback setup
 
 `dist/feedback/` is a public page with no login. Its form sends JSON to `functions/api/feedback.js`, which validates sizes and fields, verifies a Cloudflare Turnstile token server-side, and stores text in a private D1 table. There is no file input or public read endpoint. Email is optional and used only for a reply. Reports are reviewed in D1; this site does not send email automatically. The page explains these limits to visitors.
 
-App and site links use `/feedback/` for general feedback and `/feedback/?category=bug` to preselect a bug report and require reproduction steps. Keep those paths when changing the public hostname.
+App and site links use `https://typefield.app/feedback/` for general feedback and `https://typefield.app/feedback/?category=bug` to preselect a bug report and require reproduction steps.
 
 Required Cloudflare setup before deployment:
 
 1. Create a D1 database for beta feedback. Record its database ID as `<D1_DATABASE_ID>` in private deployment notes, and apply `migrations/0001_feedback_reports.sql` to that database. Do not use a public or production user-data database for this table.
 2. Bind the D1 database to the existing Pages project `typefield` as `FEEDBACK_DB` in **Settings → Bindings**. The binding points to `<D1_DATABASE_ID>`; configure production and preview environments as needed.
-3. Create a Turnstile widget allowed on `typefield.pages.dev`. Set its public `<TURNSTILE_SITE_KEY>` as the Pages text variable `TURNSTILE_SITE_KEY`. Set the private Turnstile secret as the **encrypted** Pages secret `TURNSTILE_SECRET_KEY`. The static page obtains only the public key from `GET /api/feedback`; the secret is never sent to browsers or committed. Add `typefield.app` to widget hostnames only after the custom domain is active.
+3. Create a Turnstile widget allowed on `typefield.app` (and `typefield.pages.dev` if that address is used for testing). Set its public `<TURNSTILE_SITE_KEY>` as the Pages text variable `TURNSTILE_SITE_KEY`. Set the private Turnstile secret as the **encrypted** Pages secret `TURNSTILE_SECRET_KEY`. The static page obtains only the public key from `GET /api/feedback`; the secret is never sent to browsers or committed.
 4. Redeploy after bindings and secrets are saved. From `marketing/website`, run `wrangler pages deploy dist --project-name typefield` using an authenticated Wrangler session. Dashboard direct upload omits `functions/` and will leave the form unusable.
 5. Check `GET /api/feedback`, submit a disposable report, confirm one D1 row, then verify missing fields, invalid verification, oversized bodies, and file uploads are rejected. Confirm the GitHub DMG and release page are public without sign-in before publishing their links.
 
