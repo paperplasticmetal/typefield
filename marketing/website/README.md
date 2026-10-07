@@ -114,3 +114,9 @@ Cloudflare Pages project `typefield` is live at https://typefield.pages.dev/. It
 The header and closing action lead to `/download/`. The page states that no DMG is available yet. The current local app is 0.59.6 (86), built for Apple silicon and macOS 13+, with an ad hoc signature. This Mac has no valid Developer ID signing identity. The app has no account or license-key gate, but an ordinary direct download needs a Developer ID signed and notarized DMG. Never publish the local ad hoc build as an installable beta.
 
 The `paperplasticmetal/typefield` GitHub repository is private. Invited testers must have GitHub access; a website link cannot bypass repository authentication. When a signed and notarized DMG is ready, upload it as a GitHub Release asset. Update the download page with the exact asset URL, app version and SHA-256, enable the link, then redeploy Cloudflare Pages. Verify the direct link while signed in as an invited tester, including on a clean Mac. Keep the release private; do not change repository visibility to make the asset downloadable without authentication.
+
+## Social sharing preview
+
+The 1200 × 630 `dist/assets/social-preview-v1.png` follows the supplied Typefield composition: paper background, upper-left wordmark, large two-line headline, and coral period. The image is generated with the system Helvetica Neue font; no font binary is bundled. To regenerate on macOS with Pillow installed, run `python3 marketing/website/render-social-preview.py` from the repository root.
+
+Both the homepage and download page use absolute Open Graph and X large-card image URLs. The revisioned image filename helps when sharing services cache a previous preview. Update the image URLs and `og:url` values when `typefield.app` becomes the canonical domain.
