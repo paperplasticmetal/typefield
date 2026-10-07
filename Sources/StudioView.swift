@@ -195,6 +195,7 @@ struct StudioView: View {
     @ObservedObject var store: StudioStore
     @Binding var sidebarCollapsed: Bool
     @Binding var focusCanvas: Bool
+    var editorToolbar: AnyView = AnyView(EmptyView())
     @State private var spaceID: UUID?
     @State private var boardID: UUID?
     @State private var newName = ""
@@ -224,50 +225,19 @@ struct StudioView: View {
                 }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 4)
             }
             if let space {
-                if !focusCanvas { HStack(spacing: 12) {
-                    ShelfEditableName(name: space.displayName, onRename: { setSpaceName(space.id, $0) })
-                        .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
-                        .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
-                    Spacer()
-                    Button("New typeboard") {
-                        let fonts = library.compared.map { library.chosenFace($0).name }
-                        if fonts.isEmpty { boardID = store.addBoard(space: space.id) }
-                        else { library.pairSelection(fonts, source: "Shortlist", spaceID: space.id) }
-                    }.disabled(store.readBlocked)
-                    Menu {
-                        Button("Rename space…") { renameSpace(space) }
-                        Button("Import Figma typeboard…") { importFigma() }.disabled(store.readBlocked)
-                        Button("Import Adobe return JSON…") { importAdobe() }.disabled(store.readBlocked)
-                        Menu("Export Adobe return bridge") {
-                            Button("Illustrator (.jsx)…") { exportAdobeReturnBridge(.illustrator) }
-                            Button("InDesign (.jsx)…") { exportAdobeReturnBridge(.indesign) }
-                        }
-                        Button("Create font collection…") { createCollection(from: space) }.disabled(space.boards.isEmpty)
-                        Button("Developer handoff for this space (\(space.boards.count) \(space.boards.count == 1 ? "typeboard" : "typeboards"))…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
-                        Button("Export “\(space.displayName)” as Space JSON…") { exportSpace(space) }
-                        Button("Import space…") { importSpace() }.disabled(store.readBlocked)
-                        Divider()
-                        Button("Delete space…", role: .destructive) { confirmDelete = true }
-                    } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Space actions").accessibilityLabel("Space actions")
-                }
-                .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
-                .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
-                .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
-                .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
-                .fixedSize(horizontal: false, vertical: true) }
-                if !focusCanvas { Divider() }
                 if let board {
-                    TypeBoardEditor(library: library, savedBoard: board, projectName: space.displayName, projectBoards: space.boards, focusCanvas: $focusCanvas, sidebarCollapsed: $sidebarCollapsed, onSave: { edited, action in
+                    TypeBoardEditor(library: library, savedBoard: board, projectName: space.displayName, projectBoards: space.boards, focusCanvas: $focusCanvas, sidebarCollapsed: $sidebarCollapsed, projectMenu: AnyView(spaceMenu(space)), editorToolbar: editorToolbar, onSave: { edited, action in
                         _ = store.update(space: space.id, board: edited, action: action)
                         return store.state.spaces.first(where: { $0.id == space.id })?.boards.first(where: { $0.id == edited.id }) ?? board
                     }, onDelete: {
                         if store.removeBoard(space: space.id, id: board.id) { boardID = store.focusedBoard }
                     }).id(board.id)
                 } else {
-                    VStack(spacing: 14) { Image(systemName: "rectangle.3.group").font(.system(size: 38)); Text("No typeboards").font(.title2); Button("Create typeboard") { boardID = store.addBoard(space: space.id) }.disabled(store.readBlocked) }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 14) { editorToolbar; spaceMenu(space); Image(systemName: "rectangle.3.group").font(.system(size: 38)); Text("No typeboards").font(.title2); Button("Create typeboard") { boardID = store.addBoard(space: space.id) }.disabled(store.readBlocked) }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 VStack(spacing: 16) {
+                    editorToolbar
                     Image(systemName: "rectangle.3.group").font(.system(size: 42)).foregroundStyle(.secondary)
                     Text("Create a space").font(.title2)
                     Text("A space holds your project's typeboards. Each typeboard can contain several canvases to explore and compare.").foregroundStyle(.secondary)
@@ -314,6 +284,30 @@ struct StudioView: View {
             Button("Delete", role: .destructive) { if let target = deletingBoard, store.removeBoard(space: target.space, id: target.board.id), boardID == target.board.id { boardID = store.focusedBoard }; deletingBoard = nil }
             Button("Cancel", role: .cancel) { deletingBoard = nil }
         } message: { Text("Its canvases will be removed from this space. You can undo this with ⌘Z.") }
+    }
+    private func spaceMenu(_ space: DesignSpace) -> some View {
+                    Menu {
+                        Button("New typeboard") {
+                            let fonts = library.compared.map { library.chosenFace($0).name }
+                            if fonts.isEmpty { boardID = store.addBoard(space: space.id) }
+                            else { library.pairSelection(fonts, source: "Shortlist", spaceID: space.id) }
+                        }.disabled(store.readBlocked)
+                        Divider()
+                        Button("Rename space…") { renameSpace(space) }
+                        Button("Import Figma typeboard…") { importFigma() }.disabled(store.readBlocked)
+                        Button("Import Adobe return JSON…") { importAdobe() }.disabled(store.readBlocked)
+                        Menu("Export Adobe return bridge") {
+                            Button("Illustrator (.jsx)…") { exportAdobeReturnBridge(.illustrator) }
+                            Button("InDesign (.jsx)…") { exportAdobeReturnBridge(.indesign) }
+                        }
+                        Button("Create font collection…") { createCollection(from: space) }.disabled(space.boards.isEmpty)
+                        Button("Developer handoff for this space (\(space.boards.count) \(space.boards.count == 1 ? "typeboard" : "typeboards"))…") { exportHandoff(space) }.disabled(space.boards.isEmpty)
+                        Button("Export “\(space.displayName)” as Space JSON…") { exportSpace(space) }
+                        Button("Import space…") { importSpace() }.disabled(store.readBlocked)
+                        Divider()
+                        Button("Delete space…", role: .destructive) { confirmDelete = true }
+                    } label: { Text(space.displayName).lineLimit(1).frame(maxWidth: 160, alignment: .leading) }.menuStyle(.borderlessButton).help("Space actions").accessibilityLabel("Space: " + space.displayName)
+
     }
     var navigation: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -736,12 +730,15 @@ struct TypeBoardEditor: View {
     let savedBoard: TypeBoard
     let projectName: String
     let projectBoards: [TypeBoard]
+    let projectMenu: AnyView
+    let editorToolbar: AnyView
     @Binding var focusCanvas: Bool
     @Binding var sidebarCollapsed: Bool
     let onSave: (TypeBoard, String) -> TypeBoard
     let onDelete: () -> Void
-    init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], focusCanvas: Binding<Bool>, sidebarCollapsed: Binding<Bool>, onSave: @escaping (TypeBoard, String) -> TypeBoard, onDelete: @escaping () -> Void) {
+    init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], focusCanvas: Binding<Bool>, sidebarCollapsed: Binding<Bool>, projectMenu: AnyView = AnyView(EmptyView()), editorToolbar: AnyView = AnyView(EmptyView()), onSave: @escaping (TypeBoard, String) -> TypeBoard, onDelete: @escaping () -> Void) {
         self.library = library; self.savedBoard = savedBoard; self.projectName = projectName; self.projectBoards = projectBoards; self._focusCanvas = focusCanvas; self._sidebarCollapsed = sidebarCollapsed; self.onSave = onSave; self.onDelete = onDelete
+        self.projectMenu = projectMenu; self.editorToolbar = editorToolbar
         _editorSession = StateObject(wrappedValue: library.editorSession(for: savedBoard))
         _inspectorMode = State(initialValue: StudioInspectorPreference.mode())
         let initialCanvasIDs = Set([savedBoard.selectedDirection ?? savedBoard.directions.first?.id].compactMap { $0 })
@@ -855,31 +852,20 @@ struct TypeBoardEditor: View {
     func directionBinding<T>(_ key: WritableKeyPath<TypeDirection, T>) -> Binding<T> { Binding(get: { direction[keyPath: key] }, set: { board.directions[directionIndex][keyPath: key] = $0; save() }) }
     func styleBinding<T>(_ key: WritableKeyPath<TypeStyle, T>) -> Binding<T> { Binding(get: { style[keyPath: key] }, set: { var updated = style; updated[keyPath: key] = $0; setStyle(updated); save(key == \TypeStyle.size ? "Change Size" : key == \TypeStyle.tracking ? "Change Letter Spacing" : key == \TypeStyle.text ? "Change Sample Text" : "Edit Typography") }) }
     func typeboardToolbar(compact: Bool) -> some View {
-        let fontCount = visibleFontCount
-        let canvasCount = visibleDirections.count
-        let summaryLabel = "\(fontCount) \(fontCount == 1 ? "font" : "fonts") on \(canvasCount) visible \(canvasCount == 1 ? "canvas" : "canvases")"
         let boardCanvasCount = board.directions.count
         let boardCanvasLabel = "\(boardCanvasCount) \(boardCanvasCount == 1 ? "canvas" : "canvases")"
-        return HStack(spacing: compact ? 7 : 12) {
+        return HStack(spacing: compact ? 8 : 14) {
+                projectMenu
+                Text("/").foregroundStyle(.tertiary)
                 ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") })
                     .font(.headline).lineLimit(1).frame(minWidth: compact ? 90 : 110, maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: compact ? 4 : 12)
-                Menu {
+                Menu("Insert") {
                     Button("Blank canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; summaryCanvasIDs.insert(canvas.id); save("Add Canvas") }
                     Button("Duplicate current canvas") { let copy = direction.copy(name: board.nextCanvasName); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save("Duplicate Canvas") }
-                } label: { Image(systemName: "plus") }.shelfIconMenu().help("Add a canvas").accessibilityLabel("Add a canvas")
-                Button { chooseArtwork() } label: {
-                    if compact { Image(systemName: "photo.on.rectangle") }
-                    else { Label("Artwork…", systemImage: "photo.on.rectangle") }
-                }
-                    .fixedSize().help("Import SVG, PNG, JPEG, TIFF, HEIC, BMP, or GIF artwork onto this canvas. You can also drop a file directly onto a canvas.")
-                    .accessibilityLabel("Import artwork onto this canvas")
-                Button { openFontSummary() } label: {
-                    if compact { Label("\(fontCount)", systemImage: "textformat") }
-                    else { Label(summaryLabel, systemImage: "textformat") }
-                }
-                    .fixedSize().accessibilityLabel("Typography summary: " + summaryLabel)
-                    .popover(isPresented: $showFontSummary) { fontSummaryPopover }
+                    Divider()
+                    Button("Artwork…") { chooseArtwork() }
+                }.menuStyle(.borderlessButton).fixedSize().help("Add a canvas or import artwork")
                 Menu("Export") {
                     Button("Typography summary for shown canvases…") { openFontSummary() }
                     Button("Web-font performance for shown canvases…") { summaryCanvasIDs = Set(visibleDirections.map(\.id)); showWebFontAudit = true }
@@ -887,8 +873,10 @@ struct TypeBoardEditor: View {
                     Divider()
                     Button("Preview PDF for \(board.canvasName(direction))…") { exportPDF() }
                     Button("Editable Figma layout for this typeboard (\(boardCanvasLabel))…") { exportFigma() }
-                }.fixedSize()
-                Menu {
+                }.menuStyle(.borderlessButton).fixedSize()
+                Menu("Board") {
+                    Button("Rename typeboard…") { if let name = ShelfRename.prompt("Rename typeboard", current: board.name) { board.name = name; save("Rename Typeboard") } }
+                    Divider()
                     Button("Save checkpoint") { saveCheckpoint() }
                     Text("\((board.checkpoints ?? []).count) of \(StudioCheckpointSave.maximumCount) checkpoints saved")
                     Text("After 50, the oldest is replaced")
@@ -904,8 +892,16 @@ struct TypeBoardEditor: View {
                     Divider()
                     Button("Delete canvas", role: .destructive) { let id = direction.id; board.directions.removeAll { $0.id == id }; shownCanvasIDs.remove(id); summaryCanvasIDs.remove(id); board.selectedDirection = board.directions.first?.id; if let selected = board.selectedDirection { shownCanvasIDs.insert(selected); if summaryCanvasIDs.isEmpty { summaryCanvasIDs.insert(selected) } }; abID = nil; save("Delete Canvas") }.disabled(board.directions.count < 2)
                     Button("Delete typeboard…", role: .destructive) { showDelete = true }
-                } label: { Image(systemName: "ellipsis") }.shelfIconMenu().help("Typeboard actions").accessibilityLabel("Typeboard actions")
-            }.padding(.horizontal, 12).padding(.vertical, 8).fixedSize(horizontal: false, vertical: true)
+                }.menuStyle(.borderlessButton).fixedSize().help("Typeboard actions")
+                editorToolbar
+            }
+            .controlSize(.small)
+            .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
+            .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
+            .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
+            .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+            .popover(isPresented: $showFontSummary) { fontSummaryPopover }
+            .fixedSize(horizontal: false, vertical: true)
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -914,6 +910,7 @@ struct TypeBoardEditor: View {
                 typeboardToolbar(compact: false)
                 typeboardToolbar(compact: true)
             }
+            Divider()
             HStack(spacing: 8) {
                 inspectorLayoutMenu
                 Divider().frame(height: 20)
@@ -948,9 +945,9 @@ struct TypeBoardEditor: View {
                         }
                     }
                 } label: {
-                    Label(direction.canvasDisplayName + " (\(Int(direction.width)) \(direction.canvasUnitLabel))", systemImage: "rectangle.dashed")
+                    Label("Canvas", systemImage: "rectangle.dashed")
                         .lineLimit(1)
-                }.fixedSize().help("Change canvas format or width")
+                }.menuStyle(.borderlessButton).fixedSize().help(direction.canvasDisplayName + " · \(Int(direction.width)) \(direction.canvasUnitLabel). Change format or width.")
                 Menu {
                     Button("Only " + board.canvasName(direction)) { showOnlyCurrent() }.disabled(visibleDirections.count == 1 && abID == nil)
                     Button("Show every canvas") { shownCanvasIDs = Set(board.directions.map(\.id)); abID = nil }.disabled(showingAllCanvases)
@@ -968,10 +965,10 @@ struct TypeBoardEditor: View {
                         if candidates.isEmpty { Text("Duplicate a canvas to start"); Text("Use the same format, width, and scale") }
                         ForEach(candidates) { candidate in Button(board.canvasName(candidate)) { abID = candidate.id; shownCanvasIDs = [direction.id] } }
                     }.disabled(board.directions.count < 2)
-                } label: { Label(abID != nil ? "A/B" : "\(visibleDirections.count) shown", systemImage: "eye") }.fixedSize().help("Choose exactly which canvases are visible")
+                } label: { Label(abID != nil ? "A/B" : "Canvases", systemImage: "eye") }.menuStyle(.borderlessButton).fixedSize().help("\(visibleDirections.count) shown. Choose visible canvases and A/B comparison.")
                 if abID != nil { Button { swapAB() } label: { Image(systemName: "arrow.left.arrow.right") }.keyboardShortcut("\\", modifiers: [.command]).help("Swap A/B (⌘\\)").accessibilityLabel("Swap A/B") }
-                Menu(zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%") { Button("Fit width of visible canvases") { zoom = 0 }; ForEach([0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0], id: \.self) { value in Button("\(Int(value * 100))%") { zoom = value } } }.fixedSize().help("Pinch to zoom, or hold ⌘ while scrolling with a mouse. Scroll normally to pan.")
-            }.padding(.horizontal, 12).padding(.bottom, 7).fixedSize(horizontal: false, vertical: true)
+                Menu(zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%") { Button("Fit width of visible canvases") { zoom = 0 }; ForEach([0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0], id: \.self) { value in Button("\(Int(value * 100))%") { zoom = value } } }.menuStyle(.borderlessButton).fixedSize().help("Pinch to zoom, or hold ⌘ while scrolling with a mouse. Scroll normally to pan.")
+            }.controlSize(.small).padding(.horizontal, 12).padding(.vertical, 7).fixedSize(horizontal: false, vertical: true)
             Divider()
             }
             if inspectorMode == .expanded && !focusCanvas {
@@ -1150,6 +1147,7 @@ struct TypeBoardEditor: View {
                 }
             } label: { Label(board.canvasName(direction), systemImage: "rectangle.on.rectangle") }
                 .fixedSize().help("Choose canvas")
+            editorToolbar
             Button { leaveCanvasFocus() } label: { Label("Exit focus", systemImage: "arrow.down.right.and.arrow.up.left") }
                 .help("Restore the Spaces toolbar and sidebar")
                 .accessibilityIdentifier("spaces-exit-focus")
@@ -1537,7 +1535,7 @@ struct TypeBoardEditor: View {
                 if direction.canvas == .imported {
                     HStack { Text("Imported text layers").font(.caption.weight(.semibold)).foregroundStyle(.secondary); editingScopeInfoButton }
                     ShelfDropdown(title: "Layer", selection: Binding(get: { importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id } ?? "" }, set: { selectedSection = $0 }), options: (direction.importedLayout?.layers.filter { $0.style != nil } ?? []).map { ($0.name, $0.id) }, showsTitle: false)
-                    Text("Edit each text layer independently. Drag layers on the canvas to position them.").font(.caption).foregroundStyle(.secondary)
+
                 } else {
                 HStack(spacing: 8) {
                     Text("Type role").font(.caption).foregroundStyle(.secondary)
@@ -1549,7 +1547,7 @@ struct TypeBoardEditor: View {
                         HStack(spacing: 5) { Text(role.rawValue).fontWeight(.medium); Image(systemName: "chevron.up.chevron.down").font(.caption2) }
                     }.fixedSize().accessibilityLabel("Type role: " + role.rawValue)
                 }
-                DisclosureGroup("Browse and add roles") {
+                DisclosureGroup("Add text roles") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
                 ForEach(TypeRole.allCases) { item in
                     let count = StudioRoleScope.affectedTextCount(role: item, direction: direction)
@@ -1570,10 +1568,10 @@ struct TypeBoardEditor: View {
                 } else {
                 if direction.canvas == .imported { Text(editingTitle).font(.headline) }
                 characterPanel
-                colorPicker("Text", key: \.ink)
-                DisclosureGroup("Type") {
+                colorPicker("Text color", key: \.ink)
+                paragraphPanel
+                DisclosureGroup("Font features & pairing") {
                     VStack(alignment: .leading, spacing: 10) {
-                        paragraphPanel
                         if direction.canvas != .imported {
                             Menu {
                                 ForEach(TypeRole.allCases.filter { $0 != role }) { target in
@@ -1601,7 +1599,7 @@ struct TypeBoardEditor: View {
                         }
                     }.padding(.top, 8)
                 }
-                DisclosureGroup("Object") {
+                DisclosureGroup("Text & proofing") {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(selectedTextID == nil ? "Sample text" : "Selected text").font(.caption).fontWeight(.semibold)
                         TextEditor(text: styleBinding(\.text)).frame(height: 100)

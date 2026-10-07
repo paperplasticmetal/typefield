@@ -168,28 +168,34 @@ private struct EditorWindowRoot: View {
     @AppStorage("appearance") private var appearance = "Dark"
     @AppStorage("typefield.palette") private var palette = "neutral"
     @Environment(\.colorScheme) private var scheme
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                WorkspaceTearOff(windows: windows, mode: mode).frame(width: 24, height: 24)
-                Text(mode.rawValue).font(.caption.weight(.semibold))
-                Spacer()
+    private var editorToolbar: some View {
+        HStack(spacing: 8) {
+            WorkspaceTearOff(windows: windows, mode: mode).frame(width: 20, height: 28)
+            Menu("View") {
                 if mode == .fontLab {
-                    if fontLabSession.focusEditor {
-                        Toggle("Characters", isOn: $fontLabSession.showCharacters).toggleStyle(.button)
-                        Toggle("Metrics", isOn: $fontLabSession.compactMetricsExpanded).toggleStyle(.button)
-                    }
-                    Button(fontLabSession.focusEditor ? "Full workspace" : "Focus editor") { fontLabSession.focusEditor.toggle() }
+                    Toggle("Focus editor", isOn: $fontLabSession.focusEditor)
+                    Toggle("Show characters", isOn: $fontLabSession.showCharacters)
+                        .disabled(!fontLabSession.focusEditor)
+                    Toggle("Show metrics & spacing", isOn: $fontLabSession.compactMetricsExpanded)
+                    Divider()
                 }
-                Button("Font browser") { windows.openBrowser() }
-                Button {
+                Button("Open font browser…") { windows.openBrowser() }
+                Button(windows.detached.contains(mode) ? "Dock window" : "Pop out editor") {
                     if windows.detached.contains(mode) { windows.dock(mode) } else { windows.detach(mode) }
-                } label: { Label(windows.detached.contains(mode) ? "Dock window" : "Pop out", systemImage: "macwindow.on.rectangle") }
-            }.padding(.horizontal, 12).padding(.vertical, 6)
-            Divider()
+                }
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+            .help("Editor layout, font browser and window options")
+            .accessibilityLabel("Workspace view")
+        }
+        .accessibilityIdentifier("workspace-editor-controls")
+    }
+
+    var body: some View {
+        Group {
             ZStack(alignment: .topLeading) {
-                if mode == .spaces { StudioView(library: library, store: library.studio, sidebarCollapsed: $collapsed, focusCanvas: $focusCanvas) }
-                else { FontLabView(library: library, sidebarCollapsed: $collapsed, session: fontLabSession) }
+                if mode == .spaces { StudioView(library: library, store: library.studio, sidebarCollapsed: $collapsed, focusCanvas: $focusCanvas, editorToolbar: AnyView(editorToolbar)) }
+                else { FontLabView(library: library, sidebarCollapsed: $collapsed, session: fontLabSession, editorToolbar: AnyView(editorToolbar)) }
                 if collapsed && !focusCanvas && !(mode == .fontLab && fontLabSession.focusEditor) { WorkspaceSidebarRevealButton(collapsed: $collapsed).padding(.top, 8) }
             }
         }

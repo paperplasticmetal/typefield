@@ -153,23 +153,17 @@ struct StudioTypeNumber: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
+            Menu {
+                if let autoAction { Button("Automatic", action: autoAction); Divider() }
+                ForEach(presets.filter { range.contains($0) }, id: \.self) { amount in
+                    Button(formatted(amount) + " " + unit) { value = amount; draft = formatted(amount) }
+                }
+            } label: {
                 Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Spacer(minLength: 0)
-                if let autoAction {
-                    Button("Auto", action: autoAction)
-                        .font(.caption2).buttonStyle(.borderless)
-                        .help("Use automatic leading")
-                        .accessibilityLabel("Use automatic leading")
-                }
-                if !presets.isEmpty {
-                    Menu { ForEach(presets.filter { range.contains($0) }, id: \.self) { amount in
-                        Button(formatted(amount) + " " + unit) { value = amount; draft = formatted(amount) }
-                    } } label: { Image(systemName: "ellipsis").font(.caption2).frame(width: 18, height: 16) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .help(title + " presets").accessibilityLabel(title + " presets")
-                }
             }
+            .menuStyle(.borderlessButton).fixedSize()
+            .disabled(presets.isEmpty && autoAction == nil)
+            .help(title + " presets").accessibilityLabel(title + " presets")
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 12)).frame(width: 16).foregroundStyle(.secondary).accessibilityHidden(true)
                 TextField(title, text: $draft).textFieldStyle(.plain).focused($focused)
@@ -260,7 +254,7 @@ extension TypeBoardEditor {
                     autoAction: style.lineHeight == nil ? nil : { var s = style; s.lineHeight = nil; setStyle(s); save("Auto Leading") }
                 )
             }
-            DisclosureGroup("Character details") {
+            DisclosureGroup("Spacing & decoration") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Text(style.lineHeight == nil ? "Auto leading: \(Int(style.leading * 100))%" : "Custom leading")
@@ -276,9 +270,11 @@ extension TypeBoardEditor {
                     }
                     Text("Case & decoration").font(.caption).foregroundStyle(.secondary)
                     HStack(spacing: 5) {
-                        StudioInspectorIcon(title: "Original case", icon: "textformat", selected: style.casing == nil || style.casing == .original) { var s = style; s.casing = .original; setStyle(s); save("Change Case") }
-                        StudioInspectorIcon(title: "Uppercase", icon: "textformat.abc", selected: style.casing == .upper) { var s = style; s.casing = .upper; setStyle(s); save("Change Case") }
-                        StudioInspectorIcon(title: "Lowercase", icon: "textformat.alt", selected: style.casing == .lower) { var s = style; s.casing = .lower; setStyle(s); save("Change Case") }
+                        Picker("Case", selection: Binding(get: { style.casing ?? .original }, set: { var s = style; s.casing = $0; setStyle(s); save("Change Case") })) {
+                            Text("Original").tag(TextCaseOption.original)
+                            Text("Uppercase").tag(TextCaseOption.upper)
+                            Text("Lowercase").tag(TextCaseOption.lower)
+                        }.labelsHidden().frame(maxWidth: .infinity)
                         StudioInspectorIcon(title: "Underline", icon: "underline", selected: style.underline == true) { var s = style; s.underline = !(s.underline ?? false); setStyle(s); save("Toggle Underline") }
                         StudioInspectorIcon(title: "Strikethrough", icon: "strikethrough", selected: style.strikethrough == true) { var s = style; s.strikethrough = !(s.strikethrough ?? false); setStyle(s); save("Toggle Strikethrough") }
                     }

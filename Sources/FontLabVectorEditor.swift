@@ -512,6 +512,8 @@ struct FontLabVectorEditorView: View {
     @State private var y = ""
     @State private var scale = "100"
     @State private var angle = "0"
+    @State private var showSelectionInspector = false
+    @State private var showCanvasAppearance = false
     init(glyph:FontLabGlyph,metrics:FontLabMetrics,retainedEditor:FontLabVectorEditor?=nil,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,compact:Bool=false,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
         self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.compact=compact;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo;self.onPreviewInkChange=onPreviewInkChange
         let value=retainedEditor ?? FontLabVectorEditor(glyph:glyph,metrics:metrics)
@@ -520,40 +522,57 @@ struct FontLabVectorEditorView: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:8) {
-            if compact {
-                VStack(alignment:.leading,spacing:6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
                     vectorToolButtons
-                    HStack(spacing:6) {
-                        selectionPicker
-                        Spacer(minLength:0)
-                        pathsMenu
-                    }
-                }
-            } else {
-                HStack(spacing:6) {
-                    vectorToolButtons
+                    Divider().frame(height: 20)
                     selectionPicker
-                    Spacer(minLength:0)
+                    Spacer(minLength: 0)
                     pathsMenu
+                    selectionInspectorButton
                 }
-            }
+                VStack(alignment: .leading, spacing: 6) {
+                    vectorToolButtons
+                    HStack(spacing: 8) { selectionPicker; Spacer(minLength: 0); pathsMenu; selectionInspectorButton }
+                }
+            }.controlSize(.small)
             FontLabVectorCanvas(editor:editor,onChange:onChange,onUndo:onUndo,onRedo:onRedo)
                 .frame(minWidth:340,maxWidth:.infinity,minHeight:340,maxHeight:.infinity)
                 .background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:12))
                 .clipShape(RoundedRectangle(cornerRadius:12))
                 .overlay(RoundedRectangle(cornerRadius:12).strokeBorder(Color.primary.opacity(0.15)))
-            if compact {
-                VStack(alignment:.leading,spacing:6) {
-                    HStack(spacing:10) { vectorDisplayToggles; Spacer(minLength:0) }
-                    HStack(spacing:10) { Spacer(minLength:0); vectorZoomControls }
-                }.font(.caption)
-            } else {
-                HStack(spacing:10) {
-                    vectorDisplayToggles
-                    Spacer(minLength:0)
-                    vectorZoomControls
-                }.font(.caption)
-            }
+            HStack(spacing: 10) {
+                Menu("Canvas") {
+                    Toggle("Show grid", isOn: $editor.grid)
+                    Toggle("Snap to grid", isOn: $editor.snap)
+                    Toggle("Show fill", isOn: $editor.fill)
+                    Divider()
+                    Button("Preview appearance…") { showCanvasAppearance = true }
+                }.menuStyle(.borderlessButton).fixedSize()
+                Spacer(minLength: 0)
+                vectorZoomControls
+            }.font(.caption).controlSize(.small)
+            .popover(isPresented: $showCanvasAppearance) { canvasAppearance.padding(16).frame(width: 310) }
+            Text(editor.openCount > 0 ? "\(editor.openCount) open contour(s). \(editor.message)" : editor.message)
+                .font(.caption2).foregroundStyle(editor.openCount > 0 ? .orange : .secondary).fixedSize(horizontal: false, vertical: true)
+                .help("Objects: edit whole shapes. Nodes: edit points and handles. Paths contains contour operations. Selection contains coordinates and transforms.")
+        }
+        .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
+        .onAppear { editor.receive(glyph); editor.metrics=metrics; editor.componentStrokes=componentStrokes; updateCoordinates() }
+        .onChange(of:componentStrokes) {editor.componentStrokes=$0}
+        .onChange(of:metrics) {editor.metrics=$0}
+        .onChange(of:editor.selection) {_ in updateCoordinates()}
+        .onChange(of:editor.glyph) {_ in updateCoordinates()}
+        .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
+    }
+    private var selectionInspectorButton: some View {
+        Button("Selection") { showSelectionInspector = true }
+            .buttonStyle(.borderless).help("Coordinates, alignment, scale and rotation")
+            .popover(isPresented: $showSelectionInspector) { selectionInspector.padding(16).frame(width: 400) }
+    }
+    private var selectionInspector: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("Selection").font(.headline); Spacer(); Button("Select all") { editor.selectAll() }; Button("Done") { showSelectionInspector = false } }
             HStack(spacing:6) {
                 Text("\(editor.selection.count) nodes").foregroundStyle(.secondary).frame(width:65,alignment:.leading)
                 Text("X");TextField("X",text:$x).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection X in font units").onSubmit {if let v=Double(x) {editor.setCoordinate(v,x:true)}}
@@ -569,13 +588,20 @@ struct FontLabVectorEditorView: View {
                 }.disabled(editor.selection.isEmpty).fixedSize()
             }.textFieldStyle(.roundedBorder).font(.caption)
             HStack(spacing:6) {
-                Button("Select all") { editor.selectAll() }.help("Select all outlines (⌘A)")
                 Text("Scale %");TextField("100",text:$scale).frame(width:50)
                 Button("Scale") {if let v=Double(scale),v>0,v<=1000 {editor.transform(scaleX:v/100,scaleY:v/100)}}.disabled(editor.selection.isEmpty)
+                Spacer(minLength: 0)
+            }.textFieldStyle(.roundedBorder).font(.caption)
+            HStack(spacing: 6) {
                 Text("Rotate °");TextField("0",text:$angle).frame(width:45)
                 Button("Rotate") {if let v=Double(angle),v.isFinite {editor.transform(angle:v * .pi/180)}}.disabled(editor.selection.isEmpty)
                 Spacer(minLength:0)
             }.textFieldStyle(.roundedBorder).font(.caption)
+        }
+    }
+    private var canvasAppearance: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("Preview appearance").font(.headline); Spacer(); Button("Done") { showCanvasAppearance = false } }
             HStack {
                 ColorPicker("Preview ink", selection: $editor.inkColor, supportsOpacity: false).fixedSize()
                     .help("Canvas preview color only. Font exports remain monochrome; choose text color in Spaces or the app using the font.")
@@ -587,25 +613,15 @@ struct FontLabVectorEditorView: View {
                 }
                 Spacer(minLength: 0)
             }.font(.caption)
-            Text(editor.openCount>0 ? "\(editor.openCount) open contour(s). \(editor.message)" : editor.message)
-                .font(.caption2).foregroundStyle(editor.openCount>0 ? .orange : .secondary).fixedSize(horizontal:false,vertical:true)
-                .help("Objects: move a whole shape or drag a corner to resize (Shift keeps proportions). Nodes: edit points and handles. Paths contains split, join and midpoint tools. Arrow keys move one unit; Shift moves ten.")
         }
-        .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
-        .onAppear { editor.receive(glyph); editor.metrics=metrics; editor.componentStrokes=componentStrokes; updateCoordinates() }
-        .onChange(of:componentStrokes) {editor.componentStrokes=$0}
-        .onChange(of:metrics) {editor.metrics=$0}
-        .onChange(of:editor.selection) {_ in updateCoordinates()}
-        .onChange(of:editor.glyph) {_ in updateCoordinates()}
-        .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
     }
     private var vectorToolButtons: some View {
         HStack(spacing:6) {
             ForEach(FontLabVectorTool.allCases) { tool in
                 Button {editor.tool=tool;editor.activePath=nil} label: { Image(systemName:tool.icon).frame(width:28,height:24) }
-                    .buttonStyle(.bordered).tint(editor.tool == tool ? .accentColor : .secondary).help(tool.rawValue).accessibilityLabel(tool.rawValue)
+                    .buttonStyle(.plain).padding(4).background(editor.tool == tool ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6)).foregroundStyle(editor.tool == tool ? Color.accentColor : Color.primary).help(tool.rawValue).accessibilityLabel(tool.rawValue)
             }
-        }
+        }.padding(3).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
     }
     private var selectionPicker: some View {
         Picker("Selection", selection: $editor.objectSelection) { Text("Objects").tag(true); Text("Nodes").tag(false) }
@@ -634,14 +650,7 @@ struct FontLabVectorEditorView: View {
                     Button("Copy contours") {editor.copyPaths()}.disabled(editor.selection.isEmpty)
                     Button("Paste contours") {editor.pastePaths()}
                     Button("Delete nodes",role:.destructive) {editor.deleteSelection()}.disabled(editor.selection.isEmpty)
-        }.fixedSize()
-    }
-    private var vectorDisplayToggles: some View {
-        HStack(spacing:10) {
-            Toggle("Grid",isOn:$editor.grid)
-            Toggle("Snap",isOn:$editor.snap)
-            Toggle("Fill",isOn:$editor.fill)
-        }.toggleStyle(.checkbox)
+        }.menuStyle(.borderlessButton).fixedSize()
     }
     private var vectorZoomControls: some View {
         HStack(spacing:10) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.59.11 (2026-10-07)
+
+- Consolidate Spaces into a project toolbar and canvas strip. Put window/focus controls under View, use labeled Insert/Board/Export menus, and keep the shared navigation fixed.
+- Simplify Letterform project and drawing controls, with on-demand Selection, Canvas and Brush settings. Keep undo/redo beside the active glyph.
+- Flatten Spaces typography sections, combine numeric presets with their labels, and replace ambiguous case icons with a named case picker.
+- Keep the shared Library, Spaces and Letterform navigation aligned at its normal size: window/focus controls now belong to the editor content column.
+- Expand Letterform Metrics & spacing across the available editor width, with responsive columns for the metric preview, height controls and glyph bearings. The narrow side inspector remains available in the full workspace.
+
 ## 0.59.10 (2026-10-07)
 
 - Pop Spaces and Letterform Editor into movable, resizable, full-screen-capable windows. Use Pop out or drag the header grip beyond the window edge; Dock window or close returns the same editing session to the main window.

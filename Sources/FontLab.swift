@@ -1200,6 +1200,7 @@ struct FontLabView: View {
     @ObservedObject private var session: FontLabEditorSession
     @ObservedObject private var store: FontLabStore
     @Binding private var sidebarCollapsed: Bool
+    private let editorToolbar: AnyView
     private var selectedCharacter: String { get { session.selectedCharacter } nonmutating set { session.selectedCharacter = newValue } }
     private var strokeWidth: Double { get { session.strokeWidth } nonmutating set { session.strokeWidth = newValue } }
     private var drawingTool: FontLabDrawingTool { get { session.drawingTool } nonmutating set { session.drawingTool = newValue } }
@@ -1216,6 +1217,7 @@ struct FontLabView: View {
     @AppStorage("fontLabProofStripHeight") private var proofStripHeight = FontLabProofStripLayout.defaultHeight
     @AppStorage("fontLabProofStripExpanded") private var proofStripExpanded = true
     @State private var showInputHelp = false
+    @State private var showBrushSettings = false
     @State private var showMetricsGuide = false
     @State private var showExamples = false
     @State private var showArtworkImporter = false
@@ -1248,9 +1250,10 @@ struct FontLabView: View {
         let glyph: FontLabGlyph
     }
 
-    init(library: Library, sidebarCollapsed: Binding<Bool>, session: FontLabEditorSession) {
+    init(library: Library, sidebarCollapsed: Binding<Bool>, session: FontLabEditorSession, editorToolbar: AnyView = AnyView(EmptyView())) {
         self.library = library
         self.session = session
+        self.editorToolbar = editorToolbar
         _sidebarCollapsed = sidebarCollapsed
         _store = ObservedObject(wrappedValue: library.fontLab)
     }
@@ -1266,10 +1269,11 @@ struct FontLabView: View {
                 WorkspaceSidebarShell { projectSidebar }
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
-            Group {
+            VStack(spacing: 0) {
                 if let project {
                     projectWorkspace(project)
                 } else {
+                    HStack { Spacer(); editorToolbar }.padding()
                     emptyState
                 }
             }
@@ -1461,9 +1465,7 @@ struct FontLabView: View {
         let allDrawnCharacters = project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true }
         let trueTypeScope = FontLabTrueTypeExporter.exportScope(for: project)
         return VStack(spacing: 0) {
-            if !session.focusEditor {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 12) {
+            HStack(spacing: 14) {
                     TextField("Project name", text: projectNameBinding(project.id))
                         .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold)).textFieldStyle(.plain)
                         .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
@@ -1472,14 +1474,14 @@ struct FontLabView: View {
                         .layoutPriority(1)
                     Text("\(project.completedCount)/\(project.characters.count) glyphs")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: true, vertical: false)
-                }
-                HStack(spacing: 10) {
-                    Button("Components & masters", systemImage: "square.stack.3d.up") { showFontDesign = true }
+                    Spacer(minLength: 8)
+                    Menu("Project") {
+                    Button("Components & masters…", systemImage: "square.stack.3d.up") { showFontDesign = true }
                         .help("Components, masters, kerning groups and glyph set")
                         .disabled(store.readBlocked || isExportingFont)
                     Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
                         .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
-                    Menu {
+                    Divider()
                         if let undo = designUndo, undo.after == project {
                             Button("Undo project setup") {
                                 if store.replaceArtworkProject(undo.after, with: undo.before) {
@@ -1501,9 +1503,8 @@ struct FontLabView: View {
                         if designUndo?.after == project || artworkUndo?.after == project { Divider() }
                         Button("Delete project…", role: .destructive) { deleteRequest = project }
                             .disabled(store.readBlocked || isExportingFont)
-                    } label: { Label("Project", systemImage: "ellipsis.circle") }
-                        .help("Project history and deletion")
-                    Spacer(minLength: 0)
+                    }.menuStyle(.borderlessButton).fixedSize()
+                        .help("Import artwork, font setup and project history")
                     Menu {
                         Button("Export \(selectedCharacter) as SVG…") { prepareExport(.glyphSVG, characters: [selectedCharacter], project: project) }
                             .disabled(project.resolvedGlyph(selectedCharacter)?.hasArtwork != true)
@@ -1519,15 +1520,15 @@ struct FontLabView: View {
                         Button("Export variable TrueType (.ttf)…") { prepareExport(.variableTrueType, characters: trueTypeScope.mappedArtworkCharacters, project: project) }
                             .disabled((project.masters?.count ?? 0) < 2 || isExportingFont)
                             .help("Interpolate two compatible masters on a weight axis. Incompatible glyphs are rejected with a reason.")
-                    } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                        .disabled(store.readBlocked)
-                }
+                    } label: { Text("Export") }
+                        .menuStyle(.borderlessButton).fixedSize().disabled(store.readBlocked)
+                    editorToolbar
             }
+            .controlSize(.small)
             .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
             .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
             .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
-            .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
-            }
+            .padding(.leading, sidebarCollapsed && !session.focusEditor ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             if !store.error.isEmpty {
                 Text(store.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
@@ -1538,10 +1539,9 @@ struct FontLabView: View {
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
             if !session.focusEditor {
-            Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Draw Bézier contours in Vector, or freehand in Sketch. Export SVG artwork or an installable TrueType font (.ttf).")
-                .font(.caption2).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
-                .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+            if isExportingFont {
+                ProgressView("Building font…").controlSize(.small).padding(.horizontal, 20).padding(.bottom, 8)
+            }
             if let provenance = project.remixProvenance {
                 Text(provenance.summary + ". Review both source font licenses before distributing the result.")
                     .help((provenance.preservedCharacters ?? []).isEmpty ? provenance.summary : "Source structure preserved for: " + provenance.preservedCharacters!.joined(separator: " "))
@@ -1557,9 +1557,12 @@ struct FontLabView: View {
             GeometryReader { proxy in
                 let hasProofText = !project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 let proofHeight = session.focusEditor ? 0 : proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(proofStripHeight) : FontLabProofStripLayout.emptyHeight) : 44.0
-                let compactEditor = proxy.size.width < 1_200
+                // Focused editors fit the window, including their expanded metrics.
+                // A horizontal scroll view would propose an unbounded panel width.
+                let compactEditor = session.focusEditor || proxy.size.width < 1_200
                 let availableBrowserWidth = max(152, Double(proxy.size.width) - 644)
                 let displayedBrowserWidth = min(characterBrowserWidth, availableBrowserWidth)
+                let metricsWidth = proxy.size.width - ((!session.focusEditor || session.showCharacters) ? displayedBrowserWidth + 16 : 0) - 60
                 VStack(spacing: 0) {
                     if !session.focusEditor {
                     preview(project).frame(height: proofHeight)
@@ -1577,7 +1580,7 @@ struct FontLabView: View {
                                 FontLabCharacterPanelDivider(width: $characterBrowserWidth)
                             }
                             }
-                            glyphEditor(project, compact: compactEditor)
+                            glyphEditor(project, compact: compactEditor, metricsColumns: metricsWidth >= 640 ? 3 : 1)
                         }
                         .frame(width: compactEditor ? max(0, proxy.size.width - 16) : nil, alignment: .topLeading)
                         .frame(minWidth: compactEditor ? nil : max(720, proxy.size.width), alignment: .topLeading)
@@ -1708,43 +1711,23 @@ struct FontLabView: View {
         characterJumpMessage = ""
     }
 
-    private func glyphEditor(_ project: FontLabProject, compact: Bool) -> some View {
+    private func glyphEditor(_ project: FontLabProject, compact: Bool, metricsColumns: Int) -> some View {
         let glyph = project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
         let paths = FontLabVectorMath.paths(in: glyph)
         let anchorCount = paths.reduce(0) { $0 + $1.nodes.count }
         let canSimplify = paths.contains { $0.closed && ($0.nodes.allSatisfy { $0.incoming == nil && $0.outgoing == nil } || $0.nodes.count > 32) }
         return HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
-                if compact {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            glyphNavigation(in: project)
-                            Spacer(minLength: 0)
-                            glyphModePicker(glyph)
-                        }
-                        HStack {
-                            Spacer(minLength: 0)
-                            glyphHeaderActions(project, glyph: glyph, anchorCount: anchorCount, canSimplify: canSimplify)
-                        }
-                    }
-                } else {
-                    HStack {
-                        glyphNavigation(in: project)
-                        Spacer(minLength: 0)
-                        glyphModePicker(glyph)
-                        glyphHeaderActions(project, glyph: glyph, anchorCount: anchorCount, canSimplify: canSimplify)
-                    }
-                }
-                HStack(spacing: 8) {
-                    Text("History: \(selectedCharacter) artwork and spacing from this session")
-                        .font(.caption2).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("font-lab-history-scope")
-                    Spacer()
-                    Button("Undo edit") { undoStroke(glyph, projectID: project.id) }
-                        .disabled(glyphUndo.isEmpty || store.readBlocked)
-                    Button("Redo edit") { redoGlyph(projectID: project.id) }
-                        .disabled(glyphRedo.isEmpty || store.readBlocked)
-                }
+                HStack(spacing: 10) {
+                    glyphNavigation(in: project)
+                    Spacer(minLength: 0)
+                    glyphModePicker(glyph)
+                    Button { undoStroke(glyph, projectID: project.id) } label: { Image(systemName: "arrow.uturn.backward") }
+                        .disabled(glyphUndo.isEmpty || store.readBlocked).help("Undo glyph edit (⌘Z)").accessibilityLabel("Undo edit")
+                    Button { redoGlyph(projectID: project.id) } label: { Image(systemName: "arrow.uturn.forward") }
+                        .disabled(glyphRedo.isEmpty || store.readBlocked).help("Redo glyph edit (⇧⌘Z)").accessibilityLabel("Redo edit")
+                    glyphHeaderActions(project, glyph: glyph, anchorCount: anchorCount, canSimplify: canSimplify)
+                }.buttonStyle(.borderless).controlSize(.small)
                 if anchorCount > 100 && canSimplify {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("\(anchorCount) points — simplify this outline before editing individual nodes.", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
@@ -1754,7 +1737,7 @@ struct FontLabView: View {
                 }
                 if compact || session.focusEditor {
                     DisclosureGroup(isExpanded: $session.compactMetricsExpanded) {
-                        metricsPanel(project, glyph: glyph).padding(.top, 8)
+                        metricsPanel(project, glyph: glyph, expanded: true, columns: metricsColumns).padding(.top, 8)
                     } label: {
                         Label("Metrics & spacing", systemImage: "ruler")
                             .font(.subheadline.weight(.medium))
@@ -1773,6 +1756,18 @@ struct FontLabView: View {
                         .id(project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString)
                         .disabled(store.readBlocked)
                 } else {
+                HStack(spacing: 12) {
+                        Picker("Tool", selection: $session.drawingTool) {
+                            ForEach(FontLabDrawingTool.allCases) { tool in
+                                Label(tool.title, systemImage: tool.systemImage).tag(tool)
+                            }
+                        }
+                        .labelsHidden().pickerStyle(.segmented).frame(width: 240)
+                    Spacer(minLength: 0)
+                    Button("Brush settings") { showBrushSettings = true }
+                        .buttonStyle(.borderless)
+                        .popover(isPresented: $showBrushSettings) { brushSettings.frame(width: 440).padding(12) }
+                }.controlSize(.small)
                 FontLabGlyphCanvas(
                     glyph: glyph,
                     metrics: project.metrics,
@@ -1794,15 +1789,16 @@ struct FontLabView: View {
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.12)))
+                }
+            }
+            if !compact && !session.focusEditor { metricsPanel(project, glyph: glyph) }
+        }
+        .padding(compact ? 6 : 20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var brushSettings: some View {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 12) {
-                        Picker("Tool", selection: $session.drawingTool) {
-                            ForEach(FontLabDrawingTool.allCases) { tool in
-                                Label(tool.title, systemImage: tool.systemImage).tag(tool)
-                            }
-                        }
-                        .labelsHidden().pickerStyle(.segmented).frame(width: 240)
-                        Divider().frame(height: 22)
                         Text("Nib").font(.caption).foregroundStyle(.secondary)
                         Picker("Nib", selection: $session.nibStyle) {
                             ForEach(FontLabNibStyle.allCases) { style in
@@ -1842,11 +1838,6 @@ struct FontLabView: View {
                 .padding(10)
                 .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                }
-            }
-            if !compact && !session.focusEditor { metricsPanel(project, glyph: glyph) }
-        }
-        .padding(compact ? 6 : 20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func glyphNavigation(in project: FontLabProject) -> some View {
@@ -1877,14 +1868,16 @@ struct FontLabView: View {
     }
 
     private func glyphHeaderActions(_ project: FontLabProject, glyph: FontLabGlyph, anchorCount: Int, canSimplify: Bool) -> some View {
-        HStack {
+        Menu("Glyph") {
             if anchorCount <= 100 {
                 Button("Simplify outline…") { showSmoothing = true }
                     .disabled(store.readBlocked || !canSimplify)
             }
             Button("Clear", role: .destructive) { clearRequest = ClearRequest(projectID: project.id, glyph: glyph) }
                 .disabled(!glyph.hasArtwork || store.readBlocked)
-        }
+            Divider()
+            Text("History applies to \(selectedCharacter) artwork and spacing in this session.")
+        }.menuStyle(.borderlessButton).fixedSize().help("Simplify or clear this glyph")
     }
 
     private func hasAdjacentCharacter(in project: FontLabProject, offset: Int) -> Bool {
@@ -1900,7 +1893,7 @@ struct FontLabView: View {
         selectedCharacter = sequence[index + offset]
     }
 
-    private func metricsPanel(_ project: FontLabProject, glyph: FontLabGlyph) -> some View {
+    private func metricsPanel(_ project: FontLabProject, glyph: FontLabGlyph, expanded: Bool = false, columns: Int = 1) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Metrics").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -1908,6 +1901,29 @@ struct FontLabView: View {
                 Button { showMetricsGuide = true } label: { Label("Guide", systemImage: "questionmark.circle") }
                     .buttonStyle(.plain).font(.caption).help("Learn what each type metric controls")
             }
+            if expanded {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 20, alignment: .topLeading), count: columns), alignment: .leading, spacing: 16) {
+                    metricIllustration(project, glyph: glyph)
+                    verticalMetrics(project)
+                    glyphBearings(project, glyph: glyph)
+                }
+            } else {
+                metricIllustration(project, glyph: glyph)
+                verticalMetrics(project)
+                Divider()
+                glyphBearings(project, glyph: glyph)
+            }
+        }
+        .padding(16)
+        .frame(width: expanded ? nil : 232)
+        .frame(maxWidth: expanded ? .infinity : nil, alignment: .topLeading)
+        .shelfGlass(radius: 14)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityIdentifier(expanded ? "font-lab-expanded-metrics" : "font-lab-side-metrics")
+    }
+
+    private func metricIllustration(_ project: FontLabProject, glyph: FontLabGlyph) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             FontLabMetricExample(metrics: project.metrics, glyph: glyph)
                 .frame(height: 118)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -1915,17 +1931,24 @@ struct FontLabView: View {
                 .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
             Text("H reaches cap height; x reaches x-height. Both sit on the baseline.")
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func verticalMetrics(_ project: FontLabProject) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
             metricSlider("Baseline", value: metricBinding(project.id, kind: .baseline), range: 0.04...0.42)
             metricSlider("x-height", value: metricBinding(project.id, kind: .xHeight), range: 0.12...0.88)
             metricSlider("Cap height", value: metricBinding(project.id, kind: .capHeight), range: 0.22...0.96)
-            Divider()
+        }
+    }
+
+    private func glyphBearings(_ project: FontLabProject, glyph: FontLabGlyph) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
             metricSlider("Left bearing", value: bearingBinding(glyph, projectID: project.id, left: true), range: 0...0.4)
             metricSlider("Right bearing", value: bearingBinding(glyph, projectID: project.id, left: false), range: 0...0.4)
             Text("Measurements are proportions of the drawing area. Side bearings apply to this glyph.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16).frame(width: 232).shelfGlass(radius: 14)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func metricSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
