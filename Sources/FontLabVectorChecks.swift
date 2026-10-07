@@ -8,6 +8,7 @@ enum FontLabVectorChecks {
         return FontLabGlyph(character:"O",strokes:[FontLabStroke(vectorPaths:[outer,inner])],contourDesignWidth:0.62)
     }
     static func run() throws {
+        try FontLabInteractionChecks.run()
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
         let densePoints = (0..<10_000).map { index -> FontLabPoint in

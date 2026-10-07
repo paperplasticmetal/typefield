@@ -21,6 +21,7 @@ struct FontLabArtworkImportSheet: View {
     @State private var replace = false
     @State private var reviewed = false
     @State private var busy = false
+    @State private var importing = false
     @State private var failure = ""
     @State private var scanTask: Task<Void, Never>?
     @State private var scanGeneration = UUID()
@@ -72,6 +73,7 @@ struct FontLabArtworkImportSheet: View {
                         HStack {
                             TextField("Letter order, e.g. ABCDEFG…", text: $order)
                                 .textFieldStyle(.roundedBorder).onChange(of: order) { if $0.count > 256 { order = String($0.prefix(256)) } }
+                                .disabled(busy)
                             Button("Apply order") { applyOrder() }.disabled(busy || scan?.regions.isEmpty != false)
                         }
                         HStack(spacing: 12) {
@@ -80,10 +82,10 @@ struct FontLabArtworkImportSheet: View {
                             Button("0–9") { order = "0123456789"; applyOrder() }
                             Spacer()
                             Text("Order: left to right, top to bottom").font(.caption2).foregroundStyle(.secondary)
-                        }.buttonStyle(.plain).font(.caption)
+                        }.buttonStyle(.plain).font(.caption).disabled(busy)
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Review \(scan?.regions.count ?? 0) regions").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Review \(scan?.regions.count ?? 0) \(scan?.regions.count == 1 ? "region" : "regions")").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         ScrollViewReader { proxy in
                             ScrollView {
                                 LazyVStack(spacing: 8) {
@@ -122,12 +124,12 @@ struct FontLabArtworkImportSheet: View {
                         if let currentProject { Text(currentProject.name).tag(true) }
                     }.labelsHidden().frame(maxWidth: 280)
                     if !useCurrentProject { TextField("Project name", text: $name).textFieldStyle(.roundedBorder) }
-                    else if conflicts > 0 { Toggle("Replace \(conflicts) existing glyphs", isOn: $replace).toggleStyle(.checkbox) }
-                }.font(.subheadline)
+                    else if conflicts > 0 { Toggle("Replace \(conflicts) existing \(conflicts == 1 ? "glyph" : "glyphs")", isOn: $replace).toggleStyle(.checkbox) }
+                }.font(.subheadline).disabled(busy)
                 if useCurrentProject && conflicts > 0 && !replace {
-                    Text("Existing artwork will be kept; \(conflicts) assigned glyphs will be skipped.").font(.caption).foregroundStyle(.secondary)
+                    Text("Existing artwork will be kept; \(conflicts) assigned \(conflicts == 1 ? "glyph" : "glyphs") will be skipped.").font(.caption).foregroundStyle(.secondary)
                 }
-                Toggle("I checked the regions, character labels, and traced shapes.", isOn: $reviewed).toggleStyle(.checkbox).font(.caption)
+                Toggle("I checked the regions, character labels, and traced shapes.", isOn: $reviewed).toggleStyle(.checkbox).font(.caption).disabled(busy)
             } else {
                 VStack(spacing: 15) {
                     Image(systemName: "doc.viewfinder").font(.system(size: 48)).foregroundStyle(.secondary)
@@ -141,12 +143,12 @@ struct FontLabArtworkImportSheet: View {
             }
             if !failure.isEmpty { Text(failure).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             HStack {
-                if busy { ProgressView().controlSize(.small); Text("Reading artwork and tracing letters…").font(.caption) }
+                if busy { ProgressView().controlSize(.small); Text(importing ? "Fitting editable outlines…" : "Reading artwork and tracing letters…").font(.caption) }
                 else if settingsChanged { Text("Settings changed. Rescan before importing.").font(.caption).foregroundStyle(.secondary) }
                 else if scan != nil { Text("\(included.count) \(included.count == 1 ? "item" : "items") selected. \(invalidAssignments ? "Review missing or duplicate labels." : "Labels are ready.")").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Import \(included.count) glyphs") { commit() }
+                Button("Cancel") { cancelScan(); dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Import \(included.count) \(included.count == 1 ? "glyph" : "glyphs")") { commit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(busy || settingsChanged || invalidAssignments || !reviewed || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -205,16 +207,17 @@ struct FontLabArtworkImportSheet: View {
         .padding(7)
         .background(selectedRegion == region.id ? ShelfPalette.ink.opacity(colorSchemeContrast == .increased ? 0.2 : 0.12) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selectedRegion == region.id ? ShelfPalette.ink : .clear, lineWidth: selectedRegion == region.id ? (colorSchemeContrast == .increased ? 2 : 1.5) : 0))
+        .disabled(busy)
     }
 
     private func mutate(_ id: UUID, _ change: (inout FontLabArtworkRegion) -> Void) {
-        guard let index = scan?.regions.firstIndex(where: { $0.id == id }) else { return }
+        guard !busy, let index = scan?.regions.firstIndex(where: { $0.id == id }) else { return }
         change(&scan!.regions[index]); reviewed = false
     }
 
     private func cancelScan() {
         scanTask?.cancel(); scanTask = nil
-        scanGeneration = UUID(); busy = false
+        scanGeneration = UUID(); busy = false; importing = false
     }
 
     private func chooseFile() {
@@ -274,6 +277,7 @@ struct FontLabArtworkImportSheet: View {
     }
 
     private func applyOrder() {
+        guard !busy else { return }
         let letters = order.filter { !$0.isWhitespace }.map(String.init)
         let includedIndices = scan?.regions.indices.filter { scan!.regions[$0].included } ?? []
         guard letters.count == includedIndices.count else { failure = "Enter exactly \(includedIndices.count) characters, one for each included region. Spaces and line breaks are ignored."; return }
@@ -282,7 +286,7 @@ struct FontLabArtworkImportSheet: View {
     }
 
     private func addRegion(_ rect: CGRect) {
-        guard let mask = scan?.mask, var region = FontLabArtworkEngine.region(rect: rect, mask: mask), (scan?.regions.count ?? 0) < 256 else { return }
+        guard !busy, let mask = scan?.mask, var region = FontLabArtworkEngine.region(rect: rect, mask: mask), (scan?.regions.count ?? 0) < 256 else { return }
         if options.layout == .single { region.character = selectedCharacter }
         scan?.regions.append(region)
         if let value = scan {
@@ -293,13 +297,27 @@ struct FontLabArtworkImportSheet: View {
     }
 
     private func commit() {
-        guard let scan else { return }
-        do {
-            let original = useCurrentProject ? currentProject : nil
-            let result = try FontLabArtworkEngine.project(from: scan, name: name, existing: original, replace: replace)
-            if onImport(result, original) { dismiss() }
-            else { failure = "The project changed or could not be saved. Your existing artwork was kept." }
-        } catch { failure = error.localizedDescription }
+        guard !busy, !settingsChanged, !invalidAssignments, reviewed, let scan else { return }
+        cancelScan()
+        let original = useCurrentProject ? currentProject : nil
+        let requestedName = name, requestedReplacement = replace, generation = scanGeneration
+        busy = true; importing = true; failure = ""
+        scanTask = Task {
+            let worker = Task.detached(priority: .userInitiated) {
+                Result { try FontLabArtworkEngine.project(from: scan, name: requestedName, existing: original, replace: requestedReplacement) }
+            }
+            let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
+            await MainActor.run {
+                guard !Task.isCancelled, scanGeneration == generation else { return }
+                scanTask = nil; busy = false; importing = false
+                switch result {
+                case let .success(project):
+                    if onImport(project, original) { dismiss() }
+                    else { failure = "The project changed or could not be saved. Your existing artwork was kept." }
+                case let .failure(error): failure = error.localizedDescription
+                }
+            }
+        }
     }
 }
 

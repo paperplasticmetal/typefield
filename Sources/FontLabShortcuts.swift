@@ -6,6 +6,11 @@ enum FontLabShortcutAction: Equatable {
     case nextGlyph
     case vectorEditor
     case sketchEditor
+    case copyContours
+    case pasteContours
+    case selectAllContours
+
+    var isVectorCommand: Bool { self == .copyContours || self == .pasteContours || self == .selectAllContours }
 
     static func resolve(key: String?, keyCode: UInt16? = nil, modifiers: NSEvent.ModifierFlags) -> Self? {
         let relevant = modifiers.intersection([.command, .option, .control, .shift])
@@ -19,6 +24,9 @@ enum FontLabShortcutAction: Equatable {
         case ("]", .command): return .nextGlyph
         case ("1", [.command, .shift]): return .vectorEditor
         case ("2", [.command, .shift]): return .sketchEditor
+        case ("c", .command): return .copyContours
+        case ("v", .command): return .pasteContours
+        case ("a", .command): return .selectAllContours
         default: return nil
         }
     }
@@ -32,6 +40,7 @@ struct FontLabShortcutBridge: NSViewRepresentable {
     let canSketch: Bool
     let onSelectCharacter: (String) -> Void
     let onSelectMode: (Bool) -> Void
+    let onVectorCommand: (FontLabShortcutAction) -> Bool
 
     func makeNSView(context: Context) -> FontLabShortcutAnchor { FontLabShortcutAnchor(frame: .zero) }
 
@@ -52,6 +61,11 @@ struct FontLabShortcutBridge: NSViewRepresentable {
                 onSelectMode(true)
             case .sketchEditor:
                 if canSketch { onSelectMode(false) }
+            case .copyContours, .pasteContours, .selectAllContours:
+                // The focused canvas finishes any gesture before its native
+                // key equivalent. Only fill the workspace-focus gap here.
+                guard !(event.window?.firstResponder is FontLabVectorNSView) else { return false }
+                return onVectorCommand(action)
             }
             return true
         }
@@ -62,16 +76,21 @@ final class FontLabShortcutAnchor: NSView {
     var onShortcut: ((NSEvent) -> Bool)?
     private var monitor: Any?
 
+    static func allowsWorkspaceShortcuts(matchingWindow: Bool, isKeyWindow: Bool, hasSheet: Bool,
+                                         hasModalWindow: Bool, firstResponder: NSResponder?) -> Bool {
+        matchingWindow && isKeyWindow && !hasSheet && !hasModalWindow &&
+        !(firstResponder is NSTextView) && !(firstResponder is NSTextField)
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
         guard let window else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
-            guard let self, let window, event.window === window, window.isKeyWindow,
-                  window.attachedSheet == nil, NSApp.modalWindow == nil else { return event }
-            if window.firstResponder is NSTextView || window.firstResponder is NSTextField {
-                return event
-            }
+            guard let self, let window,
+                  Self.allowsWorkspaceShortcuts(matchingWindow: event.window === window, isKeyWindow: window.isKeyWindow,
+                                                hasSheet: window.attachedSheet != nil, hasModalWindow: NSApp.modalWindow != nil,
+                                                firstResponder: window.firstResponder) else { return event }
             return self.onShortcut?(event) == true ? nil : event
         }
     }

@@ -173,6 +173,18 @@ enum FontLabArtworkChecks {
         try check(aPaths.filter(\.closed).count == 2 && aPaths.flatMap(\.nodes).count < 40,
                   "Coarse rounded A retained too many pixel corners or lost its counter")
         print("COARSE A: \(FontLabVectorMath.paths(in: rawA).flatMap(\.nodes).count) → \(aPaths.flatMap(\.nodes).count) anchors; open pen edit preserved")
+        let overlappingSquares = [CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.6), CGRect(x: 0.4, y: 0.2, width: 0.5, height: 0.6)].enumerated().map { index, rect in
+            var path = FontLabVectorMath.rectangle(rect, ellipse: false)
+            for _ in 0..<3 { for segment in (0..<path.segmentCount).reversed() { path.insertNode(segment: segment, t: 0.5) } }
+            if index == 1 { path.reverse() }
+            return FontLabStroke(vectorPaths: [path])
+        }
+        let overlappingGlyph = FontLabGlyph(character: "A", strokes: overlappingSquares)
+        let fittedOverlap = try FontLabTraceSmoothing.fit(overlappingGlyph, units: 1)
+        try check(fittedOverlap.strokes.count == 2 && FontLabVectorMath.paths(in: fittedOverlap).flatMap(\.nodes).count == 8,
+                  "Independent overlapping strokes could not simplify while preserving their fill groups")
+        try check(fittedOverlap.strokes.allSatisfy { $0.vectorPaths?.first?.cgPath.contains(CGPoint(x: 500, y: 500)) == true },
+                  "Simplifying opposite-wound strokes changed their overlapping ink")
         for index in FontLabExamples.titles.indices {
             let example = try FontLabExamples.make(index)
             try check(example.isValid, "In-app practice example is invalid")
@@ -217,6 +229,15 @@ enum FontLabArtworkChecks {
         single.regions[0].character = "O"
         let imported = try FontLabArtworkEngine.project(from: single, name: "Single")
         try check(imported.glyphs["O"]!.importFormat == .svg, "SVG source provenance was not saved.")
+        let cancelledImport = DispatchSemaphore(value: 0)
+        let cancellationFixture = single
+        Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do { _ = try FontLabArtworkEngine.project(from: cancellationFixture, name: "Cancelled"); return }
+            catch is CancellationError { cancelledImport.signal() }
+            catch { }
+        }
+        try check(cancelledImport.wait(timeout: .now() + 5) == .success, "A cancelled final artwork import produced a project")
         let dotted = try FontLabArtworkEngine.scan(FontLabArtworkReader.load(folder.appendingPathComponent("detached-ij!.png")), options: FontLabArtworkOptions(), recognize: false)
         try check(dotted.regions.count == 3 && dotted.regions.allSatisfy { $0.contours.count == 2 }, "Detached i/j/! marks were lost or assigned to separate glyphs.")
         let procreate = try FontLabArtworkReader.load(folder.appendingPathComponent("synthetic-preview.procreate"))

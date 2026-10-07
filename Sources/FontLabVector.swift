@@ -84,7 +84,11 @@ struct FontLabVectorPath: Codable, Equatable, Identifiable {
         nodes[index].smooth = value
         guard value, nodes.count > 1 else { return }
         let p = nodes[index].point
-        let before = nodes[(index + nodes.count - 1) % nodes.count].point, after = nodes[(index + 1) % nodes.count].point
+        // Open endpoints have only one adjacent segment. Wrapping around to
+        // the far endpoint can point a new handle away from its own curve (and
+        // gives a two-node open path a zero-length tangent).
+        let before = !closed && index == 0 ? p : nodes[(index + nodes.count - 1) % nodes.count].point
+        let after = !closed && index == nodes.count - 1 ? p : nodes[(index + 1) % nodes.count].point
         let dx = after.x-before.x, dy = after.y-before.y, length = max(0.00001,hypot(dx,dy))
         let a = nodes[index].incoming.map { hypot($0.x-p.x,$0.y-p.y) } ?? hypot(before.x-p.x,before.y-p.y)/3
         let b = nodes[index].outgoing.map { hypot($0.x-p.x,$0.y-p.y) } ?? hypot(after.x-p.x,after.y-p.y)/3
@@ -145,13 +149,54 @@ enum FontLabVectorMath {
             }
         }
     }
-    static func replacingPaths(in glyph: FontLabGlyph, with paths: [FontLabVectorPath]) -> FontLabGlyph {
-        var result=glyph
-        result.strokes.removeAll { $0.contours != nil || $0.vectorPaths != nil }
-        if !paths.isEmpty {
-            result.strokes.append(FontLabStroke(vectorPaths:paths))
-            if result.contourDesignWidth == nil { result.contourDesignWidth = glyph.resolvedDesignWidth }
+    static func pathGroups(in glyph: FontLabGlyph) -> [[UUID]] {
+        glyph.strokes.filter { $0.contours != nil || $0.vectorPaths != nil }.map { stroke in
+            var source = glyph; source.strokes = [stroke]
+            return paths(in: source).map(\.id)
         }
+    }
+    /// Stroke groups paint independently. Merging them during an ordinary node
+    /// edit can turn an overlap between opposite windings into a new hole.
+    /// Explicit path groups are reserved for operations that combine contours.
+    static func replacingPaths(in glyph: FontLabGlyph, with paths: [FontLabVectorPath], pathGroups: [[UUID]] = []) -> FontLabGlyph {
+        let outlineIndices = glyph.strokes.indices.filter { glyph.strokes[$0].contours != nil || glyph.strokes[$0].vectorPaths != nil }
+        var owners: [UUID: Int] = [:], nodeOwners: [UUID: Int] = [:]
+        for (group, index) in outlineIndices.enumerated() {
+            var source = glyph; source.strokes = [glyph.strokes[index]]
+            for path in self.paths(in: source) {
+                owners[path.id] = group
+                for node in path.nodes { nodeOwners[node.id] = group }
+            }
+        }
+        // A fresh path joins the last outline group, preserving the existing
+        // drawing workflow for making a counter inside a shape. Splits retain
+        // their original group through the surviving node identities.
+        let existingCount = max(1, outlineIndices.count)
+        var groups = Array(repeating: [FontLabVectorPath](), count: existingCount + pathGroups.count)
+        var explicitOwners: [UUID: Int] = [:]
+        for (group, ids) in pathGroups.enumerated() {
+            let idSet = Set(ids)
+            // Reuse a source stroke when the explicit group contains all of
+            // its paths. Reapplying Make counter then remains a true no-op.
+            let reusable = outlineIndices.indices.first { owner in owners.filter { $0.value == owner }.keys.allSatisfy { idSet.contains($0) } }
+            for id in ids { explicitOwners[id] = reusable ?? existingCount + group }
+        }
+        for path in paths {
+            let owner = explicitOwners[path.id] ?? owners[path.id] ?? path.nodes.lazy.compactMap { nodeOwners[$0.id] }.first ?? existingCount - 1
+            groups[owner].append(path)
+        }
+        var result = glyph, strokes: [FontLabStroke] = []
+        let outlineOwners = Dictionary(uniqueKeysWithValues: outlineIndices.enumerated().map { ($0.element, $0.offset) })
+        for (index, source) in glyph.strokes.enumerated() {
+            guard let group = outlineOwners[index] else { strokes.append(source); continue }
+            guard !groups[group].isEmpty else { continue }
+            var stroke = source; stroke.points = []; stroke.contours = nil; stroke.vectorPaths = groups[group]
+            strokes.append(stroke)
+        }
+        if outlineIndices.isEmpty, !groups[0].isEmpty { strokes.append(FontLabStroke(vectorPaths: groups[0])) }
+        for group in groups.dropFirst(existingCount) where !group.isEmpty { strokes.append(FontLabStroke(vectorPaths: group)) }
+        result.strokes = strokes
+        if !paths.isEmpty, result.contourDesignWidth == nil { result.contourDesignWidth = glyph.resolvedDesignWidth }
         return result
     }
     static func draw(_ paths: [FontLabVectorPath], in rect: CGRect, color: NSColor, showOpen: Bool = true) {

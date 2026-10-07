@@ -49,11 +49,18 @@ struct FontLabDesignView: View {
     private func apply(open character: String? = nil) {
         project.captureActiveMaster()
         if onApply(project, character) { dismiss() }
+        else { message = "The project could not be saved. Your setup changes are still here; resolve the project save error and try Apply again." }
     }
-    private func change(_ action: (inout FontLabProject) -> Void) {
+    @discardableResult private func change(_ action: (inout FontLabProject) -> Void) -> Bool {
         var candidate = project; action(&candidate)
-        guard candidate.isValid else { message = "That change would create an invalid reference, duplicate group membership or an outline outside the design box."; return }
+        guard candidate.isValid else { message = "That change would create an invalid reference, duplicate group membership or an outline outside the design box."; return false }
         project = candidate; message = ""
+        if !componentSources.contains(source) { source = componentSources.first ?? character }
+        let leftEndpoints = Set(project.characters).union((project.kerningGroups ?? []).filter { $0.side == .left }.map { "@" + $0.id.uuidString })
+        let rightEndpoints = Set(project.characters).union((project.kerningGroups ?? []).filter { $0.side == .right }.map { "@" + $0.id.uuidString })
+        if !leftEndpoints.contains(left) { left = project.characters.contains(character) ? character : project.characters.first ?? "" }
+        if !rightEndpoints.contains(right) { right = project.characters.contains("V") ? "V" : project.characters.first ?? "" }
+        return true
     }
     private var masterControls: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -81,7 +88,7 @@ struct FontLabDesignView: View {
                     .textFieldStyle(.roundedBorder).frame(width: 64).help("OpenType weight class from 1 to 1000")
                 Button("Duplicate current as master") {
                     let name = masterName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !name.isEmpty else { return }
+                    guard !name.isEmpty, masterWeight.isFinite else { message = "Enter a finite weight from 1 to 1000."; return }
                     change { $0.addMaster(name: String(name.prefix(80)), weight: min(1000, max(1, masterWeight.rounded()))) }
                 }.disabled((project.masters?.count ?? 0) >= 16 || masterName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -94,11 +101,16 @@ struct FontLabDesignView: View {
             project.masters?[index].weight = min(1000, max(1, value.rounded()))
         })
     }
+    private var componentSources: [String] { project.characters.filter { $0 != character && project.glyphs[$0]?.hasArtwork == true } }
     private var componentControls: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Reuse another glyph as a linked component in \(character). Editing the source updates every use in this master. Teal outlines on the canvas are linked components.").foregroundStyle(.secondary)
             HStack {
-                Picker("Source glyph", selection: $source) { ForEach(project.characters.filter { $0 != character && project.glyphs[$0]?.hasArtwork == true }, id: \.self) { Text($0).tag($0) } }.frame(maxWidth: 220)
+                if componentSources.isEmpty {
+                    Text("Draw another glyph to add a component.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker("Source glyph", selection: $source) { ForEach(componentSources, id: \.self) { Text($0).tag($0) } }.frame(maxWidth: 220)
+                }
                 Button("Insert component") {
                     guard source != character, let base = project.glyphs[source], let target = project.glyphs[character] else { return }
                     let scale = min(1, target.resolvedDesignWidth / base.resolvedDesignWidth)
@@ -201,14 +213,13 @@ struct FontLabDesignView: View {
             TextField("Characters, e.g. éàöñç", text: $newCharacters).textFieldStyle(.roundedBorder)
             Button("Add to glyph set") {
                 let additions = newCharacters.map(String.init).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                change { p in
+                if change({ p in
                     for c in additions where !p.characters.contains(c) {
                         p.characters.append(c); p.glyphs[c] = FontLabGlyph(character: c)
                         if p.masters != nil { for i in p.masters!.indices { p.masters?[i].glyphs[c] = FontLabGlyph(character: c) } }
                     }
-                }
-                newCharacters = ""
-            }.disabled(newCharacters.isEmpty)
+                }) { newCharacters = "" }
+            }.disabled(newCharacters.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Text("\(project.characters.count) characters").font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -221,7 +232,7 @@ struct FontLabDesignView: View {
 struct FontLabSmoothingView: View {
     let original: FontLabGlyph
     let metrics: FontLabMetrics
-    let onApply: (FontLabGlyph) -> Void
+    let onApply: (FontLabGlyph) -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var tolerance = 5.0
     @State private var candidate: FontLabGlyph?
@@ -243,7 +254,15 @@ struct FontLabSmoothingView: View {
                 sample("Smoothed", glyph: candidate ?? original)
             }
             Text(message).font(.caption).foregroundStyle(.secondary).frame(minHeight: 36)
-            HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Apply simplified outline") { if let candidate { onApply(candidate); dismiss() } }.keyboardShortcut(.defaultAction).disabled(candidate == nil || working) }
+            HStack {
+                Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Apply simplified outline") {
+                    if let candidate {
+                        if onApply(candidate) { dismiss() }
+                        else { message = "The outline could not be saved. Your preview is still here; resolve the project save error and try again." }
+                    }
+                }.keyboardShortcut(.defaultAction).disabled(candidate == nil || candidate == original || working)
+            }
         }.padding(24).frame(width: 700)
         .onAppear { generate() }.onChange(of: tolerance) { _ in candidate = nil; generate() }
         .onDisappear { revision = UUID(); worker?.cancel(); worker = nil }
@@ -262,7 +281,7 @@ struct FontLabSmoothingView: View {
             await MainActor.run {
                 guard revision == id else { return }; working = false
                 switch result {
-                case .success(let glyph): candidate = glyph; message = "Review the curves before applying. Undo edit restores the original outline."
+                case .success(let glyph): candidate = glyph; message = glyph == original ? "This outline already fits the selected tolerance. No changes are needed." : "Review the curves before applying. Undo edit restores the original outline."
                 case .failure(let error): message = error.localizedDescription
                 }
             }

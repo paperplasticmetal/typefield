@@ -123,6 +123,9 @@ enum FontLabTrueTypeExporter {
 
     private struct RevisionKerning: Encodable { let left: String; let right: String; let value: Int }
     private struct RevisionPayload: Encodable {
+        // Conversion changes can alter installed outlines without a project
+        // edit. Give corrected exports a fresh macOS font-cache identity.
+        let outlineEncodingRevision = 2
         let metrics: FontLabMetrics
         let weightClass: UInt16
         let glyphs: [RevisionGlyph]
@@ -174,14 +177,15 @@ enum FontLabTrueTypeExporter {
         let weightClass = UInt16(activeMaster?.weight ?? 400)
         var project = project.outputProject
         if let masterName { project.name += " — " + masterName }
-        for glyph in project.glyphs.values where glyph.strokes.contains(where: { $0.vectorPaths?.contains(where: { !$0.closed }) == true }) {
+        let mappings = mappedGlyphs(project)
+        // Unsupported and unlisted glyphs are omitted by the reviewed export
+        // scope. Their unfinished paths must not block the mapped characters.
+        for glyph in mappings.compactMap(\.glyph) where glyph.strokes.contains(where: { $0.vectorPaths?.contains(where: { !$0.closed }) == true }) {
             throw ExportError.openContours(glyph.character)
         }
-
         let revision = try fontRevision(for: project, weightClass: weightClass)
         let familyName = uniqueFamilyName(project.name, projectID: project.id, fingerprint: revision.fingerprint)
         let postScriptName = sanitizedPostScriptName(familyName)
-        let mappings = mappedGlyphs(project)
         let scope = exportScope(in: project, mappings: mappings)
         guard mappings.contains(where: { $0.glyph?.hasArtwork == true }) else { throw ExportError.noDrawnCharacters }
 
@@ -439,6 +443,20 @@ enum FontLabTrueTypeExporter {
               limitedScope.skippedCharacters == [decomposed, "Z"] else {
             throw ExportError.malformedFont("the export review counted an orphan or unsupported glyph")
         }
+        let unfinished = FontLabStroke(vectorPaths: [FontLabVectorPath(nodes: [
+            .init(point: .init(x: 0.2, y: 0.3)), .init(point: .init(x: 0.7, y: 0.8))
+        ])])
+        limited.glyphs[decomposed]?.strokes = [unfinished]
+        limited.glyphs["Q"]?.strokes = [unfinished]
+        let limitedArtifact = try artifact(for: limited)
+        guard limitedArtifact.mappedCharacters == [" ", "A"], limitedArtifact.skippedCharacters == [decomposed, "Z"] else {
+            throw ExportError.malformedFont("omitted unfinished artwork changed the reviewed export scope")
+        }
+        limited.glyphs["A"]?.strokes = [unfinished]
+        do {
+            _ = try artifact(for: limited)
+            throw ExportError.malformedFont("an open contour in a mapped character was accepted")
+        } catch ExportError.openContours("A") { }
         let validation = try validate(first)
         guard validation.glyphCount == 8, validation.verifiedCharacters == first.mappedCharacters else {
             throw ExportError.malformedFont("CoreText returned unexpected glyph metadata")
@@ -496,6 +514,27 @@ enum FontLabTrueTypeExporter {
         }
         try verifyMetricTables(denseArtifact.data, project: denseOutline)
 
+        // A long stroke beside many short strokes previously consumed their
+        // endpoint budgets, silently exporting hundreds of lines as dots.
+        let shortStroke = FontLabStroke(points: [.init(x: 0.1, y: 0.2), .init(x: 0.8, y: 0.8)])
+        let longStroke = FontLabStroke(points: (0..<1_000).map { index in
+            FontLabPoint(x: 0.1 + Double(index) / 1_000 * 0.7, y: 0.5)
+        })
+        let mixedGlyph = FontLabGlyph(character: "M", strokes: Array(repeating: shortStroke, count: 450) + [longStroke])
+        let mixedSamples = try sampledStrokes(mixedGlyph)
+        guard mixedSamples.strokes.count == mixedGlyph.strokes.count,
+              mixedSamples.strokes.reduce(0, { $0 + $1.points.count }) == maximumSamplesPerGlyph,
+              zip(mixedSamples.strokes, mixedGlyph.strokes).allSatisfy({ sample, original in
+                  sample.points.first == original.points.first && sample.points.last == original.points.last
+              }) else {
+            throw ExportError.malformedFont("dense pen export lost a stroke endpoint")
+        }
+        let overBudget = FontLabGlyph(character: "M", strokes: Array(repeating: shortStroke, count: 501))
+        do {
+            _ = try sampledStrokes(overBudget)
+            throw ExportError.malformedFont("an impossible endpoint budget silently damaged pen strokes")
+        } catch ExportError.glyphTooComplex("M") { }
+
         var remixed = project
         remixed.id = UUID(uuidString: "8F111111-2222-4333-8444-555555555555")!
         remixed.remixProvenance = FontLabRemixProvenance(
@@ -538,6 +577,7 @@ enum FontLabTrueTypeExporter {
             throw ExportError.malformedFont("same-display-name fonts could not be registered and resolved independently")
         }
         try variableSelfTest()
+        try compoundWindingSelfTest()
     }
 
     private static func variableSelfTest() throws {
@@ -639,6 +679,78 @@ enum FontLabTrueTypeExporter {
         }
     }
 
+    private static func compoundWindingSelfTest() throws {
+        var project = FontLabProject(name: "Independent fill export", characters: ["A", "O"])
+        let left = FontLabVectorMath.rectangle(CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.6), ellipse: false)
+        var right = FontLabVectorMath.rectangle(CGRect(x: 0.4, y: 0.2, width: 0.5, height: 0.6), ellipse: false)
+        right.reverse()
+        let containedPen = FontLabStroke(points: [.init(x: 0.45, y: 0.5), .init(x: 0.55, y: 0.5)], width: 0.05)
+        project.glyphs["A"]?.strokes = [FontLabStroke(vectorPaths: [left]), FontLabStroke(vectorPaths: [right]), containedPen]
+        let outer = FontLabVectorMath.rectangle(CGRect(x: 0.1, y: 0.2, width: 0.8, height: 0.6), ellipse: false)
+        var inner = FontLabVectorMath.rectangle(CGRect(x: 0.3, y: 0.35, width: 0.4, height: 0.3), ellipse: false)
+        inner.reverse()
+        project.glyphs["O"]?.strokes = [FontLabStroke(vectorPaths: [outer, inner])]
+
+        func matchesPreview(_ data: Data, project: FontLabProject, weight: Int? = nil) throws {
+            let base = CTFontCreateWithGraphicsFont(CGFont(CGDataProvider(data: data as CFData)!)!, 1_000, nil, nil)
+            let font: CTFont
+            if let weight {
+                let variation: [NSNumber: NSNumber] = [NSNumber(value: 0x77676874): NSNumber(value: weight)]
+                let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontVariationAttribute: variation] as CFDictionary)
+                font = CTFontCreateCopyWithAttributes(base, 1_000, nil, descriptor)
+            } else { font = base }
+            for character in project.characters {
+                let glyph = project.glyphs[character]!
+                var code = character.utf16.first!, glyphID: CGGlyph = 0
+                guard CTFontGetGlyphsForCharacters(font, &code, &glyphID, 1), let actual = CTFontCreatePathForGlyph(font, glyphID, nil) else {
+                    throw ExportError.malformedFont("independent fill fixture did not render")
+                }
+                let strokes = glyph.strokes.compactMap { stroke -> CGPath? in
+                    guard let paths = stroke.vectorPaths else { return nil }
+                    let compound = CGMutablePath(); paths.forEach { compound.addPath($0.cgPath) }; return compound
+                }
+                var intersection = 0, union = 0
+                for y in 0..<96 { for x in 0..<96 {
+                    let px = (Double(x) + 0.5) / 96, py = (Double(y) + 0.5) / 96
+                    // The test pen is entirely inside the rectangles, so the
+                    // source-stroke union is represented by these vector fills.
+                    let expected = strokes.contains { $0.contains(CGPoint(x: px * 1000, y: py * 1000)) }
+                    let rendered = actual.contains(CGPoint(x: (glyph.leftSideBearing + px * glyph.resolvedDesignWidth) * 1000,
+                                                          y: (py - project.metrics.baseline) * 1000))
+                    if expected && rendered { intersection += 1 }
+                    if expected || rendered { union += 1 }
+                } }
+                guard union > 0, Double(intersection) / Double(union) > 0.995 else {
+                    throw ExportError.malformedFont("\(character) changed independent stroke fill or a counter in native TrueType rendering")
+                }
+            }
+            guard let maxp = tableData("maxp", in: data), readUInt16(maxp, 6) <= 48 else {
+                throw ExportError.malformedFont("simple compound normalization produced excessive export points")
+            }
+        }
+        let original = project
+        let staticArtifact = try artifact(for: project)
+        try matchesPreview(staticArtifact.data, project: project)
+        project.addMaster(name: "Bold", weight: 700)
+        project.glyphs["A"]?.strokes[0].vectorPaths?[0].nodes[0].point.x += 0.03
+        let variable = try variableArtifact(for: project)
+        try matchesPreview(variable.data, project: original, weight: 400)
+        try matchesPreview(variable.data, project: project, weight: 700)
+
+        var ambiguous = project
+        let first = FontLabVectorMath.rectangle(CGRect(x: 0.05, y: 0.25, width: 0.25, height: 0.5), ellipse: false)
+        var second = FontLabVectorMath.rectangle(CGRect(x: 0.65, y: 0.25, width: 0.25, height: 0.5), ellipse: false)
+        second.reverse()
+        let mixed = FontLabGlyph(character: "A", strokes: [FontLabStroke(vectorPaths: [first, second])])
+        ambiguous.glyphs["A"] = mixed
+        ambiguous.masters?[0].glyphs["A"] = mixed
+        do {
+            _ = try variableArtifact(for: ambiguous)
+            throw ExportError.malformedFont("ambiguous compound winding was accepted for variable interpolation")
+        } catch ExportError.incompatibleMasters { }
+        print("PASS: native static and variable independent stroke fills, reversed outer contours, counters, pen overlap and bounded export points.")
+    }
+
     // MARK: - Character selection
 
     private struct MappedGlyph {
@@ -718,7 +830,14 @@ enum FontLabTrueTypeExporter {
         let sampled = try sampledStrokes(glyph)
         var outlineContours: [[TTPoint]] = []
         for stroke in sampled.strokes {
-            outlineContours.append(contentsOf: contours(for: stroke, metrics: metrics, leftBearing: glyph.leftSideBearing, width: glyph.resolvedDesignWidth * Double(unitsPerEm)))
+            let raw = contours(for: stroke, metrics: metrics, leftBearing: glyph.leftSideBearing, width: glyph.resolvedDesignWidth * Double(unitsPerEm))
+            // The preview fills each stroke independently. Canonical winding
+            // makes their combined TrueType fill a union, even when a user has
+            // reversed an outer contour. Variable records are paired below and
+            // must retain corresponding points instead of normalizing them.
+            if !retainContours, stroke.contours != nil || stroke.vectorPaths != nil {
+                outlineContours.append(contentsOf: try canonicalFilledContours(raw))
+            } else { outlineContours.append(contentsOf: raw) }
         }
         let advance = Int((glyph.resolvedDesignWidth * Double(unitsPerEm) + (glyph.leftSideBearing + glyph.rightSideBearing) * Double(unitsPerEm)).rounded())
         return (try glyphRecord(contours: outlineContours, advanceWidth: advance, retainContours: retainContours), sampled.removedPointCount)
@@ -789,14 +908,18 @@ enum FontLabTrueTypeExporter {
         let originalCount = nonempty.reduce(0) { $0 + $1.points.count }
         guard originalCount > maximumSamplesPerGlyph else { return SampledStrokes(strokes: filled + nonempty, removedPointCount: 0) }
 
-        let mandatory = nonempty.count
+        // Keep both ends of every line; a single-sample stroke is a deliberate
+        // dot. If even those cannot fit, fail instead of silently erasing lines.
+        let minimumBudgets = nonempty.map { min(2, $0.points.count) }
+        let mandatory = minimumBudgets.reduce(0, +)
+        guard mandatory <= maximumSamplesPerGlyph else { throw ExportError.glyphTooComplex(glyph.character) }
         let extraCapacity = maximumSamplesPerGlyph - mandatory
-        let availableExtra = nonempty.reduce(0) { $0 + max(0, $1.points.count - 1) }
-        var budgets = nonempty.map { _ in 1 }
+        let availableExtra = originalCount - mandatory
+        var budgets = minimumBudgets
         var assignedExtra = 0
         if availableExtra > 0 {
             for index in nonempty.indices {
-                let available = max(0, nonempty[index].points.count - 1)
+                let available = nonempty[index].points.count - minimumBudgets[index]
                 let share = min(available, Int((Double(extraCapacity) * Double(available) / Double(availableExtra)).rounded(.down)))
                 budgets[index] += share
                 assignedExtra += share
@@ -985,6 +1108,57 @@ enum FontLabTrueTypeExporter {
         return cleaned.count >= 3 ? cleaned : nil
     }
 
+    private static func polygonPath(_ contours: [[TTPoint]]) -> CGPath {
+        let path = CGMutablePath()
+        for contour in contours {
+            guard let first = contour.first else { continue }
+            path.move(to: CGPoint(x: first.x, y: first.y))
+            for point in contour.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: point.y)) }
+            path.closeSubpath()
+        }
+        return path
+    }
+
+    private static func canonicalFilledContours(_ contours: [[TTPoint]]) throws -> [[TTPoint]] {
+        var output: [[TTPoint]] = [], current: [TTPoint] = [], unexpectedCurve = false
+        polygonPath(contours).normalized(using: .winding).applyWithBlock { pointer in
+            let element = pointer.pointee
+            switch element.type {
+            case .moveToPoint: current = [TTPoint(x: Int(element.points[0].x.rounded()), y: Int(element.points[0].y.rounded()))]
+            case .addLineToPoint: current.append(TTPoint(x: Int(element.points[0].x.rounded()), y: Int(element.points[0].y.rounded())))
+            case .closeSubpath:
+                // Quartz normalizes outer polygons counterclockwise. Reverse
+                // the whole compound to match our clockwise pen outlines;
+                // the relative winding of every counter is retained.
+                if let contour = cleanContour(current) { output.append(Array(contour.reversed())) }
+                current = []
+            default: unexpectedCurve = true
+            }
+        }
+        guard !unexpectedCurve else { throw ExportError.malformedFont("polygon fill normalization produced an unsupported curve") }
+        return output
+    }
+
+    /// A variable compound may be reversed as a whole without changing point
+    /// correspondence. Disconnected outer regions with conflicting direction
+    /// require boolean normalization, so leave those to static export.
+    private static func reverseVariableCompound(_ contours: [[TTPoint]], character: String) throws -> Bool {
+        let paths = contours.map { polygonPath([$0]) }
+        let roots = contours.indices.filter { index in
+            guard let first = contours[index].first else { return false }
+            return !contours.indices.contains { other in
+                other != index && paths[other].boundingBoxOfPath.contains(paths[index].boundingBoxOfPath) &&
+                    paths[other].contains(CGPoint(x: first.x, y: first.y))
+            }
+        }
+        let areas = roots.map { signedArea(contours[$0]) }
+        guard let direction = areas.first, direction != 0,
+              areas.allSatisfy({ $0 != 0 && ($0 > 0) == (direction > 0) }) else {
+            throw ExportError.incompatibleMasters("\(character) has mixed outer contour directions within an outline part. Match the outer winding in both masters, or export static fonts.")
+        }
+        return direction > 0
+    }
+
     private static func compatibleGlyphRecords(_ lowerSource: FontLabGlyph, _ upperSource: FontLabGlyph, metrics: FontLabMetrics) throws -> (GlyphRecord, GlyphRecord) {
         let character = lowerSource.character
         guard lowerSource.strokes.count == upperSource.strokes.count else {
@@ -1020,6 +1194,18 @@ enum FontLabTrueTypeExporter {
                 }
             } else {
                 throw ExportError.incompatibleMasters("\(character) mixes different outline types between masters.")
+            }
+        }
+        for index in lower.strokes.indices where lower.strokes[index].contours != nil {
+            let a = contours(for: lower.strokes[index], metrics: metrics, leftBearing: lower.leftSideBearing, width: lower.resolvedDesignWidth * Double(unitsPerEm))
+            let b = contours(for: upper.strokes[index], metrics: metrics, leftBearing: upper.leftSideBearing, width: upper.resolvedDesignWidth * Double(unitsPerEm))
+            let reverse = try reverseVariableCompound(a, character: character)
+            _ = try reverseVariableCompound(b, character: character)
+            // Use the SAME reversal in both masters. Independently repairing
+            // their winding would hide incompatible point order.
+            if reverse {
+                lower.strokes[index].contours = lower.strokes[index].contours?.map { Array($0.reversed()) }
+                upper.strokes[index].contours = upper.strokes[index].contours?.map { Array($0.reversed()) }
             }
         }
         let a = try glyphRecord(lower, metrics: metrics, retainContours: true).record

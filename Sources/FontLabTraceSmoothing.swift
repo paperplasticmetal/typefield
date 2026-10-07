@@ -52,17 +52,24 @@ enum FontLabTraceSmoothing {
             if let accepted { candidates[index] = accepted; changed = changed || accepted.nodes.count < original.count || accepted.nodes.contains { $0.smooth } }
         }
         guard changed else { throw Failure.unsafe }
-        let before = paths.filter(\.closed).map { $0.flattened(tolerance: 0.000001).map(physical) }
-        let after = candidates.filter(\.closed).map { $0.flattened(tolerance: 0.000001).map(physical) }
-        guard after.reduce(0, { $0 + $1.count }) <= 6000, !crossings(after) else { throw Failure.unsafe }
+        let groups = FontLabVectorMath.pathGroups(in: glyph)
+        let before = paths.map { $0.closed ? $0.flattened(tolerance: 0.000001).map(physical) : [] }
+        let after = candidates.map { $0.closed ? $0.flattened(tolerance: 0.000001).map(physical) : [] }
+        guard paths.indices.filter({ paths[$0].closed }).reduce(0, { $0 + after[$1].count }) <= 6000 else { throw Failure.unsafe }
         let beforePaths = before.map(polygonPath), afterPaths = after.map(polygonPath)
-        for i in before.indices { for j in before.indices where i != j {
-            guard let p = before[i].first, let q = after[i].first,
-                  beforePaths[j].contains(CGPoint(x:p.x,y:p.y)) == afterPaths[j].contains(CGPoint(x:q.x,y:q.y)) else { throw Failure.unsafe }
-        } }
+        // Separate strokes paint independently. Their outlines may overlap;
+        // topology checks apply within each compound fill, just as rendering.
+        for group in groups {
+            let indices = paths.indices.filter { paths[$0].closed && group.contains(paths[$0].id) }
+            guard !crossings(indices.map { after[$0] }) else { throw Failure.unsafe }
+            for i in indices { for j in indices where i != j {
+                guard let p = before[i].first, let q = after[i].first,
+                      beforePaths[j].contains(CGPoint(x:p.x,y:p.y)) == afterPaths[j].contains(CGPoint(x:q.x,y:q.y)) else { throw Failure.unsafe }
+            } }
+        }
         // Near-touching boundaries can change a large filled region without
         // a proper segment crossing. Check filled ink as well as boundaries.
-        guard silhouetteAgreement(paths, candidates) >= (units > 3 ? 0.96 : 0.975) else { throw Failure.unsafe }
+        guard silhouetteAgreement(paths, candidates, groups: groups) >= (units > 3 ? 0.96 : 0.975) else { throw Failure.unsafe }
         return FontLabVectorMath.replacingPaths(in: glyph, with: candidates)
     }
     /// Iterative RDP avoids recursion overflow on adversarial sawtooth paths.
@@ -208,24 +215,32 @@ enum FontLabTraceSmoothing {
         return FontLabVectorPath(nodes:nodes,closed:true)
     }
 
-    private static func silhouetteAgreement(_ before: [FontLabVectorPath], _ after: [FontLabVectorPath]) -> Double {
-        let a=CGMutablePath(),b=CGMutablePath()
-        before.filter(\.closed).forEach {a.addPath($0.cgPath)}
-        after.filter(\.closed).forEach {b.addPath($0.cgPath)}
+    private static func silhouetteAgreement(_ before: [FontLabVectorPath], _ after: [FontLabVectorPath], groups: [[UUID]]) -> Double {
+        func compounds(_ paths: [FontLabVectorPath]) -> [CGPath] {
+            groups.map { group in
+                let compound = CGMutablePath()
+                paths.filter { $0.closed && group.contains($0.id) }.forEach { compound.addPath($0.cgPath) }
+                return compound
+            }.filter { !$0.isEmpty }
+        }
+        let a = compounds(before), b = compounds(after)
+        let aBounds = a.reduce(CGRect.null) { $0.union($1.boundingBoxOfPath) }
+        let bBounds = b.reduce(CGRect.null) { $0.union($1.boundingBoxOfPath) }
         var agreement=1.0
         // Test both the original frame and the union frame. A tiny bounds
         // change must not move the sampling grid away from a damaged region.
-        for box in [a.boundingBoxOfPath, a.boundingBoxOfPath.union(b.boundingBoxOfPath)] {
+        for box in [aBounds, aBounds.union(bBounds)] {
             guard box.width > 0,box.height > 0 else {return 0}
             // Rasterize once per outline instead of performing 25,600
             // point-in-path scans through every original polygon segment.
-            func mask(_ path: CGPath) -> [UInt8] {
+            func mask(_ paths: [CGPath]) -> [UInt8] {
                 var bytes=[UInt8](repeating:0,count:160*160)
                 bytes.withUnsafeMutableBytes { buffer in
                     guard let context=CGContext(data:buffer.baseAddress,width:160,height:160,bitsPerComponent:8,bytesPerRow:160,space:CGColorSpaceCreateDeviceGray(),bitmapInfo:CGImageAlphaInfo.none.rawValue) else { return }
                     context.setShouldAntialias(false);context.setAllowsAntialiasing(false)
                     context.scaleBy(x:160/box.width,y:160/box.height);context.translateBy(x:-box.minX,y:-box.minY)
-                    context.setFillColor(gray:1,alpha:1);context.addPath(path);context.fillPath()
+                    context.setFillColor(gray:1,alpha:1)
+                    for path in paths { context.addPath(path); context.fillPath() }
                 }
                 return bytes
             }
