@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.59.8 (2026-10-06)
+
+- Route in-app feedback and bug reports to the separate public Typefield issue tracker so beta testers do not need access to the source repository.
+- Prepare a public beta DMG for direct download from the website and a separate GitHub release.
+
 ## 0.59.7 (2026-10-06)
 
 - Add Feedback and Report a Bug links in the app for invited beta testers. Reports open the private Typefield GitHub issue templates.

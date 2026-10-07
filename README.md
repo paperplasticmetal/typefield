@@ -4,11 +4,27 @@
 
 Native macOS workspace for organizing fonts, exploring typography in typeboards, and drawing editable letterforms.
 
-**Current local build: 0.59.4 (build 84).** The five default Spaces canvases have distinct, realistic compositions with refined compact details. Saved text and section edits remain intact. New canvases start white, and Library grid previews align within each row. App Store submission is in preparation; this is not a distribution-signed, notarized or App Store-approved release. See [current QA](docs/QA_2026-10-01_0.59.4.md).
+## Download the beta
 
-**Local development build:** run `./install-local.sh` to build, check, and install `/Applications/Typefield.app`. Public download and TestFlight distribution are being prepared.
+**Typefield 0.59.8 beta 1 (build 88)** is a free beta for Apple silicon Macs running macOS 13 or newer. No account, activation key, or purchase is required.
 
-**First run:** A four-step tour introduces Library, Spaces and Letterform Editor in about a minute, then offers direct actions to browse fonts, open Spaces or draw a letter. Skip it at any time, or reopen it from **Help → Getting Started Tour…** or **About Typefield**. About also includes local-storage, network and font/artwork rights guidance.
+[Download from the website](https://typefield.pages.dev/download/) | [Download from GitHub](https://github.com/paperplasticmetal/typefield/releases/download/v0.59.8-beta.1/Typefield-0.59.8-beta.dmg) | [Release notes](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.8-beta.1)
+
+The [source repository](https://github.com/paperplasticmetal/typefield) contains the app and build scripts; see [License](#license) for reuse terms.
+
+1. Open the downloaded `.dmg` and drag **Typefield** into **Applications**.
+2. Eject the disk image, then open Typefield from Applications. If macOS blocks the first launch, open **System Settings → Privacy & Security** and choose **Open Anyway** for Typefield.
+3. Take the four-step tour to explore Library, Spaces and Letterform Editor. You can skip it and reopen it from **Help → Getting Started Tour…**.
+
+See [build and verification status](docs/STATUS.md) for completed checks and remaining device coverage.
+
+Share your experience in the [beta feedback tracker](https://github.com/paperplasticmetal/typefield-feedback/issues/new?template=beta_feedback.md), [report a bug](https://github.com/paperplasticmetal/typefield-feedback/issues/new?template=bug_report.md), or [browse existing reports](https://github.com/paperplasticmetal/typefield-feedback/issues). Redact personal paths and data; do not attach proprietary font files.
+
+## Explore Typefield
+
+- **Library:** Browse and organize installed fonts and selected folders; compare families, inspect styles and glyphs, and build collections and saved searches.
+- **Spaces:** Try fonts in editable website, product UI, editorial, poster and type-system canvases; compare directions and export specifications or PDFs.
+- **Letterform Editor:** Draw or import artwork, edit Bézier outlines and spacing, then export finished glyphs as SVG or a static TrueType font.
 
 **Developer handoff:** In a typeboard, choose **Export → Developer handoff…** for all its canvases, or use the space actions menu to export the whole project. One folder contains `@font-face` declarations, axes/features, CSS variables and suggested fluid `clamp()` scales, fallback stacks, preload examples, font-display guidance, Tailwind v3/v4 setup, versioned token JSON, SwiftUI and Compose starter definitions, and a standalone printable HTML specimen. Font binaries are never bundled: supply licensed web/app assets at the manifest paths. The README documents defaults and native integration work; the specimen is a typography reference, not a pixel-perfect layout export.
 
@@ -77,11 +93,17 @@ Search accepts `#tag`, `#!tag`, and quoted names such as `#"Client Work"`. Typin
 
 **Figma round trip:** Use the typeboard's **Export** menu to create an editable Figma package. The bundled local plugin can also export selected Figma frames; import that JSON using **Spaces → Import → Figma typeboard…**. Imported text layers can be edited independently and moved directly on the canvas. Selected simple shapes support fill, corner radius, stroke color, stroke opacity and stroke width. Fonts must be available on each side. Native `.fig` files, live sync and full Figma fidelity are not supported; unsupported elements/settings are reported. See [bridge instructions](Resources/FigmaImport/README.md) and [interaction checks](docs/INTERACTION_AUDIT.md).
 
-This is not complete Typeface feature parity. Native Adobe-file decoding and live sync, production-compatible master interpolation, advanced GPOS kerning export, opt-in model-backed font generation, a published Figma plug-in, document-triggered activation, importing third-party collection databases, screenshot-based font matching and cloud team collaboration are not implemented. Session activation is verified in the local development build; App Store sandbox verification remains outstanding.
+Current limits include native Adobe-file decoding and live sync, production-compatible master interpolation, advanced GPOS kerning export, model-backed font generation, a published Figma plug-in, document-triggered activation, third-party collection database import, screenshot-based font matching and cloud team collaboration. Session activation is verified in the local development build; App Store sandbox verification remains outstanding.
 
-## Build and run
+### Settings and icon designs
 
-Requirements: an Apple Silicon Mac, full **Xcode 26 or later** selected as the active developer directory, and its command-line tools. The app declares macOS 13 as its minimum; older-OS testing remains outstanding. Intel binaries are not shipped.
+Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The workspace uses Porcelain's neutral light and dark surfaces. Choose Porcelain, Turmeric, Indigo, Neem, Jamun, or Rose as an accent for controls and selections. The App Icon pane offers six designs: clean Porcelain, layered Paper Play, typographic Type Study, pen-drawn Ink Sketch, textured Chalkboard, and dimensional Pressed Type. Each has one preview. The Dock icon can follow the app or stay Light/Dark independently of app and macOS appearance. Selections persist; Finder uses the bundled Porcelain light icon. Accent colors do not recolor font previews or saved typeboards.
+
+Icon artwork is generated from native type outlines by `scripts/make-icon.swift`; its header documents the compilation command. The same renderer powers Settings previews and the Dock.
+
+## Build from source
+
+Requirements: an Apple silicon Mac running macOS 13 or newer, full **Xcode 26 or later** selected as the active developer directory, and its command-line tools. Intel binaries are not shipped.
 
 ```sh
 git clone https://github.com/paperplasticmetal/typefield.git
@@ -90,12 +112,11 @@ cd typefield
 open /Applications/Typefield.app
 ```
 
-The installer builds and verifies an ad-hoc-signed local app, then updates the stable `/Applications/Typefield.app` copy. This avoids accumulating numbered app bundles; opening Typefield from Applications launches the latest installed build. Pass another destination path to `install-local.sh` when needed. No paid Apple account is required for this local build. To run the checks again:
-
-Production workflow: after each completed fix or feature, run the relevant checks, commit its source, tests and release notes, and push the commit to both the personal canonical repository (`origin/main`) and the private Regular Expression collaboration repository (`regex/main`). This working copy configures `origin` with both push destinations so an ordinary push updates both. Fetch and review `regex` before integrating team work; never force-push over collaborators. The canonical local app remains `/Applications/Typefield.app`; an unpushed local build is not the release reference.
+The installer builds, runs the native checks, and installs an ad hoc signed local app at `/Applications/Typefield.app`. Pass another destination path to `install-local.sh` if needed. No paid Apple account is required for a local build. To build and test without installing, run:
 
 ```sh
-dist/Typefield.app/Contents/MacOS/Typefield --self-test
+bash build.sh
+node tests/figma-import.test.js
 ```
 
 For Xcode, open `Typefield.xcodeproj` and select the shared **Typefield** scheme. Build without distribution credentials:
@@ -136,10 +157,4 @@ The workflow badge reflects GitHub CI. Local checks and manual testing have narr
 
 ## License
 
-No open-source license has been granted at this time. All rights are reserved by the respective copyright holders, except as permitted by applicable law and GitHub's terms. Public visibility is not permission to redistribute the app or reuse its code. Font files retain their own licenses; no font binaries are bundled in this repository.
-
-### Settings and icon designs
-
-Open **Typefield → Settings…** (⌘,) or the Library sidebar gear. The workspace uses Porcelain's neutral light and dark surfaces. Choose Porcelain, Turmeric, Indigo, Neem, Jamun, or Rose as an accent for controls and selections. The App Icon pane offers six designs: clean Porcelain, layered Paper Play, typographic Type Study, pen-drawn Ink Sketch, textured Chalkboard, and dimensional Pressed Type. Each has one preview. The Dock icon can follow the app or stay Light/Dark independently of app and macOS appearance. Selections persist; Finder uses the bundled Porcelain light icon. Accent colors do not recolor font previews or saved typeboards.
-
-Icon artwork is generated from native type outlines by `scripts/make-icon.swift`; its header documents the compilation command. The same renderer powers Settings previews and the Dock.
+No open-source license has been granted at this time. All rights are reserved by the respective copyright holders, except as permitted by applicable law and GitHub's terms. Public visibility is not permission to redistribute the app or reuse its code. The repository includes one Typefield-generated launch fixture, [`Ink.ttf`](marketing/launch/assets/v3/Ink.ttf); it is not bundled in the beta app. Fonts you import retain their own licenses.
