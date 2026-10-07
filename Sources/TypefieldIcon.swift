@@ -73,6 +73,7 @@ enum TypefieldIcon {
         value.countLimit = 96
         return value
     }()
+    private static var appliedDockKey: String?
 
     private static func c(_ hex: String, _ alpha: CGFloat = 1) -> NSColor {
         TypefieldPalette.color(hex).withAlphaComponent(alpha)
@@ -395,12 +396,24 @@ enum TypefieldIcon {
         let defaults = UserDefaults.standard
         let palette = TypefieldPalette.resolve(defaults.string(forKey: "typefield.iconPalette"))
         let dark = isDark(mode: defaults.string(forKey: "typefield.iconAppearance") ?? "Automatic")
-        let icon = NSImage(size: NSSize(width: 512, height: 512))
-        for size in [16, 32, 64, 128, 256, 512, 1024] {
-            if let data = image(palette: palette, dark: dark, size: size).tiffRepresentation,
-               let rep = NSBitmapImageRep(data: data) { rep.size = icon.size; icon.addRepresentation(rep) }
+        let key = "dock-\(palette.rawValue)-\(dark)"
+        // Several windows observe appearance changes; only the effective icon
+        // choice needs to rebuild or update the Dock.
+        guard appliedDockKey != key else { return }
+        let icon: NSImage
+        if let cached = cache.object(forKey: key as NSString) {
+            icon = cached
+        } else {
+            icon = NSImage(size: NSSize(width: 512, height: 512))
+            let sizes = [16, 32, 64, 128, 256, 512, 1024]
+            for size in sizes {
+                if let data = image(palette: palette, dark: dark, size: size).tiffRepresentation,
+                   let rep = NSBitmapImageRep(data: data) { rep.size = icon.size; icon.addRepresentation(rep) }
+            }
+            cache.setObject(icon, forKey: key as NSString, cost: sizes.reduce(0) { $0 + $1 * $1 * 4 })
         }
         NSApp.applicationIconImage = icon
+        appliedDockKey = key
     }
 }
 

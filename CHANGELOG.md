@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — onboarding refinement
+
+- Replace the text-only tour with a typography playground: change typefaces, try your own words in layouts, and reshape a letter with a draggable point or accessible slider.
+- Add short, Reduce Motion-aware transitions, direct step navigation, and a smoother handoff into docked or detached workspaces.
+- Match sidebar shortcut motion to its buttons, remove duplicate About-sheet code, and avoid rebuilding an unchanged Dock icon.
+
 ## 0.59.13 (2026-10-07)
 
 - Separate Select, Marquee, Text and Canvas interaction tools. Canvas outlines and resize handles appear only after explicit boundary selection in Canvas mode.

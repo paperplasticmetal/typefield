@@ -168,6 +168,7 @@ private struct EditorWindowRoot: View {
     @AppStorage("appearance") private var appearance = "Dark"
     @AppStorage("typefield.palette") private var palette = "neutral"
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var editorToolbar: some View {
         HStack(spacing: 8) {
             Menu("View") {
@@ -204,7 +205,7 @@ private struct EditorWindowRoot: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
             guard (NSApp.delegate as? AppDelegate)?.activeWorkspace == mode, event.object as? String == "toggleSidebar" else { return }
             if mode == .spaces && focusCanvas { NotificationCenter.default.post(name: Notification.Name("TypefieldCanvasFocus"), object: nil) }
-            else { collapsed.toggle() }
+            else { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { collapsed.toggle() } }
         }
     }
 }

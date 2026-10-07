@@ -711,7 +711,9 @@ struct ContentView: View {
     @State var showColors = false
     @State var showTagFilters = false
     @State var showDiscovery = false
-    @State private var guide: TypefieldGuide?
+    @State private var showTour = false
+    @State private var pendingTourWorkspace: WorkspaceMode?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("typefield.onboardingComplete") private var onboardingComplete = false
     @AppStorage(WorkspaceSidebarPreference.key) var sidebarCollapsed = false
     @FocusState private var searchFocused: Bool
@@ -759,18 +761,19 @@ struct ContentView: View {
             case "list": grid = false
             case "grid": grid = true
             case "toggleSidebar":
-                if (NSApp.delegate as? AppDelegate)?.activeWorkspace == .library { sidebarCollapsed.toggle() }
-            case "tour": guide = .tour
-            case "about": guide = .about
-            case "shortcuts": guide = .shortcuts
+                if (NSApp.delegate as? AppDelegate)?.activeWorkspace == .library {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { sidebarCollapsed.toggle() }
+                }
+            case "tour": showTour = true
             default: break
             }
         }
         .onChange(of: appearance) { value in NSApp.appearance = value == "System" ? nil : NSAppearance(named: value == "Dark" ? .darkAqua : .aqua); TypefieldIcon.apply() }
         .onAppear {
             library.requiredText = preview == "{family}" ? "" : preview
-            if !onboardingComplete { DispatchQueue.main.async { guide = .tour } }
+            presentInitialTourIfReady()
         }
+        .onChange(of: library.message) { _ in presentInitialTourIfReady() }
         .onChange(of: preview) { value in library.requiredText = value == "{family}" ? "" : value; if value == "{family}" { library.requireCoverage = false } }
         .sheet(item: $licenseFace) { FontLicenseSourcesView(face: $0) }
         .sheet(isPresented: $library.showTools) { LibraryToolsView(library: library) }
@@ -778,14 +781,15 @@ struct ContentView: View {
         .sheet(item: $library.typeboardDraft) { draft in TypeboardRoleMapper(library: library, draft: draft) }
         .sheet(isPresented: $showDiscovery) { FontDiscoveryView(library: library, eligibleFamilies: library.filtered, preview: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
         .sheet(item: $library.detail) { family in DetailView(library: library, family: family, preview: preview == "{family}" ? family.name : preview, size: size) }
-        .sheet(item: $guide) { destination in
-            switch destination {
-            case .tour: TypefieldTour(dismiss: { onboardingComplete = true; guide = nil }, open: { destination in
-                onboardingComplete = true; library.workspace = destination; guide = nil
-            })
-            case .about: TypefieldAbout(dismiss: { guide = nil }, showTour: { guide = .tour }, showShortcuts: { guide = .shortcuts })
-            case .shortcuts: TypefieldShortcutReference { guide = nil }
+        .sheet(isPresented: $showTour, onDismiss: {
+            onboardingComplete = true
+            if let destination = pendingTourWorkspace {
+                pendingTourWorkspace = nil
+                library.workspace = destination
+                if windows.detached.contains(destination) { windows.detach(destination) }
             }
+        }) {
+            TypefieldTour(dismiss: { finishTour() }, open: { finishTour($0) })
         }
         .alert("New collection", isPresented: $showCollection) {
             TextField("Collection name", text: $collectionName)
@@ -793,6 +797,19 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { collectionName = "" }
         } message: { Text("Add families through their ••• menu or by right-clicking a preview.") }
         .alert("Typefield", isPresented: Binding(get: { !library.message.isEmpty }, set: { if !$0 { library.message = "" } })) { Button("OK") { library.message = "" } } message: { Text(library.message) }
+    }
+    private func finishTour(_ destination: WorkspaceMode? = nil) {
+        // Complete immediately so a late startup notification cannot reopen the
+        // tour during dismissal. Mount the chosen workspace in onDismiss above.
+        onboardingComplete = true
+        pendingTourWorkspace = destination
+        showTour = false
+    }
+    private func presentInitialTourIfReady() {
+        guard !onboardingComplete, !showTour, library.message.isEmpty,
+              !library.showTools, !library.showCompare, library.detail == nil,
+              library.typeboardDraft == nil, licenseFace == nil else { return }
+        showTour = true
     }
     var topControls: some View {
         VStack(spacing: 0) {
@@ -1295,125 +1312,6 @@ struct Axis: Identifiable {
     let min: Double
     let max: Double
     let defaultValue: Double
-}
-
-private enum TypefieldGuide: String, Identifiable {
-    case tour, about, shortcuts
-    var id: String { rawValue }
-}
-
-private struct TourPage {
-    let symbol: String
-    let eyebrow: String
-    let title: String
-    let detail: String
-    let action: String
-    static let all: [TourPage] = [
-        .init(symbol: "square.grid.2x2", eyebrow: "Welcome", title: "Meet Typefield", detail: "Your fonts, type ideas, and letterforms live together here. This quick tour takes about a minute. You can skip it and return from Help at any time.", action: "Your work stays on this Mac unless you choose to export it."),
-        .init(symbol: "textformat", eyebrow: "1. Library", title: "Find the right font", detail: "Browse fonts already on your Mac, preview your own words, filter by style or language, and save favorites and collections. Add a folder when you want Typefield to watch your own font files.", action: "Start with a preview, then shortlist a few families."),
-        .init(symbol: "square.stack.3d.up", eyebrow: "2. Spaces", title: "Try type in context", detail: "Turn a shortlist into a typeboard. Arrange live text and shapes, compare directions, and tune roles such as Heading and Body. Export a PDF, Figma layout, Adobe bridge, or developer handoff when you are ready.", action: "Choose Spaces in the sidebar to make a typeboard."),
-        .init(symbol: "pencil.and.outline", eyebrow: "3. Letterform Editor", title: "Draw your own letters", detail: "Sketch or edit vector letters, import artwork you have rights to use, refine spacing, and preview words. You can export SVG outlines or a font built from your own glyphs.", action: "Choose Letterform Editor in the sidebar to begin.")
-    ]
-}
-
-private struct TypefieldTour: View {
-    let dismiss: () -> Void
-    let open: (WorkspaceMode) -> Void
-    @State private var index = 0
-    private var page: TourPage { TourPage.all[index] }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Typefield").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-                Spacer()
-                Button("Skip tour", action: dismiss).buttonStyle(.plain).foregroundStyle(.secondary).keyboardShortcut(.cancelAction)
-            }
-            Spacer(minLength: 18)
-            Image(systemName: page.symbol)
-                .font(.system(size: 42, weight: .light))
-                .foregroundStyle(ShelfPalette.indiaYellow)
-                .frame(width: 88, height: 88)
-                .background(ShelfPalette.indiaYellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 24))
-                .accessibilityHidden(true)
-            Text(page.eyebrow).font(.system(size: 13, weight: .medium)).foregroundStyle(ShelfPalette.indiaYellow).padding(.top, 26)
-            Text(page.title).font(.system(size: 36, weight: .semibold, design: .rounded)).padding(.top, 8)
-            Text(page.detail).font(.system(size: 16)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 14)
-            Label(page.action, systemImage: "sparkle")
-                .font(.system(size: 13)).foregroundStyle(.primary)
-                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                .background(ShelfPalette.indiaYellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-                .padding(.top, 24)
-            Spacer(minLength: 24)
-            HStack(spacing: 7) {
-                ForEach(TourPage.all.indices, id: \.self) { position in
-                    Capsule().fill(position == index ? ShelfPalette.indiaYellow : Color.secondary.opacity(0.3))
-                        .frame(width: position == index ? 24 : 7, height: 7)
-                        .accessibilityLabel("Step \(position + 1) of \(TourPage.all.count)")
-                }
-                Spacer()
-                if index > 0 { Button("Back") { index -= 1 }.buttonStyle(.bordered) }
-                if index == TourPage.all.count - 1 {
-                    Button("Browse fonts") { open(.library) }.buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
-                    Button("Open Spaces") { open(.spaces) }.buttonStyle(.bordered)
-                    Button("Draw a letter") { open(.fontLab) }.buttonStyle(.bordered)
-                } else {
-                    Button("Next") { index += 1 }.buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
-                }
-            }
-        }
-        .padding(32)
-        .frame(width: 610, height: 490)
-        .accessibilityIdentifier("typefield-onboarding")
-    }
-}
-
-private struct TypefieldAbout: View {
-    let dismiss: () -> Void
-    let showTour: () -> Void
-    let showShortcuts: () -> Void
-    private var version: String {
-        "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))"
-    }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack(spacing: 18) {
-                        TypefieldIconPreview(size: 74)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Typefield").font(.system(size: 30, weight: .semibold, design: .rounded))
-                            Text(version).foregroundStyle(.secondary)
-                            Text("A place for fonts, typeboards, and your own letterforms.").font(.caption)
-                        }
-                    }
-                    Divider()
-                    Text("Privacy & permissions").font(.headline)
-                    Text("Your library, collections, projects, and previews are stored on this Mac. Typefield has no account, analytics, ads, or tracking, and does not upload your fonts or projects.")
-                    Text("Folder access is granted through the macOS picker. Browsing or downloading Google Fonts contacts GitHub for public previews, font files, and licenses; GitHub receives normal connection data. Exports go only where you choose.")
-                    Text("Use or export only fonts and artwork you have the rights to use. Typefield cannot verify redistribution, web embedding, or commercial licensing. Review each font’s license before sharing a font, typeboard, or developer handoff.")
-                    Text("Figma and Adobe handoffs are local files that you import or run yourself. They do not include font binaries.").foregroundStyle(.secondary)
-                    Divider()
-                    Text("Beta feedback").font(.headline)
-                    Text("Tell us what worked, what was confusing, or what went wrong.")
-                    HStack(spacing: 18) {
-                        Link("Send Feedback", destination: TypefieldSupportLinks.feedback)
-                        Link("Report a Bug", destination: TypefieldSupportLinks.bugReport)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            HStack {
-                Button("Take the Tour", action: showTour).buttonStyle(.bordered)
-                Button("Keyboard Shortcuts", action: showShortcuts).buttonStyle(.bordered)
-                Spacer()
-                Button("Done", action: dismiss).buttonStyle(.borderedProminent).tint(Color(red: 0.28, green: 0.22, blue: 0.14)).keyboardShortcut(.defaultAction)
-            }
-        }
-        .font(.system(size: 13))
-        .padding(30)
-        .frame(width: 610, height: 480)
-        .accessibilityIdentifier("typefield-about")
-    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
