@@ -10,15 +10,16 @@ h1,h2,h3{text-wrap:balance}
 .icon-sprite{position:absolute;width:0;height:0;overflow:hidden}
 .skip-link{position:fixed;z-index:10;top:-80px;left:20px;background:var(--paper);padding:15px}
 .skip-link:focus{top:20px}
-.site-header{display:flex;align-items:center;justify-content:space-between;gap:22px;margin:0 5.5%;padding:26px 0;border-bottom:1px solid var(--line)}
-.wordmark{font-size:32px;line-height:1;font-weight:750;letter-spacing:-1.1px}
+.site-header{display:flex;align-items:center;justify-content:space-between;margin:0 32px;padding:20px 0 35px;border-bottom:1px solid var(--line)}
+.wordmark{font-size:32px;line-height:normal;font-weight:750;letter-spacing:-1.1px}
 .site-header .wordmark{flex:none}
-.wordmark span{display:inline-block;margin:4px 0 0 3px;font-size:12px;font-weight:500;letter-spacing:0;vertical-align:top}
-.main-nav{display:flex;align-items:center;gap:27px;font-size:14px;font-weight:600}
-.main-nav a{display:inline-flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid transparent;white-space:nowrap}
-.main-nav a:hover,.main-nav a[aria-current=page]{border-color:currentColor}
-.main-nav .nav-download{border-color:currentColor}
-.main-nav .nav-download:hover{color:var(--coral)}
+.wordmark span{display:inline-block;margin:5px 0 0 3px;font-size:12px;font-weight:500;letter-spacing:0;vertical-align:top}
+.site-nav{display:flex;align-items:center;gap:24px}
+.site-nav a{display:inline-flex;align-items:center;padding:10px 0;border-bottom:1px solid transparent;font-size:14px;font-weight:600;white-space:nowrap}
+.site-nav .nav-features:hover,.site-nav .nav-features[aria-current=page]{border-color:currentColor;color:var(--coral)}
+.site-nav .nav-download{gap:14px;border-color:currentColor;letter-spacing:-.01em}
+.site-nav .nav-download:hover{color:var(--coral)}
+.site-nav .nav-download span{font-size:18px;line-height:1}
 .hero{margin:0 5.5%;padding:78px 0 80px;display:grid;grid-template-columns:1.4fr .6fr;gap:8%;align-items:center}
 .hero h1{font-size:clamp(63px,8vw,124px);font-weight:500;letter-spacing:-.052em;line-height:.98}
 .hero h1 span,.closing h2 span{color:var(--coral)}
@@ -66,3 +67,6 @@ footer nav a:hover{color:var(--coral)}
 @media(max-width:650px){body{padding:7px}.page{border-radius:12px}.site-header{margin:0 20px;padding:22px 0}.wordmark{font-size:26px}.main-nav{gap:17px;font-size:13px}.main-nav a:first-child{display:none}.hero{margin:0 20px;display:block;padding:58px 0 48px}.hero h1{font-size:clamp(53px,12vw,78px)}.hero p{font-size:19px;margin-top:24px}.hero-mark{display:none}.section-nav{padding:0 20px 28px;gap:7px}.section-nav a{padding:9px 12px;font-size:12px}.feature-section,.spec-section{padding:49px 20px 55px;gap:28px}.section-intro{grid-template-columns:72px 1fr;column-gap:17px}.icon-tile{width:72px;height:72px;border-radius:10px}.icon-tile svg{width:52px;height:52px}.section-intro h2{font-size:39px}.section-intro p{font-size:16px;line-height:1.45}.feature-grid{grid-template-columns:1fr}.feature-grid article{padding:22px 0 25px}.feature-mark{margin-bottom:12px}.feature-grid h3{font-size:20px}.feature-grid p{font-size:15px}.spec-grid{grid-template-columns:1fr 1fr;gap:0 18px}.spec-grid dd{font-size:16px}.closing{padding:52px 20px}.closing>div{display:block}.closing h2{font-size:clamp(50px,12vw,76px)}.download-button{margin-top:33px}footer{padding:33px 20px;align-items:flex-start;flex-direction:column}}
 @media(max-width:380px){.main-nav{gap:11px}.main-nav a{font-size:12px}.section-intro h2{font-size:33px}.section-intro{grid-template-columns:60px 1fr;column-gap:14px}.icon-tile{width:60px;height:60px}.icon-tile svg{width:45px;height:45px}.spec-grid{grid-template-columns:1fr}.hero h1{font-size:50px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.section-nav a:hover,.download-button:hover{transform:none}}
+@media(max-width:800px){.site-header{margin-inline:20px}}
+@media(max-width:650px){.site-header{margin-inline:23px;padding:23px 0 20px}.wordmark{font-size:32px}}
+@media(max-width:480px){.site-header{margin-inline:17px;padding:20px 0 23px}.wordmark{font-size:25px}.site-nav{gap:14px}.site-nav a{font-size:13px}.site-nav .nav-download{gap:8px}}
