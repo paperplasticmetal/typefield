@@ -17,6 +17,8 @@ Removed the obsolete parallel About/Shortcuts sheet implementation; those menu a
 
 The full optimized native suite passed: 21,260 layouts, 778 families and 4,252 styles. Native multi-window checks passed. The compiled app passed first-run presentation, Library/Spaces/Letterform destinations, replay through Help and About, return to an already detached Letterform Editor, sidebar shortcuts, and completion persistence across quit/relaunch. About and Shortcuts continue to work in Settings. All 29 saved-data hashes and two research hashes matched after QA.
 
-Final 0.59.16 validation integrates the released 0.59.14 Spaces fixes and 0.59.15 Letterform changes. The earlier duplicate 0.59.15 onboarding installer was explicitly cancelled before installation to preserve the other release. Canonical installation and public distribution of the combined 0.59.16 candidate are in progress.
+The final 0.59.16 optimized native suite passed, including 21,265 layouts across 779 families / 4,253 styles, plus multi-window and Figma checks. Canonical `/Applications/Typefield.app` is 0.59.16 (96). Strict signatures and executable equality passed for the built app, installed app, and read-only mounted DMG. All 29 saved-data files and both paused research files retain their starting hashes.
+
+This release integrates the verified 0.59.14 Spaces and 0.59.15 Letterform fixes. Publication and unauthenticated public-download verification are in progress.
 
 Private starting diff, data/research hashes, preview and timing evidence: `.context/qa-artifacts/onboarding-refinement/` in the original working copy. Missing-letter research remains paused.
