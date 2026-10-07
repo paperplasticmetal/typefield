@@ -707,6 +707,7 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var systemScheme
     @State var collectionName = ""
     @State var showCollection = false
+    @State private var licenseFace: Face?
     @State var showColors = false
     @State var showTagFilters = false
     @State var showDiscovery = false
@@ -771,6 +772,7 @@ struct ContentView: View {
             if !onboardingComplete { DispatchQueue.main.async { guide = .tour } }
         }
         .onChange(of: preview) { value in library.requiredText = value == "{family}" ? "" : value; if value == "{family}" { library.requireCoverage = false } }
+        .sheet(item: $licenseFace) { FontLicenseSourcesView(face: $0) }
         .sheet(isPresented: $library.showTools) { LibraryToolsView(library: library) }
         .sheet(isPresented: $library.showCompare) { CompareView(library: library, preview: preview, size: size) }
         .sheet(item: $library.typeboardDraft) { draft in TypeboardRoleMapper(library: library, draft: draft) }
@@ -1260,6 +1262,9 @@ struct ContentView: View {
         }.frame(maxWidth: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.onDrag { FontDragPayload.provider(library.chosenFace(family).name) }.contextMenu { actions(family) }
     }
     @ViewBuilder func actions(_ family: Family) -> some View {
+        FontActivationButton(face: library.chosenFace(family)) { library.message = $0 }
+        Button("License sources…") { licenseFace = library.chosenFace(family) }
+        Divider()
         Button("New typeboard with this font") { library.pairSelection([library.chosenFace(family).name], source: family.name) }
         Button(library.comparison.contains(family.name) ? "Remove from comparison" : "Add to comparison") { library.compare(family) }
         Button("Use as overlay reference") { library.overlayName = library.chosenFace(family).name }

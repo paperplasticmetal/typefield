@@ -454,7 +454,7 @@ struct StudioTransferReport {
             switch self {
             case .spaceJSON: return "Saved layout data and embedded artwork are included. Font files are not bundled."
             case .developerHandoff: return "Exports CSS, tokens, and a specimen. Font files and canvas artwork are not bundled."
-            case .previewPDF: return "Exports the current canvas as a visual PDF. Text and images are not editable as Spaces objects in the PDF."
+            case .previewPDF: return "Exports each selected canvas as a separate visual PDF page. Text and images are not editable as Spaces objects in the PDF."
             case .figma: return "Exports editable text and shapes. Images are omitted, font files are not bundled, and Figma may reflow text."
             case .typographySummary: return "Exports typography settings for the selected canvases. Canvas layout and artwork are not included."
             case .typeSystemPDF: return "Builds one specimen page per selected canvas. Imported Figma and Adobe canvases are not supported."

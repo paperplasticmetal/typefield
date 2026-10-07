@@ -321,6 +321,7 @@ struct DetailView: View {
     @State var tab = "All styles"
     @State var overlayStyles = false
     @State private var exportStatus = ""
+    @State private var showLicenseSources = false
     @State private var settingsError = ""
     @Environment(\.dismiss) var dismiss
     var face: Face { family.faces.first { $0.name == chosen } ?? library.chosenFace(family) }
@@ -345,7 +346,7 @@ struct DetailView: View {
     }
     var body: some View {
         VStack(spacing: 14) {
-            HStack { Text(family.name).font(.title2); Spacer(); Button("Find similar") { tab = "Similar" }; Button("Export font…") { if let result = FontExporter.export([face]) { exportStatus = result } }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { Text(family.name).font(.title2); Spacer(); FontActivationButton(face: face) { exportStatus = $0 }; Menu("More") { Button("License sources…") { showLicenseSources = true }; Button("Find similar") { tab = "Similar" } }; Button("Export font…") { if let result = FontExporter.export([face]) { exportStatus = result } }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
                 .alert("Settings not saved", isPresented: Binding(get: { !settingsError.isEmpty }, set: { if !$0 { settingsError = "" } })) {
                     Button("OK") { settingsError = "" }
                 } message: { Text(settingsError) }
@@ -409,6 +410,6 @@ struct DetailView: View {
                     }.padding(18) }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }.padding(20).frame(width: 980, height: min(820, (NSScreen.main?.visibleFrame.height ?? 920) - 90)).onAppear { chosen = library.chosenFace(family).name }
+        }.sheet(isPresented: $showLicenseSources) { FontLicenseSourcesView(face: face) }.padding(20).frame(width: 980, height: min(820, (NSScreen.main?.visibleFrame.height ?? 920) - 90)).onAppear { chosen = library.chosenFace(family).name }
     }
 }

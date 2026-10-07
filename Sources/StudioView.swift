@@ -63,7 +63,10 @@ enum StudioTransferDialog {
     static func confirm(_ report: StudioTransferReport) -> Bool {
         let alert = NSAlert()
         alert.messageText = report.blockingReason == nil ? "Export " + report.format.title + "?" : "Export is unavailable"
-        alert.informativeText = report.detail
+        alert.informativeText = report.scope
+        let review = NSHostingView(rootView: StudioExportReview(report: report).frame(width: 440))
+        review.frame.size = review.fittingSize
+        alert.accessoryView = review
         alert.alertStyle = report.blockingReason == nil ? .informational : .warning
         alert.addButton(withTitle: report.blockingReason == nil ? "Continue to Export" : "OK")
         if report.blockingReason == nil { alert.addButton(withTitle: "Cancel") }
@@ -604,8 +607,8 @@ enum CanvasBoardLayout {
         let appliedDelta = edge.horizontal
             ? (canvas.canvas == .imported ? (importedWidth ?? currentWidth) - currentWidth : width - canvas.width)
             : (height ?? baseHeight) - baseHeight
-        let x = edge == .left ? position.x - appliedDelta : position.x
-        let y = edge == .top ? position.y - appliedDelta : position.y
+        let x = edge == .left ? position.x - appliedDelta * scale : position.x
+        let y = edge == .top ? position.y - appliedDelta * scale : position.y
         let fittedDirection = {
             var value = canvas
             value.width = width; value.canvasWidth = importedWidth; value.canvasHeight = height
@@ -753,8 +756,9 @@ struct TypeBoardEditor: View {
     @State private var showPairingSuggestions = false
     @State private var pairingTargetRole = TypeRole.body
     @State private var showEditingScope = false
-    @State private var showFontSummary = false
     @State private var showWebFontAudit = false
+    @State private var exportRequest: StudioExportKind?
+    @State private var confirmedExport: StudioExportConfiguration?
     @State private var fontSummaryDetail = TypographySummaryDetail.roles
     @State private var summaryCanvasIDs: Set<UUID>
     @State private var draggedSection: String?
@@ -807,8 +811,12 @@ struct TypeBoardEditor: View {
     var fontSummary: TypographySummaryDocument { TypographySummaryDocument(summaries: selectedSummaryDirections.map { CanvasTypographySummary(canvas: board.canvasName($0), direction: $0) }) }
     var visibleFontCount: Int { TypographySummaryDocument(summaries: visibleDirections.map { CanvasTypographySummary(canvas: board.canvasName($0), direction: $0) }).fonts.count }
     func confirmExport(_ format: StudioTransferReport.Format, directions: [TypeDirection], scope: String) -> Bool {
-        StudioTransferDialog.confirm(StudioTransferReport(format: format, scope: scope, directions: directions,
-                                                          availableFonts: Set(library.allFaces.map(\.name))))
+        let report = StudioTransferReport(format: format, scope: scope, directions: directions,
+                                          availableFonts: Set(library.allFaces.map(\.name)))
+        // The export window already presents compatibility and selection. Recheck
+        // the contract here without opening a second, text-only confirmation.
+        if let reason = report.blockingReason { status = reason; return false }
+        return !directions.isEmpty
     }
     var editingTitle: String { if let index = importedLayerIndex { return direction.importedLayout?.layers[index].name ?? "Text layer" }; return role.rawValue }
     var editingScopeLabel: String {
@@ -852,8 +860,6 @@ struct TypeBoardEditor: View {
     func directionBinding<T>(_ key: WritableKeyPath<TypeDirection, T>) -> Binding<T> { Binding(get: { direction[keyPath: key] }, set: { board.directions[directionIndex][keyPath: key] = $0; save() }) }
     func styleBinding<T>(_ key: WritableKeyPath<TypeStyle, T>) -> Binding<T> { Binding(get: { style[keyPath: key] }, set: { var updated = style; updated[keyPath: key] = $0; setStyle(updated); save(key == \TypeStyle.size ? "Change Size" : key == \TypeStyle.tracking ? "Change Letter Spacing" : key == \TypeStyle.text ? "Change Sample Text" : "Edit Typography") }) }
     func typeboardToolbar(compact: Bool) -> some View {
-        let boardCanvasCount = board.directions.count
-        let boardCanvasLabel = "\(boardCanvasCount) \(boardCanvasCount == 1 ? "canvas" : "canvases")"
         return HStack(spacing: compact ? 8 : 14) {
                 projectMenu
                 Text("/").foregroundStyle(.tertiary)
@@ -867,19 +873,14 @@ struct TypeBoardEditor: View {
                     Button("Artwork…") { chooseArtwork() }
                 }.menuStyle(.borderlessButton).fixedSize().help("Add a canvas or import artwork")
                 Menu("Export") {
-                    Button("Typography summary for shown canvases…") { openFontSummary() }
-                    Button("Web-font performance for shown canvases…") { summaryCanvasIDs = Set(visibleDirections.map(\.id)); showWebFontAudit = true }
-                    Button("Developer handoff for this typeboard (\(boardCanvasLabel))…") { exportDeveloperHandoff() }
-                    Divider()
-                    Button("Preview PDF for \(board.canvasName(direction))…") { exportPDF() }
-                    Button("Editable Figma layout for this typeboard (\(boardCanvasLabel))…") { exportFigma() }
+                    ForEach(StudioExportKind.allCases) { kind in
+                        Button(kind.rawValue + "…") { exportRequest = kind }
+                    }
                 }.menuStyle(.borderlessButton).fixedSize()
                 Menu("Board") {
                     Button("Rename typeboard…") { if let name = ShelfRename.prompt("Rename typeboard", current: board.name) { board.name = name; save("Rename Typeboard") } }
                     Divider()
-                    Button("Save checkpoint") { saveCheckpoint() }
-                    Text("\((board.checkpoints ?? []).count) of \(StudioCheckpointSave.maximumCount) checkpoints saved")
-                    Text("After 50, the oldest is replaced")
+                    Button("Save checkpoint") { saveCheckpoint() }.help("Keeps the latest 50 checkpoints; saving another replaces the oldest.")
                     Menu("Restore checkpoint as canvas") {
                         ForEach((board.checkpoints ?? []).reversed()) { checkpoint in Button(checkpoint.direction.name + ", " + checkpoint.date.formatted(date: .abbreviated, time: .shortened)) { let copy = checkpoint.direction.copy(name: checkpoint.direction.name + " restored"); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save() } }
                     }.disabled((board.checkpoints ?? []).isEmpty)
@@ -900,7 +901,6 @@ struct TypeBoardEditor: View {
             .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
             .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
             .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
-            .popover(isPresented: $showFontSummary) { fontSummaryPopover }
             .fixedSize(horizontal: false, vertical: true)
     }
     var body: some View {
@@ -985,6 +985,13 @@ struct TypeBoardEditor: View {
         .alert("Artwork could not be imported", isPresented: Binding(get: { artworkImportError != nil }, set: { if !$0 { artworkImportError = nil } })) {
             Button("OK") { artworkImportError = nil }
         } message: { Text(artworkImportError ?? "") }
+        .sheet(item: $exportRequest, onDismiss: performConfirmedExport) { kind in
+            StudioExportScopeView(kind: kind, board: board, shown: Set(visibleDirections.map(\.id)), current: direction.id,
+                                  availableFonts: Set(library.allFaces.map(\.name))) { configuration in
+                confirmedExport = configuration
+                exportRequest = nil
+            }
+        }
         .sheet(isPresented: $showWebFontAudit) { WebFontAuditView(board: board, library: library, initialCanvasIDs: summaryCanvasIDs) }
         .sheet(isPresented: $showPairingSuggestions) {
             if let reference = library.allFaces.first(where: { $0.name == style.fontName }) {
@@ -1051,11 +1058,12 @@ struct TypeBoardEditor: View {
                     // Leave space for the vertical scroller and the right-hand resize handle.
                     let fittingWidth = max(1, geometry.size.width - 32)
                     let scale = interactionZoom ?? (zoom == 0 ? min(1, max(0.1, fittingWidth / max(1, committedWidth))) : zoom)
-                    let extent = canvasWorkspaceExtent(visible, positions: positions, visibleOffset: visibleOffset, zoom: scale)
+                    let displays = Dictionary(uniqueKeysWithValues: visible.map { ($0.id, displayedCanvas($0, positions: positions, zoom: scale)) })
+                    let extent = canvasWorkspaceExtent(Array(displays.values), visibleOffset: visibleOffset)
                     ScrollView([.horizontal, .vertical]) {
                         ZStack(alignment: .topLeading) {
                             ForEach(visible) { item in
-                                let display = displayedCanvas(item, positions: positions, zoom: scale)
+                                let display = displays[item.id]!
                                 canvas(item, displayed: display.direction, scale: scale)
                                     .offset(x: (display.position.x + visibleOffset.width) * scale,
                                             y: (display.position.y + visibleOffset.height) * scale)
@@ -1063,7 +1071,7 @@ struct TypeBoardEditor: View {
                         }
                         .frame(width: max(fittingWidth, extent.width * scale),
                                height: max(geometry.size.height, extent.height * scale), alignment: .topLeading)
-                    }.background(Color.primary.opacity(0.07)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
+                    }.coordinateSpace(name: "canvas-workspace").background(Color.primary.opacity(0.07)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
                     }
                     if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B: " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.plan(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.plan(for: direction).artboardSize.height)) \(direction.canvasUnitLabel), " + (zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
         }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
@@ -1203,9 +1211,8 @@ struct TypeBoardEditor: View {
             return CanvasFrameDisplay(direction: rendered, position: result.position)
         }
     }
-    private func canvasWorkspaceExtent(_ visible: [TypeDirection], positions: [UUID: CanvasBoardPosition], visibleOffset: CGSize, zoom: Double) -> CGSize {
-        visible.reduce(CGSize(width: 48, height: 120)) { extent, item in
-            let display = displayedCanvas(item, positions: positions, zoom: zoom)
+    private func canvasWorkspaceExtent(_ displays: [CanvasFrameDisplay], visibleOffset: CGSize) -> CGSize {
+        displays.reduce(CGSize(width: 48, height: 120)) { extent, display in
             let size = CanvasPlanCache.plan(for: display.direction).size
             return CGSize(width: max(extent.width, display.position.x + visibleOffset.width + size.width + 24),
                           height: max(extent.height, display.position.y + visibleOffset.height + size.height + 58))
@@ -1215,6 +1222,7 @@ struct TypeBoardEditor: View {
         if interactionZoom == nil { interactionZoom = zoom }
         frameCanvasID = id
         frameInteraction = CanvasFrameInteraction(id: id, mode: mode, translation: translation)
+        FontDragPayload.trace("Canvas gesture delta \(translation.width),\(translation.height) at zoom \(zoom)")
     }
     private func finishFrameInteraction(_ id: UUID, mode: CanvasFrameInteraction.Mode, translation: CGSize, zoom: Double) {
         defer { frameInteraction = nil; interactionZoom = nil }
@@ -1225,6 +1233,8 @@ struct TypeBoardEditor: View {
         frameCanvasID = id
         let dragged = hypot(translation.width, translation.height) > 2
         if dragged {
+            // A manual resize leaves Fit width so release does not snap back to a new scale.
+            if mode.isResize && self.zoom == 0 { self.zoom = interactionZoom ?? zoom }
             let positions = CanvasBoardLayout.positions(for: board.directions)
             if visibleDirections.count == 1 { soloViewport = CanvasSoloViewport(id: id, offset: CanvasBoardLayout.visibleOffset(for: visibleDirections, positions: positions)) }
             let original = board.directions[index]
@@ -1427,7 +1437,7 @@ struct TypeBoardEditor: View {
     }
     private func canvasMoveEdge(_ id: UUID, zoom: Double) -> some View {
         Rectangle().fill(Color.clear).contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("canvas-workspace"))
                 .onChanged { beginFrameInteraction(id, mode: .move, translation: $0.translation, zoom: zoom) }
                 .onEnded { finishFrameInteraction(id, mode: .move, translation: $0.translation, zoom: zoom) })
             .help("Drag this canvas edge to arrange it")
@@ -1438,7 +1448,7 @@ struct TypeBoardEditor: View {
             .overlay { RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor, lineWidth: 1.5) }
             .frame(width: 12, height: 12)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("canvas-workspace"))
                 .onChanged { beginFrameInteraction(id, mode: .resizeCorner(corner), translation: $0.translation, zoom: zoom) }
                 .onEnded { finishFrameInteraction(id, mode: .resizeCorner(corner), translation: $0.translation, zoom: zoom) })
             .help("Drag to resize the canvas and its contents proportionally")
@@ -1457,7 +1467,7 @@ struct TypeBoardEditor: View {
             .overlay { RoundedRectangle(cornerRadius: 3).strokeBorder(Color.accentColor, lineWidth: 1.5) }
             .frame(width: 12, height: 12)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("canvas-workspace"))
                 .onChanged { beginFrameInteraction(id, mode: .resizeEdge(edge), translation: $0.translation, zoom: zoom) }
                 .onEnded { finishFrameInteraction(id, mode: .resizeEdge(edge), translation: $0.translation, zoom: zoom) })
             .help(edge.horizontal ? "Drag to resize canvas width. Text stays inside the artboard." : "Drag to resize canvas height. Text stays inside the artboard.")
@@ -1748,10 +1758,6 @@ struct TypeBoardEditor: View {
         let preferred = library.discoveryCandidates(in: eligible, includeSystemFonts: false, seed: discoveryNonce, limit: 1).first ?? library.discoveryCandidates(in: eligible, includeSystemFonts: true, seed: discoveryNonce, limit: 1).first
         if let preferred, chooseFont(preferred.face.name) { fontSearch = ""; status = "Trying \(preferred.family.name), \(preferred.face.style), from your local library" }
     }
-    func openFontSummary() {
-        summaryCanvasIDs = Set(visibleDirections.map(\.id))
-        showFontSummary = true
-    }
     func saveCheckpoint() {
         let outcome = StudioCheckpointSave.save(direction: direction, board: board) { onSave($0, "Save Checkpoint") }
         board = outcome.board
@@ -1760,43 +1766,6 @@ struct TypeBoardEditor: View {
         } else {
             status = library.studio.error.isEmpty ? "Checkpoint could not be saved" : "Checkpoint could not be saved: " + library.studio.error
         }
-    }
-    var fontSummaryPopover: some View {
-        let summary = fontSummary
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack { VStack(alignment: .leading, spacing: 3) { Text("Typography summary").font(.headline); Text("\(selectedSummaryDirections.count) of \(board.directions.count) \(board.directions.count == 1 ? "canvas" : "canvases") with \(summary.fonts.count) \(summary.fonts.count == 1 ? "font" : "fonts")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Done") { showFontSummary = false }.keyboardShortcut(.cancelAction) }
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Canvases to include").font(.caption).foregroundStyle(.secondary)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(board.directions) { canvas in
-                            Toggle(board.canvasName(canvas), isOn: Binding(get: { summaryCanvasIDs.contains(canvas.id) }, set: { included in
-                                if included { summaryCanvasIDs.insert(canvas.id) }
-                                else if summaryCanvasIDs.count > 1 { summaryCanvasIDs.remove(canvas.id) }
-                            })).toggleStyle(.checkbox).disabled(summaryCanvasIDs.count == 1 && summaryCanvasIDs.contains(canvas.id))
-                        }
-                    }
-                }
-            }
-            Picker("Detail", selection: $fontSummaryDetail) { ForEach(TypographySummaryDetail.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented).labelsHidden()
-            ScrollView { Text(summary.text(fontSummaryDetail)).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8)).frame(minHeight: 180, maxHeight: 320)
-            HStack {
-                Button("Copy") { let pasteboard = NSPasteboard.general; pasteboard.clearContents(); pasteboard.setString(summary.text(fontSummaryDetail), forType: .string); status = "Typography summary copied" }
-                Button("Web cost…") { showFontSummary = false; DispatchQueue.main.async { showWebFontAudit = true } }
-                Spacer()
-                Menu { Button("From this canvas…") { createCollection(.canvas) }; Button("From this typeboard…") { createCollection(.typeboard) }; Button("From this project…") { createCollection(.project) } } label: { Label("Collection", systemImage: "folder.badge.plus") }.fixedSize()
-                Menu("Export selected canvases") {
-                    Button("Plain text (\(selectedSummaryDirections.count) selected)…") { exportFontSummary(markdown: false) }
-                    Button("Markdown (\(selectedSummaryDirections.count) selected)…") { exportFontSummary(markdown: true) }
-                    Divider()
-                    Button("Type system PDF (\(selectedSummaryDirections.count) selected)…") { exportTypeSystemPDF() }
-                    Divider()
-                    Button("Illustrator builder (\(selectedSummaryDirections.count) selected, .jsx)…") { exportAdobeTypeSystem(.illustrator) }
-                    Button("InDesign builder (\(selectedSummaryDirections.count) selected, .jsx)…") { exportAdobeTypeSystem(.indesign) }
-                }.fixedSize()
-            }
-            Text("Each selected canvas contributes its visible text styles. Type system PDF creates one specimen page per canvas; imported Figma and Adobe canvases are not supported yet. Use Preview PDF for their visual layout. Adobe builders create editable native documents when you run the saved script inside Illustrator or InDesign; fonts are referenced, never bundled.").font(.caption).foregroundStyle(.secondary)
-        }.padding(18).frame(width: 540)
     }
     enum CollectionScope { case canvas, typeboard, project }
     var summaryExportScope: String {
@@ -2018,32 +1987,54 @@ struct TypeBoardEditor: View {
             }
         ))
     }
+    func performConfirmedExport() {
+        guard let configuration = confirmedExport else { return }
+        confirmedExport = nil
+        summaryCanvasIDs = configuration.canvasIDs
+        fontSummaryDetail = configuration.detail
+        guard !selectedSummaryDirections.isEmpty else { return }
+        switch configuration.kind {
+        case .summary:
+            switch configuration.summaryOutput {
+            case .text: exportFontSummary(markdown: false)
+            case .markdown: exportFontSummary(markdown: true)
+            case .pdf: exportTypeSystemPDF()
+            case .illustrator: exportAdobeTypeSystem(.illustrator)
+            case .indesign: exportAdobeTypeSystem(.indesign)
+            }
+        case .web: showWebFontAudit = true
+        case .handoff: exportDeveloperHandoff()
+        case .preview: exportPDF()
+        case .figma: exportFigma()
+        }
+    }
+    var exportBoard: TypeBoard { StudioExportScope.board(board, including: summaryCanvasIDs) }
     func exportDeveloperHandoff() {
-        guard confirmExport(.developerHandoff, directions: board.directions,
-                            scope: "Typeboard “\(board.name)” with \(completeTypeboardCanvasScope)") else { return }
+        guard confirmExport(.developerHandoff, directions: selectedSummaryDirections, scope: summaryExportScope) else { return }
         do {
-            if let folder = try DeveloperHandoff.selectFolder(title: board.name, boards: [board], catalog: library.families) {
-                status = "Developer handoff exported for \(completeTypeboardCanvasScope). Open index.html for the specimen."
+            if let folder = try DeveloperHandoff.selectFolder(title: board.name, boards: [exportBoard], catalog: library.families) {
+                status = "Developer handoff exported."
                 NSWorkspace.shared.activateFileViewerSelecting([folder])
             }
         } catch { status = "Handoff export failed: " + error.localizedDescription }
     }
     func exportPDF() {
-        guard confirmExport(.previewPDF, directions: [direction],
-                            scope: "Canvas “\(board.canvasName(direction))” in typeboard “\(board.name)”") else { return }
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + " — " + direction.name + ".pdf"
+        guard confirmExport(.previewPDF, directions: selectedSummaryDirections, scope: summaryExportScope) else { return }
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = board.name + ".pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let plan = CanvasPlanCache.plan(for: direction); let view = CanvasNativeView(plan: plan); try view.dataWithPDF(inside: view.bounds).write(to: url, options: .atomic); status = "Preview PDF exported for “\(board.canvasName(direction))”." } catch { status = "Export failed: " + error.localizedDescription }
+        do {
+            try CanvasPreviewPDF.data(directions: selectedSummaryDirections).write(to: url, options: .atomic)
+            status = "Preview PDF exported."
+        } catch { status = "Export failed: " + error.localizedDescription }
     }
     func exportFigma() {
-        guard confirmExport(.figma, directions: board.directions,
-                            scope: "Typeboard “\(board.name)” with \(completeTypeboardCanvasScope)") else { return }
+        guard confirmExport(.figma, directions: selectedSummaryDirections, scope: summaryExportScope) else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
-        let omittedArtwork = StudioTransferReport(format: .figma, scope: board.name, directions: board.directions,
+        let omittedArtwork = StudioTransferReport(format: .figma, scope: board.name, directions: selectedSummaryDirections,
                                                    availableFonts: Set(library.allFaces.map(\.name))).omittedArtworkCount
         panel.message = "Choose where to save the editable Figma layout and local importer. No fonts are bundled." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers are omitted; use Preview PDF for a visual handoff." : "")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let folder = try FigmaLayoutExporter.write(board: board, parent: url); status = "Figma package exported for \(completeTypeboardCanvasScope). See README for import steps." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : ""); NSWorkspace.shared.activateFileViewerSelecting([folder]) } catch { status = "Figma export failed: " + error.localizedDescription }
+        do { let folder = try FigmaLayoutExporter.write(board: exportBoard, parent: url); status = "Figma package exported. See README for import steps." + (omittedArtwork > 0 ? " \(omittedArtwork) image layers omitted." : ""); NSWorkspace.shared.activateFileViewerSelecting([folder]) } catch { status = "Figma export failed: " + error.localizedDescription }
     }
 }
 

@@ -170,7 +170,6 @@ private struct EditorWindowRoot: View {
     @Environment(\.colorScheme) private var scheme
     private var editorToolbar: some View {
         HStack(spacing: 8) {
-            WorkspaceTearOff(windows: windows, mode: mode).frame(width: 20, height: 28)
             Menu("View") {
                 if mode == .fontLab {
                     Toggle("Focus editor", isOn: $fontLabSession.focusEditor)
@@ -207,30 +206,6 @@ private struct EditorWindowRoot: View {
             if mode == .spaces && focusCanvas { NotificationCenter.default.post(name: Notification.Name("TypefieldCanvasFocus"), object: nil) }
             else { collapsed.toggle() }
         }
-    }
-}
-
-/// Drag the grip beyond the window edge to detach, or click Pop out.
-private struct WorkspaceTearOff: NSViewRepresentable {
-    let windows: WorkspaceWindows
-    let mode: WorkspaceMode
-    func makeNSView(context: Context) -> TearOffGrip { TearOffGrip() }
-    func updateNSView(_ view: TearOffGrip, context: Context) {
-        view.toolTip = "Drag outside this window to pop out " + mode.rawValue
-        view.onDetach = { point in windows.detach(mode, at: point) }
-    }
-}
-private final class TearOffGrip: NSView {
-    var onDetach: ((NSPoint) -> Void)?
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.secondaryLabelColor.setFill()
-        for x in [9.0, 15.0] { for y in [6.0, 12.0, 18.0] { NSBezierPath(ovalIn: NSRect(x: x, y: y, width: 2, height: 2)).fill() } }
-    }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
-    override func mouseDown(with event: NSEvent) {}
-    override func mouseDragged(with event: NSEvent) {
-        guard let window, !window.frame.contains(NSEvent.mouseLocation) else { return }
-        onDetach?(NSEvent.mouseLocation)
     }
 }
 

@@ -68,7 +68,7 @@ enum DeveloperHandoff {
     static func selectFolder(title: String, boards: [TypeBoard], catalog: [Family]) throws -> URL? {
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
         panel.title = "Export developer handoff"; panel.prompt = "Export handoff"
-        panel.message = "All canvases → CSS, Tailwind, tokens, SwiftUI, Compose and an HTML specimen. Font files are not included; licensed assets must be supplied separately."
+        panel.message = "Selected canvases → CSS, Tailwind, tokens, SwiftUI, Compose and an HTML specimen. Font files are not included; licensed assets must be supplied separately."
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return try write(title: title, boards: boards, catalog: catalog, parent: url)
     }

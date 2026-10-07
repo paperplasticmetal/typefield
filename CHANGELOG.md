@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.59.12 (2026-10-07)
+
+- Replace the text-heavy Spaces export popup with a full configuration window: format and scope dropdowns, selectable canvases, structured typography preview, file/detail options and compact compatibility information. Preview PDF supports one page per chosen canvas; Figma and developer handoff respect the same selection.
+- Remove checkpoint explanation rows from the Board menu. Keep retention help on the Save checkpoint action and confirmation in the status line.
+- Anchor canvas frame drags to the workspace instead of the moving handle, preserve zoom after manual resizing, correct scaled left/top anchoring, and avoid computing each live resize twice.
+- Remove the ambiguous drag grip from Spaces and Letterform. View still offers Pop out editor / Dock window and independent font browsers.
+- Add direct local activation/deactivation in Library font actions and the font inspector. Expose embedded license/foundry links and provider account destinations. Live pricing, account connection and personal/team entitlement verification are not included; they require provider access.
+
 ## 0.59.11 (2026-10-07)
 
 - Consolidate Spaces into a project toolbar and canvas strip. Put window/focus controls under View, use labeled Insert/Board/Export menus, and keep the shared navigation fixed.

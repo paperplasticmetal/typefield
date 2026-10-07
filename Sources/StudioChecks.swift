@@ -178,6 +178,41 @@ enum StudioChecks {
         print("PASS: live recursive watcher, original-file preview, temporary activation visible to a separate process, deactivation and removal reconciliation.")
     }
     static func run(catalog: [Family]) throws {
+        // Scope filtering preserves board order, never exports stale IDs or checkpoints.
+        var scopeBoard = TypeBoard(name: "Export scope")
+        let scopeFirst = TypeDirection(name: "First", fonts: ["Helvetica"])
+        var scopeSecond = TypeDirection(name: "Second", fonts: ["Times-Roman"])
+        scopeSecond.width = 640
+        scopeBoard.directions = [scopeFirst, scopeSecond]
+        scopeBoard.selectedDirection = scopeFirst.id
+        let staleID = UUID()
+        try verify(StudioExportScope.shown.ids(board: scopeBoard, shown: [scopeSecond.id, staleID], current: scopeFirst.id, selected: []) == [scopeSecond.id])
+        try verify(StudioExportScope.all.ids(board: scopeBoard, shown: [], current: staleID, selected: []) == [scopeFirst.id, scopeSecond.id])
+        try verify(StudioExportScope.current.ids(board: scopeBoard, shown: [], current: scopeFirst.id, selected: []) == [scopeFirst.id])
+        try verify(StudioExportScope.selected.ids(board: scopeBoard, shown: [], current: scopeFirst.id, selected: [staleID]).isEmpty)
+        let exportScopedBoard = StudioExportScope.board(scopeBoard, including: [scopeSecond.id])
+        try verify(exportScopedBoard.directions.map(\.id) == [scopeSecond.id] && exportScopedBoard.selectedDirection == scopeSecond.id && scopeBoard.directions.count == 2)
+        var scaledCanvas = scopeFirst
+        scaledCanvas.canvasScale = 1.5
+        let scaledSize = CanvasPlan(direction: scaledCanvas).artboardSize
+        let scaledOrigin = CanvasBoardPosition(x: 400, y: 400)
+        let leftResize = CanvasBoardLayout.resized(canvas: scaledCanvas, artboardSize: scaledSize, position: scaledOrigin, edge: .left, by: CGSize(width: -45, height: 0), zoom: 0.5)
+        try verify(abs(leftResize.position.x + leftResize.width * 1.5 - (scaledOrigin.x + scaledCanvas.width * 1.5)) < 0.01, "Scaled left resize must keep the opposite edge anchored")
+        let previewData = try CanvasPreviewPDF.data(directions: scopeBoard.directions)
+        let previewDocument = CGDataProvider(data: previewData as CFData).flatMap(CGPDFDocument.init)
+        try verify(previewDocument?.numberOfPages == 2, "Preview PDF must export one page per selected canvas")
+        for (index, canvas) in scopeBoard.directions.enumerated() {
+            try verify(previewDocument?.page(at: index + 1)?.getBoxRect(.mediaBox).size == CanvasPlanCache.plan(for: canvas).size, "Preview pages must preserve dimensions and selection order")
+        }
+        do { _ = try CanvasPreviewPDF.data(directions: []); try verify(false, "Empty PDF selection must fail") } catch let error as NSError { try verify(error.domain == "Typefield.PreviewPDF") }
+        try verify(FontActivationAvailability.state(url: nil, owned: false, scope: .none) == .unavailable)
+        let localFontURL = URL(fileURLWithPath: "/tmp/example.otf")
+        try verify(FontActivationAvailability.state(url: localFontURL, owned: false, scope: .process) == .local)
+        try verify(FontActivationAvailability.state(url: localFontURL, owned: false, scope: .session) == .external)
+        try verify(FontActivationAvailability.state(url: localFontURL, owned: true, scope: .session) == .typefield)
+        try verify(FontActivationAvailability.state(url: URL(fileURLWithPath: "/System/Library/Fonts/example.otf"), owned: false, scope: .none) == .external)
+        try verify(FontLicenseSource.webURL("file:///tmp/license") == nil && FontLicenseSource.webURL("javascript:alert(1)") == nil && FontLicenseSource.webURL("https://user:secret@example.com") == nil)
+        try verify(FontLicenseSource.webURL("https://example.com/license")?.host == "example.com")
         // Font drops preserve content and geometry and target one template role
         // or imported layer. Invalid targets are rejected without a write.
         let dropOriginal = TypeDirection(name: "Font drop", fonts: ["Helvetica"])
