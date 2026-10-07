@@ -11,7 +11,7 @@
   <meta property="og:url" content="https://typefield.app/feedback/">
   <meta property="og:title" content="Feedback for Typefield">
   <meta property="og:description" content="Send Typefield beta feedback or report a bug without creating an account.">
-  <meta property="og:image" content="https://typefield.app/assets/social-preview-v1.png">
+  <meta property="og:image" content="https://typefield.app/assets/social-preview-v2.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -19,12 +19,13 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Feedback for Typefield">
   <meta name="twitter:description" content="Send Typefield beta feedback or report a bug without creating an account.">
-  <meta name="twitter:image" content="https://typefield.app/assets/social-preview-v1.png">
+  <meta name="twitter:image" content="https://typefield.app/assets/social-preview-v2.png">
   <meta name="twitter:image:alt" content="Typefield. Quite the character.">
   <title>Feedback for Typefield</title>
   <link rel="icon" href="../assets/typefield-icon.png">
   <link rel="stylesheet" href="../download/download.css?v=6">
-  <link rel="stylesheet" href="feedback.css?v=1">
+  <link rel="stylesheet" href="feedback.css?v=2">
+  <link rel="stylesheet" href="../brand.css?v=1">
   <script type="module" src="feedback.js?v=1"></script>
 </head>
 <body>
@@ -43,7 +44,7 @@
         <div class="feedback-intro">
           <h2 id="form-heading">Send a report.</h2>
           <p>Specific details help us understand what happened. If something broke, tell us how to reproduce it.</p>
-          <div class="privacy-note"><h3>What you share</h3><p>We store the text you submit and your email only if you provide it, so we can review the report and reply if needed. Cloudflare Turnstile checks submissions for abuse. Please do not include private fonts, font files, passwords, or other sensitive information. File uploads are not accepted.</p></div>
+          <div class="privacy-note"><h3>What you share</h3><p>We store the text you submit and your email only if you provide it, so we can review the report and reply if needed. Cloudflare Turnstile checks submissions for abuse. Please do not include private fonts, font files, passwords, or other sensitive information. File uploads are not accepted. <a href="../privacy/">Read the privacy page</a>.</p></div>
         </div>
         <form id="feedback-form" class="feedback-form" action="/api/feedback" method="post" novalidate>
           <div class="form-field">
@@ -78,7 +79,7 @@
         </form>
       </section>
     </main>
-    <footer><a href="../">typefield<span>™</span></a><a href="../download/">Get the beta</a></footer>
+    <footer class="site-footer"><a class="wordmark" href="/">typefield<span>™</span></a><nav aria-label="Site links"><a href="/">Home</a><a href="/features/">Features</a><a href="/download/">Download</a><a href="/about/">About</a><a href="/support/">Support</a><a href="/privacy/">Privacy</a><a href="/feedback/" aria-current="page">Feedback</a><a href="/feedback/?category=bug">Report a bug</a></nav><small>Typefield public beta for Mac</small></footer>
   </div>
 </body>
 </html>

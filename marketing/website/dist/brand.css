@@ -1,0 +1,75 @@
+@font-face {
+  font-family: "Instrument Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/assets/fonts/InstrumentSans-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/InstrumentSerif-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/InstrumentSerif-Italic-latin.woff2") format("woff2");
+}
+
+:root {
+  --brand-sans: "Instrument Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --brand-serif: "Instrument Serif", Georgia, serif;
+  font-family: var(--brand-sans);
+}
+
+body, button, input, select, textarea { font-family: var(--brand-sans); }
+.wordmark, footer > a:first-child, .site-header .wordmark, footer.site-footer .wordmark { font-family: var(--brand-sans); font-weight: 700; }
+.strip-serif, .collection-serif, .type-stage textarea, .intro em,
+.pairing-demo em, .collection-italic, .intro-panel h2 em { font-family: var(--brand-serif); }
+.strip-italic, .collection-italic { font-style: italic; }
+.feature-mark text { font-family: var(--brand-sans); }
+.feedback-form button { font-family: var(--brand-sans); }
+
+.site-nav .nav-features:hover,
+.site-nav .nav-features[aria-current="page"],
+.site-nav .nav-download:hover,
+.nav-shell nav > .nav-features:hover,
+.nav-shell nav > .nav-download:hover {
+  color: var(--ink);
+  border-color: var(--coral);
+}
+
+footer.site-footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 24px 40px;
+  padding: 38px 5.5%;
+}
+
+footer.site-footer nav {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  max-width: 940px;
+  margin-left: auto;
+  line-height: 1.5;
+}
+
+footer.site-footer nav a:hover { color: #b33e29; }
+body > footer.site-footer nav a:hover { color: var(--coral); }
+footer.site-footer nav a[aria-current="page"] { text-decoration: underline; text-decoration-color: var(--coral); text-underline-offset: 5px; }
+footer.site-footer small { grid-column: 1 / -1; font-size: 12px; color: inherit; opacity: .65; }
+
+@media (max-width: 800px) {
+  footer.site-footer { grid-template-columns: 1fr; gap: 18px; }
+  footer.site-footer nav { justify-content: flex-start; margin-left: 0; }
+  footer.site-footer small { grid-column: 1; }
+}

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://typefield.app/sitemap.xml

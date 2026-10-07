@@ -25,9 +25,9 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 
 ## Assets
 
-`typefield-film.mp4` and `film-poster.png` are the approved v16 launch assets from `marketing/launch/renders/`. The app screenshots are matched 2480 × 1764 Light mode captures from a disposable QA profile. Library uses only system fonts (Courier New, Georgia, Helvetica, and Times New Roman); Spaces uses the included Website canvas; Letterform Editor uses the app's synthetic handwriting example. Captures exclude the pointer and private projects. The site shows a focused crop on small screens.
+`typefield-film.mp4` and `film-poster.png` are the approved v16 launch assets from `marketing/launch/renders/`. The app screenshots are matched 2480 × 1764 Light mode captures from a disposable QA profile. Library uses only system fonts (Courier New, Georgia, Helvetica, and Times New Roman); Spaces uses the included Website canvas; Letterform Editor uses the app's synthetic handwriting example. Captures exclude the pointer and private projects. The published page crops the top 64 pixels of each app capture to hide the QA window chrome, then uses a focused crop on small screens.
 
-`website-layout.png` and `website-layout.pdf` are a real export of the included Spaces Website canvas. The validated source is stored privately under `.context/qa-artifacts/spaces-template-polish-0594/previews/`. Only the sample PNG and PDF are published. The Figma compatibility mark follows Figma's public brand guidance; Adobe product names are text because third-party use of Adobe product icons requires permission. No proprietary font binaries are distributed; the page uses system font stacks.
+`website-layout.png` and `website-layout.pdf` are a real export of the included Spaces Website canvas. The validated source is stored privately under `.context/qa-artifacts/spaces-template-polish-0594/previews/`. Only the sample PNG and PDF are published. The Figma compatibility mark follows Figma's public brand guidance; Adobe product names are text because third-party use of Adobe product icons requires permission. The site self-hosts OFL-licensed Instrument Sans and Instrument Serif; their license files are in `dist/assets/fonts/`.
 
 ## Hosting
 
@@ -121,7 +121,7 @@ The download page is live for 0.59.13 beta 1 (build 93). Its primary button serv
 
 ## Social sharing preview
 
-The 1200 × 630 `dist/assets/social-preview-v1.png` follows the supplied Typefield composition: paper background, upper-left wordmark, large two-line headline, and coral period. The image is generated with the system Helvetica Neue font; no font binary is bundled. To regenerate on macOS with Pillow installed, run `python3 marketing/website/render-social-preview.py` from the repository root.
+The 1200 × 630 `dist/assets/social-preview-v2.png` follows the supplied Typefield composition: paper background, upper-left wordmark, large two-line headline, and coral period. It uses the bundled OFL-licensed Instrument Sans. To regenerate on macOS with Pillow installed, run `python3 marketing/website/render-social-preview.py` from the repository root.
 
 The homepage, features, download, and feedback pages use `https://typefield.app/` canonical URLs and absolute Open Graph and X image URLs. The revisioned image filename helps when sharing services cache a previous preview. Keep canonical, Open Graph and image URLs aligned across all four pages.
 

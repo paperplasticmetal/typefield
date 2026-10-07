@@ -39,6 +39,16 @@ h1,h2,h3{text-wrap:balance}
 .section-number{display:block;margin-bottom:13px;font-size:13px;font-weight:600;color:#66665d}
 .section-intro h2{font-size:clamp(39px,4.5vw,69px);font-weight:500;letter-spacing:-.04em;line-height:1.05}
 .section-intro p{margin-top:20px;max-width:340px;font-size:18px;line-height:1.45;color:var(--muted)}
+.feature-section.with-proof{row-gap:36px}
+.feature-section.with-proof .section-intro{grid-row:1 / span 2}
+.feature-proof,.feature-section .feature-grid{grid-column:2}
+.feature-proof{min-width:0;margin:0}
+.feature-proof img{display:block;width:100%;height:auto;border:1px solid #20201e2e;border-radius:12px;background:#fff}
+.feature-proof .screenshot-viewport{position:relative;aspect-ratio:2480/1700;overflow:hidden;border:1px solid #20201e2e;border-radius:12px;background:#fff}
+.feature-proof .screenshot-viewport img{position:absolute;inset:auto 0 0;display:block;width:100%;height:auto;border:0;border-radius:0}
+.feature-proof figcaption{display:grid;grid-template-columns:145px minmax(0,1fr);gap:16px;padding-top:15px}
+.feature-proof figcaption span{font-size:13px;font-weight:700;line-height:1.45}
+.feature-proof figcaption p{max-width:590px;font-size:14px;line-height:1.5;color:var(--muted)}
 .feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 38px;border-top:1px solid #20201e3b}
 .feature-grid article{position:relative;min-width:0;padding:28px 0 32px;border-bottom:1px solid #20201e3b}
 .feature-mark{display:block;width:43px;height:43px;margin-bottom:18px;padding:7px;border:1px solid #20201e30;border-radius:9px;background:#f7f6ef;fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -70,3 +80,6 @@ footer nav a:hover{color:var(--coral)}
 @media(max-width:800px){.site-header{margin-inline:20px}}
 @media(max-width:650px){.site-header{margin-inline:23px;padding:23px 0 20px}.wordmark{font-size:32px}}
 @media(max-width:480px){.site-header{margin-inline:17px;padding:20px 0 23px}.wordmark{font-size:25px}.site-nav{gap:14px}.site-nav a{font-size:13px}.site-nav .nav-download{gap:8px}}
+@media(max-width:950px){.feature-section.with-proof{row-gap:28px}.feature-section.with-proof .section-intro{grid-row:auto}.feature-proof,.feature-section .feature-grid{grid-column:1}}
+@media(max-width:650px){.feature-proof figcaption{grid-template-columns:1fr;gap:4px;padding-top:12px}}
+@media(max-width:950px){.section-intro .icon-tile{align-self:start}}

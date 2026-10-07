@@ -148,7 +148,7 @@ test('site links, privacy copy and release assets stay aligned', () => {
     assert.doesNotMatch(html, /typefield-feedback\/issues\/new/);
     assert.match(html, /href="\/feedback\//);
     assert.match(html, /<link rel="canonical" href="https:\/\/typefield\.app\//);
-    assert.match(html, /<meta property="og:image" content="https:\/\/typefield\.app\/assets\/social-preview-v1\.png">/);
+    assert.match(html, /<meta property="og:image" content="https:\/\/typefield\.app\/assets\/social-preview-v2\.png">/);
   }
   const feedback = readFileSync(new URL('../dist/feedback/index.html', import.meta.url), 'utf8');
   assert.match(feedback, /<link rel="canonical" href="https:\/\/typefield\.app\/feedback\/">/);
