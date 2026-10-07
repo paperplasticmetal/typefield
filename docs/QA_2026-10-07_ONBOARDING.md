@@ -19,6 +19,8 @@ The full optimized native suite passed: 21,260 layouts, 778 families and 4,252 s
 
 The final 0.59.16 optimized native suite passed, including 21,265 layouts across 779 families / 4,253 styles, plus multi-window and Figma checks. Canonical `/Applications/Typefield.app` is 0.59.16 (96). Strict signatures and executable equality passed for the built app, installed app, and read-only mounted DMG. All 29 saved-data files and both paused research files retain their starting hashes.
 
-This release integrates the verified 0.59.14 Spaces and 0.59.15 Letterform fixes. Publication and unauthenticated public-download verification are in progress.
+This release integrates the verified 0.59.14 Spaces and 0.59.15 Letterform fixes. The [public GitHub prerelease](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.16-beta.1) and [canonical download page](https://typefield.app/download/) are live. The website and GitHub DMGs were downloaded without authentication and both match SHA-256 `4c232386f0b35b04918798624bf923d8eaf447103cfcc3bd932e0709d01cd347`. The built, installed and mounted-DMG executables match SHA-256 `01535ea285ffa02bd3d18e77b97688b26835cfacb5328c6d213ae596d8f2c086`.
+
+The version/link/checksum check, website JavaScript syntax checks and all eight website tests passed. Cloudflare deployment [f6155d61](https://f6155d61.typefield.pages.dev) included the feedback Function; the live API returned its configured public site key. All saved-data and paused-research hashes were checked again after publication and remained unchanged. The beta remains ad hoc signed; Developer ID notarization, second-Mac testing and a full VoiceOver speech audit are outside this pass.
 
 Private starting diff, data/research hashes, preview and timing evidence: `.context/qa-artifacts/onboarding-refinement/` in the original working copy. Missing-letter research remains paused.
