@@ -10,8 +10,6 @@ Native macOS workspace for organizing fonts, exploring typography in typeboards,
 
 [Download from the website](https://typefield.app/download/) | [Download from GitHub](https://github.com/paperplasticmetal/typefield/releases/download/v0.59.9-beta.1/Typefield-0.59.9-beta.dmg) | [Release notes](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.9-beta.1)
 
-The 0.59.9 beta DMG and website download link are being prepared; use the published [0.59.8 beta release](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.8-beta.1) until the matching 0.59.9 release is available.
-
 The [source repository](https://github.com/paperplasticmetal/typefield) contains the app and build scripts; see [License](#license) for reuse terms.
 
 1. Open the downloaded `.dmg` and drag **Typefield** into **Applications**.
