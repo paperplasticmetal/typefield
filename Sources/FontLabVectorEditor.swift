@@ -512,9 +512,9 @@ struct FontLabVectorEditorView: View {
     @State private var y = ""
     @State private var scale = "100"
     @State private var angle = "0"
-    init(glyph:FontLabGlyph,metrics:FontLabMetrics,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,compact:Bool=false,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
+    init(glyph:FontLabGlyph,metrics:FontLabMetrics,retainedEditor:FontLabVectorEditor?=nil,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,compact:Bool=false,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
         self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.compact=compact;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo;self.onPreviewInkChange=onPreviewInkChange
-        let value=FontLabVectorEditor(glyph:glyph,metrics:metrics)
+        let value=retainedEditor ?? FontLabVectorEditor(glyph:glyph,metrics:metrics)
         if let previewInkHex { value.inkColor=Color(nsColor:NSColor(hex:previewInkHex)) }
         _editor=StateObject(wrappedValue:value)
     }
@@ -592,7 +592,7 @@ struct FontLabVectorEditorView: View {
                 .help("Objects: move a whole shape or drag a corner to resize (Shift keeps proportions). Nodes: edit points and handles. Paths contains split, join and midpoint tools. Arrow keys move one unit; Shift moves ten.")
         }
         .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
-        .onAppear { editor.componentStrokes=componentStrokes }
+        .onAppear { editor.receive(glyph); editor.metrics=metrics; editor.componentStrokes=componentStrokes; updateCoordinates() }
         .onChange(of:componentStrokes) {editor.componentStrokes=$0}
         .onChange(of:metrics) {editor.metrics=$0}
         .onChange(of:editor.selection) {_ in updateCoordinates()}

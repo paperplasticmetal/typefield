@@ -94,6 +94,7 @@ struct CompareView: View {
         VStack(spacing: 16) {
             HStack {
                 Text("Shortlist").font(.title2)
+                Button("Open in window") { dismiss(); (NSApp.delegate as? AppDelegate)?.workspaceWindows.openBrowser(scope: "Shortlist") }
                 Spacer()
                 Text("\(selectedFonts.count) of \(library.compared.count) selected").foregroundStyle(.secondary)
                 Button("Create typeboard") { let fonts = selectedFonts; dismiss(); DispatchQueue.main.async { library.pairSelection(fonts, source: "Shortlist") } }.buttonStyle(.borderedProminent).disabled(selectedFonts.isEmpty)
@@ -115,7 +116,7 @@ struct CompareView: View {
                             // Wrapping allows comparing the same complete sentence at a shared size.
                             Text(text).font(.custom(face.name, size: size)).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                             CoverageView(text: text, coverage: face.coverage)
-                        }.padding(16).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+                        }.padding(16).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8)).onDrag { FontDragPayload.provider(face.name) }
                     }
                     if library.compared.isEmpty { Text("Add families with the + button on a font preview.").foregroundStyle(.secondary).padding(30) }
                 }

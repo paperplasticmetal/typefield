@@ -178,6 +178,37 @@ enum StudioChecks {
         print("PASS: live recursive watcher, original-file preview, temporary activation visible to a separate process, deactivation and removal reconciliation.")
     }
     static func run(catalog: [Family]) throws {
+        // Font drops preserve content and geometry and target one template role
+        // or imported layer. Invalid targets are rejected without a write.
+        let dropOriginal = TypeDirection(name: "Font drop", fonts: ["Helvetica"])
+        let dropElement = CanvasPlan(direction: dropOriginal).elements.first { $0.role == .display && $0.text != nil }!
+        let dropped = StudioFontDrop.applying("Times-Roman", to: dropOriginal, element: dropElement)!
+        var expectedDrop = dropOriginal
+        expectedDrop.styles[TypeRole.display.rawValue]!.fontName = "Times-Roman"
+        try verify(dropped == expectedDrop, "Font drop must preserve text, geometry and other roles")
+        try verify(StudioFontDrop.applying("Times-Roman", to: dropOriginal, element: CanvasElement(rect: .zero)) == nil, "Blank canvas is not a font target")
+        var importedDrop = TypeDirection(); importedDrop.canvas = .imported
+        importedDrop.importedLayout = ImportedLayout(width: 320, height: 200, layers: [
+            ImportedLayer(name: "First", x: 10, y: 10, width: 280, height: 60, color: "222222", style: TypeStyle(fontName: "Helvetica", size: 24, text: "First")),
+            ImportedLayer(name: "Second", x: 10, y: 100, width: 280, height: 60, color: "222222", style: TypeStyle(fontName: "Helvetica", size: 24, text: "Second"))])
+        let layerDropElement = CanvasPlan(direction: importedDrop).elements.first { $0.sectionID == importedDrop.importedLayout!.layers[1].id && $0.text != nil }!
+        var expectedImportedDrop = importedDrop
+        expectedImportedDrop.importedLayout!.layers[1].style!.fontName = "Times-Roman"
+        try verify(StudioFontDrop.applying("Times-Roman", to: importedDrop, element: layerDropElement) == expectedImportedDrop, "Imported font drop must change only the hit text layer")
+        let dropFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-drop-check-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dropFolder) }
+        let dropStore = StudioStore(url: dropFolder.appendingPathComponent("spaces.json"))
+        dropStore.undoManager.groupsByEvent = false
+        let dropIDs = dropStore.createBoard(in: nil, defaultSpaceName: "Drop check")!
+        var dropBoard = dropStore.state.spaces[0].boards[0]
+        let originalDropBoard = dropBoard
+        var persistedDrop = dropped; persistedDrop.id = dropBoard.directions[0].id
+        dropBoard.directions[0] = persistedDrop
+        try verify(dropStore.update(space: dropIDs.space, board: dropBoard, action: "Drop Font"), "Drop must persist")
+        dropStore.undoManager.undo()
+        try verify(dropStore.state.spaces[0].boards[0] == originalDropBoard, "Undo must restore the pre-drop canvas")
+        dropStore.undoManager.redo()
+        try verify(dropStore.state.spaces[0].boards[0] == dropBoard, "Redo must restore the font drop")
         try verify(StudioHexColor.parse(" #4f6b91 \n") == "4F6B91", "Pasted hex colors must normalize before saving")
         try verify(StudioHexColor.parse("#aBc") == "AABBCC", "Short CSS hex colors must expand to saved RGB values")
         try verify(StudioHexColor.parse("4F6B91") == "4F6B91", "Hex colors without # must be accepted")

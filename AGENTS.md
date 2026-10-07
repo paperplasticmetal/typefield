@@ -7,7 +7,7 @@ Preserve user fonts and saved library/project data. Use temporary fixtures for d
 
 Keep `.context/` local and private. Do not commit its chat archives or QA artifacts.
 
-After every completed fix or feature, run the relevant checks, commit the change, and push it to `origin`. For user-visible releases, bump both version plists and update the changelog/status notes. Build and install one canonical `/Applications/Typefield.app` with `./install-local.sh`; do not create numbered app copies or ZIPs unless the user explicitly requests them.
+After every completed fix or feature, run the relevant checks, commit the change, and push it to `origin`. Every app update pushed to GitHub must also complete the public-beta distribution workflow in `docs/RELEASE_WORKFLOW.md`: package and verify the matching DMG, upload it to the public release repository, update the website version/download link, and publish the existing Typefield Site. Do not call a release complete while the website still offers an older app; report any distribution blocker explicitly. For user-visible releases, bump both version plists and update the changelog/status notes. Build and install one canonical `/Applications/Typefield.app` with `./install-local.sh`; do not create numbered app copies or ZIPs unless the user explicitly requests them.
 
 
 ## Letterform development: eight-agent team

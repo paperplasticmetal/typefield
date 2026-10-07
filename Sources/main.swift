@@ -146,6 +146,13 @@ final class Library: ObservableObject {
     var autoActivatedPaths: Set<String> = []
     var autoActivatedStamps: [String: FontFileStamp] = [:]
     lazy var studio = StudioStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("spaces.json"), recoveryError: backupRecoveryError)
+    private var retainedStudioSession: StudioEditorSession?
+    func editorSession(for board: TypeBoard) -> StudioEditorSession {
+        if let retainedStudioSession, retainedStudioSession.board.id == board.id { return retainedStudioSession }
+        let session = StudioEditorSession(board: board)
+        retainedStudioSession = session
+        return session
+    }
     lazy var fontLab = FontLabStore(url: saveURL.deletingLastPathComponent().appendingPathComponent("font-lab.json"), recoveryError: backupRecoveryError)
     func pairSelection(_ names: [String], source: String = "Selected fonts", spaceID: UUID? = nil) {
         guard !studio.readBlocked else { message = studio.error; return }
@@ -690,6 +697,7 @@ private struct LibrarySidebarSnapshot {
 
 struct ContentView: View {
     @ObservedObject var library: Library
+    @ObservedObject var windows: WorkspaceWindows
     @AppStorage("previewText") var preview = "The quick brown fox jumps over the lazy dog."
     @AppStorage("previewSize") var size = 64.0
     @AppStorage("adaptiveGridView") var grid = true
@@ -705,7 +713,6 @@ struct ContentView: View {
     @State private var guide: TypefieldGuide?
     @AppStorage("typefield.onboardingComplete") private var onboardingComplete = false
     @AppStorage(WorkspaceSidebarPreference.key) var sidebarCollapsed = false
-    @State private var spacesCanvasFocused = false
     @FocusState private var searchFocused: Bool
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -713,9 +720,9 @@ struct ContentView: View {
             if library.workspace == .library && !sidebarCollapsed { WorkspaceSidebarShell { sidebar }.transition(.move(edge: .leading).combined(with: .opacity)) }
             switch library.workspace {
             case .spaces:
-                StudioView(library: library, store: library.studio, sidebarCollapsed: $sidebarCollapsed, focusCanvas: $spacesCanvasFocused)
+                WorkspaceEditorSlot(windows: windows, mode: .spaces)
             case .fontLab:
-                FontLabView(library: library, sidebarCollapsed: $sidebarCollapsed)
+                WorkspaceEditorSlot(windows: windows, mode: .fontLab)
             case .library:
                 VStack(spacing: 0) {
                 let visibleFamilies = library.filtered
@@ -727,7 +734,7 @@ struct ContentView: View {
                 }.accessibilityIdentifier("library-workspace")
             }
         }
-        if sidebarCollapsed && !(library.workspace == .spaces && spacesCanvasFocused) {
+        if sidebarCollapsed && library.workspace == .library {
             WorkspaceSidebarRevealButton(collapsed: $sidebarCollapsed)
                 .padding(.top, 8)
                 .zIndex(2)
@@ -740,6 +747,7 @@ struct ContentView: View {
         .onChange(of: systemScheme) { _ in TypefieldIcon.apply() }
         .frame(minWidth: 980, minHeight: 620)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
+            guard (NSApp.delegate as? AppDelegate)?.window.isKeyWindow == true else { return }
             switch event.object as? String {
             case "collection": library.workspace = .library; showCollection = true
             case "colors": showColors = true
@@ -750,9 +758,7 @@ struct ContentView: View {
             case "list": grid = false
             case "grid": grid = true
             case "toggleSidebar":
-                if library.workspace == .spaces && spacesCanvasFocused {
-                    NotificationCenter.default.post(name: Notification.Name("TypefieldCanvasFocus"), object: nil)
-                } else { sidebarCollapsed.toggle() }
+                if (NSApp.delegate as? AppDelegate)?.activeWorkspace == .library { sidebarCollapsed.toggle() }
             case "tour": guide = .tour
             case "about": guide = .about
             case "shortcuts": guide = .shortcuts
@@ -851,6 +857,7 @@ struct ContentView: View {
                     Spacer()
                     if !library.comparison.isEmpty {
                         Button("Shortlist (\(library.comparison.count))") { library.showCompare = true }
+                        Button("Open shortlist window") { windows.openBrowser(scope: "Shortlist") }
                         Button("Clear shortlist") { library.comparison = [] }
                     }
                 }.font(.caption).padding(.horizontal, 16).padding(.bottom, 10)
@@ -1003,7 +1010,7 @@ struct ContentView: View {
                                 Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) }
                             } label: { Image(systemName: "ellipsis").frame(width: 28, height: 28) }
                                 .shelfIconMenu().accessibilityLabel("Actions for collection \(name)")
-                        }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Rename collection…") { renameCollection(name) }; Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) } }
+                        }.padding(.horizontal, 10).padding(.vertical, 9).background(library.selection == "collection:" + name ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8).contextMenu { Button("Open in new window") { windows.openBrowser(scope: "collection:" + name) }; Button("Rename collection…") { renameCollection(name) }; Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) } }
                     }
                     if library.saved.collections.isEmpty { Text("No collections yet. Use + to create one.").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 5) }
                 }
@@ -1250,7 +1257,7 @@ struct ContentView: View {
                 FontPreview(text: preview == "{family}" ? family.name : preview, name: face.name, size: size, wraps: true, variations: library.pro.axes[face.name] ?? [:], features: library.pro.features[face.name] ?? [:], baseline: metrics.baseline, maximumLines: 3).frame(height: metrics.height, alignment: .topLeading).allowsHitTesting(false)
             }
             if grid && !shortPreview { Button("Expand preview…") { library.detail = family }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Open all preview text and font styles").accessibilityLabel("Expand \(family.name) preview") }
-        }.frame(maxWidth: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.contextMenu { actions(family) }
+        }.frame(maxWidth: .infinity, alignment: .topLeading).modifier(ShelfCardSurface(selected: library.selectedFamilies.contains(family.name))).contentShape(Rectangle()).onTapGesture { library.detail = family }.onDrag { FontDragPayload.provider(library.chosenFace(family).name) }.contextMenu { actions(family) }
     }
     @ViewBuilder func actions(_ family: Family) -> some View {
         Button("New typeboard with this font") { library.pairSelection([library.chosenFace(family).name], source: family.name) }
@@ -1406,8 +1413,18 @@ private struct TypefieldAbout: View {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var window: NSWindow!
-    let library = Library()
+    let library: Library
+    init(library: Library = Library()) { self.library = library; super.init() }
     let settingsWindow = TypefieldSettingsWindow()
+    lazy var workspaceWindows = WorkspaceWindows(library: library)
+    var activeWorkspace: WorkspaceMode {
+        if let mode = workspaceWindows.mode(for: NSApp.keyWindow) { return mode }
+        if NSApp.keyWindow?.title == "Typefield: Inspector" { return .spaces }
+        if workspaceWindows.isBrowser(NSApp.keyWindow) { return .library }
+        return library.workspace
+    }
+    var activeEditorWindow: NSWindow { NSApp.keyWindow ?? window }
+    var editorIsKey: Bool { window.isKeyWindow || workspaceWindows.mode(for: NSApp.keyWindow) != nil }
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Bundle.main.bundleIdentifier == "local.typefield.app", !UserDefaults.standard.bool(forKey: "typefield.legacyPreferencesChecked") {
             let old = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences/local.fontshelf.app.plist")
@@ -1418,8 +1435,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let theme = UserDefaults.standard.string(forKey: "appearance") ?? "Dark"
         NSApp.appearance = theme == "System" ? nil : NSAppearance(named: theme == "Dark" ? .darkAqua : .aqua)
         TypefieldIcon.apply()
-        let root = ContentView(library: library)
+        let root = ContentView(library: library, windows: workspaceWindows)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.tabbingMode = .disallowed
         window.titlebarAppearsTransparent = false
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.title = "Typefield"; window.minSize = NSSize(width: 980, height: 660)
@@ -1440,7 +1459,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(withTitle: "Quit Typefield", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let fileMenu = addMenu("File", to: menu)
         addCommand("Add Font Folder…", "folder", to: fileMenu, key: "o")
-        addCommand("New Collection…", "collection", to: fileMenu, key: "n")
+        addCommand("New Font Browser Window", "newWindow", to: fileMenu, key: "n")
+        addCommand("New Collection…", "collection", to: fileMenu, key: "n", modifiers: [.command, .shift])
         addCommand("New Typeboard", "pair", to: fileMenu, key: "k")
         fileMenu.addItem(.separator())
         addCommand("Export Library Backup…", "backup", to: fileMenu)
@@ -1514,6 +1534,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
         windowItem.submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
+        addCommand("Pop Out Spaces", "popSpaces", to: windowMenu)
+        addCommand("Pop Out Letterform Editor", "popFontLab", to: windowMenu)
+        addCommand("Dock Editor Window", "dockEditor", to: windowMenu)
+        addCommand("New Font Browser Window", "newWindow", to: windowMenu)
+        windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         let fullScreenItem = windowMenu.addItem(withTitle: "Enter Full Screen", action: #selector(toggleMainFullScreen(_:)), keyEquivalent: "f")
@@ -1529,10 +1555,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Report a Bug…", "bugReport", to: helpMenu)
         NSApp.helpMenu = helpMenu
         NSApp.mainMenu = menu
+        NSApp.addWindowsItem(window, title: "Typefield", filename: false)
         NSApp.activate(ignoringOtherApps: true)
-        let activationErrors = ActivationManager.shared.clear(restore: false)
+        let activationErrors = CommandLine.arguments.contains("--window-qa") ? [] : ActivationManager.shared.clear(restore: false)
         if !activationErrors.isEmpty { library.message = "Some previous temporary activations could not be cleared: " + activationErrors.joined(separator: "\n") }
-        library.reload(register: true)
+        library.reload(register: !CommandLine.arguments.contains("--window-qa"))
     }
     func addMenu(_ title: String, to parent: NSMenu) -> NSMenu {
         let item = NSMenuItem(); parent.addItem(item)
@@ -1546,42 +1573,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(undo(_:)) {
             if let manager = activeUndoManager { item.title = manager.undoMenuItemTitle; return manager.canUndo }
-            let editorOwnsHistory = library.workspace == .fontLab && NSApp.keyWindow === window && window.attachedSheet == nil && !(window.firstResponder is NSTextView)
+            let editorOwnsHistory = activeWorkspace == .fontLab && editorIsKey && activeEditorWindow.attachedSheet == nil && !(activeEditorWindow.firstResponder is NSTextView)
             item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.undoTitle : "Undo"
             return editorOwnsHistory && FontLabEditMenuBridge.shared.canUndo
         }
         if item.action == #selector(redo(_:)) {
             if let manager = activeUndoManager { item.title = manager.redoMenuItemTitle; return manager.canRedo }
-            let editorOwnsHistory = library.workspace == .fontLab && NSApp.keyWindow === window && window.attachedSheet == nil && !(window.firstResponder is NSTextView)
+            let editorOwnsHistory = activeWorkspace == .fontLab && editorIsKey && activeEditorWindow.attachedSheet == nil && !(activeEditorWindow.firstResponder is NSTextView)
             item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.redoTitle : "Redo"
             return editorOwnsHistory && FontLabEditMenuBridge.shared.canRedo
         }
         if item.action == #selector(toggleMainFullScreen(_:)) {
-            item.title = window.styleMask.contains(.fullScreen) ? "Exit Full Screen" : "Enter Full Screen"
-            return NSApp.isActive && window.attachedSheet == nil
+            item.title = activeEditorWindow.styleMask.contains(.fullScreen) ? "Exit Full Screen" : "Enter Full Screen"
+            return NSApp.isActive && activeEditorWindow.attachedSheet == nil
         }
         guard let command = item.representedObject as? String else { return true }
         if ["settings", "about", "privacy", "shortcuts", "feedback", "bugReport"].contains(command) { return true }
-        let inspectorIsKey = NSApp.keyWindow?.title == "Typefield: Inspector" && library.workspace == .spaces
+        let inspectorIsKey = NSApp.keyWindow?.title == "Typefield: Inspector" && activeWorkspace == .spaces
         if command == "dockInspector" { return NSApp.isActive && inspectorIsKey && window.attachedSheet == nil }
-        guard NSApp.isActive, window.attachedSheet == nil, window.isKeyWindow || inspectorIsKey else { return false }
-        let inLibrary = library.workspace == .library
+        if ["newWindow", "popSpaces", "popFontLab"].contains(command) { return NSApp.isActive && NSApp.keyWindow?.attachedSheet == nil }
+        if command == "dockEditor" { return workspaceWindows.mode(for: NSApp.keyWindow) != nil && activeEditorWindow.attachedSheet == nil }
+        guard NSApp.isActive, activeEditorWindow.attachedSheet == nil, window.isKeyWindow || workspaceWindows.mode(for: NSApp.keyWindow) != nil || inspectorIsKey else { return false }
+        let inLibrary = activeWorkspace == .library
         let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
         switch command {
         case "library", "spaces", "fontLab":
-            item.state = (command == "library" && inLibrary) || (command == "spaces" && library.workspace == .spaces) || (command == "fontLab" && library.workspace == .fontLab) ? .on : .off
+            item.state = (command == "library" && inLibrary) || (command == "spaces" && activeWorkspace == .spaces) || (command == "fontLab" && activeWorkspace == .fontLab) ? .on : .off
         case "inspect": return inLibrary && selected.count == 1
         case "export", "tagSelected", "familySelected", "favorite", "copyNames", "deselect": return inLibrary && !selected.isEmpty
         case "compareSelected": return inLibrary && (2...6).contains(selected.count)
         case "select": return inLibrary && !library.filtered.isEmpty
-        case "find": item.title = library.workspace == .spaces ? "Choose Font…" : "Find Fonts…"; return inLibrary || library.workspace == .spaces
+        case "find": item.title = activeWorkspace == .spaces ? "Choose Font…" : "Find Fonts…"; return inLibrary || activeWorkspace == .spaces
         case "list", "grid":
             item.state = (UserDefaults.standard.object(forKey: "adaptiveGridView") as? Bool ?? true) == (command == "grid") ? .on : .off
             return inLibrary
         case "larger", "smaller", "resetSize", "colors", "filters", "clearFilters": return inLibrary
         case "comparison": return inLibrary
         case "studio.previousCanvas", "studio.nextCanvas", "studio.canvas.fit", "studio.inspector.full", "studio.inspector.slim", "studio.inspector.hidden", "studio.inspector.floating", "studio.inspector.toggle", "studio.inspector.typography", "studio.inspector.arrangement", "studio.canvasFocus":
-            return library.workspace == .spaces && !(NSApp.keyWindow?.firstResponder is NSTextView)
+            return activeWorkspace == .spaces && !(NSApp.keyWindow?.firstResponder is NSTextView)
         case "refresh": return inLibrary && !library.loading
         case "toggleSidebar": item.title = WorkspaceSidebarPreference.collapsed() ? "Show Sidebar" : "Hide Sidebar"
         default: break
@@ -1589,38 +1618,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return true
     }
     var activeUndoManager: UndoManager? {
-        if let text = NSApp.keyWindow?.firstResponder as? NSTextView, !(library.workspace == .spaces && text.isFieldEditor), let manager = text.undoManager, manager.canUndo || manager.canRedo { return manager }
-        guard NSApp.keyWindow === window || NSApp.keyWindow?.title == "Typefield: Inspector" else { return nil }
-        return library.workspace == .spaces ? library.studio.undoManager : nil
+        if let text = NSApp.keyWindow?.firstResponder as? NSTextView, !(activeWorkspace == .spaces && text.isFieldEditor), let manager = text.undoManager, manager.canUndo || manager.canRedo { return manager }
+        guard NSApp.keyWindow === window || workspaceWindows.mode(for: NSApp.keyWindow) != nil || NSApp.keyWindow?.title == "Typefield: Inspector" else { return nil }
+        return activeWorkspace == .spaces ? library.studio.undoManager : nil
     }
     @objc func undo(_ sender: Any?) {
         if let manager = activeUndoManager {
-            if manager === library.studio.undoManager { window.makeFirstResponder(window) }
+            if manager === library.studio.undoManager { activeEditorWindow.makeFirstResponder(nil) }
             manager.undo()
-        } else if library.workspace == .fontLab && window.isKeyWindow && window.attachedSheet == nil && !(window.firstResponder is NSTextView) {
+        } else if activeWorkspace == .fontLab && editorIsKey && activeEditorWindow.attachedSheet == nil && !(activeEditorWindow.firstResponder is NSTextView) {
             FontLabEditMenuBridge.shared.requestUndo()
         }
     }
     @objc func redo(_ sender: Any?) {
         if let manager = activeUndoManager {
-            if manager === library.studio.undoManager { window.makeFirstResponder(window) }
+            if manager === library.studio.undoManager { activeEditorWindow.makeFirstResponder(nil) }
             manager.redo()
-        } else if library.workspace == .fontLab && window.isKeyWindow && window.attachedSheet == nil && !(window.firstResponder is NSTextView) {
+        } else if activeWorkspace == .fontLab && editorIsKey && activeEditorWindow.attachedSheet == nil && !(activeEditorWindow.firstResponder is NSTextView) {
             FontLabEditMenuBridge.shared.requestRedo()
         }
     }
-    @objc func toggleMainFullScreen(_ sender: Any?) { window.toggleFullScreen(sender) }
+    @objc func toggleMainFullScreen(_ sender: Any?) { activeEditorWindow.toggleFullScreen(sender) }
     @objc func runMenuCommand(_ sender: NSMenuItem) {
         guard validateMenuItem(sender), let command = sender.representedObject as? String else { return }
         let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
         switch command {
+        case "newWindow": workspaceWindows.openBrowser()
+        case "popSpaces": workspaceWindows.detach(.spaces)
+        case "popFontLab": workspaceWindows.detach(.fontLab)
+        case "dockEditor": if let mode = workspaceWindows.mode(for: NSApp.keyWindow) { workspaceWindows.dock(mode) }
         case "folder": library.addFolder()
-        case "library": library.workspace = .library
-        case "spaces": library.workspace = .spaces
-        case "fontLab": library.workspace = .fontLab
+        case "library": library.workspace = .library; window.makeKeyAndOrderFront(nil)
+        case "spaces":
+            library.workspace = .spaces
+            if workspaceWindows.detached.contains(.spaces) { workspaceWindows.detach(.spaces) } else { window.makeKeyAndOrderFront(nil) }
+        case "fontLab":
+            library.workspace = .fontLab
+            if workspaceWindows.detached.contains(.fontLab) { workspaceWindows.detach(.fontLab) } else { window.makeKeyAndOrderFront(nil) }
         case "dockInspector":
             NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.full")
-            window.makeKeyAndOrderFront(nil)
+            if workspaceWindows.detached.contains(.spaces) { workspaceWindows.detach(.spaces) } else { window.makeKeyAndOrderFront(nil) }
         case "settings": settingsWindow.show(library: library)
         case "about": settingsWindow.show(library: library, page: .about)
         case "privacy": settingsWindow.show(library: library, page: .privacy)
@@ -1632,7 +1669,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             window.makeKeyAndOrderFront(nil)
             NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: command)
         case "pair":
-            if library.workspace == .library {
+            if activeWorkspace == .library {
                 let seed = library.contextualTypeboardSeed()
                 library.pairSelection(selected.isEmpty ? seed.fonts : selected.map { library.chosenFace($0).name }, source: selected.isEmpty ? seed.source : "Selected Library fonts")
             } else { library.pairSelection([], source: "Blank typeboard") }
@@ -1655,8 +1692,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         default: NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: command)
         }
     }
-    func applicationWillTerminate(_ notification: Notification) { ActivationManager.shared.clear(restore: false) }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationWillTerminate(_ notification: Notification) { if !CommandLine.arguments.contains("--window-qa") { ActivationManager.shared.clear(restore: false) } }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { window.makeKeyAndOrderFront(nil) }
+        return true
+    }
 }
 
 enum PerformanceAudit {
@@ -1793,6 +1834,8 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
 } else if CommandLine.arguments.contains("--stress-regression-check") {
     do { try StudioChecks.stress(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run() }
     catch { fputs("Stress regression failed: \(error.localizedDescription)\n",stderr);exit(1) }
+} else if CommandLine.arguments.contains("--window-self-test") {
+    WorkspaceWindowChecks.run()
 } else if CommandLine.arguments.contains("--self-test") {
     for pointSize in [52.0, 131.0] {
         let views = ["Helvetica", "Times-Roman"].map { name -> BaselineTextView in
@@ -1966,7 +2009,15 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     for c in Category.allCases { print("\(c.rawValue): \(fonts.filter { $0.automaticCategory == c }.count)") }
 } else {
     let app = NSApplication.shared
-    let delegate = AppDelegate()
+    let delegate: AppDelegate
+    if CommandLine.arguments.contains("--window-qa") {
+        let fixture = Library(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-window-qa-" + UUID().uuidString + "/library.json"))
+        _ = fixture.studio.createBoard(in: nil, defaultSpaceName: "Window QA", fonts: ["Helvetica", "Times-Roman"])
+        _ = fixture.fontLab.addProject(name: "Window QA")
+        fixture.comparison = ["Helvetica", "Times"]
+        fixture.workspace = .spaces
+        delegate = AppDelegate(library: fixture)
+    } else { delegate = AppDelegate() }
     app.delegate = delegate
     app.run()
 }

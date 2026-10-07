@@ -80,18 +80,26 @@ enum StudioTransferDialog {
 }
 struct WorkspaceSwitcher: View {
     @ObservedObject var library: Library
+    @Environment(\.windowWorkspace) private var windowWorkspace
+    private var selectedWorkspace: WorkspaceMode { windowWorkspace ?? library.workspace }
     var body: some View {
         VStack(spacing: 3) {
             ForEach(WorkspaceMode.allCases) { workspace in
-                Button { library.workspace = workspace } label: {
+                Button {
+                    library.workspace = workspace
+                    if let delegate = NSApp.delegate as? AppDelegate {
+                        if delegate.workspaceWindows.detached.contains(workspace) { delegate.workspaceWindows.detach(workspace) }
+                        else { delegate.window.makeKeyAndOrderFront(nil) }
+                    }
+                } label: {
                     Label(workspace.rawValue, systemImage: workspace == .library ? "textformat" : workspace == .spaces ? "square.stack.3d.up" : "pencil.and.outline")
-                        .font(.system(size: 12, weight: library.workspace == workspace ? .semibold : .regular))
+                        .font(.system(size: 12, weight: selectedWorkspace == workspace ? .semibold : .regular))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(library.workspace == workspace ? ShelfPalette.indiaYellow.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                        .background(selectedWorkspace == workspace ? ShelfPalette.indiaYellow.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .accessibilityValue(library.workspace == workspace ? "Selected" : "")
+                .accessibilityValue(selectedWorkspace == workspace ? "Selected" : "")
                 .help(workspace == .library ? "Browse and organize fonts" : workspace == .spaces ? "Explore typeboards and layouts" : "Draw and refine your own letters")
             }
         }.accessibilityIdentifier("workspace-switcher")
@@ -734,7 +742,7 @@ struct TypeBoardEditor: View {
     let onDelete: () -> Void
     init(library: Library, savedBoard: TypeBoard, projectName: String, projectBoards: [TypeBoard], focusCanvas: Binding<Bool>, sidebarCollapsed: Binding<Bool>, onSave: @escaping (TypeBoard, String) -> TypeBoard, onDelete: @escaping () -> Void) {
         self.library = library; self.savedBoard = savedBoard; self.projectName = projectName; self.projectBoards = projectBoards; self._focusCanvas = focusCanvas; self._sidebarCollapsed = sidebarCollapsed; self.onSave = onSave; self.onDelete = onDelete
-        _editorSession = StateObject(wrappedValue: StudioEditorSession(board: savedBoard))
+        _editorSession = StateObject(wrappedValue: library.editorSession(for: savedBoard))
         _inspectorMode = State(initialValue: StudioInspectorPreference.mode())
         let initialCanvasIDs = Set([savedBoard.selectedDirection ?? savedBoard.directions.first?.id].compactMap { $0 })
         _shownCanvasIDs = State(initialValue: initialCanvasIDs)
@@ -747,6 +755,7 @@ struct TypeBoardEditor: View {
     @State private var status = ""
     @State private var showPairingSuggestions = false
     @State private var pairingTargetRole = TypeRole.body
+    @State private var showEditingScope = false
     @State private var showFontSummary = false
     @State private var showWebFontAudit = false
     @State private var fontSummaryDetail = TypographySummaryDetail.roles
@@ -1008,7 +1017,7 @@ struct TypeBoardEditor: View {
             if focusCanvas { leaveCanvasFocus(); sidebarCollapsed = false }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TypefieldMenu"))) { event in
-            guard let command = event.object as? String else { return }
+            guard (NSApp.delegate as? AppDelegate)?.activeWorkspace == .spaces, let command = event.object as? String else { return }
             switch command {
             case "find":
                 inspectorTab = "Typography"
@@ -1376,7 +1385,7 @@ struct TypeBoardEditor: View {
                     else if visibleDirections.count > 1 { Button("Only this") { showOnlyCurrent() }.buttonStyle(.borderless).font(.caption).fixedSize().help("Hide the other canvases") }
                 }
             }.frame(width: max(1,plan.artboardSize.width * zoom), height:24).clipped()
-            CanvasPreview(plan: plan, zoom: zoom, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, selectedTextID: direction.id == self.direction.id ? selectedTextID : nil, onSelect: { id in frameCanvasID = nil; selectedSection = id; selectedTextID = nil; inspectorTab = "Arrangement" }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.id == self.direction.id && direction.canvas == .imported ? moveLayer : nil, onArtworkTranslate: direction.id == self.direction.id ? moveLayer : nil, onImportArtwork: { url, point in importArtwork(url, onto: direction.id, at: point) }, onTextSelect: { element in frameCanvasID = nil; selectText(element) }, onTextEdit: direction.id == self.direction.id ? { element, text in editText(element, text, directionID: direction.id) } : nil)
+            CanvasPreview(plan: plan, zoom: zoom, directionID: direction.id == self.direction.id ? direction.id : nil, selectedSection: direction.id == self.direction.id ? selectedSection : nil, selectedTextID: direction.id == self.direction.id ? selectedTextID : nil, onSelect: { id in frameCanvasID = nil; selectedSection = id; selectedTextID = nil; inspectorTab = "Arrangement" }, onMove: moveSection, onAddRole: direction.id == self.direction.id ? addRole : nil, onTranslate: direction.id == self.direction.id && direction.canvas == .imported ? moveLayer : nil, onArtworkTranslate: direction.id == self.direction.id ? moveLayer : nil, onImportArtwork: { url, point in importArtwork(url, onto: direction.id, at: point) }, onTextSelect: { element in frameCanvasID = nil; selectText(element) }, onTextEdit: direction.id == self.direction.id ? { element, text in editText(element, text, directionID: direction.id) } : nil, acceptsFont: { library.face(named: $0) != nil && !library.studio.readBlocked }, onDropFont: { name, element in dropFont(name, onto: element, directionID: direction.id) })
                 .frame(width: plan.size.width * zoom, height: plan.size.height * zoom)
                 .overlay(alignment: .topLeading) {
                     canvasFrameControls(direction, size: CGSize(width: plan.artboardSize.width * zoom, height: plan.artboardSize.height * zoom), zoom: zoom)
@@ -1464,6 +1473,24 @@ struct TypeBoardEditor: View {
             }
             .onHover { if $0 { (edge.horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set() } else { NSCursor.arrow.set() } }
     }
+    private var editingScopeInfoButton: some View {
+        Button { showEditingScope.toggle() } label: { Image(systemName: "info.circle") }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("What changes with this selection?")
+            .accessibilityLabel("About editing scope")
+            .popover(isPresented: $showEditingScope) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(editingScopeLabel).font(.caption.weight(.semibold))
+                    if direction.canvas != .imported {
+                        Text("Font, size and spacing change every use of this role. Text color changes canvas text; selected text content changes only that object.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if importedLayerIndex != nil {
+                        Text("Typography, color and text content change only this imported layer.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }.padding(14).frame(width: 270).accessibilityIdentifier("spaces-editing-scope")
+            }
+    }
     func selectText(_ element: CanvasElement) {
         selectedSection = element.sectionID
         selectedTextID = element.textID
@@ -1490,19 +1517,6 @@ struct TypeBoardEditor: View {
                         .textFieldStyle(.roundedBorder)
                 }
                 Picker("Inspector", selection: $editorSession.inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(editingScopeLabel).font(.caption.weight(.semibold))
-                    if direction.canvas != .imported {
-                        Text("Font, size and spacing change every use of this role. Text color changes canvas text; selected text content changes only that object.")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    } else if importedLayerIndex != nil {
-                        Text("Typography, color and text content change only this imported layer.")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
-                    .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.accentColor.opacity(contrast == .increased ? 0.8 : 0.2)))
-                    .accessibilityIdentifier("spaces-editing-scope")
                 if let warnings = direction.importWarnings, !warnings.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Label("Import result (\(warnings.count) \(warnings.count == 1 ? "note" : "notes"))", systemImage: "exclamationmark.triangle")
@@ -1521,12 +1535,13 @@ struct TypeBoardEditor: View {
                 if inspectorTab == "Arrangement" { layoutSections }
                 else {
                 if direction.canvas == .imported {
-                    Text("Imported text layers").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    HStack { Text("Imported text layers").font(.caption.weight(.semibold)).foregroundStyle(.secondary); editingScopeInfoButton }
                     ShelfDropdown(title: "Layer", selection: Binding(get: { importedLayerIndex.flatMap { direction.importedLayout?.layers[$0].id } ?? "" }, set: { selectedSection = $0 }), options: (direction.importedLayout?.layers.filter { $0.style != nil } ?? []).map { ($0.name, $0.id) }, showsTitle: false)
                     Text("Edit each text layer independently. Drag layers on the canvas to position them.").font(.caption).foregroundStyle(.secondary)
                 } else {
                 HStack(spacing: 8) {
                     Text("Type role").font(.caption).foregroundStyle(.secondary)
+                    editingScopeInfoButton
                     Spacer(minLength: 8)
                     Menu {
                         ForEach(TypeRole.allCases) { item in Button(item.rawValue) { selectRole(item) } }
@@ -1690,6 +1705,17 @@ struct TypeBoardEditor: View {
             }.frame(height: Double(plan.sections.count) * 42)
             Text(direction.canvas == .imported ? "Drag to reorder or move layers. On a focused canvas, use arrows to select, ⌘⌥↑/↓ to reorder, or ⌥arrow to nudge." : "Drag to reorder sections. On a focused canvas, use arrows to select and ⌘⌥↑/↓ to reorder.").font(.caption2).foregroundStyle(.secondary)
         }
+    }
+    @discardableResult func dropFont(_ name: String, onto element: CanvasElement, directionID: UUID) -> Bool {
+        guard library.face(named: name) != nil, !library.studio.readBlocked,
+              let index = board.directions.firstIndex(where: { $0.id == directionID }),
+              let updated = StudioFontDrop.applying(name, to: board.directions[index], element: element,
+                                                   axes: library.pro.axes[name] ?? [:], features: library.pro.features[name] ?? [:]) else { return false }
+        board.directions[index] = updated
+        guard save("Drop Font") else { status = "Font change could not be saved."; return false }
+        _ = library.recordFontUse(name)
+        status = updated.canvas == .imported ? "Changed font for this text layer" : "Changed font for the \(element.role?.rawValue ?? "selected") role"
+        return true
     }
     @discardableResult func chooseFont(_ name: String) -> Bool {
         let changed = style.fontName != name
@@ -2980,6 +3006,8 @@ final class CanvasNativeView: NSView {
     var onImportArtwork: ((URL, CGPoint) -> Void)?
     var onTextSelect: ((CanvasElement) -> Void)?
     var onTextEdit: ((CanvasElement, String) -> Void)?
+    var acceptsFont: ((String) -> Bool)?
+    var onDropFont: ((String, CanvasElement) -> Bool)?
     private var insertionY: Double?
     private var artworkDropHover = false
     private var translation = NSPoint.zero
@@ -2992,7 +3020,7 @@ final class CanvasNativeView: NSView {
     override var canBecomeKeyView: Bool { directionID != nil }
     override func becomeFirstResponder() -> Bool { let accepted = super.becomeFirstResponder(); if accepted { needsDisplay = true }; return accepted }
     override func resignFirstResponder() -> Bool { let accepted = super.resignFirstResponder(); if accepted { needsDisplay = true }; return accepted }
-    init(plan: CanvasPlan) { self.plan = plan; super.init(frame: CGRect(origin: .zero, size: plan.size)); registerForDraggedTypes([.string, .fileURL]) }
+    init(plan: CanvasPlan) { self.plan = plan; super.init(frame: CGRect(origin: .zero, size: plan.size)); registerForDraggedTypes([.string, .fileURL, FontDragPayload.type]) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func resetCursorRects() { if directionID != nil { addCursorRect(bounds, cursor: .openHand) } }
     private var navigationTargets: [CanvasAccessibleTarget] {
@@ -3307,8 +3335,21 @@ final class CanvasNativeView: NSView {
               SpacesArtworkImport.supportedExtensions.contains(url.pathExtension.lowercased()) else { return nil }
         return url
     }
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+    private func fontDrop(_ sender: NSDraggingInfo) -> (String, CanvasElement)? {
+        guard onDropFont != nil, let name = FontDragPayload.read(sender.draggingPasteboard), acceptsFont?(name) == true else { return nil }
+        let point = convert(sender.draggingLocation, from: nil)
+        guard let element = plan.text(at: NSPoint(x: point.x / max(0.01, zoom), y: point.y / max(0.01, zoom))), element.style != nil else { return nil }
+        return (name, element)
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        FontDragPayload.trace("Entered canvas: " + (FontDragPayload.read(sender.draggingPasteboard) ?? "no font payload"))
+        return draggingUpdated(sender)
+    }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if fontDrop(sender) != nil {
+            artworkDropHover = true; insertionY = nil; needsDisplay = true
+            return .copy
+        }
         if artworkURL(sender) != nil {
             artworkDropHover = true; insertionY = nil; needsDisplay = true
             return .copy
@@ -3321,9 +3362,14 @@ final class CanvasNativeView: NSView {
         if case .role = source(sender) { return .copy }; return .move
     }
     override func draggingExited(_ sender: NSDraggingInfo?) { insertionY = nil; artworkDropHover = false; needsDisplay = true }
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { artworkURL(sender) != nil || source(sender) != nil }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { fontDrop(sender) != nil || artworkURL(sender) != nil || source(sender) != nil }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         defer { insertionY = nil; artworkDropHover = false; needsDisplay = true }
+        if let (name, element) = fontDrop(sender) {
+            FontDragPayload.trace("Drop font " + name + " onto " + element.sectionID)
+            finishEditing(commit: true)
+            return onDropFont?(name, element) ?? false
+        }
         if let url = artworkURL(sender) {
             let point = convert(sender.draggingLocation, from: nil)
             onImportArtwork?(url, CGPoint(x: point.x / max(0.01, zoom), y: point.y / max(0.01, zoom)))
@@ -3388,10 +3434,12 @@ struct CanvasPreview: NSViewRepresentable {
     var onImportArtwork: ((URL, CGPoint) -> Void)?
     var onTextSelect: ((CanvasElement) -> Void)?
     var onTextEdit: ((CanvasElement, String) -> Void)?
+    var acceptsFont: ((String) -> Bool)?
+    var onDropFont: ((String, CanvasElement) -> Bool)?
     final class Coordinator {}
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> CanvasNativeView { CanvasNativeView(plan: plan) }
-    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.selectedTextID = selectedTextID; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onArtworkTranslate = onArtworkTranslate; view.onImportArtwork = onImportArtwork; view.onTextSelect = onTextSelect; view.onTextEdit = onTextEdit; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.synchronizeInlineEditor(); view.setAccessibilityElement(true); view.updateAccessibilityItems(); view.needsDisplay = true }
+    func updateNSView(_ view: CanvasNativeView, context: Context) { view.plan = plan; view.zoom = zoom; view.directionID = directionID; view.selectedSection = selectedSection; view.selectedTextID = selectedTextID; view.onSelect = onSelect; view.onMove = onMove; view.onAddRole = onAddRole; view.onTranslate = onTranslate; view.onArtworkTranslate = onArtworkTranslate; view.onImportArtwork = onImportArtwork; view.onTextSelect = onTextSelect; view.onTextEdit = onTextEdit; view.acceptsFont = acceptsFont; view.onDropFont = onDropFont; view.frame.size = CGSize(width: plan.size.width * zoom, height: plan.size.height * zoom); view.synchronizeInlineEditor(); view.setAccessibilityElement(true); view.updateAccessibilityItems(); view.needsDisplay = true }
     static func dismantleNSView(_ view: CanvasNativeView, coordinator: Coordinator) { DispatchQueue.main.async { view.endInlineEditing(commit: true) } }
 }
 

@@ -1162,23 +1162,56 @@ private struct FontLabCharacterPanelDivider: View {
     }
 }
 
+/// Window-independent interaction state; docking must not erase undo or selection.
+final class FontLabEditorSession: ObservableObject {
+    @Published var focusEditor = false
+    @Published var showCharacters = true
+    @Published var selectedCharacter = "A"
+    @Published var strokeWidth = 0.026
+    @Published var drawingTool = FontLabDrawingTool.pen
+    @Published var nibStyle = FontLabNibStyle.round
+    @Published var smoothing = FontLabSmoothingLevel.gentle
+    @Published var usesTabletPressure = true
+    @Published var tabletInputDetected = false
+    @Published var selectingCharacters = false
+    @Published var selectedCharacters: Set<String> = []
+    @Published var characterFilter = FontLabCharacterFilter.all
+    @Published var characterJump = ""
+    @Published var characterJumpMessage = ""
+    @Published var artworkUndo: (before: FontLabProject, after: FontLabProject)?
+    @Published var editHistory = FontLabGlyphEditHistory()
+    @Published var vectorEditing = true
+    @Published var designUndo: (before: FontLabProject, after: FontLabProject)?
+    @Published var glyphEditRevision = UUID()
+    @Published var compactMetricsExpanded = false
+    private var vectorKey = ""
+    private var vectorEditor: FontLabVectorEditor?
+    func vector(for key: String, glyph: FontLabGlyph, metrics: FontLabMetrics) -> FontLabVectorEditor {
+        if vectorKey == key, let vectorEditor { return vectorEditor }
+        let value = FontLabVectorEditor(glyph: glyph, metrics: metrics)
+        vectorKey = key; vectorEditor = value
+        return value
+    }
+}
+
 struct FontLabView: View {
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @ObservedObject private var library: Library
+    @ObservedObject private var session: FontLabEditorSession
     @ObservedObject private var store: FontLabStore
     @Binding private var sidebarCollapsed: Bool
-    @State private var selectedCharacter = "A"
-    @State private var strokeWidth = 0.026
-    @State private var drawingTool = FontLabDrawingTool.pen
-    @State private var nibStyle = FontLabNibStyle.round
-    @State private var smoothing = FontLabSmoothingLevel.gentle
-    @State private var usesTabletPressure = true
-    @State private var tabletInputDetected = false
-    @State private var selectingCharacters = false
-    @State private var selectedCharacters: Set<String> = []
-    @State private var characterFilter = FontLabCharacterFilter.all
-    @State private var characterJump = ""
-    @State private var characterJumpMessage = ""
+    private var selectedCharacter: String { get { session.selectedCharacter } nonmutating set { session.selectedCharacter = newValue } }
+    private var strokeWidth: Double { get { session.strokeWidth } nonmutating set { session.strokeWidth = newValue } }
+    private var drawingTool: FontLabDrawingTool { get { session.drawingTool } nonmutating set { session.drawingTool = newValue } }
+    private var nibStyle: FontLabNibStyle { get { session.nibStyle } nonmutating set { session.nibStyle = newValue } }
+    private var smoothing: FontLabSmoothingLevel { get { session.smoothing } nonmutating set { session.smoothing = newValue } }
+    private var usesTabletPressure: Bool { get { session.usesTabletPressure } nonmutating set { session.usesTabletPressure = newValue } }
+    private var tabletInputDetected: Bool { get { session.tabletInputDetected } nonmutating set { session.tabletInputDetected = newValue } }
+    private var selectingCharacters: Bool { get { session.selectingCharacters } nonmutating set { session.selectingCharacters = newValue } }
+    private var selectedCharacters: Set<String> { get { session.selectedCharacters } nonmutating set { session.selectedCharacters = newValue } }
+    private var characterFilter: FontLabCharacterFilter { get { session.characterFilter } nonmutating set { session.characterFilter = newValue } }
+    private var characterJump: String { get { session.characterJump } nonmutating set { session.characterJump = newValue } }
+    private var characterJumpMessage: String { get { session.characterJumpMessage } nonmutating set { session.characterJumpMessage = newValue } }
     @AppStorage("fontLabCharacterBrowserWidth") private var characterBrowserWidth = FontLabCharacterPanelLayout.defaultWidth
     @AppStorage("fontLabProofStripHeight") private var proofStripHeight = FontLabProofStripLayout.defaultHeight
     @AppStorage("fontLabProofStripExpanded") private var proofStripExpanded = true
@@ -1186,20 +1219,20 @@ struct FontLabView: View {
     @State private var showMetricsGuide = false
     @State private var showExamples = false
     @State private var showArtworkImporter = false
-    @State private var artworkUndo: (before: FontLabProject, after: FontLabProject)?
+    private var artworkUndo: (before: FontLabProject, after: FontLabProject)? { get { session.artworkUndo } nonmutating set { session.artworkUndo = newValue } }
     @State private var isExportingFont = false
     @State private var clearRequest: ClearRequest?
     @State private var deleteRequest: FontLabProject?
-    @State private var editHistory = FontLabGlyphEditHistory()
+    private var editHistory: FontLabGlyphEditHistory { get { session.editHistory } nonmutating set { session.editHistory = newValue } }
     private var glyphUndo: [FontLabGlyph] { editHistory.undoEntries[selectedCharacter] ?? [] }
     private var glyphRedo: [FontLabGlyph] { editHistory.redoEntries[selectedCharacter] ?? [] }
-    @State private var vectorEditing = true
+    private var vectorEditing: Bool { get { session.vectorEditing } nonmutating set { session.vectorEditing = newValue } }
     @State private var showFontDesign = false
     @State private var showSmoothing = false
-    @State private var designUndo: (before: FontLabProject, after: FontLabProject)?
-    @State private var glyphEditRevision = UUID()
+    private var designUndo: (before: FontLabProject, after: FontLabProject)? { get { session.designUndo } nonmutating set { session.designUndo = newValue } }
+    private var glyphEditRevision: UUID { get { session.glyphEditRevision } nonmutating set { session.glyphEditRevision = newValue } }
     @State private var exportRequest: ExportRequest?
-    @State private var compactMetricsExpanded = false
+    private var compactMetricsExpanded: Bool { get { session.compactMetricsExpanded } nonmutating set { session.compactMetricsExpanded = newValue } }
 
     private struct ExportRequest {
         enum Kind { case glyphSVG, selectedSVGs, allSVGs, trueType }
@@ -1215,8 +1248,9 @@ struct FontLabView: View {
         let glyph: FontLabGlyph
     }
 
-    init(library: Library, sidebarCollapsed: Binding<Bool>) {
+    init(library: Library, sidebarCollapsed: Binding<Bool>, session: FontLabEditorSession) {
         self.library = library
+        self.session = session
         _sidebarCollapsed = sidebarCollapsed
         _store = ObservedObject(wrappedValue: library.fontLab)
     }
@@ -1228,7 +1262,7 @@ struct FontLabView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !sidebarCollapsed {
+            if !sidebarCollapsed && !session.focusEditor {
                 WorkspaceSidebarShell { projectSidebar }
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
@@ -1427,6 +1461,7 @@ struct FontLabView: View {
         let allDrawnCharacters = project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true }
         let trueTypeScope = FontLabTrueTypeExporter.exportScope(for: project)
         return VStack(spacing: 0) {
+            if !session.focusEditor {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 12) {
                     TextField("Project name", text: projectNameBinding(project.id))
@@ -1489,6 +1524,7 @@ struct FontLabView: View {
             .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
             .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
             .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+            }
             if !store.error.isEmpty {
                 Text(store.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
@@ -1498,6 +1534,7 @@ struct FontLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 10)
                     .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             }
+            if !session.focusEditor {
             Text(isExportingFont ? "Building and validating the installable TrueType font…" : "Draw Bézier contours in Vector, or freehand in Sketch. Export SVG artwork or an installable TrueType font (.ttf).")
                 .font(.caption2).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 9)
@@ -1512,25 +1549,30 @@ struct FontLabView: View {
             if let master = project.masters?.first(where: { $0.id == project.activeMasterID }) {
                 Text("Active master: " + master.name).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 8)
             }
+            }
             Divider()
             GeometryReader { proxy in
                 let hasProofText = !project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                let proofHeight = proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(proofStripHeight) : FontLabProofStripLayout.emptyHeight) : 44.0
+                let proofHeight = session.focusEditor ? 0 : proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(proofStripHeight) : FontLabProofStripLayout.emptyHeight) : 44.0
                 let compactEditor = proxy.size.width < 1_200
                 let availableBrowserWidth = max(152, Double(proxy.size.width) - 644)
                 let displayedBrowserWidth = min(characterBrowserWidth, availableBrowserWidth)
                 VStack(spacing: 0) {
+                    if !session.focusEditor {
                     preview(project).frame(height: proofHeight)
                     if proofStripExpanded && hasProofText { FontLabProofStripDivider(height: $proofStripHeight) }
                     Divider()
+                    }
                     ScrollView(compactEditor ? .vertical : [.horizontal, .vertical]) {
                         HStack(spacing: 0) {
+                            if !session.focusEditor || session.showCharacters {
                             characterBrowser(project)
                                 .frame(width: displayedBrowserWidth)
                             if displayedBrowserWidth < characterBrowserWidth {
                                 Divider()
                             } else {
                                 FontLabCharacterPanelDivider(width: $characterBrowserWidth)
+                            }
                             }
                             glyphEditor(project, compact: compactEditor)
                         }
@@ -1556,7 +1598,7 @@ struct FontLabView: View {
                 .help(selectingCharacters ? "Finish selecting glyphs" : "Select several glyphs for SVG export")
             }
             HStack(spacing: 6) {
-                Picker("Filter", selection: $characterFilter) {
+                Picker("Filter", selection: $session.characterFilter) {
                     ForEach(FontLabCharacterFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
                 }
                 .pickerStyle(.menu)
@@ -1571,7 +1613,7 @@ struct FontLabView: View {
                 Text("Editing \(selectedCharacter); hidden by \(characterFilter.rawValue.lowercased()) filter.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            TextField("Jump to character", text: $characterJump)
+            TextField("Jump to character", text: $session.characterJump)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { jumpToCharacter(in: project) }
                 .onChange(of: characterJump) { _ in characterJumpMessage = "" }
@@ -1707,8 +1749,8 @@ struct FontLabView: View {
                         Button("Simplify outline…") { showSmoothing = true }.disabled(store.readBlocked)
                     }.padding(10).background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 }
-                if compact {
-                    DisclosureGroup(isExpanded: $compactMetricsExpanded) {
+                if compact || session.focusEditor {
+                    DisclosureGroup(isExpanded: $session.compactMetricsExpanded) {
                         metricsPanel(project, glyph: glyph).padding(.top, 8)
                     } label: {
                         Label("Metrics & spacing", systemImage: "ruler")
@@ -1717,7 +1759,7 @@ struct FontLabView: View {
                     .accessibilityIdentifier("font-lab-compact-metrics")
                 }
                 if vectorEditing || glyph.components?.isEmpty == false {
-                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex, compact: compact,
+                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, retainedEditor: session.vector(for: project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString, glyph: glyph, metrics: project.metrics), componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex, compact: compact,
                         onChange: { edited in recordGlyphEdit(edited, projectID: project.id) },
                         onUndo: { undoStroke(glyph, projectID: project.id) },
                         onRedo: { redoGlyph(projectID: project.id) },
@@ -1751,7 +1793,7 @@ struct FontLabView: View {
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.12)))
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 12) {
-                        Picker("Tool", selection: $drawingTool) {
+                        Picker("Tool", selection: $session.drawingTool) {
                             ForEach(FontLabDrawingTool.allCases) { tool in
                                 Label(tool.title, systemImage: tool.systemImage).tag(tool)
                             }
@@ -1759,7 +1801,7 @@ struct FontLabView: View {
                         .labelsHidden().pickerStyle(.segmented).frame(width: 240)
                         Divider().frame(height: 22)
                         Text("Nib").font(.caption).foregroundStyle(.secondary)
-                        Picker("Nib", selection: $nibStyle) {
+                        Picker("Nib", selection: $session.nibStyle) {
                             ForEach(FontLabNibStyle.allCases) { style in
                                 Label(style.title, systemImage: style.systemImage).tag(style)
                             }
@@ -1770,17 +1812,17 @@ struct FontLabView: View {
                     }
                     HStack(spacing: 12) {
                         Text(drawingTool == .reshape ? "Point editing" : drawingTool == .pen ? "Stroke" : "Eraser size").font(.caption).foregroundStyle(.secondary)
-                        Slider(value: $strokeWidth, in: 0.008...0.07).frame(maxWidth: 210).disabled(drawingTool == .reshape)
+                        Slider(value: $session.strokeWidth, in: 0.008...0.07).frame(maxWidth: 210).disabled(drawingTool == .reshape)
                         Text(strokeWidth.formatted(.number.precision(.fractionLength(3))))
                             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
                         Spacer(minLength: 0)
-                        Picker("Smoothing", selection: $smoothing) {
+                        Picker("Smoothing", selection: $session.smoothing) {
                             ForEach(FontLabSmoothingLevel.allCases) { level in Text(level.title).tag(level) }
                         }
                         .pickerStyle(.menu).frame(width: 138).disabled(drawingTool != .pen)
                     }
                     HStack(spacing: 14) {
-                        Toggle("Pressure", isOn: $usesTabletPressure)
+                        Toggle("Pressure", isOn: $session.usesTabletPressure)
                             .toggleStyle(.switch).controlSize(.small).disabled(drawingTool != .pen)
                         Spacer(minLength: 4)
                         Button { showInputHelp.toggle() } label: {
@@ -1799,7 +1841,7 @@ struct FontLabView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                 }
             }
-            if !compact { metricsPanel(project, glyph: glyph) }
+            if !compact && !session.focusEditor { metricsPanel(project, glyph: glyph) }
         }
         .padding(compact ? 6 : 20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -1825,7 +1867,7 @@ struct FontLabView: View {
     }
 
     private func glyphModePicker(_ glyph: FontLabGlyph) -> some View {
-        Picker("Editor", selection: $vectorEditing) {
+        Picker("Editor", selection: $session.vectorEditing) {
             Text("Vector").tag(true)
             Text("Sketch").tag(false).disabled(glyph.components?.isEmpty == false)
         }.pickerStyle(.segmented).labelsHidden().frame(width: 150)

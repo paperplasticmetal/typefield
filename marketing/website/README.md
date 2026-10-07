@@ -20,7 +20,7 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 - Editable type study with system serif/sans/mono, letter spacing, and reset. This is a browser demonstration, not an embedded app.
 - Native dialogs for the launch film and release status; closing the film pauses playback.
 - FAQ disclosures, reduced-motion support, keyboard focus states, and responsive layouts.
-- Honest prelaunch state: no public download, price, email collection, or invented signup backend.
+- Public beta download links point to a versioned DMG in `paperplasticmetal/typefield-feedback`; no signup or app license gate. See `docs/RELEASE_WORKFLOW.md` for the app/website release contract.
 
 ## Assets
 
@@ -28,7 +28,7 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 
 ## Hosting
 
-The existing Site identity is in `.openai/hosting.json`. Keep it unchanged. The draft is owner-private. The future `typefield.app` domain is not connected.
+The existing Site identity is in `.openai/hosting.json`. Keep it unchanged. The Site is public (verified October 6, 2026). The future `typefield.app` domain is not connected.
 
 The Sites workflow uses the ignored `.sites-checkout/` deployment mirror so it does not change this app repository's Git metadata. For later edits, open that same Site using its persisted ID, reconcile its source, and keep the canonical files here synchronized before publishing. Never create a second Site for this draft.
 
@@ -91,3 +91,7 @@ Reproduction from repository root, using the locally downloaded source:
 ```
 
 Validation: JavaScript syntax, complete media decode, 59.5-second H.264/AAC stream checks, desktop and mobile player layout, play/pause, mute, seeking, fullscreen entry/exit, close/pause behavior, specimen typeface switching, and workspace transition tested. Browser error log was empty. Music selection used the source's genre metadata; automated playback was verified, but subjective audio audition is left to the user.
+
+## Public beta releases
+
+The app and website ship together under `docs/RELEASE_WORKFLOW.md`. Update all DMG URLs and version/build copy for each app release. Run `python3 scripts/check-beta-website.py` from the repository root to verify website links and both app plists agree. Publish the versioned GitHub asset before the website so its download buttons never point to a missing file.

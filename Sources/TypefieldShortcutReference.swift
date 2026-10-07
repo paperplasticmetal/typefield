@@ -62,7 +62,10 @@ struct TypefieldShortcutReference: View {
         .init(title: "Common", symbol: "keyboard", shortcuts: [
             .init(action: "Undo or redo text or the active workspace", keys: "⌘Z / ⇧⌘Z"),
             .init(action: "Cut / Copy / Paste text", keys: "⌘X / ⌘C / ⌘V"),
-            .init(action: "Close window", keys: "⌘W"),
+            .init(action: "New font browser window", keys: "⌘N"),
+            .init(action: "New collection", keys: "⇧⌘N"),
+            .init(action: "Full screen for the active window", keys: "⌃⌘F"),
+            .init(action: "Close window (dock a popped-out editor)", keys: "⌘W"),
             .init(action: "Open Settings", keys: "⌘,")
         ])
     ]
