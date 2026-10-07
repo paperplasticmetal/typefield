@@ -20,8 +20,8 @@ Use sentence-case headings and labels. Do not use all-caps headings, dot separat
 - Editable type study with system serif/sans/mono, letter spacing, and reset. This is a browser demonstration, not an embedded app.
 - Native dialog for the launch film; closing the film pauses playback.
 - FAQ disclosures, reduced-motion support, keyboard focus states, and responsive layouts.
-- One-action header navigation and a dedicated `/download/` page. The private beta uses a direct GitHub Release asset link and explains macOS's per-app Open Anyway flow.
-- No public download, price, email collection, or invented signup backend.
+- Header navigation to a detailed `/features/` page and dedicated `/download/` page. The public beta DMG is hosted as a versioned same-origin asset, with a separate GitHub Release download. The download page explains macOS's per-app Open Anyway flow.
+- No price, email collection, or invented signup backend.
 
 ## Assets
 
@@ -43,6 +43,10 @@ The Sites workflow uses the ignored `.sites-checkout/` deployment mirror so it d
 - Workspace click and keyboard selection, type editing, face selection, spacing, reset, film playback/pause, film dialog/Escape, and FAQ expansion checked in the browser.
 
 App runtime files and paused letterform experiments are unchanged. Native app tests are not applicable to this static website change.
+
+## Feature inventory
+
+`/features/` groups verified capabilities into Library, Spaces, Letterform Editor, handoffs and Mac specs, with original inline SVG icons. Its copy is grounded in the app README and current feature documentation. It names the file-based Figma and Adobe workflows, static TrueType export, artwork-import limitations and exact WOFF2 matching rules. Missing-letter generation remains paused and hidden, so it is not advertised as an available feature.
 
 ## Typography and copy refinement
 
@@ -109,11 +113,11 @@ Cloudflare Pages project `typefield` is live at https://typefield.pages.dev/. It
 - Kept the latest approved launch film unchanged.
 - Verified JavaScript syntax, all static asset responses, responsive layout at 320px, 390px, and 1280px, no horizontal overflow, and workspace tab/caption/link behavior. Native app runtime files are unchanged.
 
-## Private beta download
+## Public beta download
 
-The header and closing action lead to `/download/`. The beta is an ad hoc signed macOS app distributed without Developer ID signing or notarization. The page links directly to its versioned private GitHub Release DMG and explains the first-open flow: try to open the installed app, then use System Settings → Privacy & Security → Open Anyway if macOS blocks it. Apple documents this per-app exception at https://support.apple.com/en-us/102445. The app itself has no account or license-key gate.
+The header and closing action lead to `/download/`. The versioned beta DMG lives in `dist/assets/` and is served by the same Cloudflare Pages project as the site. A separate link downloads the same build from the public GitHub Release. Visitors do not need a GitHub account. The app has no account or license-key gate. The page explains the first-open flow: try to open the installed app, then use System Settings → Privacy & Security → Open Anyway if macOS blocks it. Apple documents this per-app exception at https://support.apple.com/en-us/102445.
 
-The `paperplasticmetal/typefield` GitHub repository is private. Invited testers must have GitHub access; a website link cannot bypass repository authentication. The feedback and bug-report links on the site open separate issue templates in that repository. For each new beta, update the download page with the exact asset URL and release details, then redeploy Cloudflare Pages. Verify the direct link while signed in as an invited tester, including on a clean Mac. Keep the release private; do not change repository visibility to make the asset downloadable without authentication.
+The public `paperplasticmetal/typefield-feedback` repository has separate issue templates for feedback and bug reports; the site links to each. For each new beta, add the new versioned DMG to `dist/assets/`, update the download page's version, filenames, GitHub Release URL and SHA-256, update its `_headers` rule, then redeploy Cloudflare Pages. Verify both download links without GitHub authentication, compare the two asset checksums, and test first launch on a clean Mac. Never replace an existing versioned DMG in place because it uses immutable browser caching.
 
 ## Social sharing preview
 

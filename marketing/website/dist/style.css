@@ -61,7 +61,7 @@ h1,h2,h3{text-wrap:balance}p{font-kerning:normal}.hero-bottom p{line-height:1.5;
   .app-preview[data-view="editor"] img{left:-66%;top:-64%}
 }
 
-/* Keep the header focused on the one useful next action. */
+/* Keep site navigation short and make the feature inventory easy to find. */
 .nav-shell nav{gap:0}
 .nav-shell nav>.nav-download{display:inline-flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid currentColor;font-size:14px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;transition:color .2s}
 .nav-shell nav>.nav-download:hover{color:var(--coral)}
@@ -69,3 +69,7 @@ h1,h2,h3{text-wrap:balance}p{font-kerning:normal}.hero-bottom p{line-height:1.5;
 @media(max-width:480px){.nav-shell nav>.nav-download{font-size:13px;gap:8px}}
 footer nav{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:14px 28px}
 @media(max-width:800px){footer nav{width:100%;justify-content:flex-start}}
+.nav-shell nav{gap:24px}
+.nav-shell nav>.nav-features{display:inline-flex;align-items:center;padding:10px 0;border-bottom:1px solid transparent;font-size:14px;font-weight:600;white-space:nowrap}
+.nav-shell nav>.nav-features:hover{border-color:currentColor;color:var(--coral)}
+@media(max-width:480px){.nav-shell nav{gap:14px}.nav-shell nav>.nav-features{font-size:13px}}
