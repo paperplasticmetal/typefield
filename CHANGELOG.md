@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.59.9 beta 1 (2026-10-07)
+
+- Export a variable weight TrueType font from two compatible Letterform Editor masters on the `wght` axis. Mismatched contours, vertical metrics or kerning are rejected rather than producing a misleading font.
+- Point the app's Feedback and Report a Bug actions to the Typefield feedback page, and use the canonical website address for beta download information.
+
 ## 0.59.8 (2026-10-06)
 
 - Route in-app feedback and bug reports to the separate public Typefield issue tracker so beta testers do not need access to the source repository.
