@@ -1,0 +1,9 @@
+# Onboarding copy cleanup — 0.59.17 (97)
+
+Removed the decorative duration/preview label, welcome eyebrow and sparkle, Library personality caption, Letterforms eyebrow, and empty footer encouragement. Spaces and Letterforms now use short action instructions. Main titles, specimen layouts, interactive controls, privacy guidance and replay instructions remain.
+
+The tour compiled separately with warnings as errors using the app’s macOS 13 deployment target. All four steps were rendered and inspected for text spacing and clipping; the fixed frame, welcome inset and Reset row remain balanced. These SwiftUI ImageRenderer fixtures omit native AppKit text-field/slider pixels, so they are layout evidence, not a new live interaction claim. The interaction implementation is unchanged from 0.59.16. Figma bridge checks passed.
+
+The optimized native suite passed, including 21,265 layouts across 779 families / 4,253 styles. Canonical `/Applications/Typefield.app` is 0.59.17 (97). The built app, installed app and read-only mounted DMG have matching executables and valid strict signatures. All 29 saved-data files and both paused research files retain their starting hashes. Website version/link/checksum, JavaScript syntax and all eight website checks passed.
+
+DMG SHA-256: `d2aea6555361af3f16d49b5989651771d8d8419d998e047904f20546aed77b0e`. Public distribution verification is in progress. Private evidence is in `.context/qa-artifacts/onboarding-copy-05917/`. Missing-letter research remains paused.

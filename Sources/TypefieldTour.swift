@@ -46,9 +46,6 @@ struct TypefieldTour: View {
                     Text(Self.details[step])
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                         .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
-                    Label(step == 0 ? "About a minute. All yours to explore." : "A little preview. Nothing is saved.", systemImage: step == 0 ? "sparkle" : "hand.draw")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .id(step)
@@ -111,8 +108,10 @@ struct TypefieldTour: View {
                 .keyboardShortcut(.defaultAction)
             }
             HStack {
-                Text(step == 0 ? "Your fonts and projects stay on this Mac." : "Ready when you are.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                if step == 0 {
+                    Text("Your fonts and projects stay on this Mac.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 Spacer()
                 if step > 0 {
                     Button("Browse fonts") { open(.library) }.buttonStyle(.plain)
@@ -150,11 +149,6 @@ struct TypefieldTour: View {
 
     private var welcome: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("A TYPE PLAYGROUND").tracking(2).font(.system(size: 9, weight: .semibold))
-                Spacer()
-                Image(systemName: "sparkle").foregroundStyle(coral).accessibilityHidden(true)
-            }.padding(.horizontal, 26).padding(.top, 25)
             Button {
                 withAnimation(motion) { face = (face + 1) % Self.fonts.count }
             } label: {
@@ -165,6 +159,7 @@ struct TypefieldTour: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(.top, 25)
             .accessibilityLabel("Change the specimen typeface")
             .accessibilityValue(Self.names[face])
             HStack {
@@ -195,8 +190,6 @@ struct TypefieldTour: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel("\(specimen), in \(Self.names[face])")
             facePicker
-            Text("Same words. Three very different personalities.")
-                .font(.system(size: 11)).foregroundStyle(ink.opacity(0.65))
         }.padding(24)
     }
 
@@ -271,7 +264,7 @@ struct TypefieldTour: View {
             .background(poster ? coral : .white, in: RoundedRectangle(cornerRadius: 4))
             .rotationEffect(.degrees(poster ? -2 : 0))
             .shadow(color: ink.opacity(0.10), radius: 9, y: 4)
-            Text("Your specimen, now in context. Try another layout.")
+            Text("Try another layout.")
                 .font(.system(size: 11)).foregroundStyle(ink.opacity(0.65))
         }.padding(24)
     }
@@ -279,7 +272,6 @@ struct TypefieldTour: View {
     private var letter: some View {
         VStack(spacing: 12) {
             HStack {
-                Text("ONE CURVE. YOUR CALL.").tracking(1.6).font(.system(size: 9, weight: .semibold))
                 Spacer()
                 Button("Reset") { withAnimation(motion) { roundness = 0.55 } }
                     .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(coral)
@@ -326,7 +318,7 @@ struct TypefieldTour: View {
                     .accessibilityValue("\(Int(roundness * 100)) percent")
                 Text("Round").font(.system(size: 10))
             }
-            Text("Drag the coral point. A small move, a new character.")
+            Text("Drag the coral point.")
                 .font(.system(size: 11)).foregroundStyle(ink.opacity(0.65))
         }.padding(24)
     }

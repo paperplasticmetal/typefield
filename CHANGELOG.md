@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.59.17 (2026-10-07)
+
+- Remove decorative onboarding subheaders and filler captions; keep the interactive previews and concise action instructions.
+
 ## 0.59.16 (2026-10-07)
 
 - Replace the text-only tour with a typography playground: change typefaces, try your own words in layouts, and reshape a letter with a draggable point or accessible slider.
