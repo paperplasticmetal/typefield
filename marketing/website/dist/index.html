@@ -3,14 +3,30 @@
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f0efe9">
-  <meta name="description" content="Quite the character. Meet Typefield: a home for your font library, a space to try ideas, and an editor to make something your own. Coming to Mac.">
+  <meta name="description" content="Quite the character. Meet Typefield: a home for your font library, a space to try ideas, and an editor to make something your own. Download the Mac beta.">
+  <link rel="canonical" href="https://typefield.app/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Typefield">
+  <meta property="og:url" content="https://typefield.app/">
+  <meta property="og:title" content="Typefield. Quite the character.">
+  <meta property="og:description" content="Organize your fonts. Try them in context. Make your own.">
+  <meta property="og:image" content="https://typefield.app/assets/social-preview-v1.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Typefield. Quite the character.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Typefield. Quite the character.">
+  <meta name="twitter:description" content="Organize your fonts. Try them in context. Make your own.">
+  <meta name="twitter:image" content="https://typefield.app/assets/social-preview-v1.png">
+  <meta name="twitter:image:alt" content="Typefield. Quite the character.">
   <title>Typefield / Quite the character.</title>
   <link rel="icon" href="assets/typefield-icon.png"><link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
-  <header class="nav-shell"><a class="wordmark" href="#" aria-label="Typefield home">typefield<span>™</span></a><nav aria-label="Main navigation"><a href="#workspaces">The app</a><a href="#play">Play with type</a><button class="nav-cta" data-launch>Coming to Mac </button></nav></header>
+  <header class="nav-shell"><a class="wordmark" href="#" aria-label="Typefield home">typefield<span>™</span></a><nav aria-label="Main navigation"><a class="nav-features" href="features/">Features</a><a class="nav-download" href="download/">Download <span aria-hidden="true">↗</span></a></nav></header>
   <main id="main">
     <section class="hero panel" aria-labelledby="hero-title">
       <h1 id="hero-title">Quite the<br><span class="hero-line">character<span class="coral">.</span></span></h1>
@@ -18,7 +34,13 @@
       <div class="specimen-strip" aria-label="Interactive type specimens"><button class="specimen-letter strip-serif" aria-label="Animate Aa specimen"><span aria-hidden="true">Aa</span></button><button class="specimen-letter strip-sans" aria-label="Animate Gg specimen"><span aria-hidden="true">Gg</span></button><button class="specimen-letter strip-italic" aria-label="Animate & specimen"><span aria-hidden="true">&</span></button><button class="specimen-letter strip-mono" aria-label="Animate Rr specimen"><span aria-hidden="true">Rr</span></button><button class="specimen-letter strip-serif" aria-label="Animate Qq specimen"><span aria-hidden="true">Qq</span></button><button class="specimen-letter strip-sans" aria-label="Animate ?! specimen"><span aria-hidden="true">?!</span></button></div>
     </section>
     <section class="intro" id="workspaces"><h2>From “what’s that font?”<br>to <em>that’s the one.</em></h2><p>Typefield brings your fonts, your ideas, and your own letterforms into one native Mac app. Less looking around. More making things.</p></section>
-    <section class="workspace panel" aria-labelledby="workspace-title"><div class="section-head"><div><span class="eyebrow" id="workspace-number">01 / Library</span><h2 id="workspace-title">Good taste.<br>Great company.</h2></div><div class="workspace-copy"><p id="workspace-description">Bring your font collection into focus. Browse, compare, and shortlist the faces that feel right for your next idea.</p><div class="tabs" role="tablist" aria-label="Explore workspaces"><button role="tab" id="tab-library" aria-controls="workspace-view" aria-selected="true" data-workspace="library">Library</button><button role="tab" id="tab-spaces" aria-controls="workspace-view" aria-selected="false" tabindex="-1" data-workspace="spaces">Spaces</button><button role="tab" id="tab-editor" aria-controls="workspace-view" aria-selected="false" tabindex="-1" data-workspace="editor">Letterforms</button></div></div></div><div id="workspace-view" role="tabpanel" aria-labelledby="tab-library" tabindex="0"><div class="app-frame"><div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Typefield / Library</span></div><img id="workspace-image" src="assets/library.png" alt="Typefield Library showing a font collection, live type previews, and font details" width="2480" height="1000"></div><div class="workspace-caption"><span id="workspace-features">Collections & tags / Live previews / Font comparison</span><span>Actual app view</span></div></div></section>
+    <section class="workspace panel" aria-labelledby="workspace-title"><div class="section-head"><div><span class="eyebrow" id="workspace-number">01 / Library</span><h2 id="workspace-title">Good taste.<br>Great company.</h2></div><div class="workspace-copy"><p id="workspace-description">See fonts side by side with your own preview text. Search by family, style, or tag, then keep the ones you want in favorites, shortlists, and collections.</p><div class="tabs" role="tablist" aria-label="Explore workspaces"><button role="tab" id="tab-library" aria-controls="workspace-view" aria-selected="true" data-workspace="library">Library</button><button role="tab" id="tab-spaces" aria-controls="workspace-view" aria-selected="false" tabindex="-1" data-workspace="spaces">Spaces</button><button role="tab" id="tab-editor" aria-controls="workspace-view" aria-selected="false" tabindex="-1" data-workspace="editor">Letterforms</button></div></div></div><div id="workspace-view" role="tabpanel" aria-labelledby="tab-library" tabindex="0">
+      <div class="app-preview" data-view="library">
+        <img id="workspace-image" src="assets/library-light.png" alt="Typefield Library in Light mode comparing four font families with the same preview text" width="2480" height="1764" loading="lazy" decoding="async">
+      </div>
+      <div class="workspace-caption"><span id="workspace-features">Compare four fonts with the same preview text.</span><span>Actual app view in Light mode</span></div>
+      <ul class="workspace-actions" id="workspace-actions"><li>Preview your words in any font.</li><li>Compare typefaces side by side.</li><li>Keep favorites in collections.</li></ul>
+    </div></section>
     <section class="playground panel" id="play" aria-labelledby="play-title">
       <div class="play-heading"><h2 id="play-title">Go on. Make an impression.</h2></div>
       <div class="type-stage"><label class="sr-only" for="type-sample">Your type specimen</label><textarea id="type-sample" rows="2" maxlength="80" spellcheck="false">Stay curious.</textarea><span class="type-hint eyebrow">Click to edit</span></div>
@@ -28,11 +50,23 @@
       <article class="detail-card light"><h2>A collection<br>with character.</h2><div class="collection-demo" aria-hidden="true"><div><span class="collection-label">The shortlist</span><span class="collection-count">04</span></div><p class="collection-serif">Something editorial.</p><p class="collection-grotesk">A little more direct.</p><p class="collection-mono">Room to experiment.</p><p class="collection-italic">Just the right feeling.</p></div><p>Keep your favorites close, group fonts into collections, and compare the details that make a difference.</p></article>
       <article class="detail-card olive"><h2>Let the letters<br>do the talking.</h2><div class="pairing-demo" aria-hidden="true"><p>Ordinary<br><em>things.</em></p><div>A good pairing makes<br>everything feel different.</div></div><p>Try a pairing in an actual layout. Explore typeboards in Spaces, then take your direction into the next part of your process.</p></article>
     </section>
+    <section class="handoffs panel" id="exports" aria-labelledby="handoffs-title">
+      <div class="handoffs-intro"><h2 id="handoffs-title">Take it into your tools.</h2><p>Start with a Spaces typeboard. Export a vector PDF for review, editable files for design, or typography tokens for development.</p></div>
+      <div class="handoff-list">
+        <article><h3><svg class="figma-mark" viewBox="0 0 38 57" role="img" aria-label="Figma logo"><path fill="#F24E1E" d="M9.5 0h9.5v19H9.5a9.5 9.5 0 0 1 0-19Z"/><path fill="#FF7262" d="M19 0h9.5a9.5 9.5 0 0 1 0 19H19Z"/><path fill="#A259FF" d="M9.5 19H19v19H9.5a9.5 9.5 0 0 1 0-19Z"/><circle fill="#1ABCFE" cx="28.5" cy="28.5" r="9.5"/><path fill="#0ACF83" d="M9.5 38H19v9.5A9.5 9.5 0 1 1 9.5 38Z"/></svg>Figma</h3><p>Export from Spaces, then run the local importer to make editable frames, text, and shapes.</p></article>
+        <article><h3>Illustrator and InDesign</h3><p>Run the included builder scripts to recreate typeboards as editable Adobe documents.</p></article>
+        <article><h3>PDF and code</h3><p>Share a vector PDF, or hand developers typography tokens with font names, sizes, and spacing.</p></article>
+      </div>
+      <div class="export-example">
+        <div class="export-example-copy"><h3>Example: website layout</h3><p>This page was made from the included Website canvas in Spaces. See the whole layout, or download its vector PDF.</p><div class="export-links"><a href="assets/website-layout.png" target="_blank" rel="noopener">View full layout <span aria-hidden="true">↗</span></a><a href="assets/website-layout.pdf" download="Typefield-website-layout.pdf">Download vector PDF <span aria-hidden="true">↓</span></a></div></div>
+        <a class="export-art" href="assets/website-layout.png" target="_blank" rel="noopener" aria-label="Open the complete example website layout as an image"><img src="assets/website-layout.png" alt="Example website layout exported from Typefield Spaces, with editorial type and product illustrations" width="1209" height="1800" loading="lazy" decoding="async"><span>Open complete layout <span aria-hidden="true">↗</span></span></a>
+      </div>
+    </section>
     <section class="principles"><div><article><span>01</span><h3>At home on your Mac.</h3><p>A native app that fits your workflow, with your font library and creative work close at hand.</p></article><article><span>02</span><h3>Your work stays yours.</h3><p>Your library and projects live locally. No Typefield account required to use the app.</p></article><article><span>03</span><h3>Made to keep moving.</h3><p>Take out typeboards, developer tokens, and your own letterforms. Good ideas deserve to go places.</p></article></div></section>
-    <section class="faq panel" id="questions"><div><h2>Small print.<br>Big possibilities.</h2></div><div class="faq-list"><details><summary>What is Typefield?<span aria-hidden="true">+</span></summary><p>A native Mac app for working with type. Library helps you organize and compare fonts. Spaces gives you a place to explore typography in context. Letterform Editor lets you draw, import, and edit your own letterforms.</p></details><details><summary>When can I get it?<span aria-hidden="true">+</span></summary><p>Typefield is in development. The first public release is being prepared. Availability, system requirements, and pricing will be shared closer to launch.</p></details><details><summary>Can I use the fonts I already own?<span aria-hidden="true">+</span></summary><p>Yes. Typefield is built around your own font library. You can preview, organize, compare, and activate fonts. Your font licenses still apply to any work you make or share.</p></details><details><summary>Can I make my own fonts?<span aria-hidden="true">+</span></summary><p>The Letterform Editor supports drawing and artwork import, editable outlines, spacing, and static TrueType export. Start with original artwork and refine it into something you can type with.</p></details><details><summary>Does it work with my other design tools?<span aria-hidden="true">+</span></summary><p>Typefield supports file-based handoffs, including typeboard PDFs and developer tokens. The workflow is export and import; available details vary by format and destination.</p></details></div></section>
-    <section class="closing panel"><h2>Typefield for Mac.</h2><div><button class="pill dark" data-launch>Coming to Mac </button></div></section>
+    <section class="faq panel" id="questions"><div><h2>Small print.<br>Big possibilities.</h2></div><div class="faq-list"><details><summary>What is Typefield?<span aria-hidden="true">+</span></summary><p>A native Mac app for working with type. Library helps you organize and compare fonts. Spaces gives you a place to explore typography in context. Letterform Editor lets you draw, import, and edit your own letterforms.</p></details><details><summary>When can I get it?<span aria-hidden="true">+</span></summary><p>Download the Mac beta from the <a href="download/">download page</a>. It includes system requirements and first-launch instructions.</p></details><details><summary>Can I use the fonts I already own?<span aria-hidden="true">+</span></summary><p>Yes. Typefield is built around your own font library. You can preview, organize, compare, and activate fonts. Your font licenses still apply to any work you make or share.</p></details><details><summary>Can I make my own fonts?<span aria-hidden="true">+</span></summary><p>The Letterform Editor supports drawing and artwork import, editable outlines, spacing, and static TrueType export. Start with original artwork and refine it into something you can type with.</p></details><details><summary>Does it work with my other design tools?<span aria-hidden="true">+</span></summary><p>Yes. Spaces can export layouts for Figma through a local importer, and builder scripts for Illustrator and InDesign. You can also export PDFs and developer tokens. These are file-based handoffs you run yourself, not live sync.</p></details></div></section>
+    <section class="closing panel"><h2>Typefield for Mac.</h2><div><a class="pill dark" href="download/">Download for Mac <span aria-hidden="true">↗</span></a></div></section>
   </main>
-  <footer><a class="wordmark" href="#">typefield<span>™</span></a><button data-launch>Release status</button></footer>
+  <footer><a class="wordmark" href="#">typefield<span>™</span></a><nav aria-label="Site links"><a href="features/">Features</a><a href="download/">Download for Mac</a><a href="/feedback/">Feedback</a><a href="/feedback/?category=bug">Report a bug</a></nav></footer>
   <dialog id="film-dialog" aria-label="Typefield launch film">
     <div class="film-stage" tabindex="0">
       <video controls playsinline preload="metadata" poster="assets/film-poster.png?v=16" aria-label="Typefield launch film"><source src="assets/typefield-film.mp4?v=16-music1" type="video/mp4"></video>
@@ -46,5 +80,4 @@
       </div>
     </div>
   </dialog>
-  <dialog id="launch-dialog" aria-labelledby="launch-title"><div class="dialog-head"><button class="close-dialog" aria-label="Close release status">Close ×</button></div><img class="launch-icon" src="assets/typefield-icon.png" width="80" height="80" alt=""><h2 id="launch-title">Coming to Mac.</h2><p>Typefield is in development. We’re getting the first public release ready, with more details on availability and pricing to come.</p><button class="pill dark" data-film>Take a look inside</button></dialog>
 </body></html>
