@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.27 (2026-10-08)
+
+- Reduce repeated Library filtering, sidebar counting, style lookup and mixed-script preview layout work while preserving exact search and coverage results.
+- Preserve body specimen layout and selected text across unrelated inspector changes.
+- Move Font Health scans off the main thread, cancel superseded work and speed up checksum inspection. Stop obsolete recursive folder scans and stale callbacks.
+- Retain the completed Spaces 0.59.25 and Letterform 0.59.26 toolbar, proof and dense-canvas improvements.
+
 ## 0.59.26 (2026-10-08)
 
 - Unify Letterform drawing tools into fixed 44-point targets with visible V/A/P/L/R/O/H shortcuts. Put Paths and Transform beside them; keep tool and canvas positions stable during switching.
