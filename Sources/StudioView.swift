@@ -779,6 +779,7 @@ struct TypeBoardEditor: View {
     @State private var sidebarBeforeFocus = false
     @State private var inspectorBeforeFocus = StudioInspectorMode.expanded
     @State private var inspectorBeforeFloating = StudioInspectorMode.expanded
+    @State private var showToolPicker = false
     @State private var discoveryNonce: UInt64 = 0
     @FocusState private var fontSearchFocused: Bool
     var board: TypeBoard { get { editorSession.board } nonmutating set { editorSession.board = newValue } }
@@ -805,7 +806,11 @@ struct TypeBoardEditor: View {
         guard selectedObjects.count <= 1, let selectedSection else { return nil }
         return direction.artworkLayers?.firstIndex { $0.id == selectedSection && $0.artworkData != nil }
     }
-    var selectedArtwork: ImportedLayer? { selectedArtworkIndex.flatMap { direction.artworkLayers?[$0] } }
+    var selectedArtwork: ImportedLayer? {
+        guard selectedObjects.count == 1, let selectedSection else { return nil }
+        return ((direction.artworkLayers ?? []) + (direction.objectLayers ?? []) + (direction.importedLayout?.layers ?? []))
+            .first { $0.id == selectedSection && $0.artworkData != nil }
+    }
     var selectedText: CanvasElement? { guard let selectedTextID else { return nil }; return CanvasPlanCache.plan(for: direction).elements.first { $0.textID == selectedTextID } }
     var style: TypeStyle {
         if let index = selectedLooseIndex, let style = direction.objectLayers?[index].style { return style }
@@ -862,8 +867,14 @@ struct TypeBoardEditor: View {
         save(action)
     }
     func updateSelectedArtwork(_ action: String, _ change: (inout ImportedLayer) -> Void) {
-        guard let index = selectedArtworkIndex else { return }
-        change(&board.directions[directionIndex].artworkLayers![index])
+        guard let artwork = selectedArtwork else { return }
+        if let index = direction.artworkLayers?.firstIndex(where: { $0.id == artwork.id }) {
+            change(&board.directions[directionIndex].artworkLayers![index])
+        } else if let index = direction.objectLayers?.firstIndex(where: { $0.id == artwork.id }) {
+            change(&board.directions[directionIndex].objectLayers![index])
+        } else if let index = direction.importedLayout?.layers.firstIndex(where: { $0.id == artwork.id }) {
+            change(&board.directions[directionIndex].importedLayout!.layers[index])
+        } else { return }
         save(action)
     }
     func directionBinding<T>(_ key: WritableKeyPath<TypeDirection, T>) -> Binding<T> { Binding(get: { direction[keyPath: key] }, set: { board.directions[directionIndex][keyPath: key] = $0; save() }) }
@@ -1021,8 +1032,8 @@ struct TypeBoardEditor: View {
         }
         .onChange(of: shownCanvasIDs) { _ in workspaceOffset = nil; soloViewport = nil }
         .onChange(of: interactionTool) { tool in frameCanvasID = nil; if tool == .frame { selectObjects([]) } }
-        .onChange(of: direction.id) { id in selectedObjects = []; shownCanvasIDs.insert(id); if !(direction.artworkLayers ?? []).contains(where: { $0.id == selectedSection }) { selectedSection = nil }; selectedTextID = nil; draggedSection = nil; if frameCanvasID != id { frameCanvasID = nil }; if let other = board.directions.first(where: { $0.id == abID }), other.canvas != direction.canvas || other.width != direction.width || other.canvasWidth != direction.canvasWidth || other.canvasHeight != direction.canvasHeight || other.canvasScale != direction.canvasScale { abID = nil } }
-        .onChange(of: direction.canvas) { _ in abID = nil; selectObjects([]) }
+        .onChange(of: direction.id) { id in editorSession.reconcileSelection(in: direction); shownCanvasIDs.insert(id); draggedSection = nil; if frameCanvasID != id { frameCanvasID = nil }; if let other = board.directions.first(where: { $0.id == abID }), other.canvas != direction.canvas || other.width != direction.width || other.canvasWidth != direction.canvasWidth || other.canvasHeight != direction.canvasHeight || other.canvasScale != direction.canvasScale { abID = nil } }
+        .onChange(of: direction.canvas) { _ in abID = nil; editorSession.reconcileSelection(in: direction) }
         .onChange(of: direction) { _ in if !selectedObjects.isEmpty { selectObjects(selectedObjects) } }
         .onChange(of: direction.width) { _ in abID = nil }
         .onDisappear { floatingInspector.close(); if focusCanvas { sidebarCollapsed = sidebarBeforeFocus; focusCanvas = false } }
@@ -1054,14 +1065,73 @@ struct TypeBoardEditor: View {
             }
         }
     }
-    var interactionTools: some View {
-        Menu {
-            ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
-                Button { interactionTool = tool } label: { Label(tool.rawValue, systemImage: tool.symbol) }
+    @ViewBuilder var interactionToolChoices: some View {
+        ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
+            Button { interactionTool = tool } label: {
+                Label(toolTitle(tool) + " (" + toolShortcut(tool) + ")", systemImage: interactionTool == tool ? "checkmark" : tool.symbol)
             }
-        } label: { Image(systemName: interactionTool.symbol) }
-        .menuStyle(.borderlessButton).fixedSize().help("Interaction tool (A, V, M, T, C)")
-        .accessibilityLabel("Interaction tool: " + interactionTool.rawValue)
+        }
+    }
+    func toolTitle(_ tool: CanvasInteractionTool) -> String {
+        switch tool {
+        case .auto: return "Auto · Smart selection"
+        case .select: return "Select objects"
+        case .marquee: return "Marquee selection"
+        case .text: return "Edit text"
+        case .frame: return "Canvas boundary"
+        }
+    }
+    func toolHelp(_ tool: CanvasInteractionTool) -> String {
+        switch tool {
+        case .auto: return "Select and move objects, double-click text to edit, or drag the canvas boundary."
+        case .select: return "Select, move and resize objects."
+        case .marquee: return "Drag a box to select several objects."
+        case .text: return "Double-click text to edit its contents."
+        case .frame: return "Select the canvas boundary to move or resize the canvas."
+        }
+    }
+    var interactionTools: some View {
+        Menu { interactionToolChoices } label: { Label(interactionTool.rawValue, systemImage: interactionTool.symbol) }
+        .menuStyle(.borderlessButton).fixedSize().help(toolHelp(interactionTool))
+        .accessibilityLabel("Cursor mode: " + interactionTool.rawValue)
+    }
+    var railInteractionTool: some View {
+        Button { showToolPicker.toggle() } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 3) {
+                    Image(systemName: interactionTool.symbol).font(.system(size: 16, weight: .medium))
+                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
+                }
+                Text(interactionTool.rawValue).font(.system(size: 10, weight: .medium)).lineLimit(1)
+            }
+            .frame(width: 44, height: 50)
+            .foregroundStyle(Color.accentColor)
+            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showToolPicker, arrowEdge: .trailing) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Cursor mode").font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.bottom, 4)
+                ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
+                    Button { interactionTool = tool; showToolPicker = false } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: interactionTool == tool ? "checkmark" : tool.symbol).frame(width: 18)
+                            Text(toolTitle(tool))
+                            Spacer(minLength: 8)
+                            Text(toolShortcut(tool)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .font(.callout).padding(.horizontal, 9).frame(height: 36)
+                        .background(interactionTool == tool ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain).help(toolHelp(tool))
+                }
+            }.padding(12).frame(width: 290)
+        }
+        .contextMenu { interactionToolChoices }
+        .help(toolTitle(interactionTool) + ". " + toolHelp(interactionTool) + " Click to choose another mode.")
+        .accessibilityLabel("Cursor mode: " + interactionTool.rawValue)
+        .accessibilityIdentifier("spaces-cursor-mode")
     }
     func selectObjects(_ ids: Set<String>) {
         frameCanvasID = nil
@@ -1176,20 +1246,18 @@ struct TypeBoardEditor: View {
         VStack(spacing: 4) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
-                    ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
-                        railButton(tool.rawValue + " tool (" + toolShortcut(tool) + ")", symbol: tool.symbol, selected: interactionTool == tool) { interactionTool = tool }
-                    }
+                    railInteractionTool
                     Divider().padding(.horizontal, 9).padding(.vertical, 5)
-                    Menu {
-                        Button("Text box") { objectCommand("insertText") }
-                        Button("Rectangle") { objectCommand("insertShape") }
-                        Button("Artwork…") { chooseArtwork() }
-                        if direction.canvas != .imported {
-                            Menu("Text role") { ForEach(TypeRole.allCases) { item in Button(item.rawValue) { addRole(item, target: nil, before: false) } } }
+                    Text("Add").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                    railInsert("Text", symbol: "textformat", help: "Add text box") { objectCommand("insertText") }
+                        .contextMenu {
+                            Button("Add text box") { objectCommand("insertText") }
+                            if direction.canvas != .imported {
+                                Menu("Text role") { ForEach(TypeRole.allCases) { item in Button(item.rawValue) { addRole(item, target: nil, before: false) } } }
+                            }
                         }
-                    } label: { Image(systemName: "plus").font(.system(size: 17)).frame(width: 40, height: 36) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Insert text, shapes or artwork")
-                    .accessibilityLabel("Insert object").disabled(library.studio.readBlocked)
+                    railInsert("Shape", symbol: "rectangle", help: "Add rectangle") { objectCommand("insertShape") }
+                    railInsert("Image", symbol: "photo", help: "Add image or artwork…") { chooseArtwork() }
                     Divider().padding(.horizontal, 9).padding(.vertical, 5)
                     railPanel("Properties", symbol: "slider.horizontal.3")
                     railPanel("Typography", symbol: "textformat")
@@ -1209,6 +1277,16 @@ struct TypeBoardEditor: View {
     }
     func toolShortcut(_ tool: CanvasInteractionTool) -> String {
         switch tool { case .auto: return "A"; case .select: return "V"; case .marquee: return "M"; case .text: return "T"; case .frame: return "C" }
+    }
+    func railInsert(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 16, weight: .medium))
+                Text(title).font(.system(size: 10, weight: .medium))
+            }.frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(help).accessibilityLabel(help)
+        .disabled(library.studio.readBlocked)
     }
     func railPanel(_ tab: String, symbol: String, title: String? = nil) -> some View {
         railButton(title ?? tab, symbol: symbol, selected: inspectorTab == tab && (inspectorMode == .expanded || showRailInspector || inspectorMode == .floating)) {
@@ -1460,11 +1538,14 @@ struct TypeBoardEditor: View {
             board.directions[index].artworkLayers = (canvas.artworkLayers ?? []) + [layer]
             board.selectedDirection = canvasID
             shownCanvasIDs.insert(canvasID)
-            selectedSection = layer.id; selectedTextID = nil; frameCanvasID = nil; inspectorTab = "Arrangement"
             guard save("Import Artwork") else {
                 artworkImportError = library.studio.error.isEmpty ? "This canvas could not save the image layer." : library.studio.error
                 return
             }
+            interactionTool = .auto
+            selectObjects(Set(CanvasPlanCache.plan(for: direction).elements.filter { $0.sectionID == layer.id }.map(\.objectID)))
+            inspectorTab = "Properties"
+            editorSession.selectionRevealToken += 1
             status = url.pathExtension.lowercased() == "svg"
                 ? "Imported \(layer.name). SVG was rendered to an embedded image for Spaces."
                 : "Imported \(layer.name) as an image layer"
@@ -1638,8 +1719,8 @@ struct TypeBoardEditor: View {
                 }
                 }
                 Divider()
-                if importedNonTextSelected || selectedArtworkIndex != nil {
-                    if selectedImportedShapeIndex == nil && selectedArtworkIndex == nil { Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary) }
+                if importedNonTextSelected || selectedArtwork != nil {
+                    if selectedImportedShapeIndex == nil && selectedArtwork == nil { Text("Select a text layer to edit typography.").font(.caption).foregroundStyle(.secondary) }
                 } else {
                 if direction.canvas == .imported { Text(editingTitle).font(.headline) }
                 characterPanel
@@ -1986,22 +2067,8 @@ struct TypeBoardEditor: View {
                 Spacer(minLength: 4)
                 Text(selectedArtwork?.name ?? "Image").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
-            Text("Drag the image on the canvas to position it. Its source is embedded in this project.")
+            Text("Drag a corner to resize. Hold Shift to stretch freely.")
                 .font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 7) {
-                Text("Width")
-                Spacer(minLength: 4)
-                TextField("Width", value: Binding(get: { selectedArtwork?.width ?? 1 }, set: { value in
-                    guard value.isFinite, value > 0 else { return }
-                    updateSelectedArtwork("Resize Artwork") { layer in
-                        let next = min(10_000, max(1, value))
-                        layer.height = min(10_000, max(1, layer.height * next / max(1, layer.width)))
-                        layer.width = next
-                    }
-                }), format: .number.precision(.fractionLength(0...1)))
-                    .multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder).frame(width: 80)
-                Text(direction.canvasUnitLabel).foregroundStyle(.secondary)
-            }.font(.caption)
             HStack(spacing: 7) {
                 Text("Opacity")
                 Slider(value: Binding(get: { (selectedArtwork?.opacity ?? 1) * 100 }, set: { value in
@@ -2009,15 +2076,12 @@ struct TypeBoardEditor: View {
                 }), in: 0...100) { Text("Artwork opacity") }.labelsHidden()
                 Text("\(Int((selectedArtwork?.opacity ?? 1) * 100))%").monospacedDigit().foregroundStyle(.secondary)
             }.font(.caption)
-            Toggle("Place above canvas content", isOn: Binding(get: { selectedArtwork?.artworkInFront ?? false }, set: { value in
-                updateSelectedArtwork("Arrange Artwork") { $0.artworkInFront = value }
-            })).toggleStyle(.checkbox).font(.caption)
-            Button("Remove artwork", role: .destructive) {
-                guard let index = selectedArtworkIndex else { return }
-                board.directions[directionIndex].artworkLayers?.remove(at: index)
-                selectedSection = nil
-                save("Remove Artwork")
-            }.font(.caption)
+            if selectedArtworkIndex != nil {
+                Toggle("Place above canvas content", isOn: Binding(get: { selectedArtwork?.artworkInFront ?? false }, set: { value in
+                    updateSelectedArtwork("Arrange Artwork") { $0.artworkInFront = value }
+                })).toggleStyle(.checkbox).font(.caption)
+            }
+            Button("Remove image", role: .destructive) { objectCommand("delete") }.font(.caption)
         }
     }
     var axesEditor: some View {
@@ -3336,7 +3400,7 @@ final class CanvasNativeView: NSView {
         if tool == .text, !plan.isArrangement {
             let point = convert(event.locationInWindow, from: nil)
             let local = CGPoint(x: point.x / zoom, y: point.y / zoom)
-            if plan.elements.contains(where: { !$0.objectID.isEmpty && $0.rect.contains(local) }) {
+            if resizeHandle(at: local) != nil || plan.elements.contains(where: { !$0.objectID.isEmpty && $0.rect.contains(local) }) {
                 if event.clickCount >= 2, let text = plan.text(at: local), onTextEdit != nil {
                     onTextSelect?(text); beginEditing(text)
                 } else { trackObjectSelection(event) }

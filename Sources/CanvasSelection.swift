@@ -127,9 +127,10 @@ extension CanvasNativeView {
         let start = convert(event.locationInWindow, from: nil)
         let origin = CGPoint(x: start.x / zoom, y: start.y / zoom)
         let additive = event.modifierFlags.contains(.shift)
-        let handle = resizeHandles().first { hypot(origin.x - $0.1.x, origin.y - $0.1.y) < 8 / zoom }?.0
+        let handle = resizeHandle(at: origin)
         let resize = handle != nil
         let independent = plan.elements.filter { objectSelection.contains($0.objectID) }.allSatisfy { $0.text == nil }
+        let containsImage = plan.elements.contains { objectSelection.contains($0.objectID) && $0.image != nil }
         let hit = plan.elements.last { $0.rect.contains(origin) && !$0.objectID.isEmpty }
         let marquee = !resize && (tool == .marquee || hit == nil)
         if !marquee && !resize, let hit {
@@ -156,8 +157,14 @@ extension CanvasNativeView {
                 objectSelection = additive ? originalSelection.union(hits) : hits
             } else if moved, let box {
                 if resize && independent, let handle {
-                    let proposed = handle.resized(box, delta: CGSize(width: point.x-origin.x, height: point.y-origin.y), within: originalPlan.artboardSize)
-                    let result = CanvasAlignmentGuides.resized(proposed, handle: handle.unit, canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
+                    let drag = CGSize(width: point.x-origin.x, height: point.y-origin.y)
+                    let result: CanvasAlignmentResult
+                    if containsImage && handle.isCorner && !next.modifierFlags.contains(.shift) {
+                        result = handle.proportionalResize(box, delta: drag, within: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
+                    } else {
+                        let proposed = handle.resized(box, delta: drag, within: originalPlan.artboardSize)
+                        result = CanvasAlignmentGuides.resized(proposed, handle: handle.unit, canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
+                    }
                     resizedBox = result.rect; alignmentGuides = result.guides
                 } else if resize {
                     factor = min((originalPlan.artboardSize.width-box.minX)/max(1,box.width), (originalPlan.artboardSize.height-box.minY)/max(1,box.height), max(0.05, max((point.x-box.minX)/max(1,box.width), (point.y-box.minY)/max(1,box.height))))
@@ -190,7 +197,7 @@ extension CanvasNativeView {
     func drawObjectSelection() {
         guard directionID != nil else { return }
         defer { drawAlignmentGuides() }
-        guard tool == .auto || tool == .select || tool == .marquee else { return }
+        guard tool == .auto || tool == .select || tool == .marquee || (tool == .text && !resizeHandles().isEmpty) else { return }
         ShelfPalette.nativeAccent.setStroke()
         for element in plan.elements where objectSelection.contains(element.objectID) {
             let outline = NSBezierPath(rect: element.rect); outline.lineWidth = 1 / zoom; outline.stroke()

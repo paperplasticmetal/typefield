@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.25 (2026-10-08)
+
+- Clarify Spaces cursor switching with one named active-mode menu, retaining Auto as the default and existing keyboard shortcuts.
+- Expose labeled Text, Shape and Image add controls beside the unchanged inspector panels.
+- Select imported images immediately and provide proportionate corner resizing, deliberate Shift stretching and consistent image properties after copying.
+
+
 ## 0.59.24 (2026-10-08)
 
 - Add Check for Updates in Settings → Updates and the Typefield menu, daily background checks and optional automatic downloading/installation.

@@ -77,12 +77,18 @@ enum SpacesObjects {
     }
     static func removing(_ ids: Set<String>, from source: TypeDirection) -> TypeDirection {
         var result = source
-        let looseSections = Set((source.objectLayers ?? []).map(\.id))
-        let looseIDs = Set(CanvasPlanCache.plan(for: source).elements.filter { looseSections.contains($0.sectionID) }.map(\.objectID))
-        result.hiddenObjectIDs = (result.hiddenObjectIDs ?? []).union(ids.subtracting(looseIDs))
+        // Added objects belong to the document directly, unlike template
+        // content. Remove their embedded data rather than hiding it forever.
+        var visible = source; visible.hiddenObjectIDs = []; visible.hiddenSections = []
+        let elements = CanvasPlanCache.plan(for: visible).elements
+        let ownedSections = Set(((source.objectLayers ?? []) + (source.artworkLayers ?? [])).map(\.id))
+        let ownedIDs = Set(elements.filter { ownedSections.contains($0.sectionID) }.map(\.objectID))
+        result.hiddenObjectIDs = (result.hiddenObjectIDs ?? []).union(ids.subtracting(ownedIDs)).subtracting(ids.intersection(ownedIDs))
         for id in ids { result.objectTransforms?.removeValue(forKey: id); result.objectEffects?.removeValue(forKey: id) }
-        let sections = Set(CanvasPlanCache.plan(for: source).elements.filter { ids.contains($0.objectID) }.map(\.sectionID))
+        let sections = Set(elements.filter { ids.contains($0.objectID) }.map(\.sectionID))
         result.objectLayers?.removeAll { sections.contains($0.id) }
+        result.artworkLayers?.removeAll { sections.contains($0.id) }
+        result.hiddenSections?.subtract(sections.intersection(ownedSections))
         result.objectGroups = result.objectGroups?.compactMap { group in
             var next = group; next.members.subtract(ids); return next.members.count > 1 ? next : nil
         }
@@ -150,7 +156,7 @@ extension TypeBoardEditor {
         if command == "insertText" || command == "insertShape" {
             let text = command == "insertText"
             let layer = ImportedLayer(name: text ? "Text box" : "Rectangle", x: 24, y: 24, width: text ? 280 : 160, height: text ? 80 : 120, color: text ? direction.ink : direction.accent, style: text ? TypeStyle(fontName: style.fontName, size: 24, text: "Your text") : nil)
-            if let (next, ids) = SpacesObjects.paste(SpacesObjectClip(layers: [layer]), into: direction, offset: 0) { board.directions[directionIndex] = next; if save(text ? "Add Text Box" : "Add Shape") { selectObjects(ids); editorSession.selectionRevealToken += 1 } }; return
+            if let (next, ids) = SpacesObjects.paste(SpacesObjectClip(layers: [layer]), into: direction, offset: 0) { board.directions[directionIndex] = next; if save(text ? "Add Text Box" : "Add Shape") { interactionTool = .auto; selectObjects(ids); editorSession.selectionRevealToken += 1 } }; return
         }
         if command == "group" { groupObjects(); return }; if command == "ungroup" { ungroupObjects(); return }
         if command == "copy" || command == "cut" {
@@ -233,8 +239,8 @@ extension TypeBoardEditor {
 
 }
 
-/// Eight handles resize non-text objects independently. Text selections retain
-/// proportional scaling so font metrics and text editing remain meaningful.
+/// Image corners retain their ratio by default; Shift corners or edge handles
+/// allow deliberate stretching. Text selections retain proportional scaling.
 enum SpacesResizeHandle: CaseIterable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     var unit: CGPoint {
@@ -245,6 +251,7 @@ enum SpacesResizeHandle: CaseIterable {
         case .bottomLeft: return CGPoint(x: 0,y: 1); case .left: return CGPoint(x: 0,y: 0.5)
         }
     }
+    var isCorner: Bool { unit.x != 0.5 && unit.y != 0.5 }
     func point(in box: CGRect) -> CGPoint { CGPoint(x: box.minX + box.width * unit.x, y: box.minY + box.height * unit.y) }
     func resized(_ box: CGRect, delta: CGSize, within canvas: CGSize) -> CGRect {
         var x = box.minX, y = box.minY, right = box.maxX, bottom = box.maxY
@@ -254,15 +261,52 @@ enum SpacesResizeHandle: CaseIterable {
         if unit.y == 1 { bottom = max(y + 1, min(canvas.height, bottom + delta.height)) }
         return CGRect(x: x, y: y, width: right-x, height: bottom-y)
     }
+    func proportionalResize(_ box: CGRect, delta: CGSize, within canvas: CGSize, objects: [CanvasAlignmentTarget], selected: Set<String>, zoom: CGFloat, bypass: Bool = false) -> CanvasAlignmentResult {
+        guard isCorner, box.width > 0, box.height > 0 else { return CanvasAlignmentResult(rect: box, guides: []) }
+        // Reflect the coordinate system so every corner can use the same
+        // fixed-top-left proportional guide calculation, then reflect back.
+        let mirrorX = unit.x == 0, mirrorY = unit.y == 0
+        func reflected(_ rect: CGRect) -> CGRect {
+            CGRect(x: mirrorX ? canvas.width - rect.maxX : rect.minX,
+                   y: mirrorY ? canvas.height - rect.maxY : rect.minY,
+                   width: rect.width, height: rect.height)
+        }
+        let base = reflected(box)
+        let dx = mirrorX ? -delta.width : delta.width, dy = mirrorY ? -delta.height : delta.height
+        let requested = 1 + (dx * box.width + dy * box.height) / (box.width * box.width + box.height * box.height)
+        let maximum = min((canvas.width - base.minX) / box.width, (canvas.height - base.minY) / box.height)
+        let minimum = max(1 / box.width, 1 / box.height)
+        let factor = min(maximum, max(minimum, requested))
+        let targets = objects.map { CanvasAlignmentTarget(id: $0.id, rect: reflected($0.rect)) }
+        let result = CanvasAlignmentGuides.scaled(base, factor: factor, canvas: canvas, objects: targets, selected: selected, zoom: zoom, bypass: bypass)
+        let guides = result.guides.map { guide -> CanvasAlignmentGuide in
+            var result = guide
+            if guide.axis == .vertical {
+                if mirrorX { result.position = canvas.width - guide.position }
+                if mirrorY { result.start = canvas.height - guide.end; result.end = canvas.height - guide.start }
+            } else {
+                if mirrorY { result.position = canvas.height - guide.position }
+                if mirrorX { result.start = canvas.width - guide.end; result.end = canvas.width - guide.start }
+            }
+            return result
+        }
+        return CanvasAlignmentResult(rect: reflected(result.rect), guides: guides)
+    }
 }
 extension CanvasNativeView {
     @objc func copy(_ sender: Any?) { onObjectCommand?("copy") }
     @objc func cut(_ sender: Any?) { onObjectCommand?("cut") }
     @objc func paste(_ sender: Any?) { onObjectCommand?("paste") }
     func resizeHandles() -> [(SpacesResizeHandle, CGPoint)] {
-        guard tool == .auto || tool == .select, let box = CanvasSelection.bounds(objectSelection, in: plan) else { return [] }
-        let allShapes = plan.elements.filter { objectSelection.contains($0.objectID) }.allSatisfy { $0.text == nil }
+        let selected = plan.elements.filter { objectSelection.contains($0.objectID) }
+        guard !plan.isArrangement, tool != .frame,
+              tool == .auto || tool == .select || selected.contains(where: { $0.image != nil }),
+              let box = CanvasSelection.bounds(objectSelection, in: plan) else { return [] }
+        let allShapes = selected.allSatisfy { $0.text == nil }
         return (allShapes ? SpacesResizeHandle.allCases : [.bottomRight]).map { ($0,$0.point(in: box)) }
+    }
+    func resizeHandle(at point: CGPoint) -> SpacesResizeHandle? {
+        resizeHandles().first { hypot(point.x - $0.1.x, point.y - $0.1.y) < 8 / max(0.01, zoom) }?.0
     }
 }
 
@@ -336,7 +380,111 @@ enum SpacesObjectChecks {
         let old = try JSONDecoder().decode(CanvasObjectTransform.self, from: Data("{\"scale\":1,\"x\":2,\"y\":3}".utf8))
         try check(old.isValid && old.stretchX == nil && old.flipX == nil, "Older object transforms must decode")
         try checkSymmetry()
+        try checkArtworkResize()
         print("PASS: \(cases) cross-format/scaled clipboard round trips, fresh grouped IDs, delete, eight shape handles, alignment, double reflection, Figma mirror round trip and malformed clipboard")
+    }
+
+    private static func checkArtworkResize() throws {
+        func check(_ value: Bool, _ message: String) throws {
+            if !value { throw NSError(domain: "SpacesArtworkResize", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        func close(_ a: CGRect, _ b: CGRect) -> Bool {
+            abs(a.minX-b.minX) < 0.00001 && abs(a.minY-b.minY) < 0.00001 && abs(a.width-b.width) < 0.00001 && abs(a.height-b.height) < 0.00001
+        }
+        let image = NSImage(size: CGSize(width: 16, height: 8), flipped: false) { rect in NSColor.red.setFill(); rect.fill(); return true }
+        guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let data = bitmap.representation(using: .png, properties: [:]) else {
+            throw NSError(domain: "SpacesArtworkResize", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not encode an image fixture"])
+        }
+        var layer = ImportedLayer(id: "resize-artwork", name: "Resize image", x: 60, y: 160, width: 160, height: 80, color: "FFFFFF")
+        layer.artworkData = data; layer.artworkInFront = true; layer.effects = CanvasObjectEffects(blurRadius: 2, shadowEnabled: true)
+        var cases = 0
+        for storage in 0..<2 {
+            for scale in [0.75, 1.0, 2.0] {
+                var source = SpacesInteractionChecks.importedFixture(); source.canvasScale = scale
+                if storage == 0 { source.artworkLayers = [layer] }
+                else { source.objectLayers = [layer] }
+                let original = CanvasPlan(direction: source), artwork = original.elements.first { $0.sectionID == layer.id }!
+                let ids: Set<String> = [artwork.objectID]
+                let session = StudioEditorSession(board: TypeBoard())
+                try check(session.interactionTool == .auto, "Fresh Spaces sessions must use Auto")
+                session.selectObjects(ids, in: source); session.reconcileSelection(in: source)
+                try check(session.selectedObjects == ids && session.selectedSection == layer.id, "Selection reconciliation must retain newly imported artwork on its canvas")
+                var otherCanvas = source; otherCanvas.id = UUID()
+                session.reconcileSelection(in: otherCanvas)
+                try check(session.selectedObjects.isEmpty, "Changing canvases without an explicit new selection must clear the old image")
+                session.selectObjects(ids, in: otherCanvas); session.reconcileSelection(in: otherCanvas)
+                try check(session.selectedObjects == ids, "Explicit cross-canvas image selection must survive the subsequent view update")
+                var withoutArtwork = otherCanvas; withoutArtwork.artworkLayers = nil; withoutArtwork.objectLayers = nil; withoutArtwork.importedLayout?.layers.removeAll { $0.id == layer.id }
+                session.reconcileSelection(in: withoutArtwork)
+                try check(session.selectedObjects.isEmpty && session.selectedSection == nil, "Reconciliation must prune removed image IDs")
+                try check(artwork.image != nil && artwork.text == nil, "Artwork must remain an image in every layer store")
+                let view = CanvasNativeView(plan: original); view.directionID = source.id; view.objectSelection = ids
+                for tool in [CanvasInteractionTool.auto, .select, .marquee, .text] {
+                    view.tool = tool
+                    try check(view.resizeHandles().count == 8 && view.resizeHandle(at: artwork.rect.origin) == .topLeft, "Image selection needs discoverable handles in \(tool.rawValue)")
+                }
+                view.tool = .frame
+                try check(view.resizeHandles().isEmpty, "Canvas mode must keep object handles hidden")
+                for handle in SpacesResizeHandle.allCases where handle.isCorner {
+                    let dx = handle.unit.x == 0 ? -24.0 : 24.0, dy = handle.unit.y == 0 ? -12.0 : 12.0
+                    let target = handle.proportionalResize(artwork.rect, delta: CGSize(width: dx, height: dy), within: original.artboardSize, objects: [], selected: ids, zoom: 1, bypass: true).rect
+                    try check(abs(target.width / target.height - 2) < 0.00001, "Image corner resizing must retain its ratio")
+                    let opposite = CGPoint(x: handle.unit.x == 0 ? artwork.rect.maxX : artwork.rect.minX, y: handle.unit.y == 0 ? artwork.rect.maxY : artwork.rect.minY)
+                    try check(abs((handle.unit.x == 0 ? target.maxX : target.minX)-opposite.x)<0.00001 && abs((handle.unit.y == 0 ? target.maxY : target.minY)-opposite.y)<0.00001, "The opposite image corner must remain fixed")
+                    let changed = SpacesObjects.resized(source, ids: ids, to: target), plan = CanvasPlan(direction: changed)
+                    try check(close(plan.elements.first { $0.objectID == artwork.objectID }!.rect, target) && plan.artboardSize == original.artboardSize, "Image resize must persist its preview without expanding the canvas")
+                    for element in original.elements where !ids.contains(element.objectID) {
+                        try check(plan.elements.first { $0.objectID == element.objectID }?.rect == element.rect, "Resizing artwork must not move other objects")
+                    }
+                    let clip = SpacesObjects.clip(changed, ids: ids)!
+                    try check(clip.layers[0].artworkData == data && clip.layers[0].effects == artwork.effects, "Image resizing/copy must retain pixels and appearance")
+                    let pasted = SpacesObjects.paste(clip, into: source, offset: 0)!
+                    let copy = CanvasPlan(direction: pasted.0).elements.first { pasted.1.contains($0.objectID) }!
+                    try check(close(copy.rect, target) && copy.image != nil && copy.effects == artwork.effects, "Pasted artwork must retain resized geometry and effects")
+                    let restored = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(changed))
+                    try check(restored == changed, "Image resizing must survive document reload")
+                    cases += 1
+                }
+                let shapes = original.elements.filter { $0.image == nil && $0.text == nil }
+                let groupIDs: Set<String> = [artwork.objectID, shapes[0].objectID]
+                source.objectGroups = [CanvasObjectGroup(members: groupIDs)]
+                try check(CanvasSelection.expanded(ids, groups: source.objectGroups!) == groupIDs, "Selecting grouped artwork must expand to its group")
+                let groupBounds = CanvasSelection.bounds(groupIDs, in: original)!
+                let target = SpacesResizeHandle.bottomRight.proportionalResize(groupBounds, delta: CGSize(width: 20, height: 20), within: original.artboardSize, objects: [], selected: groupIDs, zoom: 1, bypass: true).rect
+                let changed = SpacesObjects.resized(source, ids: groupIDs, to: target), plan = CanvasPlan(direction: changed)
+                let factor = target.width / groupBounds.width
+                let expected = CanvasSelection.transformed(artwork, by: CanvasObjectTransform(scale: factor, x: groupBounds.minX*(1-factor), y: groupBounds.minY*(1-factor))).rect
+                try check(close(plan.elements.first { $0.objectID == artwork.objectID }!.rect, expected) && plan.artboardSize == original.artboardSize && changed.objectGroups == source.objectGroups, "Image groups must resize together without canvas growth or lost membership")
+                let stretched = SpacesResizeHandle.right.resized(artwork.rect, delta: CGSize(width: 13, height: 0), within: original.artboardSize)
+                try check(stretched.height == artwork.rect.height && stretched.width > artwork.rect.width, "Image edge handles must allow deliberate one-axis stretch")
+                source.hiddenObjectIDs = ids; source.hiddenSections = [layer.id]
+                let removed = SpacesObjects.removing(ids, from: source)
+                try check((removed.artworkLayers ?? []).isEmpty && (removed.objectLayers ?? []).isEmpty && (removed.hiddenObjectIDs ?? []).isDisjoint(with: ids) && !(removed.hiddenSections ?? []).contains(layer.id), "Deleting added artwork must release embedded bytes and stale hidden IDs")
+                try check(removed.importedLayout == source.importedLayout, "Deleting added artwork must preserve imported source layers")
+            }
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Typefield-image-resize-checks-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = StudioStore(url: folder.appendingPathComponent("spaces.json"))
+        let space = store.addSpace("Image resize fixture")!, boardID = store.addBoard(space: space)!
+        func storedBoard() -> TypeBoard? { store.state.spaces.first { $0.id == space }?.boards.first { $0.id == boardID } }
+        var board = storedBoard()!
+        var direction = SpacesInteractionChecks.importedFixture(); direction.artworkLayers = [layer]
+        board.directions = [direction]; board.selectedDirection = direction.id
+        try check(store.update(space: space, board: board), "Could not persist image fixture")
+        store.undoManager.groupsByEvent = false; store.undoManager.removeAllActions()
+        let originalBoard = board, plan = CanvasPlan(direction: direction), artwork = plan.elements.first { $0.sectionID == layer.id }!
+        let ids: Set<String> = [artwork.objectID]
+        let target = SpacesResizeHandle.bottomRight.proportionalResize(artwork.rect, delta: CGSize(width: 40, height: 20), within: plan.artboardSize, objects: [], selected: ids, zoom: 1, bypass: true).rect
+        board.directions[0] = SpacesObjects.resized(direction, ids: ids, to: target)
+        try check(store.update(space: space, board: board, action: "Resize Objects"), "Could not commit image resize")
+        store.undoManager.undo(); try check(storedBoard() == originalBoard, "One undo must restore the image before resize")
+        store.undoManager.redo(); try check(storedBoard() == board, "One redo must restore the resized image")
+        let resizedBoard = board
+        board.directions[0] = SpacesObjects.removing(ids, from: board.directions[0])
+        try check(store.update(space: space, board: board, action: "Delete Objects") && board.directions[0].artworkLayers?.isEmpty == true, "Removing artwork must persist deletion of its bytes")
+        store.undoManager.undo(); try check(storedBoard() == resizedBoard, "Undo deletion must restore image bytes, effects and resized geometry")
+        print("PASS: \(cases) image corner resize cases across imported/pasted artwork and scales, group geometry, copy/effects, release of deleted image bytes and persisted undo/redo")
     }
 
     private static func checkSymmetry() throws {
