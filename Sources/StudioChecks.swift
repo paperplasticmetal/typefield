@@ -905,7 +905,7 @@ enum StudioChecks {
                    && verticalOnlyResize.width == 960 && verticalOnlyResize.position == startPosition,
                    "Horizontal edge drags must preserve a 1,316pt height while vertical drags preserve the 960pt width")
         let originalHeightPlan = CanvasPlan(direction: arrangementA)
-        let minimumTextSize = CanvasBoardLayout.textContentBounds(in: originalHeightPlan)
+        let minimumTextSize = CanvasBoardLayout.textContentBounds(in: originalHeightPlan, padding: 0)
         var heightLimitedCanvas = arrangementA
         heightLimitedCanvas.canvasHeight = Double(minimumTextSize.height)
         let boundedHeightResize = CanvasBoardLayout.resized(canvas: heightLimitedCanvas, artboardSize: CGSize(width: 960, height: CGFloat(minimumTextSize.height)), position: startPosition,

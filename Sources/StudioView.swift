@@ -560,7 +560,8 @@ enum CanvasBoardLayout {
         var importedWidth = canvas.canvas == .imported ? min(10_000, max(1, currentWidth + (edge.horizontal ? delta : 0))) : canvas.canvasWidth
         // Horizontal edge drags must preserve the rendered starting height.
         // Save it explicitly so responsive reflow cannot shrink the orthogonal
-        // dimension; only the later text-fit check may grow it.
+        // dimension; only real text overflow may grow it. Do not add an
+        // artificial margin to objects deliberately aligned to an edge.
         var height: Double? = edge.horizontal ? baseHeight : min(canvas.maximumCanvasHeight, max(canvas.minimumCanvasHeight, baseHeight + delta))
         var candidate = canvas
         candidate.width = width
@@ -573,7 +574,7 @@ enum CanvasBoardLayout {
             for _ in 0..<5 {
                 candidate.width = width
                 candidate.canvasWidth = importedWidth
-                let required = textContentBounds(in: CanvasPlan(direction: candidate)).width / scale
+                let required = textContentBounds(in: CanvasPlan(direction: candidate), padding: 0).width / scale
                 if canvas.canvas == .imported {
                     if required > 10_000 {
                         importedWidth = canvas.canvasWidth
@@ -598,7 +599,7 @@ enum CanvasBoardLayout {
         candidate.width = width
         candidate.canvasWidth = importedWidth
         if let requestedHeight = height {
-            let required = textContentBounds(in: CanvasPlan(direction: candidate)).height / scale
+            let required = textContentBounds(in: CanvasPlan(direction: candidate), padding: 0).height / scale
             if required > canvas.maximumCanvasHeight {
                 height = canvas.canvasHeight ?? baseHeight
                 warning = "Canvas height cannot be reduced without clipping text; resize was canceled."

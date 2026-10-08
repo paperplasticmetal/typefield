@@ -1489,7 +1489,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         item.target = self; item.representedObject = command; item.keyEquivalentModifierMask = modifiers
         return item
     }
+    private var canRouteSpacesClipboard: Bool {
+        NSApp.isActive && activeWorkspace == .spaces && !library.studio.readBlocked &&
+        (NSApp.keyWindow === window || workspaceWindows.mode(for: NSApp.keyWindow) == .spaces || NSApp.keyWindow?.title == "Typefield: Inspector") &&
+        NSApp.keyWindow?.attachedSheet == nil && !(NSApp.keyWindow?.firstResponder is NSTextView)
+    }
+    // NSTextView and CanvasNativeView still receive these actions first. The
+    // application fallback keeps object commands available after pop-out or undo
+    // clears the first responder, without intercepting normal text editing.
+    private func routeSpacesClipboard(_ command: String) {
+        guard canRouteSpacesClipboard else { return }
+        NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.object." + command)
+    }
+    @objc func copy(_ sender: Any?) { routeSpacesClipboard("copy") }
+    @objc func cut(_ sender: Any?) { routeSpacesClipboard("cut") }
+    @objc func paste(_ sender: Any?) { routeSpacesClipboard("paste") }
+    @objc func selectAll(_ sender: Any?) { routeSpacesClipboard("selectAll") }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if let action = item.action, [#selector(copy(_:)), #selector(cut(_:)), #selector(paste(_:)), #selector(selectAll(_:))].contains(action) { return canRouteSpacesClipboard }
         if item.action == #selector(undo(_:)) {
             if let manager = activeUndoManager { item.title = manager.undoMenuItemTitle; return manager.canUndo }
             let editorOwnsHistory = activeWorkspace == .fontLab && editorIsKey && activeEditorWindow.attachedSheet == nil && !(activeEditorWindow.firstResponder is NSTextView)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.19 (2026-10-07)
+
+- Keep canvas height stable when widening a canvas with bottom-aligned text; remove artificial resize padding while retaining actual text bounds.
+- Keep object clipboard shortcuts available immediately after popping out an editor or undoing an action.
+- Verify object clipboard, shape resizing, automatic selection, Command-G grouping and all six canvas alignments through the live editor.
+
 ## 0.59.18 (2026-10-07)
 
 - Add Spaces object copy/cut/paste, paste in place, duplicate, delete, and independent text boxes/shapes with undo and cross-canvas/group preservation.

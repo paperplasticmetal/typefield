@@ -49,6 +49,12 @@ enum SpacesInteractionChecks {
             let plan = CanvasPlan(direction: aligned)
             let edge = CanvasBoardLayout.resized(canvas: aligned, artboardSize: plan.artboardSize, position: CanvasBoardPosition(x: 20, y: 20), edge: .bottom, by: CGSize(width: 0, height: 30 * scale), zoom: 1)
             try check(edge.warning == nil && abs((edge.height ?? 0) - 510) < 0.01, "Resizing aligned content must preserve scale and requested height")
+            let widened = CanvasBoardLayout.resized(canvas: aligned, artboardSize: plan.artboardSize, position: CanvasBoardPosition(x: 20, y: 20), edge: .right, by: CGSize(width: 25 * scale, height: 0), zoom: 1)
+            try check(widened.warning == nil && widened.importedWidth == 665 && widened.height == 480, "Widening bottom-aligned text must not add padding to canvas height")
+            let rightAligned = CanvasSelection.aligned(direction: fixture, ids: ids, alignment: .right)
+            let rightPlan = CanvasPlan(direction: rightAligned)
+            let sameWidth = CanvasBoardLayout.resized(canvas: rightAligned, artboardSize: rightPlan.artboardSize, position: CanvasBoardPosition(x: 20, y: 20), edge: .right, by: .zero, zoom: 1)
+            try check(sameWidth.warning == nil && sameWidth.importedWidth == 640 && sameWidth.height == 480, "A zero-distance edge resize must not add margin around aligned text")
             let corner = CanvasBoardLayout.resized(canvas: aligned, artboardSize: plan.artboardSize, position: CanvasBoardPosition(x: 20, y: 20), corner: .bottomRight, by: CGSize(width: 64, height: 48), zoom: 1)
             try check(corner.warning == nil && corner.scale > scale, "Corner resizing must accept text aligned to the canvas edge")
         }
