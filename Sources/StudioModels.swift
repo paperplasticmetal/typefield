@@ -157,6 +157,7 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var textOverrides: [String: String]?
     var textPositions: [String: CanvasTextPosition]?
     var objectTransforms: [String: CanvasObjectTransform]?
+    var objectEffects: [String: CanvasObjectEffects]?
     var objectGroups: [CanvasObjectGroup]?
     var objectLayers: [ImportedLayer]?
     var hiddenObjectIDs: Set<String>?
@@ -257,6 +258,7 @@ struct ImportedLayer: Codable, Identifiable, Equatable {
     var artworkInFront: Bool?
     var flipX: Bool?
     var flipY: Bool?
+    var effects: CanvasObjectEffects?
     var isValidArtwork: Bool {
         guard let artworkData, artworkData.count > 8,
               artworkData.count <= SpacesArtworkImport.maximumEmbeddedBytes else { return false }
@@ -265,7 +267,7 @@ struct ImportedLayer: Codable, Identifiable, Equatable {
             [x, y, width, height, opacity].allSatisfy(\.isFinite) &&
             abs(x) <= 100_000 && abs(y) <= 100_000 &&
             (0.01...100_000).contains(width) && (0.01...100_000).contains(height) &&
-            (0...1).contains(opacity) && style == nil &&
+            (0...1).contains(opacity) && (effects?.isValid ?? true) && style == nil &&
             strokeColor == nil && strokeOpacity == nil && strokeWidth == nil
     }
     var visibleStrokeWidth: Double { strokeColor == nil ? 0 : (strokeWidth ?? 0) }
@@ -287,7 +289,7 @@ struct ImportedLayout: Codable, Equatable {
             (layer.strokeColor.map { $0.range(of: #"^[0-9A-Fa-f]{6}$"#, options: .regularExpression) != nil } ?? true) &&
             (layer.strokeWidth.map { $0.isFinite && (0...1000).contains($0) && ($0 == 0 || layer.strokeColor != nil) } ?? true) &&
             (layer.strokeOpacity.map { $0.isFinite && (0...1).contains($0) } ?? true) &&
-            layer.artworkData == nil &&
+            layer.artworkData == nil && (layer.effects?.isValid ?? true) &&
             (layer.style == nil || (layer.strokeColor == nil && layer.strokeWidth == nil && layer.strokeOpacity == nil)) &&
             (layer.style.map { $0.size.isFinite && (1...1000).contains($0.size) && TypeDirection.acceptsCanvasText($0.text) && $0.tracking.isFinite && abs($0.tracking) <= 100 && ($0.lineHeight.map { $0.isFinite && (1...2000).contains($0) } ?? true) && $0.axes.values.allSatisfy(\.isFinite) && [$0.paragraphSpacing, $0.indent, $0.wordSpacing].allSatisfy { $0.map { $0.isFinite && abs($0) <= 1000 } ?? true } } ?? true)
         }
@@ -485,6 +487,13 @@ struct StudioTransferReport {
         directions.reduce(0) { $0 + CanvasPlanCache.plan(for: $1).elements.filter { $0.image != nil }.count }
     }
     var omittedArtworkCount: Int { format.omitsArtwork ? artworkCount : 0 }
+    var omittedEffectsCount: Int {
+        guard format == .figma || format == .adobeBuilder || format == .developerHandoff else { return 0 }
+        return directions.reduce(0) { $0 + CanvasPlanCache.plan(for: $1).elements.filter { $0.effects.isActive }.count }
+    }
+    var effectsOmissionNote: String? {
+        omittedEffectsCount > 0 ? "Blur and shadow are omitted from editable output for \(omittedEffectsCount) objects. Use Preview PDF to preserve their appearance." : nil
+    }
     var blockingReason: String? {
         if format == .typeSystemPDF && directions.contains(where: { $0.canvas == .imported }) {
             return "The selection includes an imported Figma or Adobe canvas. Choose only native canvases or use Preview PDF for the imported layout."
@@ -501,6 +510,7 @@ struct StudioTransferReport {
                          + (missingFonts.count > 8 ? " and \(missingFonts.count - 8) more" : ""))
         }
         if format.omitsArtwork { lines.append("Image layers omitted: \(omittedArtworkCount)") }
+        if let note = effectsOmissionNote { lines.append(note) }
         lines.append(format.limitation)
         if let blockingReason { lines.append("Cannot export: " + blockingReason) }
         return lines.joined(separator: "\n")

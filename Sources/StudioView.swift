@@ -13,8 +13,8 @@ enum StudioInspectorMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .expanded: return "Full inspector"
-        case .slim: return "Slim tools"
+        case .expanded: return "Tools & inspector"
+        case .slim: return "Tools only"
         case .hidden: return "Hide inspector"
         case .floating: return "Float inspector"
         }
@@ -722,7 +722,7 @@ enum CanvasDragPayload {
 
 extension TypeDirection {
     var isValid: Bool {
-        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (canvasWidth.map { canvas == .imported && $0.isFinite && (1...10000).contains($0) } ?? true) && (canvasHeight.map { $0.isFinite && (minimumCanvasHeight...maximumCanvasHeight).contains($0) } ?? true) && (boardPosition?.isValid ?? true) && (canvasScale.map { $0.isFinite && $0 >= minimumCanvasScale && $0 <= maximumCanvasScale } ?? true) && (importedLayout?.isValid ?? (canvas != .imported)) && artworkLayersAreValid && ((objectLayers?.isEmpty ?? true) || SpacesObjectClip(layers: objectLayers ?? []).isValid) && (hiddenObjectIDs?.count ?? 0) <= 10000 && (objectTransforms.map { $0.count <= 10000 && $0.values.allSatisfy(\.isValid) } ?? true) && (objectGroups.map { $0.count <= 1000 && $0.allSatisfy { $0.members.count <= 10000 } } ?? true) && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy(Self.acceptsCanvasText) } ?? true) && (textPositions.map { $0.count <= 5000 && $0.values.allSatisfy(\.isValid) } ?? true) && TypeRole.allCases.allSatisfy { role in
+        width.isFinite && (canvas == .imported ? (1...10000).contains(width) : (320...1600).contains(width)) && (canvasWidth.map { canvas == .imported && $0.isFinite && (1...10000).contains($0) } ?? true) && (canvasHeight.map { $0.isFinite && (minimumCanvasHeight...maximumCanvasHeight).contains($0) } ?? true) && (boardPosition?.isValid ?? true) && (canvasScale.map { $0.isFinite && $0 >= minimumCanvasScale && $0 <= maximumCanvasScale } ?? true) && (importedLayout?.isValid ?? (canvas != .imported)) && artworkLayersAreValid && ((objectLayers?.isEmpty ?? true) || SpacesObjectClip(layers: objectLayers ?? []).isValid) && (hiddenObjectIDs?.count ?? 0) <= 10000 && (objectTransforms.map { $0.count <= 10000 && $0.values.allSatisfy(\.isValid) } ?? true) && (objectEffects.map { $0.count <= 10000 && $0.values.allSatisfy(\.isValid) } ?? true) && (objectGroups.map { $0.count <= 1000 && $0.allSatisfy { $0.members.count <= 10000 } } ?? true) && (textOverrides.map { $0.count <= 5000 && $0.values.allSatisfy(Self.acceptsCanvasText) } ?? true) && (textPositions.map { $0.count <= 5000 && $0.values.allSatisfy(\.isValid) } ?? true) && TypeRole.allCases.allSatisfy { role in
             guard let s = styles[role.rawValue] else { return false }
             return s.size.isFinite && (8...160).contains(s.size) && s.leading.isFinite && (1...2.5).contains(s.leading) && s.tracking.isFinite && (-3...12).contains(s.tracking) && s.axes.values.allSatisfy(\.isFinite) && (s.lineHeight.map { $0.isFinite && (8...400).contains($0) } ?? true) && [s.paragraphSpacing, s.indent].allSatisfy { $0.map { $0.isFinite && (0...200).contains($0) } ?? true } && (s.wordSpacing.map { $0.isFinite && (-3...40).contains($0) } ?? true)
         }
@@ -875,15 +875,6 @@ struct TypeBoardEditor: View {
                 ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") })
                     .font(.headline).lineLimit(1).frame(minWidth: compact ? 90 : 110, maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: compact ? 4 : 12)
-                Menu("Insert") {
-                    Button("Text box") { objectCommand("insertText") }
-                    Button("Rectangle") { objectCommand("insertShape") }
-                    Divider()
-                    Button("Blank canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; summaryCanvasIDs.insert(canvas.id); save("Add Canvas") }
-                    Button("Duplicate current canvas") { let copy = direction.copy(name: board.nextCanvasName); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save("Duplicate Canvas") }
-                    Divider()
-                    Button("Artwork…") { chooseArtwork() }
-                }.menuStyle(.borderlessButton).fixedSize().help("Add a canvas or import artwork")
                 Menu("Export") {
                     ForEach(StudioExportKind.allCases) { kind in
                         Button(kind.rawValue + "…") { exportRequest = kind }
@@ -924,9 +915,6 @@ struct TypeBoardEditor: View {
             }
             Divider()
             HStack(spacing: 8) {
-                inspectorLayoutMenu
-                interactionTools
-                Divider().frame(height: 20)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) { ForEach(board.directions) { canvas in
                         Button { selectCanvas(canvas.id) } label: {
@@ -944,6 +932,9 @@ struct TypeBoardEditor: View {
                 }
                 Divider().frame(height: 20)
                 Menu {
+                    Button("New canvas") { let canvas = TypeDirection(name: board.nextCanvasName); board.directions.append(canvas); board.selectedDirection = canvas.id; summaryCanvasIDs.insert(canvas.id); save("Add Canvas") }
+                    Button("Duplicate canvas") { let copy = direction.copy(name: board.nextCanvasName); board.directions.append(copy); board.selectedDirection = copy.id; summaryCanvasIDs.insert(copy.id); save("Duplicate Canvas") }
+                    Divider()
                     Menu("Format") {
                         ForEach(CanvasKind.allCases.filter { $0 != .imported || direction.importedLayout != nil }, id: \.self) { kind in
                             Button(kind == .imported ? direction.canvasDisplayName : kind.rawValue) { directionBinding(\.canvas).wrappedValue = kind }
@@ -984,16 +975,18 @@ struct TypeBoardEditor: View {
             }.controlSize(.small).padding(.horizontal, 12).padding(.vertical, 7).fixedSize(horizontal: false, vertical: true)
             Divider()
             }
-            if inspectorMode == .expanded && !focusCanvas {
-                HSplitView {
-                    inspector.frame(minWidth: StudioInspectorLayout.fullMinimumWidth, idealWidth: StudioInspectorLayout.fullIdealWidth, maxWidth: 500).background(StudioSplitPosition())
-                    canvasWorkspace
+            if !focusCanvas && inspectorMode != .hidden {
+                HStack(spacing: 0) {
+                    slimInspector
+                    Divider()
+                    if inspectorMode == .expanded {
+                        HSplitView {
+                            inspector.frame(minWidth: StudioInspectorLayout.fullMinimumWidth, idealWidth: StudioInspectorLayout.fullIdealWidth, maxWidth: 440).background(StudioSplitPosition())
+                            canvasWorkspace
+                        }
+                    } else { canvasWorkspace }
                 }
-            } else if inspectorMode == .slim && !focusCanvas {
-                HStack(spacing: 0) { slimInspector; Divider(); canvasWorkspace }
-            } else {
-                canvasWorkspace
-            }
+            } else { canvasWorkspace }
         }.alert("Delete this typeboard?", isPresented: $showDelete) { Button("Delete", role: .destructive, action: onDelete); Button("Cancel", role: .cancel) {} }
         .alert("Artwork could not be imported", isPresented: Binding(get: { artworkImportError != nil }, set: { if !$0 { artworkImportError = nil } })) {
             Button("OK") { artworkImportError = nil }
@@ -1062,34 +1055,22 @@ struct TypeBoardEditor: View {
         }
     }
     var interactionTools: some View {
-        HStack(spacing: 5) {
-            Picker("Interaction tool", selection: $editorSession.interactionTool) {
-                ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
-                    Label(tool.rawValue, systemImage: tool.symbol).tag(tool)
-                }
-            }.pickerStyle(.menu).labelsHidden().frame(width: 105).help("Auto selects objects, edits text on double-click, and targets canvas boundaries. A/V/M/T/C switches tools while the canvas is focused.")
-            if interactionTool != .frame {
-                Menu {
-                    objectActions
-                    Divider()
-                    Button("Select all content") { selectObjects(Set(CanvasPlanCache.plan(for: direction).elements.map(\.objectID))) }
-                    Button("Deselect") { selectObjects([]) }
-                    Divider()
-                    Button("Group selection") { groupObjects() }.disabled(selectedObjects.count < 2)
-                    Button("Ungroup") { ungroupObjects() }.disabled(!(direction.objectGroups ?? []).contains { !$0.members.isDisjoint(with: selectedObjects) })
-                    Button("Reset selected transforms") { for id in selectedObjects { board.directions[directionIndex].objectTransforms?.removeValue(forKey: id) }; save("Reset Content Transforms") }.disabled(selectedObjects.isEmpty)
-                } label: { Text(selectedObjects.isEmpty ? "Selection" : "\(selectedObjects.count) selected") }
-                .menuStyle(.borderlessButton).fixedSize()
-                .help("Shift-click adds objects. Drag the selection to move; drag its handles to resize shapes or scale text. Escape cancels a drag.")
-                Menu("Symmetry") { symmetryActions }
-                    .menuStyle(.borderlessButton).fixedSize().disabled(selectedObjects.isEmpty || library.studio.readBlocked)
-                    .help("Flip the selection or create mirrored copies across the canvas center")
+        Menu {
+            ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
+                Button { interactionTool = tool } label: { Label(tool.rawValue, systemImage: tool.symbol) }
             }
-        }
+        } label: { Image(systemName: interactionTool.symbol) }
+        .menuStyle(.borderlessButton).fixedSize().help("Interaction tool (A, V, M, T, C)")
+        .accessibilityLabel("Interaction tool: " + interactionTool.rawValue)
     }
     func selectObjects(_ ids: Set<String>) {
         frameCanvasID = nil
+        let changedSelection = selectedObjects != ids
         editorSession.selectObjects(ids, in: direction)
+        if changedSelection && !ids.isEmpty && inspectorTab != "Arrangement" && inspectorTab != "Properties" {
+            let items = CanvasPlanCache.plan(for: direction).elements.filter { ids.contains($0.objectID) }
+            inspectorTab = items.count == 1 && items.first?.text != nil ? "Typography" : "Properties"
+        }
     }
     func selectArrangementSection(_ id: String) {
         let plan = CanvasPlanCache.plan(for: direction)
@@ -1157,7 +1138,7 @@ struct TypeBoardEditor: View {
             HStack(spacing: 8) {
                 Text("Inspector").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
-                Button("Slim tools") { setInspectorMode(.slim) }.font(.caption).buttonStyle(.borderless)
+                Button("Tools only") { setInspectorMode(.slim) }.font(.caption).buttonStyle(.borderless)
                 Button { setInspectorMode(.expanded) } label: { Label("Dock", systemImage: "sidebar.left") }
                     .font(.caption).buttonStyle(.borderless).help("Dock the full inspector beside the canvas")
             }.padding(.horizontal, 12).padding(.vertical, 7)
@@ -1179,7 +1160,7 @@ struct TypeBoardEditor: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: inspectorMode.symbol).font(.system(size: 13))
-                Text("Inspector")
+                Text("View")
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
             }
             .font(.subheadline.weight(.medium))
@@ -1192,30 +1173,53 @@ struct TypeBoardEditor: View {
         .accessibilityIdentifier("spaces-inspector-layout")
     }
     var slimInspector: some View {
-        VStack(spacing: 5) {
-            railButton("Typography", symbol: "textformat", selected: inspectorTab == "Typography") {
-                inspectorTab = "Typography"; showRailInspector = true
+        VStack(spacing: 4) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 4) {
+                    ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
+                        railButton(tool.rawValue + " tool (" + toolShortcut(tool) + ")", symbol: tool.symbol, selected: interactionTool == tool) { interactionTool = tool }
+                    }
+                    Divider().padding(.horizontal, 9).padding(.vertical, 5)
+                    Menu {
+                        Button("Text box") { objectCommand("insertText") }
+                        Button("Rectangle") { objectCommand("insertShape") }
+                        Button("Artwork…") { chooseArtwork() }
+                        if direction.canvas != .imported {
+                            Menu("Text role") { ForEach(TypeRole.allCases) { item in Button(item.rawValue) { addRole(item, target: nil, before: false) } } }
+                        }
+                    } label: { Image(systemName: "plus").font(.system(size: 17)).frame(width: 40, height: 36) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Insert text, shapes or artwork")
+                    .accessibilityLabel("Insert object").disabled(library.studio.readBlocked)
+                    Divider().padding(.horizontal, 9).padding(.vertical, 5)
+                    railPanel("Properties", symbol: "slider.horizontal.3")
+                    railPanel("Typography", symbol: "textformat")
+                    railPanel("Arrangement", symbol: "square.3.layers.3d", title: "Layers")
+                    railPanel("Canvas", symbol: "rectangle.dashed")
+                }
             }
-            railButton("Arrangement", symbol: "square.3.layers.3d", selected: inspectorTab == "Arrangement") {
-                inspectorTab = "Arrangement"; showRailInspector = true
+            Spacer(minLength: 0)
+            railButton(inspectorMode == .expanded ? "Collapse inspector" : "Dock inspector", symbol: inspectorMode == .expanded ? "sidebar.left" : "sidebar.leading") {
+                setInspectorMode(inspectorMode == .expanded ? .slim : .expanded)
             }
-            Spacer(minLength: 8)
-            railButton("Float inspector", symbol: StudioInspectorMode.floating.symbol) { setInspectorMode(.floating) }
-            railButton("Full inspector", symbol: StudioInspectorMode.expanded.symbol) { setInspectorMode(.expanded) }
-            railButton("Hide inspector", symbol: "chevron.left") { setInspectorMode(.hidden) }
         }
-        .padding(.vertical, 8)
-        .frame(width: StudioInspectorLayout.slimWidth)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
-        .popover(isPresented: $showRailInspector, arrowEdge: .trailing) {
-            inspector.frame(width: 320, height: 560)
-        }
+        .padding(.vertical, 6).frame(width: StudioInspectorLayout.slimWidth)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .popover(isPresented: $showRailInspector, arrowEdge: .trailing) { inspector.frame(width: 320, height: 600) }
         .accessibilityIdentifier("spaces-inspector-rail")
+    }
+    func toolShortcut(_ tool: CanvasInteractionTool) -> String {
+        switch tool { case .auto: return "A"; case .select: return "V"; case .marquee: return "M"; case .text: return "T"; case .frame: return "C" }
+    }
+    func railPanel(_ tab: String, symbol: String, title: String? = nil) -> some View {
+        railButton(title ?? tab, symbol: symbol, selected: inspectorTab == tab && (inspectorMode == .expanded || showRailInspector || inspectorMode == .floating)) {
+            if inspectorMode == .slim && inspectorTab == tab && showRailInspector { showRailInspector = false }
+            else { showInspectorTab(tab) }
+        }
     }
     func railButton(_ title: String, symbol: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 16, weight: .medium))
-                .frame(width: 44, height: 44)
+                .frame(width: 40, height: 36)
                 .foregroundStyle(selected ? Color.accentColor : Color.primary)
                 .background(selected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
@@ -1346,6 +1350,7 @@ struct TypeBoardEditor: View {
         shownCanvasIDs.insert(id)
         board.selectedDirection = id
         editorSession.selectObjects([], in: board.directions[index])
+        inspectorTab = "Canvas"
         abID = nil
         if let resizeWarning { status = resizeWarning }
         if (dragged && board.directions != startingDirections) || !wasSelected {
@@ -1612,33 +1617,8 @@ struct TypeBoardEditor: View {
         }
         save("Edit Canvas Text")
     }
-    var inspector: some View {
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Text("Canvas").font(.caption).foregroundStyle(.secondary)
-                    TextField("Canvas name", text: Binding(get: { board.canvasName(direction) }, set: { board.directions[directionIndex].name = $0; save() }))
-                        .textFieldStyle(.roundedBorder)
-                }
-                Picker("Inspector", selection: $editorSession.inspectorTab) { Text("Typography").tag("Typography"); Text("Arrangement").tag("Arrangement") }.pickerStyle(.segmented).labelsHidden()
-                if let warnings = direction.importWarnings, !warnings.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Import result (\(warnings.count) \(warnings.count == 1 ? "note" : "notes"))", systemImage: "exclamationmark.triangle")
-                            .font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                        Text(warnings[0]).font(.caption).foregroundStyle(.secondary)
-                        if warnings.count > 1 {
-                            DisclosureGroup("Show all import notes") {
-                                Text(warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                            }.font(.caption)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
-                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
-                }
-                if !selectedObjects.isEmpty { symmetryControls; Divider() }
-                if selectedImportedShape != nil { selectedShapeAppearance; Divider() }
-                if selectedArtworkIndex != nil { selectedArtworkAppearance; Divider() }
-                if inspectorTab == "Arrangement" { layoutSections }
-                else {
+    var typographyInspector: some View {
+        VStack(alignment: .leading, spacing: 12) {
                 if let index = selectedLooseIndex {
                     Text(direction.objectLayers?[index].name ?? "Object").font(.caption.weight(.semibold))
                 } else if direction.canvas == .imported {
@@ -1655,20 +1635,6 @@ struct TypeBoardEditor: View {
                     } label: {
                         HStack(spacing: 5) { Text(role.rawValue).fontWeight(.medium); Image(systemName: "chevron.up.chevron.down").font(.caption2) }
                     }.fixedSize().accessibilityLabel("Type role: " + role.rawValue)
-                }
-                DisclosureGroup("Add text roles") {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
-                ForEach(TypeRole.allCases) { item in
-                    let count = StudioRoleScope.affectedTextCount(role: item, direction: direction)
-                    Button { if count == 0 { addRole(item, target: nil, before: false) } else { selectRole(item) } } label: {
-                        HStack { Text(item.rawValue).font(.caption).fontWeight(.medium); Spacer(); Text(count == 0 ? "Add" : "\(count)× at \(Int(direction.style(item).size))").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(9).background(role == item ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 7)).contentShape(Rectangle())
-                    }.buttonStyle(.plain).onDrag { NSItemProvider(object: (direction.id.uuidString + "|role|" + item.rawValue) as NSString) }
-                        .help(count == 0 ? "Click to add this role at the end of the canvas, or drag to place it" : "Click to locate this role; drag to add another")
-                        .accessibilityLabel(count == 0 ? "Add \(item.rawValue) to canvas" : "Select \(item.rawValue), \(count) text objects")
-                }
-                Text("Double-click text on the canvas to edit it in place. Press ⌘Return to finish or Escape to cancel.").font(.caption).foregroundStyle(.secondary)
-                }
-                Text("Click Add to place a missing role at the end. Click an existing role to select it; drag a role to choose its position.").font(.caption2).foregroundStyle(.secondary)
                 }
                 }
                 Divider()
@@ -1738,27 +1704,10 @@ struct TypeBoardEditor: View {
                             Text("Longest entered line: \(SpacesProofing.longestLine(style.text)) characters").font(.caption).foregroundStyle(.secondary)
                             Text("Select text on the canvas to see rendered line and background measurements.").font(.caption).foregroundStyle(.secondary)
                         }
-                        Divider()
-                        canvasAlignmentPanel
                     }
                     .padding(.top, 8)
                 }
                 }
-                }
-                Divider()
-                if inspectorTab == "Arrangement" { DisclosureGroup("Object") { canvasAlignmentPanel.padding(.top, 8) } }
-                DisclosureGroup("Canvas") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Colors").font(.caption).fontWeight(.semibold)
-                        if inspectorTab == "Arrangement" && !importedNonTextSelected { colorPicker("Text", key: \.ink) }
-                        colorPicker("Background", key: \.paper)
-                        if direction.canvas != .imported { colorPicker("Accent", key: \.accent) }
-                        Divider()
-                        Text("Canvas notes").font(.caption).fontWeight(.semibold)
-                        TextEditor(text: directionBinding(\.notes)).frame(height: 75)
-                    }.padding(.top, 8)
-                }
-            }.padding(14)
         }
     }
     func optionalStyleBinding<T>(_ key: WritableKeyPath<TypeStyle, T?>, default fallback: T) -> Binding<T> { Binding(get: { style[keyPath: key] ?? fallback }, set: { var s = style; s[keyPath: key] = $0; setStyle(s); save() }) }
@@ -1993,11 +1942,10 @@ struct TypeBoardEditor: View {
     var selectedShapeAppearance: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
-                Text("Selected shape").font(.headline)
+                Text("Appearance").font(.caption.weight(.semibold))
                 Spacer(minLength: 4)
                 Text(selectedImportedShape?.name ?? "Shape").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
-            Text("Appearance changes apply only to this shape.").font(.caption).foregroundStyle(.secondary)
             StudioHexColorPicker(title: "Fill", hex: selectedShapeFill)
             StudioHexColorPicker(title: "Stroke", hex: selectedShapeStroke)
             HStack(spacing: 7) {
@@ -2034,7 +1982,7 @@ struct TypeBoardEditor: View {
     var selectedArtworkAppearance: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text("Selected artwork").font(.headline)
+                Text("Appearance").font(.caption.weight(.semibold))
                 Spacer(minLength: 4)
                 Text(selectedArtwork?.name ?? "Image").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -2195,6 +2143,7 @@ struct CanvasElement {
     var objectID = ""
     var flipX = false
     var flipY = false
+    var effects = CanvasObjectEffects()
 }
 struct CanvasSection: Identifiable { var id: String; var title: String; var rect: CGRect }
 enum CanvasPlanCache {
@@ -2325,6 +2274,7 @@ struct CanvasPlan {
             elements.removeAll { (d.hiddenObjectIDs ?? []).contains($0.objectID) }
             sections.removeAll { section in !elements.contains { $0.sectionID == section.id } }
             applyCanvasScale(d.canvasScale ?? 1)
+            applyObjectEffects(from: d)
             expandTextFramesForUnbreakableContent(excluding: Set(d.objectTransforms?.keys.map { $0 } ?? []))
             applyArtboardBounds(width: d.width, importedWidth: d.canvasWidth, height: d.canvasHeight,
                                 preserveImportedOverflow: d.canvasWidth == nil && d.canvasHeight == nil)
@@ -2927,6 +2877,7 @@ struct CanvasPlan {
         elements.removeAll { (d.hiddenObjectIDs ?? []).contains($0.objectID) }
         sections.removeAll { section in !elements.contains { $0.sectionID == section.id } }
         applyCanvasScale(d.canvasScale ?? 1)
+        applyObjectEffects(from: d)
         expandTextFramesForUnbreakableContent(excluding: Set(d.objectTransforms?.keys.map { $0 } ?? []))
         applyArtboardBounds(width: d.width, importedWidth: d.canvasWidth, height: d.canvasHeight,
                             preserveImportedOverflow: d.canvas == .imported && d.canvasWidth == nil && d.canvasHeight == nil)
@@ -3140,6 +3091,7 @@ final class CanvasNativeView: NSView {
     var onTextEdit: ((CanvasElement, String) -> Void)?
     var acceptsFont: ((String) -> Bool)?
     var onDropFont: ((String, CanvasElement) -> Bool)?
+    var alignmentGuides: [CanvasAlignmentGuide] = []
     var selectionMarquee: CGRect?
     private var insertionY: Double?
     private var artworkDropHover = false
@@ -3381,6 +3333,16 @@ final class CanvasNativeView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard directionID != nil, let window else { return }
         if tool == .frame { onObjectSelection?([]); return }
+        if tool == .text, !plan.isArrangement {
+            let point = convert(event.locationInWindow, from: nil)
+            let local = CGPoint(x: point.x / zoom, y: point.y / zoom)
+            if plan.elements.contains(where: { !$0.objectID.isEmpty && $0.rect.contains(local) }) {
+                if event.clickCount >= 2, let text = plan.text(at: local), onTextEdit != nil {
+                    onTextSelect?(text); beginEditing(text)
+                } else { trackObjectSelection(event) }
+                return
+            }
+        }
         if tool == .auto || tool == .select || tool == .marquee {
             let point = convert(event.locationInWindow, from: nil)
             if tool == .auto, event.clickCount >= 2, let text = plan.text(at: CGPoint(x: point.x / zoom, y: point.y / zoom)) {
@@ -3570,6 +3532,7 @@ final class CanvasNativeView: NSView {
         NSGraphicsContext.current?.cgContext.scaleBy(x: zoom, y: zoom)
         NSBezierPath(rect: NSRect(origin: .zero, size: plan.artboardSize)).addClip()
         for element in plan.elements {
+            CanvasObjectEffectsRenderer.draw(element: element, zoom: zoom) {
             NSGraphicsContext.saveGraphicsState()
             if element.flipX || element.flipY {
                 let context = NSGraphicsContext.current!.cgContext
@@ -3590,6 +3553,7 @@ final class CanvasNativeView: NSView {
             }
             element.text?.draw(with: element.rect, options: [.usesLineFragmentOrigin, .usesFontLeading])
             NSGraphicsContext.restoreGraphicsState()
+            }
         }
         drawObjectSelection()
         if tool == .text, directionID != nil, let textID = selectedTextID, let selected = plan.elements.first(where: { $0.textID == textID }) {

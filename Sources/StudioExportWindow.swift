@@ -171,6 +171,9 @@ struct StudioExportReview: View {
             if let reason = report.blockingReason {
                 Text(reason).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
+            if let note = report.effectsOmissionNote {
+                Label(note, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             if showsFormatNote { Text(report.format.limitation).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             if !report.missingFonts.isEmpty {
                 DisclosureGroup("Unavailable fonts", isExpanded: $detailsExpanded) {
