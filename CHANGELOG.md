@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.26 (2026-10-08)
+
+- Unify Letterform drawing tools into fixed 44-point targets with visible V/A/P/L/R/O/H shortcuts. Put Paths and Transform beside them; keep tool and canvas positions stable during switching.
+- Place the Word Proof disclosure beside its title, preserve canvas keyboard focus after tool presses, and clear stale drawing state when Escape returns to Select.
+- Resolve only visible proof letters and update live proof geometry only when glyphs change. Reuse bounded dense-outline overlays and segment geometry while preserving edits, selection, viewport and appearance changes.
+- Retain the completed Spaces cursor and image-resizing improvements and signed in-app updater.
+
 ## 0.59.25 (2026-10-08)
 
 - Clarify Spaces cursor switching with one named active-mode menu, retaining Auto as the default and existing keyboard shortcuts.

@@ -60,10 +60,10 @@ struct TypefieldShortcutReference: View {
         .init(title: "Letterform Editor", symbol: "pencil.and.outline", shortcuts: [
             .init(action: "Previous or next glyph", keys: "⌘[ / ⌘]"),
             .init(action: "Vector or Sketch view", keys: "⇧⌘1 / ⇧⌘2"),
-            .init(action: "Vector tools: Select / Pen / Line / Rectangle / Ellipse / Hand", keys: "V / P / L / R / O / H"),
+            .init(action: "Vector canvas: Select objects / Nodes", keys: "V / A"),
+            .init(action: "Vector tools: Pen / Line / Rectangle / Ellipse / Hand", keys: "P / L / R / O / H"),
             .init(action: "Join two open endpoints", keys: "⌘J"),
             .init(action: "Finish the active Pen path", keys: "Return"),
-            .init(action: "Vector canvas: edit nodes", keys: "A"),
             .init(action: "Vector canvas: show or hide fill", keys: "F"),
             .init(action: "Sketch tools: Pen / Eraser / Reshape", keys: "P / E / V"),
             .init(action: "Nudge selected vector points", keys: "← / → / ↑ / ↓"),

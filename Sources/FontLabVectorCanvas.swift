@@ -23,11 +23,30 @@ final class FontLabVectorNSView: NSView {
     private var lineSourceID: UUID?
     private var lineTargetID: UUID?
     private var lineHasPreview = false
+    private struct OverlayCacheKey:Equatable {
+        var glyph:FontLabGlyph
+        var selection:Set<UUID>
+        var rect:CGRect
+        var bounds:CGRect
+        var scale:Double
+        var colors:[NSColor]
+    }
+    private struct OverlayCacheEntry {var key:OverlayCacheKey;var image:NSImage}
+    private var overlayCache:[Bool:OverlayCacheEntry]=[:]
+    private(set) var overlayCacheBuildCount=0
+    private struct HitSegmentGeometry {var controls:[FontLabPoint];var hull:CGRect;var curved:Bool}
+    private var hitGeometryPaths:[FontLabVectorPath]?
+    private var hitGeometry:[[HitSegmentGeometry]]=[]
+    private(set) var hitGeometryBuildCount=0
     private enum LineConnection {case none, joined([FontLabVectorPath],Set<UUID>), rejected}
     private enum Drag { case none, nodes, handle(Int,Int,Bool), segment(Int,Int,Double), pen(Int,Int), pathAction, line, shape, marquee, pan, resize(Int) }
     private var drag = Drag.none
     init(editor:FontLabVectorEditor) {
         self.editor=editor;super.init(frame:.zero)
+        editor.onFocusCanvasRequested = { [weak self] in
+            guard let self else {return}
+            self.window?.makeFirstResponder(self)
+        }
         setAccessibilityElement(true)
         setAccessibilityLabel("Vector glyph canvas")
         setAccessibilityRole(.group)
@@ -177,9 +196,9 @@ final class FontLabVectorNSView: NSView {
         let em=max(80,min((bounds.width-90)/width,bounds.height-75))*editor.zoom
         return CGRect(x:(bounds.width-em*width)/2+editor.pan.x,y:(bounds.height-em)/2+editor.pan.y,width:em*width,height:em)
     }
-    private func screen(_ p:FontLabPoint)->CGPoint {CGPoint(x:designRect.minX+p.x*designRect.width,y:designRect.minY+p.y*designRect.height)}
+    private func screen(_ p:FontLabPoint)->CGPoint {let r=designRect;return CGPoint(x:r.minX+p.x*r.width,y:r.minY+p.y*r.height)}
     private func design(_ p:CGPoint,clamp:Bool=true)->FontLabPoint {
-        let x=(p.x-designRect.minX)/designRect.width,y=(p.y-designRect.minY)/designRect.height
+        let r=designRect,x=(p.x-r.minX)/r.width,y=(p.y-r.minY)/r.height
         return FontLabPoint(x:clamp ? min(1,max(0,x)):x,y:clamp ? min(1,max(0,y)):y)
     }
     private func snapped(_ p:FontLabPoint,event:NSEvent)->FontLabPoint {
@@ -238,38 +257,7 @@ final class FontLabVectorNSView: NSView {
             }
             fontLabDrawStrokes(closedStrokes,in:r,color:NSColor(editor.inkColor))
         }
-        for path in paths {
-            (path.closed ? NSColor.systemBlue.withAlphaComponent(0.75) : NSColor.systemOrange).setStroke()
-            let outline=path.bezier(in:r);outline.lineWidth=path.closed ? 1:1.3
-            if !path.closed { outline.setLineDash([5,3],count:2,phase:0) }
-            outline.stroke()
-            if editor.objectSelection && editor.tool == .select && path.nodes.count > 1 { continue }
-            for (index,node) in path.nodes.enumerated() {
-                let p=screen(node.point)
-                if editor.selection.contains(node.id) {
-                    let handles = [(false,node.incoming),(true,node.outgoing)].compactMap { outgoing,handle in
-                        handleIsActive(path,index:index,outgoing:outgoing) ? handle : nil
-                    }
-                    for h in handles {
-                        let handle=screen(h);let line=NSBezierPath();line.move(to:p);line.line(to:handle);NSColor.systemOrange.setStroke();line.lineWidth=1;line.stroke()
-                        NSColor.textBackgroundColor.setFill();let dot=NSBezierPath(ovalIn:CGRect(x:handle.x-3,y:handle.y-3,width:6,height:6));dot.fill();dot.stroke()
-                    }
-                }
-                guard bounds.insetBy(dx:-10,dy:-10).contains(p) else {continue}
-                let size:Double=editor.selection.contains(node.id) ? 8:6
-                let box=CGRect(x:p.x-size/2,y:p.y-size/2,width:size,height:size)
-                let shape=node.smooth ? NSBezierPath(ovalIn:box):NSBezierPath(rect:box)
-                (editor.selection.contains(node.id) ? NSColor.systemOrange:NSColor.textBackgroundColor).setFill();shape.fill();NSColor.systemBlue.setStroke();shape.lineWidth=1;shape.stroke()
-                if index==0 {let marker=NSBezierPath();marker.move(to:CGPoint(x:p.x+5,y:p.y));marker.line(to:CGPoint(x:p.x+9,y:p.y+3));marker.line(to:CGPoint(x:p.x+9,y:p.y-3));marker.close();NSColor.systemBlue.setFill();marker.fill()}
-            }
-        }
-        if editor.objectSelection && editor.tool == .select, let box = selectionBox {
-            NSColor.systemBlue.setStroke(); NSBezierPath(rect: box).stroke()
-            for p in corners(box) {
-                let handle = NSBezierPath(rect: CGRect(x:p.x-4,y:p.y-4,width:8,height:8))
-                NSColor.textBackgroundColor.setFill(); handle.fill(); handle.stroke()
-            }
-        }
+        drawEditingOverlay(paths,in:r)
         if let marquee {NSColor.systemBlue.withAlphaComponent(0.12).setFill();marquee.fill();NSColor.systemBlue.setStroke();NSBezierPath(rect:marquee).stroke()}
         if let preview=rubberBandPath {
             NSColor.systemOrange.withAlphaComponent(0.8).setStroke();preview.lineWidth=1.2
@@ -294,6 +282,73 @@ final class FontLabVectorNSView: NSView {
             let focus = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8)
             focus.lineWidth = 2
             focus.stroke()
+        }
+    }
+    private func drawEditingOverlay(_ paths:[FontLabVectorPath],in rect:CGRect) {
+        let objects=editor.objectSelection && editor.tool == .select
+        func display(_ image:NSImage) {
+            image.draw(in:bounds,from:CGRect(origin:.zero,size:bounds.size),operation:.sourceOver,fraction:1)
+        }
+        // Small outlines are inexpensive to paint directly. A dense outline
+        // keeps at most one Nodes and one Objects overlay at native resolution.
+        let count=paths.reduce(0) {$0+$1.nodes.count}
+        let scale=window?.backingScaleFactor ?? 1
+        let pixelWidth=ceil(bounds.width*scale),pixelHeight=ceil(bounds.height*scale)
+        guard count>=512,pixelWidth>0,pixelHeight>0,pixelWidth*pixelHeight<=4_000_000 else {
+            overlayCache.removeAll();paintEditingOverlay(paths,in:rect,objects:objects);return
+        }
+        let colors=[NSColor.systemBlue,NSColor.systemOrange,NSColor.textBackgroundColor].map {$0.usingColorSpace(.deviceRGB) ?? $0}
+        let key=OverlayCacheKey(glyph:editor.glyph,selection:editor.selection,rect:rect,bounds:bounds,scale:scale,colors:colors)
+        if let cached=overlayCache[objects],cached.key==key {display(cached.image);return}
+        guard let bitmap=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:Int(pixelWidth),pixelsHigh:Int(pixelHeight),bitsPerSample:8,
+                                          samplesPerPixel:4,hasAlpha:true,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:0,bitsPerPixel:0),
+              let context=NSGraphicsContext(bitmapImageRep:bitmap) else {paintEditingOverlay(paths,in:rect,objects:objects);return}
+        NSGraphicsContext.saveGraphicsState();NSGraphicsContext.current=context
+        context.cgContext.clear(CGRect(x:0,y:0,width:pixelWidth,height:pixelHeight))
+        context.cgContext.scaleBy(x:scale,y:scale);context.cgContext.translateBy(x:-bounds.minX,y:-bounds.minY)
+        paintEditingOverlay(paths,in:rect,objects:objects)
+        NSGraphicsContext.restoreGraphicsState()
+        // Crop a fractional trailing pixel rather than stretching the layer
+        // when SwiftUI lays the canvas out on a fractional point boundary.
+        bitmap.size=CGSize(width:pixelWidth/scale,height:pixelHeight/scale)
+        let image=NSImage(size:bitmap.size);image.addRepresentation(bitmap)
+        overlayCache[objects]=OverlayCacheEntry(key:key,image:image);overlayCacheBuildCount += 1
+        display(image)
+    }
+    private func paintEditingOverlay(_ paths:[FontLabVectorPath],in r:CGRect,objects:Bool) {
+        let selection=editor.selection
+        func screen(_ p:FontLabPoint)->CGPoint {CGPoint(x:r.minX+p.x*r.width,y:r.minY+p.y*r.height)}
+        for path in paths {
+            (path.closed ? NSColor.systemBlue.withAlphaComponent(0.75) : NSColor.systemOrange).setStroke()
+            let outline=path.bezier(in:r);outline.lineWidth=path.closed ? 1:1.3
+            if !path.closed { outline.setLineDash([5,3],count:2,phase:0) }
+            outline.stroke()
+            if objects && path.nodes.count > 1 { continue }
+            for (index,node) in path.nodes.enumerated() {
+                let p=screen(node.point)
+                if selection.contains(node.id) {
+                    let handles = [(false,node.incoming),(true,node.outgoing)].compactMap { outgoing,handle in
+                        handleIsActive(path,index:index,outgoing:outgoing) ? handle : nil
+                    }
+                    for h in handles {
+                        let handle=screen(h);let line=NSBezierPath();line.move(to:p);line.line(to:handle);NSColor.systemOrange.setStroke();line.lineWidth=1;line.stroke()
+                        NSColor.textBackgroundColor.setFill();let dot=NSBezierPath(ovalIn:CGRect(x:handle.x-3,y:handle.y-3,width:6,height:6));dot.fill();dot.stroke()
+                    }
+                }
+                guard bounds.insetBy(dx:-10,dy:-10).contains(p) else {continue}
+                let size:Double=selection.contains(node.id) ? 8:6
+                let box=CGRect(x:p.x-size/2,y:p.y-size/2,width:size,height:size)
+                let shape=node.smooth ? NSBezierPath(ovalIn:box):NSBezierPath(rect:box)
+                (selection.contains(node.id) ? NSColor.systemOrange:NSColor.textBackgroundColor).setFill();shape.fill();NSColor.systemBlue.setStroke();shape.lineWidth=1;shape.stroke()
+                if index==0 {let marker=NSBezierPath();marker.move(to:CGPoint(x:p.x+5,y:p.y));marker.line(to:CGPoint(x:p.x+9,y:p.y+3));marker.line(to:CGPoint(x:p.x+9,y:p.y-3));marker.close();NSColor.systemBlue.setFill();marker.fill()}
+            }
+        }
+        if objects, let box = selectionBox {
+            NSColor.systemBlue.setStroke(); NSBezierPath(rect: box).stroke()
+            for p in corners(box) {
+                let handle = NSBezierPath(rect: CGRect(x:p.x-4,y:p.y-4,width:8,height:8))
+                NSColor.textBackgroundColor.setFill(); handle.fill(); handle.stroke()
+            }
         }
     }
     private func drawPenCenterlines(_ strokes:[FontLabStroke],in rect:CGRect,color:NSColor) {
@@ -396,16 +451,18 @@ final class FontLabVectorNSView: NSView {
     }
     private func hitNode(_ p:CGPoint)->(Int,Int,Bool?)? {
         let paths=editor.paths
+        let r=designRect,selection=editor.selection
+        func screen(_ p:FontLabPoint)->CGPoint {CGPoint(x:r.minX+p.x*r.width,y:r.minY+p.y*r.height)}
         var best: (Int,Int,Bool?)?, distance = Double.infinity
         // Prefer the nearest visible target, with anchors winning a tie. A
         // short handle must not steal a click at its anchor's exact center.
         for a in paths.indices.reversed() {for b in paths[a].nodes.indices.reversed() {
             let q=screen(paths[a].nodes[b].point),d=hypot(q.x-p.x,q.y-p.y)
-            let chosenSelected=best.map {editor.selection.contains(paths[$0.0].nodes[$0.1].id)} ?? false
-            let selectedTie=abs(d-distance)<1e-7 && editor.selection.contains(paths[a].nodes[b].id) && !chosenSelected
+            let chosenSelected=best.map {selection.contains(paths[$0.0].nodes[$0.1].id)} ?? false
+            let selectedTie=abs(d-distance)<1e-7 && selection.contains(paths[a].nodes[b].id) && !chosenSelected
             if d<8,d<distance-1e-7 || selectedTie {distance=d;best=(a,b,nil)}
         }}
-        for a in paths.indices.reversed() {for b in paths[a].nodes.indices.reversed() where editor.selection.contains(paths[a].nodes[b].id) {
+        for a in paths.indices.reversed() {for b in paths[a].nodes.indices.reversed() where selection.contains(paths[a].nodes[b].id) {
             let node=paths[a].nodes[b]
             for (outgoing,h) in [(false,node.incoming),(true,node.outgoing)] {
                 guard handleIsActive(paths[a],index:b,outgoing:outgoing),let h else {continue}
@@ -419,11 +476,19 @@ final class FontLabVectorNSView: NSView {
         var best:(Int,Int,Double)?,distance=7.0
         let r=designRect
         let paths=editor.paths
+        func screen(_ p:FontLabPoint)->CGPoint {CGPoint(x:r.minX+p.x*r.width,y:r.minY+p.y*r.height)}
+        if hitGeometryPaths != paths {
+            hitGeometry=paths.map {path in (0..<path.segmentCount).map {index in
+                let controls=path.controls(index)
+                return HitSegmentGeometry(controls:controls,hull:FontLabVectorMath.bounds(controls),curved:path.isCurve(index))
+            }}
+            hitGeometryPaths=paths;hitGeometryBuildCount += 1
+        }
         for a in paths.indices {for b in 0..<paths[a].segmentCount {
-            let c=paths[a].controls(b),curve=paths[a].isCurve(b),samples=curve ? 50:1
+            let geometry=hitGeometry[a][b],c=geometry.controls,curve=geometry.curved,samples=curve ? 50:1
             // A Bézier remains inside its control hull. Reject distant segments
             // before sampling, without changing the existing hit tolerance.
-            let hull=FontLabVectorMath.bounds(c)
+            let hull=geometry.hull
             let hitBounds=CGRect(x:r.minX+hull.minX*r.width,y:r.minY+hull.minY*r.height,
                                  width:hull.width*r.width,height:hull.height*r.height).insetBy(dx:-distance,dy:-distance)
             guard hitBounds.contains(p) else { continue }
@@ -808,7 +873,7 @@ final class FontLabVectorNSView: NSView {
     override func cancelOperation(_ sender: Any?) {
         if case .none = drag {
             if editor.activePath != nil {editor.finishPath()}
-            else {editor.tool = .select;editor.selection=[]}
+            else {editor.selection=[];editor.activateTool(.select)}
             pointerLocation=nil;needsDisplay=true
         }
         else { endGesture(commit: false) }
@@ -844,17 +909,16 @@ final class FontLabVectorNSView: NSView {
         case 126:editor.move(dx:0,dy:unit);return
         default:break
         }
-        if ["v","a","f","p","l","r","o","h"].contains(key) {editor.message=FontLabVectorEditor.defaultMessage}
         switch key {
         case " ":spaceDown=true
-        case "v":editor.tool = .select;editor.activePath=nil
-        case "a":editor.objectSelection=false;editor.tool = .select;editor.activePath=nil
-        case "f":editor.fill.toggle()
-        case "p":editor.tool = .pen
-        case "l":editor.tool = .line;editor.activePath=nil
-        case "r":editor.tool = .rectangle;editor.activePath=nil
-        case "o":editor.tool = .ellipse;editor.activePath=nil
-        case "h":editor.tool = .hand
+        case "v":editor.activateTool(.select)
+        case "a":editor.activateTool(.select,objects:false)
+        case "f":if !editor.message.isEmpty {editor.message=FontLabVectorEditor.defaultMessage};editor.fill.toggle()
+        case "p":editor.activateTool(.pen)
+        case "l":editor.activateTool(.line)
+        case "r":editor.activateTool(.rectangle)
+        case "o":editor.activateTool(.ellipse)
+        case "h":editor.activateTool(.hand)
         default:super.keyDown(with:event)
         }
     }

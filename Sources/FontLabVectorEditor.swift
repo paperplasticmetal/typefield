@@ -129,8 +129,19 @@ final class FontLabVectorEditor: ObservableObject {
     var onUndo: () -> Void = {}
     var onRedo: () -> Void = {}
     var onFocusSelectionRequested: () -> Void = {}
+    var onFocusCanvasRequested: () -> Void = {}
     @Published var activePath: UUID?
     init(glyph: FontLabGlyph, metrics: FontLabMetrics) { self.glyph=glyph;self.metrics=metrics }
+    func activateTool(_ value: FontLabVectorTool, objects: Bool? = nil) {
+        if value == .select {
+            let selectObjects = objects ?? true
+            if objectSelection != selectObjects { objectSelection = selectObjects }
+        }
+        if tool != value { tool = value }
+        if activePath != nil { activePath = nil }
+        if !message.isEmpty { message = Self.defaultMessage }
+        onFocusCanvasRequested()
+    }
     var paths: [FontLabVectorPath] {
         if let cachedPaths { return cachedPaths }
         let value = FontLabVectorMath.paths(in: glyph)
@@ -778,14 +789,13 @@ struct FontLabVectorEditorView: View {
                 HStack(spacing: 10) {
                     vectorToolButtons
                     Divider().frame(height: 20)
-                    selectionPicker
-                    Spacer(minLength: 0)
                     pathsMenu
                     selectionInspectorButton
+                    Spacer(minLength: 0)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     vectorToolButtons
-                    HStack(spacing: 8) { selectionPicker; Spacer(minLength: 0); pathsMenu; selectionInspectorButton }
+                    HStack(spacing: 8) { pathsMenu; selectionInspectorButton; Spacer(minLength: 0) }
                 }
             }.controlSize(.small)
             constructionControls
@@ -815,8 +825,9 @@ struct FontLabVectorEditorView: View {
             }.font(.caption).controlSize(.small)
             .popover(isPresented: $showCanvasAppearance) { canvasAppearance.padding(16).frame(width: 310) }
             Text(editor.message.isEmpty ? editor.interactionHint : editor.message)
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                .help("Objects: edit whole shapes. Nodes: edit points and handles. Paths contains contour operations. Selection contains coordinates and transforms.")
+                .font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+                .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40, alignment: .topLeading)
+                .help(editor.message.isEmpty ? editor.interactionHint : editor.message)
         }
         .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
         .onAppear { editor.receive(glyph); editor.metrics=metrics; editor.componentStrokes=componentStrokes; updateCoordinates() }
@@ -827,20 +838,28 @@ struct FontLabVectorEditorView: View {
         .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
     }
     private var constructionControls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { continuationButton; joinButton; closeButton; outlineStrokeButton; Spacer(minLength: 0) }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) { continuationButton; joinButton; Spacer(minLength: 0) }
-                HStack(spacing: 8) { closeButton; outlineStrokeButton; Spacer(minLength: 0) }
+        HStack(spacing: 6) {
+            if editor.activePath != nil || editor.canContinueEndpoint || editor.canJoinEndpoints || editor.canOutlineSelectedPaths {
+                if editor.activePath != nil || editor.canContinueEndpoint { continuationButton }
+                if editor.canJoinEndpoints { joinButton }
+                if editor.activePath != nil ? editor.canCloseActivePath : editor.canCloseTouchedPaths { closeButton }
+                if editor.canOutlineSelectedPaths { outlineStrokeButton }
+            } else {
+                Text(activeToolDescription).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
+            Spacer(minLength: 0)
         }
+        .frame(height: 32, alignment: .leading)
         .popover(isPresented: $showStrokeOutline) { strokeOutlineInspector.padding(16).frame(width: 320) }
     }
     @ViewBuilder private var continuationButton: some View {
         if editor.activePath != nil {
-            Button("Finish path") { editor.finishPath() }.help("Finish this open path without changing its shape (Return)")
+            Button("Finish") { editor.finishPath(); editor.onFocusCanvasRequested() }
+                .accessibilityLabel("Finish path").help("Finish this open path without changing its shape (Return)")
         } else {
-            Button("Continue path") { editor.continueSelectedEndpoint() }
+            Button("Continue") { editor.continueSelectedEndpoint(); editor.onFocusCanvasRequested() }
+                .accessibilityLabel("Continue path")
                 .disabled(!editor.canContinueEndpoint).help("Select one open endpoint, then continue drawing from it with Pen")
         }
     }
@@ -849,14 +868,16 @@ struct FontLabVectorEditorView: View {
             .accessibilityLabel("Join endpoints").help("Shift-select two open endpoints, then join them (⌘J)")
     }
     private var closeButton: some View {
-        Button("Close path") {
+        Button("Close") {
             if editor.activePath != nil { editor.closeActivePath() } else { editor.closeTouchedPaths() }
         }
+        .accessibilityLabel("Close path")
         .disabled(editor.activePath != nil ? !editor.canCloseActivePath : !editor.canCloseTouchedPaths)
         .help("Connect the first and last points of the active path or selected contours")
     }
     private var outlineStrokeButton: some View {
-        Button("Outline stroke…") { showStrokeOutline = true }
+        Button("Outline…") { showStrokeOutline = true }
+            .accessibilityLabel("Outline stroke…")
             .disabled(!editor.canOutlineSelectedPaths)
             .help("Give selected open paths a width and turn them into filled, editable outlines")
     }
@@ -948,13 +969,17 @@ struct FontLabVectorEditorView: View {
         }
     }
     private var selectionInspectorButton: some View {
-        Button("Selection") { showSelectionInspector = true }
-            .buttonStyle(.borderless).help("Coordinates, alignment, scale and rotation")
+        Button { showSelectionInspector = true } label: {
+            Label("Transform", systemImage: "arrow.up.left.and.arrow.down.right")
+                .padding(.horizontal, 8).frame(height: 36).contentShape(Rectangle())
+        }
+            .buttonStyle(.plain).fixedSize().help("Transform the selection: coordinates, alignment, scale and rotation")
+            .accessibilityIdentifier("font-lab-transform")
             .popover(isPresented: $showSelectionInspector) { selectionInspector.padding(16).frame(width: 400) }
     }
     private var selectionInspector: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("Selection").font(.headline); Spacer(); Button("Select all") { editor.selectAll() }; Button("Done") { showSelectionInspector = false } }
+            HStack { Text("Transform").font(.headline); Spacer(); Button("Select all") { editor.selectAll() }; Button("Done") { showSelectionInspector = false } }
             HStack(spacing:6) {
                 Text("\(editor.selection.count) \(editor.selection.count == 1 ? "node" : "nodes")").foregroundStyle(.secondary).frame(width:65,alignment:.leading)
                 Text("X");TextField("X",text:$x).frame(width:55).disabled(editor.selection.isEmpty).accessibilityLabel("Selection X in font units").onSubmit {submitCoordinate(x, horizontal:true)}
@@ -1020,55 +1045,72 @@ struct FontLabVectorEditorView: View {
         }
     }
     private var vectorToolButtons: some View {
-        HStack(spacing:6) {
-            ForEach(FontLabVectorTool.allCases) { tool in
-                Button {editor.tool=tool;editor.activePath=nil;editor.message=""} label: {
-                    HStack(spacing: 3) {
-                        Image(systemName:tool.icon).frame(width:24,height:24)
-                        if editor.tool == tool { Text(tool.rawValue).font(.caption).fixedSize() }
-                    }
-                }
-                    .buttonStyle(.plain).padding(4).background(editor.tool == tool ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6)).foregroundStyle(editor.tool == tool ? Color.accentColor : Color.primary).help("\(tool.rawValue) (\(tool.shortcut))").accessibilityLabel(tool.rawValue)
+        HStack(spacing: 3) {
+            toolButton(.select, title: "Select", icon: "cursorarrow", shortcut: "V", objects: true)
+            toolButton(.select, title: "Nodes", icon: "cursorarrow.and.square.on.square.dashed", shortcut: "A", objects: false)
+            ForEach(FontLabVectorTool.allCases.filter { $0 != .select }) { tool in
+                toolButton(tool, title: tool.rawValue, icon: tool.icon, shortcut: tool.shortcut)
             }
-        }.padding(3).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+        }.padding(4).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8)).fixedSize()
     }
-    private var selectionPicker: some View {
-        Picker("Selection", selection: Binding(get: { editor.objectSelection }, set: {
-            editor.objectSelection = $0; editor.tool = .select; editor.activePath = nil; editor.message = ""
-        })) { Text("Objects").tag(true); Text("Nodes").tag(false) }
-            .pickerStyle(.segmented).labelsHidden().frame(width:140)
-            .help("Nodes edits anchors, handles and curves (A). Objects moves whole shapes.")
+    private func toolButton(_ tool: FontLabVectorTool, title: String, icon: String, shortcut: String, objects: Bool? = nil) -> some View {
+        let selected = editor.tool == tool && (objects == nil || editor.objectSelection == objects)
+        return Button { editor.activateTool(tool, objects: objects) } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 16, weight: .medium)).frame(height: 18)
+                Text(shortcut).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+            }
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(FontLabToolButtonStyle(selected: selected))
+        .help("\(title) (\(shortcut))")
+        .accessibilityLabel(title).accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("font-lab-tool-\(title.lowercased())")
     }
-    private var pathsMenu: some View {
-        Menu("Paths") {
-                    Button("Select filled outlines") { editor.selectContours(closed: true) }.disabled(editor.paths.allSatisfy { !$0.closed })
-                    Button("Select open paths") { editor.selectContours(closed: false) }.disabled(editor.openCount == 0)
-                    Button("Manage contours…") { showContours = true }
-                    Divider()
-                    Button("Smooth nodes") {editor.smooth(true)}.disabled(editor.selection.isEmpty)
-                    Button("Corner nodes") {editor.smooth(false)}.disabled(editor.selection.isEmpty)
-                    Button("Make selected segments straight") {editor.lines()}.disabled(!editor.canStraightenSegments)
-                    Button("Add curve handles") {editor.curves()}.disabled(!editor.canCurveSegments)
-                    Button("Insert segment midpoints") {editor.insertMidpoints()}.disabled(!editor.canInsertMidpoints)
-                    Button("Split at selected node") {editor.splitAtNode()}.disabled(!editor.canSplitNode)
-                    Button("Join selected endpoints") {editor.joinEndpoints()}.disabled(!editor.canJoinEndpoints)
-                    Button("Continue from selected endpoint") { editor.continueSelectedEndpoint() }.disabled(!editor.canContinueEndpoint)
-                    Button("Outline selected strokes…") { showStrokeOutline = true }.disabled(!editor.canOutlineSelectedPaths)
-                    Divider()
-                    Button("Close contours") {editor.pathCommand("close")}.disabled(!editor.canCloseContours)
-                    Button("Open contours") {editor.pathCommand("open")}.disabled(!editor.canOpenContours)
-                    Button("Make counter") {editor.pathCommand("counter")}.disabled(editor.selection.isEmpty)
-                    Button("Reverse contours") {editor.pathCommand("reverse")}.disabled(editor.selection.isEmpty)
-                    Button("Remove overlaps") {editor.boolean("overlap")}.disabled(editor.paths.isEmpty)
-                    Button("Subtract later contours") {editor.boolean("subtract")}.disabled(editor.selection.isEmpty)
-                    Button("Intersect contours") {editor.boolean("intersect")}.disabled(editor.selection.isEmpty)
-                    Button("Add extrema") {editor.addExtrema()}.disabled(editor.paths.isEmpty)
-                    Divider()
-                    Button("Duplicate contours") {editor.duplicate()}.disabled(editor.selection.isEmpty)
-                    Button("Copy contours") {editor.copyPaths()}.disabled(editor.selection.isEmpty)
-                    Button("Paste contours") {editor.pastePaths()}
-                    Button("Delete nodes",role:.destructive) {editor.deleteSelection()}.disabled(editor.selection.isEmpty)
-        }.menuStyle(.borderlessButton).fixedSize()
+    private var activeToolDescription: String {
+        switch editor.tool {
+        case .select: return editor.objectSelection ? "Select whole shapes" : "Edit anchors, handles and curves"
+        case .pen: return "Click for corners · Drag for curves"
+        case .line: return "Drag a line · Shift constrains its angle"
+        case .rectangle: return "Drag a rectangle · Shift makes a square"
+        case .ellipse: return "Drag an ellipse · Shift makes a circle"
+        case .hand: return "Drag to pan the canvas"
+        }
+    }
+    private var pathsMenu: some View { FontLabPathMenuButton(actions: pathMenuActions) }
+    private func pathMenuActions() -> [FontLabPathMenuPresenter.Action] {
+        var actions: [FontLabPathMenuPresenter.Action] = []
+        if editor.activePath != nil { actions.append(.init("Finish path (Return)") { editor.finishPath() }) }
+        actions += [
+            .init("Select filled outlines", enabled: editor.paths.contains(where: \.closed)) { editor.selectContours(closed: true) },
+            .init("Select open paths", enabled: editor.openCount > 0) { editor.selectContours(closed: false) },
+            .init("Manage contours…") { showContours = true },
+            .separator,
+            .init("Smooth nodes", enabled: !editor.selection.isEmpty) { editor.smooth(true) },
+            .init("Corner nodes", enabled: !editor.selection.isEmpty) { editor.smooth(false) },
+            .init("Make selected segments straight", enabled: editor.canStraightenSegments) { editor.lines() },
+            .init("Add curve handles", enabled: editor.canCurveSegments) { editor.curves() },
+            .init("Insert segment midpoints", enabled: editor.canInsertMidpoints) { editor.insertMidpoints() },
+            .init("Split at selected node", enabled: editor.canSplitNode) { editor.splitAtNode() },
+            .init("Join selected endpoints", enabled: editor.canJoinEndpoints) { editor.joinEndpoints() },
+            .init("Continue from selected endpoint", enabled: editor.canContinueEndpoint) { editor.continueSelectedEndpoint() },
+            .init("Outline selected strokes…", enabled: editor.canOutlineSelectedPaths) { showStrokeOutline = true },
+            .separator,
+            .init("Close contours", enabled: editor.canCloseContours) { editor.pathCommand("close") },
+            .init("Open contours", enabled: editor.canOpenContours) { editor.pathCommand("open") },
+            .init("Make counter", enabled: !editor.selection.isEmpty) { editor.pathCommand("counter") },
+            .init("Reverse contours", enabled: !editor.selection.isEmpty) { editor.pathCommand("reverse") },
+            .init("Remove overlaps", enabled: !editor.paths.isEmpty) { editor.boolean("overlap") },
+            .init("Subtract later contours", enabled: !editor.selection.isEmpty) { editor.boolean("subtract") },
+            .init("Intersect contours", enabled: !editor.selection.isEmpty) { editor.boolean("intersect") },
+            .init("Add extrema", enabled: !editor.paths.isEmpty) { editor.addExtrema() },
+            .separator,
+            .init("Duplicate contours", enabled: !editor.selection.isEmpty) { editor.duplicate() },
+            .init("Copy contours", enabled: !editor.selection.isEmpty) { editor.copyPaths() },
+            .init("Paste contours") { editor.pastePaths() },
+            .init("Delete nodes", enabled: !editor.selection.isEmpty) { editor.deleteSelection() }
+        ]
+        return actions
     }
     private var vectorZoomControls: some View {
         HStack(spacing:10) {
@@ -1086,6 +1128,75 @@ struct FontLabVectorEditorView: View {
         guard !editor.selection.isEmpty else {x="";y="";return}
         x=String(format:"%.1f",editor.selectedBounds.minX*editor.glyph.resolvedDesignWidth*1000)
         y=String(format:"%.1f",(editor.selectedBounds.minY-editor.metrics.baseline)*1000)
+    }
+}
+
+private struct FontLabPathMenuButton: View {
+    let actions: () -> [FontLabPathMenuPresenter.Action]
+    @StateObject private var presenter = FontLabPathMenuPresenter()
+    var body: some View {
+        Button { presenter.show(actions()) } label: {
+            HStack(spacing: 6) {
+                Label("Paths", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .padding(.horizontal, 8).frame(height: 36).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).fixedSize().accessibilityIdentifier("font-lab-paths")
+        .help("Path and contour actions")
+        .background(FontLabPathMenuAnchor(presenter: presenter))
+    }
+}
+
+// A native SwiftUI Menu reduces its label to the intrinsic text hit area on
+// macOS. Use a full-size Button as the trigger while retaining native menu
+// navigation, disabled actions and dismissal behavior.
+private final class FontLabPathMenuPresenter: NSObject, ObservableObject {
+    struct Action {
+        let title: String?
+        let enabled: Bool
+        let perform: () -> Void
+        init(_ title: String, enabled: Bool = true, perform: @escaping () -> Void) {
+            self.title = title; self.enabled = enabled; self.perform = perform
+        }
+        private init() { title = nil; enabled = false; perform = {} }
+        static var separator: Self { Self() }
+    }
+    weak var anchor: NSView?
+    private var actions: [Action] = []
+    func show(_ actions: [Action]) {
+        guard let anchor, anchor.window != nil else { return }
+        self.actions = actions
+        defer { self.actions = [] }
+        let menu = NSMenu(); menu.autoenablesItems = false
+        for (index, action) in actions.enumerated() {
+            guard let title = action.title else { menu.addItem(.separator()); continue }
+            let item = NSMenuItem(title: title, action: #selector(invoke(_:)), keyEquivalent: "")
+            item.target = self; item.tag = index; item.isEnabled = action.enabled
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: anchor.bounds.minX, y: anchor.bounds.minY), in: anchor)
+    }
+    @objc private func invoke(_ sender: NSMenuItem) {
+        guard actions.indices.contains(sender.tag), actions[sender.tag].enabled else { return }
+        actions[sender.tag].perform()
+    }
+}
+private struct FontLabPathMenuAnchor: NSViewRepresentable {
+    let presenter: FontLabPathMenuPresenter
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(); presenter.anchor = view; return view
+    }
+    func updateNSView(_ view: NSView, context: Context) { presenter.anchor = view }
+}
+
+private struct FontLabToolButtonStyle: ButtonStyle {
+    let selected: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(selected ? Color.accentColor : Color.primary)
+            .background(selected ? Color.accentColor.opacity(configuration.isPressed ? 0.25 : 0.12) :
+                Color.primary.opacity(configuration.isPressed ? 0.10 : 0), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
