@@ -285,8 +285,19 @@ final class FontLabVectorEditor: ObservableObject {
     }
     func receive(_ value: FontLabGlyph) {
         guard value != glyph else { return }
+        let previousActive = paths.first(where: { $0.id == activePath })
         glyph=value;selection.formIntersection(Set(paths.flatMap(\.nodes).map(\.id)))
-        if !paths.contains(where:{$0.id == activePath && !$0.closed}) { activePath=nil }
+        guard let restored = paths.first(where: { $0.id == activePath && !$0.closed }) else {
+            activePath = nil; return
+        }
+        // Undo can reverse a Continue-from-first orientation edit. Finish that
+        // construction instead of silently appending at the opposite endpoint.
+        if let previousActive, previousActive.nodes.count > 1,
+           restored.nodes.first?.id == previousActive.nodes.last?.id,
+           restored.nodes.last?.id == previousActive.nodes.first?.id {
+            activePath = nil
+            message = Self.defaultMessage
+        }
     }
     @discardableResult func apply(_ value: [FontLabVectorPath], commit: Bool = true, pathGroups: [[UUID]] = []) -> Bool {
         guard value.count <= 256, value.reduce(0,{$0+$1.nodes.count}) <= 30_000, value.allSatisfy(\.isValid) else {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.59.23 (2026-10-07)
+
+- Add a Line tool with 45-degree constraints and endpoint snapping, plus Pen continuation from either end, connected paths, curve-preserving point insertion and next-segment previews.
+- Put Continue/Finish, Join, Close path and Outline stroke controls beside the canvas. Turn open centerlines into editable filled outlines with a physical-width preview, round caps/joins and preserved counters.
+- Fix stale drawing state, cancellation, focus-change commits and Return behavior. Keep the canvas stationary when the first open path appears.
+- Verify real Line/Pen construction, anchor/fill editing, undo/redo, saved-project reopening and TrueType export/install, with new geometry, interaction and compact-layout regressions.
+
+
 ## 0.59.22 — Spaces tools, guides and effects
 
 - Consolidates editing into one icon rail and focused Properties, Typography, Layers and Canvas panels. Flip buttons use icons; mirrored copies have a separate menu.

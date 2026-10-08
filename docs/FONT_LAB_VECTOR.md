@@ -21,7 +21,7 @@ Glyphs separates glyph selection/text testing, contour drawing, precise node edi
 
 Implemented here: real cubic storage, a vector-first canvas, the editing workflow above, retained sketch tools and compatible exports. This is not full Glyphs parity. Linked components, independent masters, kerning groups and optional polygon-to-curve fitting are now available; see [Font design](FONT_LAB_DESIGN.md). Automatic anchor attachment, compatible-master interpolation, variable-font export, hinting, background layers, arbitrary-angle guides, G2 harmonization and native `.glyphs` files remain future work. Imported raster contours stay polygonal until the user applies a smoothing preview. “New from fonts” remains shelved.
 
-## Path construction references (0.59.22)
+## Path construction references (0.59.23)
 
 The [Illustrator Pen guide](https://helpx.adobe.com/illustrator/using/tool-techniques/pen-tool.html) and [path adjustment guide](https://helpx.adobe.com/illustrator/using/adjust-path-segments.html) informed click/drag construction, endpoint continuation and explicit joining. The [FontLab Pen manual](https://help.fontlab.com/fontlab/7/manual/Pen-tool/) documents either-end continuation, segment insertion and Escape to end drawing. Typefield makes those actions visible above the canvas, retains direct node dragging, and uses an explicit outline conversion when a drawn centerline needs to become font ink. These are workflow references, not a claim of application parity.
 
