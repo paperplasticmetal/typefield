@@ -117,7 +117,7 @@ Cloudflare Pages project `typefield` is live at https://typefield.app/; `https:/
 
 The header and closing action lead to `/download/`. The versioned beta DMG lives in `dist/assets/` and is served by the same Cloudflare Pages project as the site. A separate link downloads the same build from the public GitHub Release. Visitors do not need a GitHub account. The app has no account or license-key gate. The page explains the first-open flow: try to open the installed app, then use System Settings → Privacy & Security → Open Anyway if macOS blocks it. Apple documents this per-app exception at https://support.apple.com/en-us/102445.
 
-The download page is prepared for 0.59.21 beta 1 (build 101). Its primary button serves `dist/assets/Typefield-0.59.21-beta.dmg`; the alternate points to `v0.59.21-beta.1/Typefield-0.59.21-beta.dmg` in the public GitHub release repository. DMG SHA-256: `2a4f801ddbfefd6cc9aae699aa0e3c5ac7beccf347bc219f582804b734acd77c`. Release history is kept in GitHub Releases; the website download page shows only the current beta. Earlier immutable assets are retained. Public deployment verification is recorded in `docs/QA_2026-10-07_letterform-refinement.md`.
+The public download page serves 0.59.21 beta 1 (build 101). Its primary button serves `dist/assets/Typefield-0.59.21-beta.dmg`; the alternate points to `v0.59.21-beta.1/Typefield-0.59.21-beta.dmg` in the public GitHub release repository. DMG SHA-256: `2a4f801ddbfefd6cc9aae699aa0e3c5ac7beccf347bc219f582804b734acd77c`. Release history is kept in GitHub Releases; the website download page shows only the current beta. Earlier immutable assets are retained. Public deployment verification is recorded in `docs/QA_2026-10-07_letterform-refinement.md`.
 
 ## Social sharing preview
 
