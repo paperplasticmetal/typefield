@@ -1,6 +1,6 @@
 # Letterform path construction refinement — 2026-10-07
 
-Status: 0.59.23 (103) candidate native and live runtime validation passed; completed Spaces 0.59.22 integrated. Final integrated build/install and package verification passed; public distribution pending. Baseline: `55a3aab`, public 0.59.21 (101). No suggestion-model research or scoring protocol changes.
+Status: 0.59.23 (103) installed and publicly distributed. Native and live runtime validation passed; completed Spaces 0.59.22 retained. Baseline: `55a3aab`, public 0.59.21 (101). No suggestion-model research or scoring protocol changes.
 
 ## Interaction changes
 
@@ -42,4 +42,6 @@ Final review caught a continuation/Undo edge case before installation: undoing a
 
 Canonical `/Applications/Typefield.app`: 0.59.23 (103), built and installed with `./install-local.sh`. The complete integrated native suite passed. Strict signatures and executable identity match the built app, canonical installation and read-only mounted DMG. All 31 saved-data hashes and both paused-research hashes remain unchanged.
 
-DMG SHA-256: `c116d6ef045874079aa26f42e9c1ea1c1fc9003b2317e974dac8283e6310ce4a`. Publication verification is pending.
+DMG SHA-256: `c116d6ef045874079aa26f42e9c1ea1c1fc9003b2317e974dac8283e6310ce4a`. Public GitHub release `v0.59.23-beta.1` and the live website both serve this exact 7,226,864-byte DMG. The live download page advertises 0.59.23 (103), with matching direct/GitHub links and checksum. Cloudflare deployment `ddf5e872` includes the feedback Function; its public configuration endpoint is healthy. Both origin repositories contain the source/package release commit `f9af41a7b3667307308e769db1c9b6d093766839`. Eight website tests and JavaScript syntax checks passed.
+
+The final live continuation replay selected the first endpoint, continued it, undid the orientation edit, then clicked empty space. The restored Continue button and independent one-node path confirmed the corrected behavior; Undo restored the original A. The stale continuation hint was subsequently cleared and covered by the passing final native regression.
