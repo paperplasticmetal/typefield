@@ -16,7 +16,7 @@ import Foundation
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSColor(srgbRed: 0.95, green: 0.95, blue: 0.96, alpha: 1).setFill()
         NSRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)).fill()
-        let names = ["Porcelain", "Paper Play", "Type Study", "Ink Sketch", "Chalkboard", "Pressed Type"]
+        let names = ["Porcelain", "Ochre", "Indigo", "Sage", "Plum", "Coral"]
         let titleStyle: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 17, weight: .semibold), .foregroundColor: NSColor.black]
         let smallStyle: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.darkGray]
         for (index, design) in TypefieldPalette.allCases.enumerated() {

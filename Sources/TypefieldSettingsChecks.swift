@@ -59,29 +59,45 @@ enum TypefieldSettingsChecks {
         }
         try require(ShelfPalette.workspaceColor(dark: false).isEqual(TypefieldPalette.color("F6F7F9")), "Light workspace uses Porcelain surface")
         try require(ShelfPalette.workspaceColor(dark: true).isEqual(TypefieldPalette.color("171A20")), "Dark workspace uses Porcelain surface")
-        // The high-contrast serif strokes must survive rasterization at small Dock sizes.
-        for size in [16, 32, 64, 128] {
-            guard let bitmap = TypefieldIcon.image(palette: .neutral, dark: false, size: size).representations.first as? NSBitmapImageRep else { throw CocoaError(.fileReadCorruptFile) }
-            try require(bitmap.pixelsWide == size && bitmap.pixelsHigh == size, "Icon raster dimensions")
-            var visibleInk = 0
-            for y in 0..<size { for x in 0..<size {
-                if let pixel = bitmap.colorAt(x: x, y: y), pixel.alphaComponent > 0.7, luminance(pixel) < 0.25 { visibleInk += 1 }
-            } }
-            try require(visibleInk > size * size / 20, "Serif icon remains visible at \(size) pixels")
-        }
-        for size in [32, 64, 128] {
+        // Icon colors share the established silhouette, including its small-size optical master.
+        try require(TypefieldPalette.allCases.map(\.rawValue) == ["neutral", "amber", "ocean", "forest", "plum", "rose"], "Stored palette IDs remain stable")
+        try require(TypefieldPalette.resolve("unknown") == .neutral, "Unknown palette fallback")
+        for size in [16, 32, 48, 64, 128] {
             var rendered = Set<Data>()
-            for design in TypefieldPalette.allCases {
+            var referenceMask: [Bool]?
+            for palette in TypefieldPalette.allCases {
                 for dark in [false, true] {
-                    guard let bitmap = TypefieldIcon.image(palette: design, dark: dark, size: size).representations.first as? NSBitmapImageRep,
+                    let image = TypefieldIcon.image(palette: palette, dark: dark, size: size)
+                    try require(image === TypefieldIcon.image(palette: palette, dark: dark, size: size), "Icon raster reuses the cache")
+                    guard let bitmap = image.representations.first as? NSBitmapImageRep,
                           bitmap.pixelsWide == size, bitmap.pixelsHigh == size,
                           let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileReadCorruptFile) }
+                    let colors = TypefieldIcon.colors(palette: palette, dark: dark)
+                    try require(contrast(colors.ink, colors.paper) >= 4.5, "Icon ink contrast: \(palette.rawValue), dark=\(dark)")
+                    let paper = colors.paper.usingColorSpace(.sRGB)!
+                    let ink = colors.ink.usingColorSpace(.sRGB)!
+                    let paperComponents = [paper.redComponent, paper.greenComponent, paper.blueComponent]
+                    let inkComponents = [ink.redComponent, ink.greenComponent, ink.blueComponent]
+                    // Use the most separated channel to compare coverage independently of color.
+                    let channel = (0..<3).max { abs(inkComponents[$0] - paperComponents[$0]) < abs(inkComponents[$1] - paperComponents[$1]) }!
+                    var mask: [Bool] = []
+                    for y in 0..<size { for x in 0..<size {
+                        guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { throw CocoaError(.fileReadCorruptFile) }
+                        let components = [pixel.redComponent, pixel.greenComponent, pixel.blueComponent]
+                        let coverage = (components[channel] - paperComponents[channel]) / (inkComponents[channel] - paperComponents[channel])
+                        mask.append(pixel.alphaComponent > 0.7 && coverage > 0.55)
+                    } }
+                    try require(mask.filter { $0 }.count > size * size / 20, "Serif icon remains visible at \(size) pixels: \(palette.rawValue)")
+                    if let referenceMask {
+                        let differences = zip(mask, referenceMask).filter { $0 != $1 }.count
+                        try require(differences <= max(2, size * size / 100), "Color preserves icon silhouette at \(size) pixels: \(palette.rawValue)")
+                    } else { referenceMask = mask }
+                    try require((bitmap.colorAt(x: 0, y: 0)?.alphaComponent ?? 1) == 0, "Icon retains transparent corner")
                     rendered.insert(png)
                 }
             }
-            try require(rendered.count == TypefieldPalette.allCases.count * 2, "Icon designs and light/dark variants remain distinct at \(size) pixels")
+            try require(rendered.count == TypefieldPalette.allCases.count * 2, "Icon colors and light/dark variants remain distinct at \(size) pixels")
         }
-        try require(TypefieldPalette.resolve("unknown") == .neutral, "Unknown palette fallback")
         try require(TypefieldIcon.isDark(mode: "Dark", appearance: NSAppearance(named: .aqua)!), "Explicit dark icon")
         try require(!TypefieldIcon.isDark(mode: "Light", appearance: NSAppearance(named: .darkAqua)!), "Explicit light icon")
         try require(!TypefieldIcon.isDark(mode: "Automatic", appearance: NSAppearance(named: .aqua)!), "Automatic light icon appearance")
@@ -97,6 +113,6 @@ enum TypefieldSettingsChecks {
         try require(library.saved.folders == [path] && library.saved.autoActivateFolders == [path], "Failed stop-watching must restore selected folders")
         try require(!library.setFolderActivation(path, enabled: false), "Unreadable library cannot change activation")
         try require(library.saved.autoActivateFolders == [path], "Failed activation edit must restore setting")
-        print("Settings checks passed: accent, card, selected-label, and opaque-control contrast; distinct icon designs at 32/64/128 pixels; serif icon at 16 pixels; appearance modes; folder-save rollback.")
+        print("Settings checks passed: accent, card, selected-label, and opaque-control contrast; icon color contrast, silhouettes, and cache reuse at 16/32/48/64/128 pixels; appearance modes; folder-save rollback.")
     }
 }

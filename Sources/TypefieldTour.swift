@@ -7,26 +7,26 @@ struct TypefieldTour: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
     @State private var face = 0
-    @State private var word = "Play"
+    @State private var word = "Hello"
     @State private var poster = false
-    @State private var roundness = 0.55
+    @State private var curve = TourCurveGeometry()
     @State private var forward = true
 
-    private static let names = ["Baskerville", "Helvetica Neue", "Courier"]
-    private static let fonts = ["Baskerville", "HelveticaNeue-Bold", "Courier-Bold"]
+    private static let names = TourSpecimens.faces.map(\.name)
+    private static let fonts = TourSpecimens.faces.map(\.postScriptName)
     private static let labels = ["Hello", "Library", "Spaces", "Letterforms"]
     private static let titles = ["Quite the\ncharacter.", "Your words.\nA new voice.", "Good type.\nGreat company.", "Make it\nyour own."]
     private static let details = [
         "Organize your fonts. Try them in context. Make your own. Let's play with a little of each.",
         "See your words in a different light. Find favorites, build a shortlist, and bring order to your font collection.",
         "Give a heading a partner. Try pairings and layouts in Spaces, then take your favorite direction with you.",
-        "Every curve has character. Draw letters or bring in your artwork, refine the outlines, and export your own font."
+        "Draw letters, refine their outlines, and export your own font."
     ]
     private var ink: Color { Color(red: 0.16, green: 0.18, blue: 0.19) }
     private var coral: Color { Color(red: 0.79, green: 0.25, blue: 0.19) }
     private var paper: Color { Color(red: 0.98, green: 0.96, blue: 0.91) }
     private var motion: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.22) }
-    private var specimen: String { word.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Play" : word }
+    private var specimen: String { word.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Hello" : word }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,6 +46,7 @@ struct TypefieldTour: View {
                     Text(Self.details[step])
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                         .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                    if step == 3 { fontGuides }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .id(step)
@@ -60,6 +61,28 @@ struct TypefieldTour: View {
         .accessibilityIdentifier("typefield-onboarding")
     }
 
+    private var fontGuides: some View {
+        let guides = [
+            ("Baseline", "Where letters sit."),
+            ("x-height", "Height of lowercase x."),
+            ("Cap height", "Height of capitals."),
+            ("Ascender", "Rises above x-height."),
+            ("Descender", "Drops below the baseline."),
+            ("Side bearings", "Space beside a glyph."),
+            ("Advance", "Distance to the next glyph.")
+        ]
+        return VStack(alignment: .leading, spacing: 5) {
+            ForEach(guides.indices, id: \.self) { index in
+                (Text(guides[index].0).fontWeight(.semibold) + Text(" · " + guides[index].1))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Font drawing guides")
+    }
+
     private var pageTransition: AnyTransition {
         reduceMotion ? .identity : .asymmetric(
             insertion: .opacity.combined(with: .offset(x: forward ? 10 : -10)),
@@ -69,7 +92,6 @@ struct TypefieldTour: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text("Typefield").font(.system(size: 15, weight: .semibold)).tracking(-0.3)
-            Circle().fill(coral).frame(width: 6, height: 6).accessibilityHidden(true)
             Spacer()
             Button("Skip tour", action: dismiss)
                 .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(.secondary)
@@ -101,8 +123,8 @@ struct TypefieldTour: View {
                     Button("Back") { navigate(to: step - 1) }
                         .buttonStyle(.plain).font(.system(size: 12)).padding(.trailing, 8)
                 }
-                Button(step == 0 ? "Let's play" : step == 3 ? "Draw a letter" : "Next") {
-                    if step == 3 { open(.fontLab) } else { navigate(to: step + 1) }
+                Button(step == 0 ? "Let's play" : step == 3 ? "Finish tour" : "Next") {
+                    if step == 3 { dismiss() } else { navigate(to: step + 1) }
                 }
                 .buttonStyle(TourPrimaryButton())
                 .keyboardShortcut(.defaultAction)
@@ -113,11 +135,14 @@ struct TypefieldTour: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if step > 0 {
-                    Button("Browse fonts") { open(.library) }.buttonStyle(.plain)
-                    Text("·").foregroundStyle(.tertiary)
+                switch step {
+                case 1:
+                    Button("Browse Fonts") { open(.library) }.buttonStyle(.plain)
+                case 2:
                     Button("Open Spaces") { open(.spaces) }.buttonStyle(.plain)
-                } else {
+                case 3:
+                    Button("Draw a Letter") { open(.fontLab) }.buttonStyle(.plain)
+                default:
                     Text("You can return from Help → Getting Started Tour.").foregroundStyle(.secondary)
                 }
             }.font(.system(size: 11))
@@ -136,7 +161,7 @@ struct TypefieldTour: View {
             case 0: welcome
             case 1: library
             case 2: space
-            default: letter
+            default: TourCurveDemo(geometry: $curve, ink: ink, coral: coral, paper: paper, motion: motion)
             }
         }
         .foregroundStyle(ink)
@@ -152,15 +177,14 @@ struct TypefieldTour: View {
             Button {
                 withAnimation(motion) { face = (face + 1) % Self.fonts.count }
             } label: {
-                Text("Aa")
-                    .font(.custom(Self.fonts[face], size: 152))
-                    .tracking(-9).frame(maxWidth: .infinity, maxHeight: .infinity)
+                TourHelloSpecimen(face: face)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .id(face).transition(.opacity)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.top, 25)
-            .accessibilityLabel("Change the specimen typeface")
+            .accessibilityLabel("Hello. Change the specimen typeface")
             .accessibilityValue(Self.names[face])
             HStack {
                 Text(Self.names[face]).font(.system(size: 11, weight: .medium))
@@ -269,85 +293,6 @@ struct TypefieldTour: View {
         }.padding(24)
     }
 
-    private var letter: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Spacer()
-                Button("Reset") { withAnimation(motion) { roundness = 0.55 } }
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(coral)
-            }
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                let height = geometry.size.height
-                let right = 0.63 + roundness * 0.22
-                ZStack {
-                    Path { path in
-                        for y in [0.17, 0.63, 0.91] {
-                            path.move(to: CGPoint(x: 14, y: height * y))
-                            path.addLine(to: CGPoint(x: width - 14, y: height * y))
-                        }
-                    }.stroke(ink.opacity(0.13), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
-                    TourLetterShape(roundness: roundness)
-                        .fill(ink, style: FillStyle(eoFill: true))
-                    TourLetterShape(roundness: roundness).stroke(coral.opacity(0.65), lineWidth: 1)
-                    Path { path in
-                        path.move(to: CGPoint(x: width * right, y: height * 0.23))
-                        path.addLine(to: CGPoint(x: width * right, y: height * 0.57))
-                    }.stroke(coral.opacity(0.6), lineWidth: 1)
-                    ForEach([0.23, 0.57], id: \.self) { y in
-                        Circle().fill(paper).overlay(Circle().stroke(coral, lineWidth: 1.5))
-                            .frame(width: 6, height: 6)
-                            .position(x: width * right, y: height * y)
-                    }
-                    Circle().fill(coral).overlay(Circle().stroke(paper, lineWidth: 2))
-                        .frame(width: 14, height: 14).padding(14).contentShape(Rectangle())
-                        .position(x: width * right, y: height * 0.40)
-                        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("tour-letter"))
-                            .onChanged { value in
-                                roundness = min(1, max(0, (value.location.x / width - 0.63) / 0.22))
-                            })
-                }
-                .coordinateSpace(name: "tour-letter")
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Editable letter p preview")
-            }.frame(height: 211)
-            HStack(spacing: 12) {
-                Text("Narrow").font(.system(size: 10))
-                Slider(value: $roundness, in: 0...1)
-                    .accessibilityLabel("Letter bowl width")
-                    .accessibilityValue("\(Int(roundness * 100)) percent")
-                Text("Round").font(.system(size: 10))
-            }
-            Text("Drag the coral point.")
-                .font(.system(size: 11)).foregroundStyle(ink.opacity(0.65))
-        }.padding(24)
-    }
-}
-
-private struct TourLetterShape: Shape {
-    var roundness: Double
-    var animatableData: Double {
-        get { roundness }
-        set { roundness = newValue }
-    }
-    func path(in rect: CGRect) -> Path {
-        let right = 0.63 + roundness * 0.22
-        func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y) }
-        var path = Path()
-        path.move(to: p(0.28, 0.17))
-        path.addLine(to: p(0.40, 0.17))
-        path.addLine(to: p(0.40, 0.21))
-        path.addCurve(to: p(right, 0.40), control1: p(0.56, 0.08), control2: p(right, 0.23))
-        path.addCurve(to: p(0.40, 0.59), control1: p(right, 0.57), control2: p(0.56, 0.72))
-        path.addLine(to: p(0.40, 0.91))
-        path.addLine(to: p(0.28, 0.91))
-        path.closeSubpath()
-        path.move(to: p(0.40, 0.32))
-        path.addCurve(to: p(right - 0.12, 0.40), control1: p(0.50, 0.23), control2: p(right - 0.12, 0.28))
-        path.addCurve(to: p(0.40, 0.48), control1: p(right - 0.12, 0.52), control2: p(0.50, 0.57))
-        path.closeSubpath()
-        return path
-    }
 }
 
 private struct TourPrimaryButton: ButtonStyle {

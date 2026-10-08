@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.20 (2026-10-07)
+
+- Show Hello in the welcome specimen with a shared visible x-height, baseline and horizontal center across fonts; remove the decorative wordmark dot.
+- Match each tour shortcut to its workspace and add a brief font-metrics guide to the Letterforms step.
+- Demonstrate actual two-dimensional Bézier handles and anchor movement, with accessible movement controls and reset.
+- Replace decorative alternate Dock icons with six consistent color choices, preserving the standard monogram and existing preference IDs.
+
 ## 0.59.19 (2026-10-07)
 
 - Keep canvas height stable when widening a canvas with bottom-aligned text; remove artificial resize padding while retaining actual text bounds.
