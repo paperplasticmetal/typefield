@@ -45,9 +45,10 @@ struct FontLabGlyphEditHistory {
 }
 
 enum FontLabVectorTool: String, CaseIterable, Identifiable {
-    case select = "Select", pen = "Bézier", rectangle = "Rectangle", ellipse = "Ellipse", hand = "Hand"
+    case select = "Select", pen = "Pen", line = "Line", rectangle = "Rectangle", ellipse = "Ellipse", hand = "Hand"
     var id: String { rawValue }
-    var icon: String { switch self { case .select:return "cursorarrow";case .pen:return "point.topleft.down.to.point.bottomright.curvepath";case .rectangle:return "rectangle";case .ellipse:return "circle";case .hand:return "hand.draw" } }
+    var icon: String { switch self { case .select:return "cursorarrow";case .pen:return "point.topleft.down.to.point.bottomright.curvepath";case .line:return "line.diagonal";case .rectangle:return "rectangle";case .ellipse:return "circle";case .hand:return "hand.draw" } }
+    var shortcut: String { switch self { case .select:return "V";case .pen:return "P";case .line:return "L";case .rectangle:return "R";case .ellipse:return "O";case .hand:return "H" } }
 }
 
 /// Clipboard coordinates retain their physical em size and distance from the
@@ -108,7 +109,10 @@ final class FontLabVectorEditor: ObservableObject {
     @Published var componentStrokes: [FontLabStroke] = []
     @Published var metrics: FontLabMetrics
     @Published var tool = FontLabVectorTool.select {
-        didSet { if tool == .select && oldValue != .select && objectSelection { selectCompleteObjects() } }
+        didSet {
+            if tool != .pen { activePath = nil }
+            if tool == .select && oldValue != .select && objectSelection { selectCompleteObjects() }
+        }
     }
     @Published var selection = Set<UUID>()
     @Published var zoom = 1.0
@@ -125,7 +129,7 @@ final class FontLabVectorEditor: ObservableObject {
     var onUndo: () -> Void = {}
     var onRedo: () -> Void = {}
     var onFocusSelectionRequested: () -> Void = {}
-    var activePath: UUID?
+    @Published var activePath: UUID?
     init(glyph: FontLabGlyph, metrics: FontLabMetrics) { self.glyph=glyph;self.metrics=metrics }
     var paths: [FontLabVectorPath] {
         if let cachedPaths { return cachedPaths }
@@ -170,11 +174,81 @@ final class FontLabVectorEditor: ObservableObject {
             return objectSelection
                 ? "Drag a shape to move it. Choose Nodes (A) to edit its outline. Space-drag pans."
                 : "Drag an anchor to move it, a handle to adjust curvature, or an edge to bend it. Double-click an edge to add a node."
-        case .pen: return "Click to draw a new contour; drag to add curve handles. Click its first node to close it. A edits existing points."
+        case .pen: return "Click for straight segments; drag for curves. Click an open endpoint to continue or connect. Click the first point to close; Return finishes."
+        case .line: return "Drag a line. Shift constrains it to 45° angles. Snap to an open endpoint to connect; Outline stroke gives the line a filled width."
         case .rectangle: return "Drag to draw a rectangle. Hold Shift for a square. A edits its points."
         case .ellipse: return "Drag to draw an ellipse. Hold Shift for a circle. A edits its points."
         case .hand: return "Drag to pan the canvas. Choose Nodes (A) to edit points or F to toggle the fill."
         }
+    }
+    func finishPath() {
+        activePath = nil
+        message = "Path finished. Click an open endpoint to continue, or empty space to start another path."
+    }
+    private var selectedOpenEndpoint: (path: Int, node: UUID)? {
+        guard selection.count == 1, let id = selection.first else { return nil }
+        guard let index = paths.firstIndex(where: { !$0.closed && ($0.nodes.first?.id == id || $0.nodes.last?.id == id) }) else { return nil }
+        return (index, id)
+    }
+    var canContinueEndpoint: Bool { selectedOpenEndpoint != nil }
+    func continueSelectedEndpoint() {
+        guard let endpoint = selectedOpenEndpoint,
+              let oriented = FontLabPathConstruction.continuing(paths[endpoint.path], from: endpoint.node) else { return }
+        var value = paths
+        value[endpoint.path] = oriented
+        if oriented != paths[endpoint.path], !apply(value) { return }
+        tool = .pen; objectSelection = false; activePath = oriented.id
+        selection = [endpoint.node]
+        message = "Continuing this endpoint. Click to add a straight segment or drag to add a curve."
+    }
+    var canCloseActivePath: Bool {
+        guard let path = paths.first(where: { $0.id == activePath }), let first = path.nodes.first, let last = path.nodes.last else { return false }
+        return FontLabPathConstruction.joining([path], from: last.id, to: first.id, preservingBridgeHandles: true) != nil
+    }
+    func closeActivePath() {
+        guard let path = paths.first(where: { $0.id == activePath }), let first = path.nodes.first, let last = path.nodes.last,
+              let result = FontLabPathConstruction.joining(paths, from: last.id, to: first.id, preservingBridgeHandles: true) else { return }
+        if apply(result) { activePath = nil; message = "Path closed. Its outline now controls the filled shape." }
+    }
+    private var selectedOpenPaths: [FontLabVectorPath] {
+        paths.filter { !$0.closed && $0.nodes.count > 1 && $0.nodes.contains { selection.contains($0.id) } }
+    }
+    var canCloseTouchedPaths: Bool {
+        selectedOpenPaths.contains { path in
+            FontLabPathConstruction.joining([path], from: path.nodes.last!.id, to: path.nodes[0].id,
+                                            preservingBridgeHandles: true) != nil
+        }
+    }
+    func closeTouchedPaths() {
+        let ids = Set(selectedOpenPaths.map(\.id))
+        var value = paths
+        for path in paths where ids.contains(path.id) {
+            if let joined = FontLabPathConstruction.joining(value, from: path.nodes.last!.id, to: path.nodes[0].id,
+                                                           preservingBridgeHandles: true) { value = joined }
+        }
+        if apply(value) { activePath = nil; message = "Closed the selected paths. Their outlines now form filled shapes." }
+    }
+    var canOutlineSelectedPaths: Bool { !selectedOpenPaths.isEmpty }
+    func strokeOutlinePreview(widthInUnits: Double) -> [[FontLabVectorPath]]? {
+        guard widthInUnits.isFinite, (2...200).contains(widthInUnits), !selectedOpenPaths.isEmpty else { return nil }
+        return FontLabPathConstruction.outlined(selectedOpenPaths, width: widthInUnits / 1000, designWidth: glyph.resolvedDesignWidth)
+    }
+    @discardableResult func outlineSelectedPaths(widthInUnits: Double) -> Bool {
+        guard widthInUnits.isFinite, (2...200).contains(widthInUnits) else {
+            message = "Enter a stroke width between 2 and 200 font units."; return false
+        }
+        let chosen = selectedOpenPaths
+        guard !chosen.isEmpty else { message = "Select an open path with at least two points."; return false }
+        guard let groups = FontLabPathConstruction.outlined(chosen, width: widthInUnits / 1000, designWidth: glyph.resolvedDesignWidth) else {
+            message = "That stroke does not fit inside the design box. Use a narrower width or move the path away from its edge."; return false
+        }
+        let replacements = Dictionary(uniqueKeysWithValues: zip(chosen, groups).map { ($0.0.id, $0.1) })
+        let value = paths.flatMap { replacements[$0.id] ?? [$0] }
+        guard apply(value, pathGroups: groups.map { $0.map(\.id) }) else { return false }
+        selection = Set(groups.flatMap { $0 }.flatMap(\.nodes).map(\.id))
+        activePath = nil; tool = .select; objectSelection = false
+        message = "Created filled, editable outlines. Undo restores the open paths."
+        return true
     }
     func selectContours(closed: Bool) {
         tool = .select; objectSelection = false; activePath = nil
@@ -212,7 +286,7 @@ final class FontLabVectorEditor: ObservableObject {
     func receive(_ value: FontLabGlyph) {
         guard value != glyph else { return }
         glyph=value;selection.formIntersection(Set(paths.flatMap(\.nodes).map(\.id)))
-        if !paths.contains(where:{$0.id == activePath}) { activePath=nil }
+        if !paths.contains(where:{$0.id == activePath && !$0.closed}) { activePath=nil }
     }
     @discardableResult func apply(_ value: [FontLabVectorPath], commit: Bool = true, pathGroups: [[UUID]] = []) -> Bool {
         guard value.count <= 256, value.reduce(0,{$0+$1.nodes.count}) <= 30_000, value.allSatisfy(\.isValid) else {
@@ -356,43 +430,24 @@ final class FontLabVectorEditor: ObservableObject {
         _=apply(value)
     }
 
-    var canJoinEndpoints: Bool {
-        let chosen = paths.flatMap { path in path.nodes.enumerated().compactMap { index, node in
-            selection.contains(node.id) ? (!path.closed && (index == 0 || index == path.nodes.count - 1)) : nil
+    private var selectedEndpointIDs: [UUID] {
+        guard selection.count == 2 else { return [] }
+        let chosen = paths.flatMap { path in path.nodes.enumerated().compactMap { index, node -> UUID? in
+            guard selection.contains(node.id), !path.closed, index == 0 || index == path.nodes.count - 1 else { return nil }
+            return node.id
         } }
-        return chosen.count == 2 && chosen.allSatisfy { $0 }
+        return chosen.count == 2 ? chosen : []
     }
-
+    var canJoinEndpoints: Bool {
+        let ends = selectedEndpointIDs
+        return ends.count == 2 && FontLabPathConstruction.joining(paths, from: ends[0], to: ends[1]) != nil
+    }
     func joinEndpoints() {
-        guard canJoinEndpoints else { message = "Select exactly two endpoints of open contours."; return }
-        var value = paths
-        let indices = value.indices.filter { value[$0].nodes.contains { selection.contains($0.id) } }
-        if indices.count == 1, let index = indices.first {
-            guard value[index].nodes.count >= 3 else { message = "A closed contour needs at least three nodes."; return }
-            if value[index].nodes.count > 3,
-               value[index].nodes[0].point == value[index].nodes.last!.point {
-                value[index].nodes[0].incoming = value[index].nodes.last!.incoming
-                value[index].nodes.removeLast()
-            }
-            value[index].closed = true
-        } else if indices.count == 2 {
-            let a = indices[0], b = indices[1]
-            if selection.contains(value[a].nodes[0].id) { value[a].reverse() }
-            if selection.contains(value[b].nodes.last!.id) { value[b].reverse() }
-            // Keep every original segment and handle; the new bridge is straight.
-            if value[a].nodes.last!.point == value[b].nodes[0].point {
-                value[a].nodes[value[a].nodes.count - 1].outgoing = value[b].nodes[0].outgoing
-                value[b].nodes.removeFirst()
-            } else {
-                value[a].nodes[value[a].nodes.count - 1].outgoing = nil
-                value[b].nodes[0].incoming = nil
-                value[a].nodes[value[a].nodes.count - 1].smooth = false
-                value[b].nodes[0].smooth = false
-            }
-            value[a].nodes += value[b].nodes
-            value.remove(at: b)
+        let ends = selectedEndpointIDs
+        guard ends.count == 2, let value = FontLabPathConstruction.joining(paths, from: ends[0], to: ends[1]) else {
+            message = "Select two open endpoints to connect. A closed shape needs at least three points."; return
         }
-        if apply(value) { activePath = nil; message = "Endpoints joined. Existing curves are preserved; Undo restores the separate contours." }
+        if apply(value) { activePath = nil; message = "Endpoints joined. Existing curves are preserved; Undo restores the separate paths." }
     }
 
     var canSplitNode: Bool {
@@ -571,7 +626,7 @@ final class FontLabVectorEditor: ObservableObject {
         } }
         let copyIDs = Dictionary(uniqueKeysWithValues: zip(chosen,copies).map { ($0.0.id,$0.1.id) })
         let groups = FontLabVectorMath.pathGroups(in:glyph).map { $0.compactMap { copyIDs[$0] } }.filter { !$0.isEmpty }
-        if apply(paths+copies,pathGroups:groups) { selection=Set(copies.flatMap(\.nodes).map(\.id)) }
+        if apply(paths+copies,pathGroups:groups) { selection=Set(copies.flatMap(\.nodes).map(\.id)); activePath=nil }
     }
     func transform(scaleX:Double=1,scaleY:Double=1,angle:Double=0) {
         guard scaleX.isFinite, scaleY.isFinite, angle.isFinite, scaleX != 0, scaleY != 0 else {
@@ -698,6 +753,8 @@ struct FontLabVectorEditorView: View {
     @State private var showSelectionInspector = false
     @State private var showCanvasAppearance = false
     @State private var showContours = false
+    @State private var showStrokeOutline = false
+    @State private var outlineWidth = "40"
     init(glyph:FontLabGlyph,metrics:FontLabMetrics,retainedEditor:FontLabVectorEditor?=nil,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,compact:Bool=false,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
         self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.compact=compact;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo;self.onPreviewInkChange=onPreviewInkChange
         let value=retainedEditor ?? FontLabVectorEditor(glyph:glyph,metrics:metrics)
@@ -720,11 +777,24 @@ struct FontLabVectorEditorView: View {
                     HStack(spacing: 8) { selectionPicker; Spacer(minLength: 0); pathsMenu; selectionInspectorButton }
                 }
             }.controlSize(.small)
+            constructionControls
+                .font(.caption).controlSize(.small)
             FontLabVectorCanvas(editor:editor,onChange:onChange,onUndo:onUndo,onRedo:onRedo)
                 .frame(minWidth:340,maxWidth:.infinity,minHeight:340,maxHeight:.infinity)
                 .background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:12))
                 .clipShape(RoundedRectangle(cornerRadius:12))
                 .overlay(RoundedRectangle(cornerRadius:12).strokeBorder(Color.primary.opacity(0.15)))
+                .overlay(alignment: .topTrailing) {
+                    if editor.openCount > 0 {
+                        Button { editor.selectContours(closed: false) } label: {
+                            Label("\(editor.openCount) open \(editor.openCount == 1 ? "path" : "paths")", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                        }
+                        .font(.caption).controlSize(.small).foregroundStyle(.orange)
+                        .accessibilityLabel("Select \(editor.openCount) open \(editor.openCount == 1 ? "path" : "paths")")
+                        .help("Open paths do not form solid letterforms. Select them, then Close path or Outline stroke.")
+                        .padding(10)
+                    }
+                }
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) { canvasDisplayControls; Spacer(minLength: 0); vectorZoomControls }
                 VStack(alignment: .leading, spacing: 8) {
@@ -733,13 +803,6 @@ struct FontLabVectorEditorView: View {
                 }
             }.font(.caption).controlSize(.small)
             .popover(isPresented: $showCanvasAppearance) { canvasAppearance.padding(16).frame(width: 310) }
-            if editor.openCount > 0 {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(editor.openCount) open \(editor.openCount == 1 ? "path does" : "paths do") not fill. Dashed outlines are separate from the solid letter.")
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Select open paths") { editor.selectContours(closed: false) }.fixedSize()
-                }.font(.caption).foregroundStyle(.orange)
-            }
             Text(editor.message.isEmpty ? editor.interactionHint : editor.message)
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .help("Objects: edit whole shapes. Nodes: edit points and handles. Paths contains contour operations. Selection contains coordinates and transforms.")
@@ -751,6 +814,76 @@ struct FontLabVectorEditorView: View {
         .onChange(of:editor.selection) {_ in updateCoordinates()}
         .onChange(of:editor.glyph) {_ in updateCoordinates()}
         .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
+    }
+    private var constructionControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { continuationButton; joinButton; closeButton; outlineStrokeButton; Spacer(minLength: 0) }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) { continuationButton; joinButton; Spacer(minLength: 0) }
+                HStack(spacing: 8) { closeButton; outlineStrokeButton; Spacer(minLength: 0) }
+            }
+        }
+        .popover(isPresented: $showStrokeOutline) { strokeOutlineInspector.padding(16).frame(width: 320) }
+    }
+    @ViewBuilder private var continuationButton: some View {
+        if editor.activePath != nil {
+            Button("Finish path") { editor.finishPath() }.help("Finish this open path without changing its shape (Return)")
+        } else {
+            Button("Continue path") { editor.continueSelectedEndpoint() }
+                .disabled(!editor.canContinueEndpoint).help("Select one open endpoint, then continue drawing from it with Pen")
+        }
+    }
+    private var joinButton: some View {
+        Button("Join") { editor.joinEndpoints() }.disabled(!editor.canJoinEndpoints)
+            .accessibilityLabel("Join endpoints").help("Shift-select two open endpoints, then join them (⌘J)")
+    }
+    private var closeButton: some View {
+        Button("Close path") {
+            if editor.activePath != nil { editor.closeActivePath() } else { editor.closeTouchedPaths() }
+        }
+        .disabled(editor.activePath != nil ? !editor.canCloseActivePath : !editor.canCloseTouchedPaths)
+        .help("Connect the first and last points of the active path or selected contours")
+    }
+    private var outlineStrokeButton: some View {
+        Button("Outline stroke…") { showStrokeOutline = true }
+            .disabled(!editor.canOutlineSelectedPaths)
+            .help("Give selected open paths a width and turn them into filled, editable outlines")
+    }
+    private var strokeOutlineInspector: some View {
+        let width = Double(outlineWidth.trimmingCharacters(in: .whitespacesAndNewlines))
+        let preview = width.flatMap { editor.strokeOutlinePreview(widthInUnits: $0) }
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("Outline stroke").font(.headline); Spacer(); Button("Cancel") { showStrokeOutline = false } }
+            Text("Turn the selected open paths into filled outlines with round ends and joins. Every point remains editable; Undo restores the original paths.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("Width")
+                TextField("40", text: $outlineWidth).textFieldStyle(.roundedBorder).frame(width: 64)
+                    .accessibilityLabel("Outline stroke width in font units")
+                Text("font units").foregroundStyle(.secondary)
+            }.font(.caption)
+            Canvas { context, size in
+                let scale = min(size.width / (editor.glyph.resolvedDesignWidth * 1000), size.height / 1000)
+                var transform = CGAffineTransform(a: scale * editor.glyph.resolvedDesignWidth, b: 0, c: 0, d: -scale,
+                    tx: (size.width - scale * editor.glyph.resolvedDesignWidth * 1000) / 2, ty: (size.height + scale * 1000) / 2)
+                for group in preview ?? [] {
+                    let compound = CGMutablePath()
+                    for path in group { if let mapped = path.cgPath.copy(using: &transform) { compound.addPath(mapped) } }
+                    context.fill(Path(compound), with: .color(.primary), style: FillStyle(eoFill: false))
+                }
+            }.frame(height: 150).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityLabel("Filled stroke preview")
+            if preview == nil {
+                Text("Use 2–200 units and keep the full stroke inside the design box. Move a path away from the edge if needed.")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button("Create outline") {
+                    if let width, editor.outlineSelectedPaths(widthInUnits: width) { showStrokeOutline = false }
+                }.disabled(preview == nil).buttonStyle(.borderedProminent)
+            }
+        }
     }
     private var canvasDisplayControls: some View {
         HStack(spacing: 10) {
@@ -878,8 +1011,13 @@ struct FontLabVectorEditorView: View {
     private var vectorToolButtons: some View {
         HStack(spacing:6) {
             ForEach(FontLabVectorTool.allCases) { tool in
-                Button {editor.tool=tool;editor.activePath=nil;editor.message=""} label: { Image(systemName:tool.icon).frame(width:28,height:24) }
-                    .buttonStyle(.plain).padding(4).background(editor.tool == tool ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6)).foregroundStyle(editor.tool == tool ? Color.accentColor : Color.primary).help(tool.rawValue).accessibilityLabel(tool.rawValue)
+                Button {editor.tool=tool;editor.activePath=nil;editor.message=""} label: {
+                    HStack(spacing: 3) {
+                        Image(systemName:tool.icon).frame(width:24,height:24)
+                        if editor.tool == tool { Text(tool.rawValue).font(.caption).fixedSize() }
+                    }
+                }
+                    .buttonStyle(.plain).padding(4).background(editor.tool == tool ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6)).foregroundStyle(editor.tool == tool ? Color.accentColor : Color.primary).help("\(tool.rawValue) (\(tool.shortcut))").accessibilityLabel(tool.rawValue)
             }
         }.padding(3).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -903,6 +1041,8 @@ struct FontLabVectorEditorView: View {
                     Button("Insert segment midpoints") {editor.insertMidpoints()}.disabled(!editor.canInsertMidpoints)
                     Button("Split at selected node") {editor.splitAtNode()}.disabled(!editor.canSplitNode)
                     Button("Join selected endpoints") {editor.joinEndpoints()}.disabled(!editor.canJoinEndpoints)
+                    Button("Continue from selected endpoint") { editor.continueSelectedEndpoint() }.disabled(!editor.canContinueEndpoint)
+                    Button("Outline selected strokes…") { showStrokeOutline = true }.disabled(!editor.canOutlineSelectedPaths)
                     Divider()
                     Button("Close contours") {editor.pathCommand("close")}.disabled(!editor.canCloseContours)
                     Button("Open contours") {editor.pathCommand("open")}.disabled(!editor.canOpenContours)
