@@ -141,6 +141,7 @@ enum FontLabPathDrawingChecks {
         try penLifecycle()
         try touchedPathClosing()
         try activePathState()
+        try continuationRestoreState()
         try interruptedLineJoin()
         try hoverAndCancellation()
         try hostedViewportStability()
@@ -408,6 +409,74 @@ enum FontLabPathDrawingChecks {
         duplicate.click(.init(x: 0.9, y: 0.8))
         try check(duplicate.editor.paths.count == 3 && duplicate.editor.paths[0] == source,
                   "Pen after Duplicate must not append to the deselected original path")
+    }
+
+    private static func continuationRestoreState() throws {
+        let points = [FontLabPoint(x: 0.2, y: 0.2), FontLabPoint(x: 0.5, y: 0.8), FontLabPoint(x: 0.8, y: 0.2)]
+        let source = FontLabVectorPath(nodes: points.map { FontLabVectorNode(point: $0) })
+        let emptyPoint = FontLabPoint(x: 0.1, y: 0.72)
+        let restored = Harness(glyph([source]))
+        let original = restored.editor.glyph
+        restored.editor.selection = [source.nodes[0].id]
+        restored.editor.continueSelectedEndpoint()
+        try check(restored.editor.activePath == source.id && restored.editor.paths[0].nodes.last?.id == source.nodes[0].id && restored.commits == 1,
+                  "The continuation-undo fixture must activate and reverse the selected first endpoint")
+        restored.key("z", code: 6, modifiers: .command)
+        try check(restored.editor.glyph == original && restored.editor.activePath == nil &&
+                  restored.editor.selection == [source.nodes[0].id] && restored.editor.tool == .pen &&
+                  restored.editor.message == FontLabVectorEditor.defaultMessage,
+                  "Undoing first-end continuation must finish active drawing, retain the selected endpoint and restore the original node order")
+        restored.click(emptyPoint)
+        try check(restored.editor.paths.count == 2 && restored.editor.paths[0] == source &&
+                  restored.editor.paths[1].nodes.count == 1 && samePoints(restored.editor.paths[1].nodes.map(\.point), [emptyPoint]) &&
+                  restored.editor.activePath == restored.editor.paths[1].id && restored.commits == 2,
+                  "Pen in empty space after undoing continuation must start a new path without extending the opposite endpoint")
+
+        let explicit = Harness(glyph([source]))
+        explicit.editor.selection = [source.nodes[0].id]
+        explicit.editor.continueSelectedEndpoint()
+        explicit.key("z", code: 6, modifiers: .command)
+        explicit.click(points[0])
+        try check(explicit.editor.activePath == source.id && explicit.editor.paths[0].nodes.last?.id == source.nodes[0].id,
+                  "After undo, an explicit endpoint click must be able to resume the intended end")
+        explicit.click(emptyPoint)
+        try check(explicit.editor.paths.count == 1 && explicit.editor.paths[0].id == source.id &&
+                  samePoints(explicit.editor.paths[0].nodes.map(\.point), Array(points.reversed()) + [emptyPoint]),
+                  "Explicitly resumed drawing after undo must connect to the chosen endpoint")
+
+        // The saved glyph normally echoes back through SwiftUI after a commit.
+        // An identical echo is not an external restore and must not finish Pen.
+        let echo = Harness(); echo.editor.tool = .pen
+        let commit = echo.editor.onCommit, echoEditor = echo.editor
+        echo.editor.onCommit = { [weak echoEditor] value in
+            commit(value)
+            echoEditor?.receive(value)
+        }
+        echo.click(points[0])
+        let active = echo.editor.activePath
+        try check(active != nil && echo.commits == 1, "A synchronous saved-glyph echo must retain a newly started Pen path")
+        let handle = FontLabPoint(x: 0.6, y: 0.86)
+        echo.drag(points[1], handle, release: false)
+        let provisional = echo.editor.glyph
+        echo.editor.receive(provisional)
+        try check(echo.editor.activePath == active && echo.editor.glyph == provisional && echo.commits == 1,
+                  "Receiving an identical in-flight Pen preview must preserve active construction without committing it")
+        echo.canvas.mouseUp(with: echo.event(.leftMouseUp, handle))
+        try check(echo.editor.activePath == active && echo.editor.glyph == provisional && echo.commits == 2,
+                  "An onCommit echo must preserve the completed Pen curve and commit it exactly once")
+        echo.click(points[2])
+        try check(echo.editor.paths.count == 1 && echo.editor.paths[0].nodes.count == 3 &&
+                  samePoints(echo.editor.paths[0].nodes.map(\.point), points) && echo.commits == 3,
+                  "Pen must continue its existing path after identical preview and save echoes")
+        echo.key("z", code: 6, modifiers: .command)
+        try check(echo.editor.glyph == provisional && echo.editor.activePath == active && echo.commits == 3,
+                  "Undoing an ordinary appended Pen point must retain construction at the preceding endpoint")
+        let replacement = FontLabPoint(x: 0.9, y: 0.65)
+        echo.click(replacement)
+        try check(echo.editor.paths.count == 1 && echo.editor.activePath == active && echo.commits == 4 &&
+                  samePoints(echo.editor.paths[0].nodes.map(\.point), Array(points.prefix(2)) + [replacement]) &&
+                  Array(echo.editor.paths[0].nodes.prefix(2)) == FontLabVectorMath.paths(in: provisional)[0].nodes,
+                  "Drawing after ordinary append undo must extend the preceding endpoint and retain its original curve controls")
     }
 
     private static func interruptedLineJoin() throws {

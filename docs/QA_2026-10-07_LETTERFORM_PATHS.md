@@ -1,6 +1,6 @@
 # Letterform path construction refinement — 2026-10-07
 
-Status: candidate native and live runtime validation passed; final release integration and distribution pending. Baseline: `55a3aab`, public 0.59.21 (101). No suggestion-model research or scoring protocol changes.
+Status: 0.59.23 (103) candidate native and live runtime validation passed; completed Spaces 0.59.22 integrated. Final integrated build/install and package verification passed; public distribution pending. Baseline: `55a3aab`, public 0.59.21 (101). No suggestion-model research or scoring protocol changes.
 
 ## Interaction changes
 
@@ -20,7 +20,7 @@ This is a targeted construction pass, not Illustrator/FontLab feature parity or 
 
 The complete candidate native suite passed, including FontLabPathConstructionChecks, FontLabPathDrawingChecks and existing editor/import/export checks. The new checks cover all four endpoint orientations, straight and curved bridges, coincident merges, counters, curve samples, width across aspect ratios, invalid geometry, event transactions, undo/redo, saved-store reopening and TrueType/SVG export.
 
-Figma bridge mock suite passed. Live UI results are recorded below; final release verification remains pending. Private evidence and original data hashes remain in `.context/qa-artifacts/letterform-paths-05922/`; that directory was named before concurrent release coordination and does not determine the shipped version.
+Figma bridge mock suite and native window self-test passed. Live UI results are recorded below; final release verification remains pending. Private evidence and original data hashes remain in `.context/qa-artifacts/letterform-paths-05922/`; that directory was named before concurrent release coordination and does not determine the shipped version.
 
 ## Live candidate checks
 
@@ -35,3 +35,11 @@ Live QA also reproduced canvas resizing while the first open path appeared. The 
 The final candidate reopened the saved A/B/C project with byte-for-byte equivalent JSON and the same visible outlines and proof.
 
 Initial native candidate compilation succeeded and geometry/existing editor checks passed. A new Pen crossbar fixture failed because its start point lay exactly on an existing diagonal, intentionally triggering point insertion; the separate-path fixture was moved into empty space while retaining the dedicated curve-insertion check.
+
+Final review caught a continuation/Undo edge case before installation: undoing a Continue-from-first orientation reversal left Pen active at the opposite endpoint. Restoring reversed endpoints now finishes active construction while retaining selection; an unchanged commit echo retains drawing state. A focused event regression covers the next Pen click after Undo. The interrupted final build did not install an app; the corrected source passed a fresh full run, including the new regression and cleared stale continuation hint. The release build also passed the native window self-test.
+
+## Release package
+
+Canonical `/Applications/Typefield.app`: 0.59.23 (103), built and installed with `./install-local.sh`. The complete integrated native suite passed. Strict signatures and executable identity match the built app, canonical installation and read-only mounted DMG. All 31 saved-data hashes and both paused-research hashes remain unchanged.
+
+DMG SHA-256: `c116d6ef045874079aa26f42e9c1ea1c1fc9003b2317e974dac8283e6310ce4a`. Publication verification is pending.
