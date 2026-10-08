@@ -2,7 +2,7 @@
 
 Date: 2026-10-08 (Pacific). Starting revision: `7a0f393`, installed/public 0.59.24 (104).
 
-Status: 0.59.27 (107) installed and locally verified. Native, window, Figma, disposable live and website checks passed. Public distribution verification is pending.
+Status: 0.59.27 (107) installed, running and publicly verified. Native, window, Figma, disposable live and website checks passed.
 
 ## Scope and coordination
 
@@ -72,3 +72,9 @@ All 31 saved-data hashes still matched this pass's baseline before canonical ins
 - DMG: 8,464,152 bytes; SHA-256 `a87e2a7bbb6e0d178cab1db16f5ccfe814e8d97696a9d0151fa152de1912dd6d`.
 
 The website's release-asset test initially rejected the not-yet-packaged 0.59.27 DMG as expected; the complete test run passed after the verified package and feed were prepared.
+
+## Public distribution verification
+
+Published [0.59.27 beta 1](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.27-beta.1) from `81229ac` and deployed the reconciled site to the existing Cloudflare Pages project `typefield` (deployment `70025472`). The [live download page](https://typefield.app/download/) shows version 0.59.27/build 107 and both exact download links. Unauthenticated GitHub and website DMGs are byte-identical to the verified local package. Public appcast bytes exactly match the signed source; its archive and feed signatures validate, and RSS/no-cache headers are correct. The feedback configuration endpoint remains healthy. The canonical app's About panel shows 0.59.27 (107); Check for Updates reports it is the newest available version. All 31 saved-data and both paused research-file hashes still match after relaunch and updater verification.
+
+Source candidate `cf2bd25`, integration/validation `1d0d9ce`, `e9977f9`, `03336d4`, and package `81229ac` are pushed to both configured origin repositories. No Letterform research model or scoring protocol changed. Existing beta limitations remain: ad hoc signing without Developer ID notarization, no second-Mac/macOS 13 validation in this pass, and no universal frame-rate or dense-project navigation guarantee.
