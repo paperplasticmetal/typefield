@@ -292,9 +292,20 @@ enum FontRepairEngine {
 
     static func checksumForTable(_ tag: String, _ data: Data) -> UInt32 { var value = data; if tag == "head", value.count >= 12 { value.fsSetUInt32(8, 0) }; return checksum(value) }
     static func checksum(_ data: Data) -> UInt32 {
-        var total: UInt32 = 0, index = 0
-        while index < data.count { var word: UInt32 = 0; for byte in 0..<4 { word <<= 8; if index + byte < data.count { word |= UInt32(data[data.startIndex + index + byte]) } }; total = total &+ word; index += 4 }
-        return total
+        data.withUnsafeBytes { bytes in
+            var total: UInt32 = 0, index = 0
+            while index + 4 <= bytes.count {
+                // Font tables need not be aligned in memory (including Data
+                // slices). Read each big-endian word without an alignment trap.
+                total = total &+ UInt32(bigEndian: bytes.loadUnaligned(fromByteOffset: index, as: UInt32.self))
+                index += 4
+            }
+            var tail: UInt32 = 0
+            for shift in stride(from: 24, through: 0, by: -8) {
+                if index < bytes.count { tail |= UInt32(bytes[index]) << shift; index += 1 }
+            }
+            return total &+ tail
+        }
     }
     static func formatName(_ data: Data) -> String { guard let signature = data.fsUInt32(0) else { return "Unknown" }; switch signature { case 0x00010000, 0x74727565: return "TrueType"; case 0x4F54544F: return "OpenType/CFF"; case 0x74746366: return "Font collection"; case 0x774F4646: return "WOFF"; case 0x774F4632: return "WOFF2"; default: return "Unknown" } }
     static func hex(_ value: UInt32) -> String { String(format: "%08X", value) }
@@ -328,12 +339,54 @@ private extension Data {
     mutating func fsSetUInt32(_ offset: Int, _ value: UInt32) { guard offset >= 0, offset + 4 <= count else { return }; self[startIndex + offset] = UInt8(value >> 24); self[startIndex + offset + 1] = UInt8((value >> 16) & 0xFF); self[startIndex + offset + 2] = UInt8((value >> 8) & 0xFF); self[startIndex + offset + 3] = UInt8(value & 0xFF) }
 }
 
+enum FontHealthWork {
+    // Keep dismissed scans from competing with their replacements for disk and CPU.
+    private static let queue = DispatchQueue(label: "Typefield.font-health", qos: .userInitiated)
+
+    static func libraryURLs(_ urls: [URL], watched: [String], userFontsOnly: Bool,
+                            cancellation: BackgroundWorkCancellation) -> [URL]? {
+        var paths = Set<String>(), seen = Set<String>()
+        for url in urls {
+            guard !cancellation.isCancelled else { return nil }
+            let path = url.standardizedFileURL.path
+            guard seen.insert(path).inserted else { continue }
+            if !userFontsOnly || FontRepairEngine.isUserFont(url) || watched.contains(where: { FontFolderSnapshot.contains(url.path, root: $0) }) {
+                paths.insert(path)
+            }
+        }
+        return paths.sorted().map(URL.init(fileURLWithPath:))
+    }
+
+    static func inspect(_ urls: [URL], cancellation: BackgroundWorkCancellation,
+                        inspectFile: (URL) -> FontInspection = FontRepairEngine.inspect) -> [FontInspection]? {
+        var values: [FontInspection] = []
+        for url in urls {
+            guard !cancellation.isCancelled else { return nil }
+            values.append(autoreleasepool { inspectFile(url) })
+        }
+        return cancellation.isCancelled ? nil : values
+    }
+
+    static func schedule(cancellation: BackgroundWorkCancellation, urls: @escaping () -> [URL]?,
+                         completion: @escaping ([FontInspection]) -> Void) {
+        queue.async {
+            guard !cancellation.isCancelled, let urls = urls(),
+                  let values = inspect(urls, cancellation: cancellation) else { return }
+            DispatchQueue.main.async {
+                guard !cancellation.isCancelled else { return }
+                completion(values)
+            }
+        }
+    }
+}
+
 struct FontHealthView: View {
     @ObservedObject var library: Library
     @State private var inspections: [FontInspection] = []
     @State private var selectedPath: String?
     @State private var selectedFixes: Set<FontRepairAction> = []
     @State private var scanning = false
+    @State private var scanCancellation: BackgroundWorkCancellation?
     @State private var userFontsOnly = true
     @State private var showClean = false
     @State private var query = ""
@@ -353,6 +406,7 @@ struct FontHealthView: View {
                 }
                 Spacer()
                 if scanning { ProgressView().controlSize(.small) }
+                if scanning { Button("Cancel") { cancelScan() } }
                 Button("Scan Library") { scanLibrary() }.disabled(scanning)
                 Button("Inspect file…") { inspectFile() }.disabled(scanning)
             }
@@ -379,6 +433,8 @@ struct FontHealthView: View {
             Divider()
             HStack { Image(systemName: "lock.shield"); Text("Original files are never overwritten without a separate confirmation. In-place repair is unavailable for system fonts and read-only files."); Spacer(); Text(status).lineLimit(2) }.font(.caption).foregroundStyle(.secondary)
         }.padding(10).onAppear { consumeRequestedFile() }
+            .onChange(of: library.repairURL) { _ in consumeRequestedFile() }
+            .onDisappear { cancelScan() }
     }
     var summary: String {
         let affected = inspections.filter(\.needsReview).count
@@ -427,9 +483,9 @@ struct FontHealthView: View {
                 }.padding(.trailing, 10)
             }
             HStack {
-                Button("Export repaired copy…") { exportCopy(item) }.disabled(!item.canRepair || selectedFixes.isEmpty)
+                Button("Export repaired copy…") { exportCopy(item) }.disabled(scanning || !item.canRepair || selectedFixes.isEmpty)
                 Button("Repair original…") { repairOriginal(item) }
-                    .disabled(repairOriginalDisabledReason(item) != nil)
+                    .disabled(scanning || repairOriginalDisabledReason(item) != nil)
                     .help(repairOriginalDisabledReason(item) ?? "Create a backup beside this font, then atomically replace it after confirmation.")
                 Spacer()
             }
@@ -441,13 +497,37 @@ struct FontHealthView: View {
     func nameRow(_ label: String, _ value: String) -> some View { GridRow { Text(label).foregroundStyle(.secondary).frame(width: 70, alignment: .trailing); Text(value).textSelection(.enabled).lineLimit(1) } }
     func select(_ item: FontInspection) { selectedPath = item.url.path; selectedFixes = Set(item.issues.filter { $0.severity >= .warning }.compactMap(\.fix)) }
     func scanLibrary() {
-        let watched = library.resolvedFolders + library.saved.folders
-        let paths = Set(library.allFaces.compactMap(\.url).filter { url in !userFontsOnly || FontRepairEngine.isUserFont(url) || watched.contains { FontFolderSnapshot.contains(url.path, root: $0) } }.map { $0.standardizedFileURL.path })
-        let urls = paths.sorted().map(URL.init(fileURLWithPath:))
-        scanning = true; status = "Inspecting \(urls.count) font files…"
-        DispatchQueue.global(qos: .userInitiated).async {
-            let values = urls.map(FontRepairEngine.inspect)
-            DispatchQueue.main.async { inspections = values; scanning = false; status = "Inspection complete"; if let first = values.first(where: \.needsReview) ?? (showClean ? values.first : nil) { select(first) } else { selectedPath = nil; selectedFixes = [] } }
+        let watched = library.resolvedFolders + library.saved.folders, urls = library.allFaces.compactMap(\.url), userOnly = userFontsOnly
+        let cancellation = beginScan(status: "Inspecting library font files…")
+        FontHealthWork.schedule(cancellation: cancellation, urls: {
+            FontHealthWork.libraryURLs(urls, watched: watched, userFontsOnly: userOnly, cancellation: cancellation)
+        }) { values in
+            inspections = values; scanning = false; scanCancellation = nil; status = "Inspection complete"
+            if let first = values.first(where: \.needsReview) ?? (showClean ? values.first : nil) { select(first) }
+            else { selectedPath = nil; selectedFixes = [] }
+        }
+    }
+    func beginScan(status text: String) -> BackgroundWorkCancellation {
+        scanCancellation?.cancel()
+        let cancellation = BackgroundWorkCancellation()
+        scanCancellation = cancellation; scanning = true; status = text
+        return cancellation
+    }
+    func cancelScan() {
+        scanCancellation?.cancel(); scanCancellation = nil
+        if scanning { scanning = false; status = "Inspection cancelled" }
+    }
+    func inspectFiles(_ urls: [URL], requested: Bool = false) {
+        let cancellation = beginScan(status: "Inspecting \(urls.count) selected file\(urls.count == 1 ? "" : "s")…")
+        FontHealthWork.schedule(cancellation: cancellation, urls: { urls }) { values in
+            for value in values {
+                if let index = inspections.firstIndex(where: { $0.url.standardizedFileURL == value.url.standardizedFileURL }) { inspections[index] = value }
+                else if requested { inspections.insert(value, at: 0) }
+                else { inspections.append(value) }
+            }
+            scanning = false; scanCancellation = nil
+            if let first = values.first { select(first) }
+            status = requested ? "Inspected " + (values.first?.url.lastPathComponent ?? "font") : "Inspected \(values.count) selected file\(values.count == 1 ? "" : "s")"
         }
     }
     func inspectFile() {
@@ -455,14 +535,11 @@ struct FontHealthView: View {
         panel.allowedContentTypes = ["ttf", "otf", "ttc", "otc", "dfont", "woff", "woff2"].compactMap { UTType(filenameExtension: $0) }
         panel.message = "Choose font files to inspect. Inspection is read-only."
         guard panel.runModal() == .OK else { return }
-        let values = panel.urls.map(FontRepairEngine.inspect)
-        for value in values { if let index = inspections.firstIndex(where: { $0.url.standardizedFileURL == value.url.standardizedFileURL }) { inspections[index] = value } else { inspections.append(value) } }
-        if let first = values.first { select(first) }; status = "Inspected \(values.count) selected file\(values.count == 1 ? "" : "s")"
+        inspectFiles(panel.urls)
     }
     func consumeRequestedFile() {
         guard let url = library.repairURL else { return }
-        library.repairURL = nil; let item = FontRepairEngine.inspect(url)
-        inspections.removeAll { $0.url.standardizedFileURL == item.url.standardizedFileURL }; inspections.insert(item, at: 0); select(item); status = "Inspected " + item.url.lastPathComponent
+        library.repairURL = nil; inspectFiles([url], requested: true)
     }
     func exportCopy(_ item: FontInspection) {
         let panel = NSSavePanel(), ext = item.url.pathExtension

@@ -26,25 +26,109 @@ struct BodyColumns: NSViewRepresentable {
     let alignment: NSTextAlignment
     let ink: NSColor
     let paper: NSColor
-    final class Coordinator { var storage: NSTextStorage? }
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> NSView { NSView() }
-    func updateNSView(_ view: NSView, context: Context) {
-        view.subviews.forEach { $0.removeFromSuperview() }
-        let paragraph = NSMutableParagraphStyle(); paragraph.lineHeightMultiple = lineHeight; paragraph.paragraphSpacing = 14; paragraph.alignment = alignment
-        let storage = NSTextStorage(attributedString: NSAttributedString(string: text, attributes: [.font: font as NSFont, .foregroundColor: ink, .paragraphStyle: paragraph, .kern: tracking]))
-        context.coordinator.storage = storage
-        let layout = NSLayoutManager(); storage.addLayoutManager(layout)
-        let gap = 24.0, columnWidth = (width - gap * Double(columns - 1)) / Double(columns)
-        for i in 0..<columns {
-            let container = NSTextContainer(size: NSSize(width: columnWidth, height: 520)); container.lineFragmentPadding = 0
-            layout.addTextContainer(container)
-            let textView = NSTextView(frame: NSRect(x: Double(i) * (columnWidth + gap), y: 0, width: columnWidth, height: 520), textContainer: container)
-            textView.isEditable = false; textView.isSelectable = true; textView.drawsBackground = true; textView.backgroundColor = paper; textView.textContainerInset = .zero
-            textView.isVerticallyResizable = false; textView.isHorizontallyResizable = false
-            view.addSubview(textView)
+    func makeNSView(context: Context) -> BodyColumnsNativeView { BodyColumnsNativeView() }
+    func updateNSView(_ view: BodyColumnsNativeView, context: Context) {
+        view.update(text: text, font: font, columns: columns, width: width,
+                    lineHeight: lineHeight, tracking: tracking, alignment: alignment,
+                    ink: ink, paper: paper)
+    }
+}
+
+/// Retains TextKit's layout and selection while surrounding inspector controls update.
+final class BodyColumnsNativeView: NSView {
+    private struct Configuration {
+        let text: String
+        let font: CTFont
+        let columns: Int
+        let width: Double
+        let lineHeight: Double
+        let tracking: Double
+        let alignment: NSTextAlignment
+        let ink: NSColor
+        let paper: NSColor
+
+        func sameTextAttributes(as other: Configuration) -> Bool {
+            CFEqual(font, other.font) && lineHeight == other.lineHeight &&
+                tracking == other.tracking && alignment == other.alignment && ink.isEqual(other.ink)
         }
-        // Text views retain their shared layout manager and text storage.
+    }
+    private let storage = NSTextStorage()
+    private let textLayout = NSLayoutManager()
+    private var textViews: [NSTextView] = []
+    private var configuration: Configuration?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        storage.addLayoutManager(textLayout)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @discardableResult
+    func update(text: String, font: CTFont, columns: Int, width: Double,
+                lineHeight: Double, tracking: Double, alignment: NSTextAlignment,
+                ink: NSColor, paper: NSColor) -> Bool {
+        let next = Configuration(text: text, font: font, columns: max(1, columns), width: width,
+                                 lineHeight: lineHeight, tracking: tracking, alignment: alignment,
+                                 ink: ink, paper: paper)
+        let previous = configuration
+        // Swift String equality folds canonical Unicode equivalents. Retain the
+        // exact input for copy/selection, including composed vs decomposed text.
+        let textChanged = previous.map { !$0.text.utf8.elementsEqual(text.utf8) } ?? true
+        let attributesChanged = previous.map { !next.sameTextAttributes(as: $0) } ?? true
+        let columnsChanged = previous?.columns != next.columns
+        let widthChanged = previous?.width != width
+        let paperChanged = previous.map { !paper.isEqual($0.paper) } ?? true
+        guard textChanged || attributesChanged || columnsChanged || widthChanged || paperChanged else { return false }
+        configuration = next
+
+        if textChanged || attributesChanged {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineHeightMultiple = lineHeight
+            paragraph.paragraphSpacing = 14
+            paragraph.alignment = alignment
+            storage.beginEditing()
+            if textChanged { storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text) }
+            storage.setAttributes([.font: font as NSFont, .foregroundColor: ink,
+                                   .paragraphStyle: paragraph, .kern: tracking],
+                                  range: NSRange(location: 0, length: storage.length))
+            storage.endEditing()
+        }
+        if columnsChanged {
+            // Keep the selected text when changing the number of columns. A new
+            // body string deliberately starts with a fresh insertion point.
+            let selection = textChanged ? NSRange(location: 0, length: 0) : textViews.first?.selectedRange()
+            for textView in textViews { textView.removeFromSuperview() }
+            textViews.removeAll()
+            while !textLayout.textContainers.isEmpty { textLayout.removeTextContainer(at: 0) }
+            for _ in 0..<next.columns {
+                let container = NSTextContainer(size: NSSize(width: 1, height: 520))
+                container.lineFragmentPadding = 0
+                textLayout.addTextContainer(container)
+                let textView = NSTextView(frame: .zero, textContainer: container)
+                textView.isEditable = false
+                textView.isSelectable = true
+                textView.drawsBackground = true
+                textView.backgroundColor = paper
+                textView.textContainerInset = .zero
+                textView.isVerticallyResizable = false
+                textView.isHorizontallyResizable = false
+                textViews.append(textView)
+                addSubview(textView)
+            }
+            if let selection { textViews.first?.setSelectedRange(selection) }
+        }
+        if columnsChanged || widthChanged {
+            let gap = 24.0
+            let columnWidth = max(1, (width - gap * Double(next.columns - 1)) / Double(next.columns))
+            for (index, textView) in textViews.enumerated() {
+                textView.frame = NSRect(x: Double(index) * (columnWidth + gap), y: 0,
+                                        width: columnWidth, height: 520)
+                textView.textContainer?.containerSize = NSSize(width: columnWidth, height: 520)
+            }
+        }
+        if paperChanged { for textView in textViews { textView.backgroundColor = paper } }
+        if textChanged { textViews.first?.setSelectedRange(NSRange(location: 0, length: 0)) }
+        return true
     }
 }
 struct LayoutWorkspace: View {

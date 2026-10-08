@@ -10,6 +10,108 @@ enum PreviewLayout {
     }
 }
 
+/// Reuses the scalar measurements needed to align Library rows. Keeping CTLines
+/// would retain shaped glyph runs for every font seen while scrolling.
+enum PreviewTextMetrics {
+    struct Measurement: Equatable {
+        let ascent: Double
+        let descent: Double
+        let lines: Int
+    }
+    private static let cache = PreviewTextMetricsCache()
+
+    static func clearCache() { cache.clear() }
+
+    static func measure(text: String, font: CTFont, width: Double) -> Measurement {
+        let visibleText = String(text.prefix(512))
+        return cache.value(text: visibleText, font: font, width: width) {
+            calculate(text: visibleText, font: font, width: width)
+        }
+    }
+
+    static func calculate(text: String, font: CTFont, width: Double) -> Measurement {
+        let attributed = NSAttributedString(string: String(text.prefix(512)), attributes: [.font: font])
+        let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+        var offset = 0
+        var lines = 0
+        var ascent = Double(CTFontGetAscent(font))
+        var descent = Double(CTFontGetDescent(font))
+        while offset < attributed.length && lines < 3 {
+            let length = max(1, CTTypesetterSuggestLineBreak(typesetter, offset, width))
+            let line = CTTypesetterCreateLine(typesetter, CFRange(location: offset, length: length))
+            var lineAscent: CGFloat = 0
+            var lineDescent: CGFloat = 0
+            CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+            let inkBounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+            ascent = max(ascent, lineAscent, inkBounds.maxY)
+            descent = max(descent, lineDescent, -inkBounds.minY)
+            offset += length
+            lines += 1
+        }
+        return Measurement(ascent: ascent, descent: descent, lines: lines)
+    }
+}
+
+final class PreviewTextMetricsCache {
+    private final class Key: NSObject {
+        let text: String
+        let font: CTFont
+        let width: Double
+        init(text: String, font: CTFont, width: Double) {
+            self.text = text; self.font = font; self.width = width
+        }
+        override var hash: Int {
+            var hasher = Hasher()
+            hasher.combine(text)
+            hasher.combine(CFHash(font))
+            hasher.combine(width.bitPattern)
+            return hasher.finalize()
+        }
+        override func isEqual(_ object: Any?) -> Bool {
+            guard let other = object as? Key else { return false }
+            return width.bitPattern == other.width.bitPattern && CFEqual(font, other.font) &&
+                text.utf8.elementsEqual(other.text.utf8)
+        }
+    }
+    private final class Entry: NSObject {
+        let measurement: PreviewTextMetrics.Measurement
+        init(_ measurement: PreviewTextMetrics.Measurement) { self.measurement = measurement }
+    }
+    private let cache: NSCache<Key, Entry> = {
+        let cache = NSCache<Key, Entry>()
+        cache.countLimit = 384
+        return cache
+    }()
+    private let lock = NSLock()
+    private var generation: UInt64 = 0
+
+    func clear() {
+        lock.lock()
+        generation &+= 1
+        cache.removeAllObjects()
+        lock.unlock()
+    }
+
+    func value(text: String, font: CTFont, width: Double,
+               calculate: () -> PreviewTextMetrics.Measurement) -> PreviewTextMetrics.Measurement {
+        let key = Key(text: text, font: font, width: width)
+        lock.lock()
+        if let entry = cache.object(forKey: key) {
+            lock.unlock()
+            return entry.measurement
+        }
+        let startingGeneration = generation
+        lock.unlock()
+        // Font fallback and shaping can be expensive. A catalog refresh may
+        // invalidate this miss while it runs; never reinsert its stale result.
+        let measurement = calculate()
+        lock.lock()
+        if generation == startingGeneration { cache.setObject(Entry(measurement), forKey: key) }
+        lock.unlock()
+        return measurement
+    }
+}
+
 /// Both real fonts share a first baseline; each retains its own glyph advances and wrapping.
 struct OverlayPreview: View {
     let text: String

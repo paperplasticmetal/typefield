@@ -175,32 +175,32 @@ enum LibraryIntelligence {
     /// records never become candidates on their own.
     static func leastRecentlyUsed(catalog: [Family], usage: [String: FontUsageRecord], currentUseCounts: [String: Int] = [:], preferredFaces: [String: String] = [:], excludingFamilyNames: Set<String> = [], includeSystemFonts: Bool = true, seed: UInt64 = 0, limit: Int = 12) -> [FontDiscoveryResult] {
         guard limit > 0 else { return [] }
-        let values = catalog.compactMap { family -> FontDiscoveryResult? in
+        // Folding names and hashing the seed are linear in the name length.
+        // Compute them once per family, not twice per sort comparison.
+        let values = catalog.compactMap { family -> (result: FontDiscoveryResult, day: Double?, name: String, tie: UInt64)? in
             guard !family.faces.isEmpty, !excludingFamilyNames.contains(family.name), includeSystemFonts || family.userFont else { return nil }
             let records = family.faces.compactMap { usage[$0.name] }
             let last = records.map(\.lastAppliedAt).max()
             let applications = records.reduce(0) { saturatedAdd($0, max(0, $1.applicationCount)) }
             let current = family.faces.reduce(0) { saturatedAdd($0, max(0, currentUseCounts[$1.name] ?? 0)) }
             let preferred = preferredFaces[family.name].flatMap { name in family.faces.first { $0.name == name } }
-            return FontDiscoveryResult(family: family, face: preferred ?? family.representative, lastAppliedAt: last, applicationCount: applications, currentCanvasCount: current)
+            let result = FontDiscoveryResult(family: family, face: preferred ?? family.representative, lastAppliedAt: last, applicationCount: applications, currentCanvasCount: current)
+            let name = stableName(family.name)
+            return (result, last.map { floor($0.timeIntervalSinceReferenceDate / 86_400) }, name, stableHash(name, seed: seed))
         }
-        return Array(values.sorted { a, b in
-            switch (a.lastAppliedAt, b.lastAppliedAt) {
+        return values.sorted { a, b in
+            switch (a.day, b.day) {
             case (nil, .some): return true
             case (.some, nil): return false
             case let (.some(left), .some(right)):
-                let leftDay = floor(left.timeIntervalSinceReferenceDate / 86_400)
-                let rightDay = floor(right.timeIntervalSinceReferenceDate / 86_400)
-                if leftDay != rightDay { return leftDay < rightDay }
+                if left != right { return left < right }
             case (nil, nil): break
             }
-            if a.currentCanvasCount != b.currentCanvasCount { return a.currentCanvasCount < b.currentCanvasCount }
-            if a.applicationCount != b.applicationCount { return a.applicationCount < b.applicationCount }
-            let leftTie = stableHash(stableName(a.family.name), seed: seed)
-            let rightTie = stableHash(stableName(b.family.name), seed: seed)
-            if leftTie != rightTie { return leftTie < rightTie }
-            return stableName(a.family.name) < stableName(b.family.name)
-        }.prefix(limit))
+            if a.result.currentCanvasCount != b.result.currentCanvasCount { return a.result.currentCanvasCount < b.result.currentCanvasCount }
+            if a.result.applicationCount != b.result.applicationCount { return a.result.applicationCount < b.result.applicationCount }
+            if a.tie != b.tie { return a.tie < b.tie }
+            return a.name < b.name
+        }.prefix(limit).map(\.result)
     }
 
     /// Counts a face at most once per current canvas and ignores checkpoints.

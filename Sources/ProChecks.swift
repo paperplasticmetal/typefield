@@ -8,6 +8,7 @@ enum ProChecks {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try checkStoreMigration(in: root)
+        checkFilteredFamilySnapshots(in: root)
         let library = Library(storageURL: root.appendingPathComponent("library.json"))
         library.acceptCatalog(catalog)
         library.acceptCatalog([])
@@ -291,6 +292,44 @@ enum ProChecks {
         precondition(changesGlyphs, "Ligature controls did not change shaped glyphs in any supported font")
         try intelligenceChecks(library: library, catalog: catalog)
         print("PASS: family merge/split with collection preservation, stable tags, saved axes/features, OpenType parsing, duplicate hashes/name collisions, original-file export and advanced filters.")
+    }
+
+    static func checkFilteredFamilySnapshots(in root: URL) {
+        let library = Library(storageURL: root.appendingPathComponent("filter-snapshots/library.json"))
+        func face(italic: Bool, coverage: String = "ABC") -> Face {
+            let facts = FontFacts(weight: 400, italic: italic, glyphCount: 256, foundry: "Fixture", features: [], widthClass: 5, xHeightRatio: 0.5, capHeightRatio: 0.72, ascenderRatio: 0.8, descenderRatio: 0.2, averageAdvanceRatio: 0.5, panose: [], variable: false, color: false, bitmap: false, monospace: false)
+            return Face(name: "FilterFixture-Regular", style: "Regular", originalFamily: "Filter Fixture", facts: facts, url: nil, coverage: CharacterSet(charactersIn: coverage), writingSystems: [.latin])
+        }
+        func family(_ face: Face) -> Family {
+            Family(name: face.originalFamily, faces: [face], automaticCategory: .sans, variable: false, writingSystems: face.writingSystems)
+        }
+        let original = family(face(italic: false))
+        let replacement = family(face(italic: true, coverage: "AB"))
+        library.families = [original]
+        precondition(library.filteredFaces.count == 1)
+        library.families = [replacement]
+        library.advanced.slant = "Italic"
+        precondition(library.filteredFaces.first?.facts.italic == true, "Catalog replacement retained old style metadata")
+        precondition(library.matchingFaces(in: original).isEmpty, "An older same-name family borrowed the replacement's cached faces")
+        precondition(library.matchingFaces(in: replacement).count == 1, "A current family lost its matching style")
+        precondition(library.chosenFace(replacement).facts.italic, "Preferred preview retained stale font facts")
+        library.pro.tags[replacement.faces[0].name] = ["filter-fixture"]
+        library.search = "#filter-fixture"
+        precondition(library.filteredFaces.count == 1)
+        library.pro.tags = [:]
+        precondition(library.filteredFaces.isEmpty && library.matchingFaces(in: replacement).isEmpty, "Tag removal retained cached matching styles")
+        library.search = ""
+        library.requiredText = "C"
+        precondition(library.filteredFaces.count == 1, "Preview text filtered fonts with coverage disabled")
+        library.requireCoverage = true
+        precondition(library.filteredFaces.isEmpty, "Enabling coverage did not inspect the latest preview text")
+        library.requiredText = "A"
+        precondition(library.filteredFaces.count == 1, "Coverage preview changes retained stale matching styles")
+        library.search = "#typefield/upright"
+        precondition(library.filteredFaces.isEmpty, "Search edits reused an old parsed query")
+        library.search = "#typefield/italic"
+        precondition(library.filteredFaces.count == 1, "Changed token filters did not restore matching styles")
+        print("PASS: matching-style snapshots preserve same-name catalog replacement, stale inspector isolation, tag changes, and coverage/search invalidation.")
     }
 
     static func intelligenceChecks(library: Library, catalog: [Family]) throws {

@@ -21,6 +21,9 @@ struct Face: Identifiable {
 }
 struct Family: Identifiable {
     var id: String { name }
+    // Copies share this immutable catalog snapshot; a reload or regroup gets a
+    // new identity even when the display name and PostScript names stay equal.
+    let filterSnapshotID = UUID()
     let name: String
     let faces: [Face]
     let automaticCategory: Category
@@ -184,10 +187,10 @@ final class Library: ObservableObject {
     }
     @Published var families: [Family] = [] {
         willSet { rebuildCatalogIndexes(for: newValue) }
-        didSet { invalidateFilteredCatalog() }
+        didSet { invalidateFilteredCatalog(); cachedSidebarSnapshot = nil }
     }
     var originalFamilies: [Family] = []
-    @Published var pro = ProState() { didSet { invalidateFilteredCatalog() } }
+    @Published var pro = ProState() { didSet { invalidateFilteredCatalog(); cachedSidebarSnapshot = nil } }
     @Published var advanced = AdvancedFilter() { didSet { invalidateFilteredCatalog() } }
     @Published var selectedFamilies: Set<String> = []
     @Published var showTools = false
@@ -328,7 +331,7 @@ final class Library: ObservableObject {
     }
     func tags(_ family: Family) -> Set<String> { family.faces.reduce(into: []) { $0.formUnion(pro.tags[$1.name] ?? []) } }
 
-    @Published var saved: SavedLibrary { didSet { invalidateFilteredCatalog() } }
+    @Published var saved: SavedLibrary { didSet { invalidateFilteredCatalog(); cachedSidebarSnapshot = nil } }
     @Published var loading = false
     @Published var message = ""
     @Published var resultNotice = ""
@@ -339,7 +342,7 @@ final class Library: ObservableObject {
     @Published var variableOnly = false { didSet { invalidateFilteredCatalog() } }
     @Published var detail: Family?
     @Published var writing: WritingSystem? { didSet { invalidateFilteredCatalog() } }
-    @Published var requiredText = "" { didSet { invalidateFilteredCatalog() } }
+    @Published var requiredText = "" { didSet { if requireCoverage { invalidateFilteredCatalog() } } }
     @Published var requireCoverage = false { didSet { invalidateFilteredCatalog() } }
     @Published var comparison: [String] = []
     @Published var overlayName = ""
@@ -356,12 +359,15 @@ final class Library: ObservableObject {
         (query.text.isEmpty || family.name.localizedCaseInsensitiveContains(query.text) || face.name.localizedCaseInsensitiveContains(query.text) || face.style.localizedCaseInsensitiveContains(query.text))
     }
     func matchingFaces(in family: Family) -> [Face] {
-        let query = FontSearchQuery(search)
+        if canCacheFilteredCatalog, let matches = cachedFilteredCatalog?.facesByFamily[family.filterSnapshotID] { return matches }
+        let query = parsedSearchQuery
         return family.faces.filter { faceMatches($0, in: family, query: query) }
     }
     func chosenFace(_ family: Family) -> Face {
         let matching = matchingFaces(in: family)
-        return matching.first(where: { $0.name == pro.mainPreviews[family.name] }) ?? matching.first(where: { $0.name == family.representative.name }) ?? matching.first ?? family.representative
+        let representative = family.representative
+        let preferredName = pro.mainPreviews[family.name]
+        return matching.first(where: { $0.name == preferredName }) ?? matching.first(where: { $0.name == representative.name }) ?? matching.first ?? representative
     }
     func compare(_ family: Family) {
         if comparison.contains(family.name) { comparison.removeAll { $0 == family.name } }
@@ -537,33 +543,63 @@ final class Library: ObservableObject {
     }
     // Retain only the current result. Selection, preview size and other UI changes
     // must not re-run every font predicate and localized sort in a large catalog.
-    private var cachedFilteredCatalog: (families: [Family], styleCount: Int)?
+    private struct FilteredCatalog {
+        let families: [Family]
+        let styleCount: Int
+        let facesByFamily: [UUID: [Face]]
+    }
+    private var cachedFilteredCatalog: FilteredCatalog?
+    private var cachedSearchQuery: (source: String, query: FontSearchQuery)?
+    private var parsedSearchQuery: FontSearchQuery {
+        if let cachedSearchQuery, cachedSearchQuery.source == search { return cachedSearchQuery.query }
+        let query = FontSearchQuery(search)
+        cachedSearchQuery = (search, query)
+        return query
+    }
+    private var canCacheFilteredCatalog: Bool {
+        // Activation predicates also read live Core Text registration state.
+        advanced.activation == "Any" && !search.lowercased().contains("/active")
+    }
+    // Search, selection and preview changes do not alter sidebar totals. Keep
+    // those catalog-wide counts until their source data actually changes.
+    private var cachedSidebarSnapshot: LibrarySidebarSnapshot?
+    fileprivate var sidebarSnapshot: LibrarySidebarSnapshot {
+        if let cachedSidebarSnapshot { return cachedSidebarSnapshot }
+        let snapshot = LibrarySidebarSnapshot(library: self)
+        cachedSidebarSnapshot = snapshot
+        return snapshot
+    }
     fileprivate func invalidateFilteredCatalog() { cachedFilteredCatalog = nil }
     var filtered: [Family] { filteredCatalog.families }
     var matchingStyleCount: Int { filteredCatalog.styleCount }
-    private var filteredCatalog: (families: [Family], styleCount: Int) {
-        // Activation predicates also read live Core Text registration state.
-        let canCache = advanced.activation == "Any" && !search.lowercased().contains("/active")
+    private var filteredCatalog: FilteredCatalog {
+        let canCache = canCacheFilteredCatalog
         if canCache, let cachedFilteredCatalog { return cachedFilteredCatalog }
-        let query = FontSearchQuery(search)
+        let query = parsedSearchQuery
         var styleCount = 0
+        var facesByFamily: [UUID: [Face]] = [:]
+        facesByFamily.reserveCapacity(families.count)
         let result = families.filter { family in
             guard matchesSection(family, selection), !variableOnly || family.variable,
                   source == "All sources" || (source == "User / third-party" ? family.userFont : !family.userFont) else { return false }
-            let matches = family.faces.reduce(0) { $0 + (faceMatches($1, in: family, query: query) ? 1 : 0) }
-            styleCount += matches
-            return matches > 0
+            let matches = family.faces.filter { faceMatches($0, in: family, query: query) }
+            styleCount += matches.count
+            facesByFamily[family.filterSnapshotID] = matches
+            return !matches.isEmpty
         }
         let sorted = result.sorted { a,b in
             if sort == "Most styles", a.faces.count != b.faces.count { return a.faces.count > b.faces.count }
             if sort == "Category", category(a) != category(b) { return category(a).rawValue < category(b).rawValue }
             return a.name.localizedStandardCompare(b.name) == (sort == "Name Z–A" ? .orderedDescending : .orderedAscending)
         }
-        let snapshot = (families: sorted, styleCount: styleCount)
+        let snapshot = FilteredCatalog(families: sorted, styleCount: styleCount, facesByFamily: facesByFamily)
         if canCache { cachedFilteredCatalog = snapshot }
         return snapshot
     }
-    var filteredFaces: [Face] { filtered.flatMap { matchingFaces(in: $0) } }
+    var filteredFaces: [Face] {
+        let snapshot = filteredCatalog
+        return snapshot.families.flatMap { snapshot.facesByFamily[$0.filterSnapshotID] ?? [] }
+    }
     var selectedOutsideViewCount: Int { selectedFamilies.subtracting(Set(filtered.map(\.name))).count }
     var selectedScopeLabel: String {
         let outside = selectedOutsideViewCount
@@ -970,7 +1006,7 @@ struct ContentView: View {
         return library.hasActiveFilters ? "Try a different search or filter. Your current collection or Library section will stay selected." : "Browse all fonts or add a font folder."
     }
     var sidebar: some View {
-        let snapshot = LibrarySidebarSnapshot(library: library)
+        let snapshot = library.sidebarSnapshot
         return VStack(alignment: .leading, spacing: 6) {
             WorkspaceSidebarHeader(library: library, collapsed: $sidebarCollapsed)
             ScrollView { VStack(alignment: .leading, spacing: 6) {
@@ -1193,26 +1229,8 @@ struct ContentView: View {
         // Measure only the first three visible lines, matching FontPreview's limit.
         // This also includes the real fallback glyph bounds for mixed scripts.
         let layouts = samples.map { sample -> (ascent: Double, descent: Double, lines: Int, font: CTFont) in
-            let text = String(sample.text.prefix(512))
-            let attributed = NSAttributedString(string: text, attributes: [.font: sample.font])
-            let typesetter = CTTypesetterCreateWithAttributedString(attributed)
-            var offset = 0
-            var lines = 0
-            var ascent = Double(CTFontGetAscent(sample.font))
-            var descent = Double(CTFontGetDescent(sample.font))
-            while offset < attributed.length && lines < 3 {
-                let length = max(1, CTTypesetterSuggestLineBreak(typesetter, offset, width))
-                let line = CTTypesetterCreateLine(typesetter, CFRange(location: offset, length: length))
-                var lineAscent: CGFloat = 0
-                var lineDescent: CGFloat = 0
-                CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
-                let inkBounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-                ascent = max(ascent, lineAscent, inkBounds.maxY)
-                descent = max(descent, lineDescent, -inkBounds.minY)
-                offset += length
-                lines += 1
-            }
-            return (ascent, descent, lines, sample.font)
+            let measurement = PreviewTextMetrics.measure(text: sample.text, font: sample.font, width: width)
+            return (measurement.ascent, measurement.descent, measurement.lines, sample.font)
         }
         let baseline = ceil(layouts.map(\.ascent).max() ?? size) + 4
         let shortPreview = preview != "{family}" && preview.trimmingCharacters(in: .whitespacesAndNewlines).count <= 3 && !preview.contains("\n")
@@ -1663,6 +1681,9 @@ enum PerformanceAudit {
         precondition(library.availableFaceNames == Set(catalog.flatMap(\.faces).map(\.name)), "Catalog name index changed its contents")
         let catalogAccess = measure(iterations: 10_000) { library.allFaces.count &+ library.availableFaceNames.count }
         let sidebarCounts = measure(iterations: 100) { LibrarySidebarSnapshot(library: library).checksum }
+        _ = library.sidebarSnapshot
+        let cachedSidebarCounts = measure(iterations: 100) { library.sidebarSnapshot.checksum }
+        precondition(sidebarCounts.checksum == cachedSidebarCounts.checksum, "Cached sidebar changed its counts")
         library.search = "a"
         let filtering = measure(iterations: 100) {
             library.invalidateFilteredCatalog()
@@ -1670,6 +1691,27 @@ enum PerformanceAudit {
         }
         let cachedFiltering = measure(iterations: 100) { library.filtered.reduce(0) { $0 &+ $1.faces.count } }
         precondition(filtering.checksum == cachedFiltering.checksum, "Cached filtering changed catalog results")
+        let visibleFamilies = Array(library.filtered.prefix(60))
+        let previewFaces = measure(iterations: 100) { visibleFamilies.reduce(0) { $0 &+ library.chosenFace($1).name.utf8.count } }
+        let metadataFaces = measure(iterations: 100) { library.filteredFaces.count }
+        let previewFonts = catalog.filter { $0.automaticCategory != .symbol }.prefix(24).map {
+            OpenType.font(name: $0.representative.name, size: 56)
+        }
+        let mixedPreview = String(repeating: "Hamburgefontsiv café العربية हिन्दी 日本語 0123456789 — ", count: 15)
+        let freshMetrics = measure(iterations: 10) {
+            previewFonts.reduce(0) { total, font in
+                let value = PreviewTextMetrics.calculate(text: mixedPreview, font: font, width: 280)
+                return total &+ value.lines &+ Int(ceil(value.ascent + value.descent))
+            }
+        }
+        for font in previewFonts { _ = PreviewTextMetrics.measure(text: mixedPreview, font: font, width: 280) }
+        let cachedMetrics = measure(iterations: 100) {
+            previewFonts.reduce(0) { total, font in
+                let value = PreviewTextMetrics.measure(text: mixedPreview, font: font, width: 280)
+                return total &+ value.lines &+ Int(ceil(value.ascent + value.descent))
+            }
+        }
+        precondition(freshMetrics.checksum / 10 == cachedMetrics.checksum / 100, "Cached preview metrics changed layout")
         let reference = catalog.first(where: { $0.automaticCategory != .symbol })?.representative
         let pairing = measure(iterations: 10) {
             guard let reference else { return 0 }
@@ -1691,8 +1733,10 @@ enum PerformanceAudit {
 
         print(String(format: "PERF catalog scan: %.2f ms (%d families, %d styles)", scanMilliseconds, catalog.count, catalog.reduce(0) { $0 + $1.faces.count }))
         print(String(format: "PERF cached catalog access: %.6f ms/pass", catalogAccess.milliseconds))
-        print(String(format: "PERF sidebar count snapshot: %.3f ms/pass", sidebarCounts.milliseconds))
+        print(String(format: "PERF sidebar count snapshot: %.3f ms uncached, %.6f ms cached", sidebarCounts.milliseconds, cachedSidebarCounts.milliseconds))
         print(String(format: "PERF library filter: %.3f ms uncached, %.6f ms cached", filtering.milliseconds, cachedFiltering.milliseconds))
+        print(String(format: "PERF Library 60 preview face reads: %.3f ms; all matching metadata: %.3f ms", previewFaces.milliseconds, metadataFaces.milliseconds))
+        print(String(format: "PERF 24 mixed-script preview measurements: %.3f ms uncached, %.3f ms cached", freshMetrics.milliseconds, cachedMetrics.milliseconds))
         print(String(format: "PERF pairing rank: %.3f ms/pass; similarity rank: %.3f ms/pass", pairing.milliseconds, similarity.milliseconds))
         print(String(format: "PERF canvas plan: %.3f ms uncached, %.6f ms cached (%.1fx faster)", direct.milliseconds, cached.milliseconds, direct.milliseconds / max(0.000_001, cached.milliseconds)))
 
@@ -1877,6 +1921,32 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     let sidebarSections = ["All Fonts", "Last Import", "Favorites", "collection:Test"] + Category.allCases.map(\.rawValue)
     precondition(sidebarSections.allSatisfy { section in sidebarSnapshot.count(section: section) == fonts.filter { testLibrary.matchesSection($0, section) }.count })
     precondition(WritingSystem.allCases.allSatisfy { writing in sidebarSnapshot.count(writingSystem: writing) == fonts.filter { $0.writingSystems.contains(writing) }.count })
+    // Exercise cached UI counts across every source of sidebar membership,
+    // including a removed catalog and nested tags shared by several styles.
+    func checkSidebarCounts() {
+        let snapshot = testLibrary.sidebarSnapshot
+        let sections = ["All Fonts", "Last Import", "Favorites"] + Category.allCases.map(\.rawValue)
+            + testLibrary.saved.collections.keys.map { "collection:" + $0 }
+            + TagQuery.hierarchy(Set(testLibrary.pro.tags.values.flatMap { $0 })).map { "tag:" + $0 }
+        precondition(sections.allSatisfy { section in snapshot.count(section: section) == testLibrary.families.filter { testLibrary.matchesSection($0, section) }.count }, "Cached sidebar membership is stale")
+        precondition(snapshot.tags == TagQuery.hierarchy(Set(testLibrary.pro.tags.values.flatMap { $0 })), "Cached sidebar tags are stale")
+        precondition(WritingSystem.allCases.allSatisfy { writing in snapshot.count(writingSystem: writing) == testLibrary.families.filter { $0.writingSystems.contains(writing) }.count }, "Cached sidebar writing-system counts are stale")
+    }
+    let sidebarSaved = testLibrary.saved
+    let sidebarPro = testLibrary.pro
+    checkSidebarCounts()
+    testLibrary.saved.favorites.insert(fonts[0].name); checkSidebarCounts()
+    testLibrary.saved.collections["Sidebar fixture"] = [fonts[0].name, "Missing font"]; checkSidebarCounts()
+    testLibrary.saved.overrides[fonts[0].name] = .display; checkSidebarCounts()
+    testLibrary.saved.lastImportNames = []; checkSidebarCounts()
+    for face in fonts[0].faces { testLibrary.pro.tags[face.name] = ["fixture/nested/one", "fixture/nested/two"] }
+    checkSidebarCounts()
+    precondition(testLibrary.sidebarSnapshot.count(section: "tag:fixture") == 1, "Sidebar double-counted a family's tagged styles")
+    testLibrary.pro.tags = [:]; checkSidebarCounts()
+    testLibrary.families = []; checkSidebarCounts()
+    testLibrary.families = fonts
+    testLibrary.saved = sidebarSaved; testLibrary.pro = sidebarPro
+    checkSidebarCounts()
     let legacyData = Data("{\"favorites\":[],\"overrides\":{},\"collections\":{},\"folders\":[]}".utf8)
     let legacyLibrary = try JSONDecoder().decode(SavedLibrary.self, from: legacyData)
     precondition(legacyLibrary.lastImportNames == nil)
@@ -1948,7 +2018,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try GlyphBrowserChecks.run(); try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try BackgroundWorkChecks.run(); try PreviewRenderingChecks.run(); try GlyphBrowserChecks.run(); try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

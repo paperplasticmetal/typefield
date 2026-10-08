@@ -2,6 +2,14 @@ import Foundation
 import SwiftUI
 import CoreText
 
+/// Shared by a worker and its main-queue delivery. Cancelling invalidates both.
+final class BackgroundWorkCancellation {
+    private let lock = NSLock()
+    private var cancelled = false
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+}
+
 struct FontFileStamp: Equatable {
     let size: Int
     let modified: Date
@@ -12,10 +20,11 @@ struct FontFileStamp: Equatable {
     }
 }
 enum FontFolderSnapshot {
-    static func read(_ roots: [String], pauseOnError: Set<String> = []) -> (files: [String: FontFileStamp], errors: [String], failedProtectedRoots: Set<String>) {
+    static func read(_ roots: [String], pauseOnError: Set<String> = [], isCancelled: () -> Bool = { false }) -> (files: [String: FontFileStamp], errors: [String], failedProtectedRoots: Set<String>) {
         var files: [String: FontFileStamp] = [:], errors: [String] = []
         var failedProtectedRoots = Set<String>()
         for root in roots {
+            guard !isCancelled() else { break }
             let protected = pauseOnError.contains(root)
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: root, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -32,7 +41,9 @@ enum FontFolderSnapshot {
                 if protected { failedProtectedRoots.insert(root) }
                 continue
             }
-            for case let url as URL in enumerator where DuplicateFinder.extensions.contains(url.pathExtension.lowercased()) {
+            for case let url as URL in enumerator {
+                guard !isCancelled() else { break }
+                guard DuplicateFinder.extensions.contains(url.pathExtension.lowercased()) else { continue }
                 if let stamp = FontFileStamp.read(url) { files[url.standardizedFileURL.path] = stamp }
                 else {
                     errors.append(url.path + ": Cannot read font")
@@ -51,18 +62,39 @@ enum FontFolderSnapshot {
 }
 /// Poll recursively on a private queue. This also handles removable and cloud-backed folders.
 final class FolderWatcher {
-    private let queue = DispatchQueue(label: "FontShelf.folder-watch", qos: .utility)
+    private let queue: DispatchQueue
+    private let pollInterval: TimeInterval
+    private let requestLock = NSLock()
+    private var requestedRoots: [String]?
+    private var requestedProtectedRoots = Set<String>()
+    private var cancellation: BackgroundWorkCancellation?
     private var timer: DispatchSourceTimer?
-    private var roots: [String] = []
     private var activeRoots: [String] = []
     private var protectedRoots: Set<String> = []
     private var suppressedRoots: Set<String> = []
     private var last: [String: FontFileStamp]?
     private var errors: [String] = []
+    init(queue: DispatchQueue = DispatchQueue(label: "FontShelf.folder-watch", qos: .utility), pollInterval: TimeInterval = 3) {
+        self.queue = queue; self.pollInterval = pollInterval
+    }
     func configure(roots: [String], pauseOnError: Set<String> = [], initialized: (([String], Set<String>) -> Void)? = nil, changed: @escaping ([String], Set<String>) -> Void) {
+        // Invalidate synchronously: the worker may be busy walking the previous
+        // root, or its result may already be waiting on the main queue.
+        requestLock.lock()
+        guard requestedRoots != roots || requestedProtectedRoots != pauseOnError else { requestLock.unlock(); return }
+        cancellation?.cancel()
+        let cancellation = BackgroundWorkCancellation()
+        self.cancellation = cancellation
+        let removedRoots = Set(requestedRoots ?? []).subtracting(roots)
+        requestedRoots = roots; requestedProtectedRoots = pauseOnError
+        requestLock.unlock()
         queue.async { [weak self] in
-            guard let self, self.roots != roots || self.protectedRoots != pauseOnError || self.timer == nil else { return }
-            self.timer?.cancel(); self.timer = nil; self.roots = roots; self.protectedRoots = pauseOnError; self.last = nil
+            guard let self else { return }
+            // Even a quickly superseded removal is an explicit reset. Keeping
+            // this transition lets a failed root resume when immediately re-added.
+            self.suppressedRoots.subtract(removedRoots)
+            guard !cancellation.isCancelled else { return }
+            self.timer?.cancel(); self.timer = nil; self.protectedRoots = pauseOnError; self.last = nil
             // A removed root may be added again only after the user explicitly
             // chooses it through the picker and Library configures that root.
             self.suppressedRoots.formIntersection(roots)
@@ -70,31 +102,32 @@ final class FolderWatcher {
             self.errors = []
             guard !roots.isEmpty else {
                 self.last = [:]
-                if let initialized { DispatchQueue.main.async { initialized([], []) } }
+                if let initialized { DispatchQueue.main.async { guard !cancellation.isCancelled else { return }; initialized([], []) } }
                 return
             }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
-            timer.schedule(deadline: .now(), repeating: 3, leeway: .milliseconds(500))
+            timer.schedule(deadline: .now(), repeating: self.pollInterval, leeway: .milliseconds(500))
             timer.setEventHandler { [weak self] in
-                guard let self else { return }
-                let current = FontFolderSnapshot.read(self.activeRoots, pauseOnError: self.protectedRoots)
+                guard let self, !cancellation.isCancelled else { return }
+                let current = FontFolderSnapshot.read(self.activeRoots, pauseOnError: self.protectedRoots, isCancelled: { cancellation.isCancelled })
+                guard !cancellation.isCancelled else { return }
                 if !current.failedProtectedRoots.isEmpty {
                     self.suppressedRoots.formUnion(current.failedProtectedRoots)
                     self.activeRoots.removeAll { current.failedProtectedRoots.contains($0) }
                 }
                 guard self.last != nil else {
                     self.last = current.files; self.errors = current.errors
-                    if let initialized { DispatchQueue.main.async { initialized(current.errors, current.failedProtectedRoots) } }
+                    if let initialized { DispatchQueue.main.async { guard !cancellation.isCancelled else { return }; initialized(current.errors, current.failedProtectedRoots) } }
                     return
                 }
                 let differs = self.last != current.files || self.errors != current.errors || !current.failedProtectedRoots.isEmpty
                 self.last = current.files; self.errors = current.errors
-                if differs { DispatchQueue.main.async { changed(current.errors, current.failedProtectedRoots) } }
+                if differs { DispatchQueue.main.async { guard !cancellation.isCancelled else { return }; changed(current.errors, current.failedProtectedRoots) } }
             }
             self.timer = timer; timer.resume()
         }
     }
-    deinit { timer?.cancel() }
+    deinit { cancellation?.cancel(); timer?.cancel() }
 }
 
 extension SavedLibrary {

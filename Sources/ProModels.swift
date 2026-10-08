@@ -85,7 +85,10 @@ enum OpenType {
     }
     static let names = ["liga":"Standard ligatures", "dlig":"Discretionary ligatures", "hlig":"Historical ligatures", "calt":"Contextual alternates", "salt":"Stylistic alternates", "smcp":"Small capitals", "c2sc":"Capitals to small capitals", "onum":"Oldstyle figures", "lnum":"Lining figures", "tnum":"Tabular figures", "pnum":"Proportional figures", "frac":"Fractions", "ordn":"Ordinals", "zero":"Slashed zero", "swsh":"Swashes", "kern":"Kerning", "locl":"Localized forms", "case":"Case-sensitive forms", "sups":"Superscript", "subs":"Subscript", "rvrn":"Required variation alternates", "rlig":"Required ligatures", "ccmp":"Glyph composition", "mark":"Mark positioning", "mkmk":"Mark-to-mark positioning", "vert":"Vertical forms", "vkrn":"Vertical kerning"]
     static func label(_ tag: String) -> String { names[tag] ?? (tag.hasPrefix("ss") ? "Stylistic set \(tag.suffix(2))" : tag.hasPrefix("cv") ? "Character variant \(tag.suffix(2))" : "Font-defined feature") }
-    static func clearFontCache() { fontCache.removeAllObjects() }
+    static func clearFontCache() {
+        fontCache.removeAllObjects()
+        PreviewTextMetrics.clearCache()
+    }
     static func font(name: String, size: Double, axes: [Int: Double] = [:], features: [String: Int] = [:]) -> CTFont {
         let axisKey = axes.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value.bitPattern)" }.joined(separator: ",")
         let featureKey = features.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
