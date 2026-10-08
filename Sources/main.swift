@@ -1380,6 +1380,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Find Fonts…", "find", to: editMenu, key: "f")
         addCommand("Replace Selection with Visible", "select", to: editMenu)
         addCommand("Deselect Families", "deselect", to: editMenu)
+        let objectsMenu = addMenu("Spaces Objects", to: editMenu)
+        for (title, command, key, modifiers) in [
+            ("Duplicate", "duplicate", "d", NSEvent.ModifierFlags.command),
+            ("New Text Box", "insertText", "t", [.command, .shift]), ("New Rectangle", "insertShape", "r", [.command, .shift]),
+            ("Paste in Place", "pasteInPlace", "v", [.command, .shift]),
+            ("Group", "group", "g", [.command]), ("Ungroup", "ungroup", "g", [.command, .shift]),
+            ("Flip Horizontally", "flipHorizontal", "h", [.command, .shift]),
+            ("Flip Vertically", "flipVertical", "v", [.command, .option]),
+            ("Mirror Copy across Vertical Canvas Axis", "mirrorVertical", "h", [.command, .option, .shift]),
+            ("Mirror Copy across Horizontal Canvas Axis", "mirrorHorizontal", "v", [.command, .option, .shift]),
+            ("Mirror Copies into Four Quadrants", "mirrorBoth", "b", [.command, .option, .shift])
+        ] { addCommand(title, "studio.object." + command, to: objectsMenu, key: key, modifiers: modifiers) }
         let fontMenu = addMenu("Font", to: menu)
         addCommand("Inspect Selected Family…", "inspect", to: fontMenu, key: "i")
         addCommand("Edit Tags…", "tagSelected", to: fontMenu, key: "t")
@@ -1413,6 +1425,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Slim", "studio.inspector.slim", to: inspectorMenu, key: "2", modifiers: [.command, .option])
         addCommand("Hidden", "studio.inspector.hidden", to: inspectorMenu, key: "3", modifiers: [.command, .option])
         addCommand("Floating", "studio.inspector.floating", to: inspectorMenu, key: "4", modifiers: [.command, .option])
+        let toolsMenu = addMenu("Spaces Tools", to: viewMenu)
+        for (index, tool) in CanvasInteractionTool.allCases.enumerated() {
+            addCommand(tool.rawValue, "studio.tool." + tool.rawValue.lowercased(), to: toolsMenu, key: String(index), modifiers: [.command, .shift])
+        }
         let canvasMenu = addMenu("Canvas", to: viewMenu)
         addCommand("Focus Canvas", "studio.canvasFocus", to: canvasMenu, key: ".")
         addCommand("Fit Canvas Width", "studio.canvas.fit", to: canvasMenu, key: "0")
@@ -1438,9 +1454,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let windowMenu = NSMenu(title: "Window")
         windowItem.submenu = windowMenu
         NSApp.windowsMenu = windowMenu
-        addCommand("Pop Out Spaces", "popSpaces", to: windowMenu)
-        addCommand("Pop Out Letterform Editor", "popFontLab", to: windowMenu)
-        addCommand("Dock Editor Window", "dockEditor", to: windowMenu)
+        addCommand("Pop Out Spaces", "popSpaces", to: windowMenu, key: "2", modifiers: [.command, .option, .shift])
+        addCommand("Pop Out Letterform Editor", "popFontLab", to: windowMenu, key: "3", modifiers: [.command, .option, .shift])
+        addCommand("Dock Editor Window", "dockEditor", to: windowMenu, key: "0", modifiers: [.command, .option, .shift])
         addCommand("New Font Browser Window", "newWindow", to: windowMenu)
         windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
@@ -1497,6 +1513,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if ["newWindow", "popSpaces", "popFontLab"].contains(command) { return NSApp.isActive && NSApp.keyWindow?.attachedSheet == nil }
         if command == "dockEditor" { return workspaceWindows.mode(for: NSApp.keyWindow) != nil && activeEditorWindow.attachedSheet == nil }
         guard NSApp.isActive, activeEditorWindow.attachedSheet == nil, window.isKeyWindow || workspaceWindows.mode(for: NSApp.keyWindow) != nil || inspectorIsKey else { return false }
+        if command.hasPrefix("studio.object.") || command.hasPrefix("studio.tool.") { return activeWorkspace == .spaces && !(NSApp.keyWindow?.firstResponder is NSTextView) }
         let inLibrary = activeWorkspace == .library
         let selected = library.families.filter { library.selectedFamilies.contains($0.name) }
         switch command {

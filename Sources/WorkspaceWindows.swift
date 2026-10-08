@@ -269,7 +269,10 @@ enum StudioFontDrop {
     static func applying(_ name: String, to direction: TypeDirection, element: CanvasElement,
                          axes: [Int: Double] = [:], features: [String: Int] = [:]) -> TypeDirection? {
         var result = direction
-        if direction.canvas == .imported {
+        if let index = direction.objectLayers?.firstIndex(where: { $0.id == element.sectionID }), var style = direction.objectLayers?[index].style {
+            style.fontName = name; style.axes = axes; style.features = features
+            result.objectLayers?[index].style = style
+        } else if direction.canvas == .imported {
             guard let index = direction.importedLayout?.textLayerIndex(selectedID: element.sectionID),
                   var style = direction.importedLayout?.layers[index].style else { return nil }
             style.fontName = name; style.axes = axes; style.features = features

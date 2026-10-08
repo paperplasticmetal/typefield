@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.18 (2026-10-07)
+
+- Add Spaces object copy/cut/paste, paste in place, duplicate, delete, and independent text boxes/shapes with undo and cross-canvas/group preservation.
+- Default to Auto selection: select objects, double-click text, and target canvas boundaries without switching tools. Keep explicit tools and add eight shape resize handles and numerical dimensions.
+- Add horizontal/vertical flips and mirrored copies across canvas axes or all four quadrants. Preserve reflection in PDF and Figma.
+- Add object/tool keyboard shortcuts and document them alongside existing view, focus, inspector and workspace shortcuts.
+
 ## 0.59.17 (2026-10-07)
 
 - Remove decorative onboarding subheaders and filler captions; keep the interactive previews and concise action instructions.

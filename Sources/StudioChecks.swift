@@ -180,6 +180,7 @@ enum StudioChecks {
     static func run(catalog: [Family]) throws {
         try CanvasSelectionChecks.run()
         try SpacesInteractionChecks.run()
+        try SpacesObjectChecks.run()
         // Scope filtering preserves board order, never exports stale IDs or checkpoints.
         var scopeBoard = TypeBoard(name: "Export scope")
         let scopeFirst = TypeDirection(name: "First", fonts: ["Helvetica"])

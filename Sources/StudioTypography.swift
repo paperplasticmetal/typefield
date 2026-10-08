@@ -329,6 +329,14 @@ extension TypeBoardEditor {
     }
     var canvasAlignmentPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let box = CanvasSelection.bounds(selectedObjects, in: CanvasPlanCache.plan(for: direction)), CanvasPlanCache.plan(for: direction).elements.filter({ selectedObjects.contains($0.objectID) }).allSatisfy({ $0.text == nil }) {
+                HStack {
+                    Text("W").font(.caption)
+                    TextField("Object width", value: Binding(get: { Double(box.width) }, set: { value in guard value.isFinite && value > 0 else { return }; var rect = box; rect.size.width = value; resizeObjects(selectedObjects, to: rect) }), format: .number.precision(.fractionLength(0...1))).textFieldStyle(.roundedBorder)
+                    Text("H").font(.caption)
+                    TextField("Object height", value: Binding(get: { Double(box.height) }, set: { value in guard value.isFinite && value > 0 else { return }; var rect = box; rect.size.height = value; resizeObjects(selectedObjects, to: rect) }), format: .number.precision(.fractionLength(0...1))).textFieldStyle(.roundedBorder)
+                }
+            }
             Text("Align to canvas").font(.system(size: 12, weight: .semibold))
             HStack(spacing: 4) {
                 ForEach(StudioCanvasAlignment.allCases) { alignment in

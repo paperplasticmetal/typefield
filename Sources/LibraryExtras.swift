@@ -725,7 +725,7 @@ enum FigmaLayoutExporter {
         let frames: [[String: Any]] = board.directions.map { direction in
             let plan = CanvasPlan(direction: direction)
             let elements: [[String: Any]] = plan.elements.filter { $0.image == nil }.map { item in
-                var object: [String: Any] = ["x": item.rect.minX, "y": item.rect.minY, "width": item.rect.width, "height": item.rect.height, "section": plan.sections.first { $0.id == item.sectionID }?.title ?? "Section"]
+                var object: [String: Any] = ["flipX": item.flipX, "flipY": item.flipY, "x": item.rect.minX, "y": item.rect.minY, "width": item.rect.width, "height": item.rect.height, "section": plan.sections.first { $0.id == item.sectionID }?.title ?? "Section"]
                 if let text = item.text, let style = item.style {
                     let font = style.font
                     var axes: [String: Double] = [:]
@@ -828,6 +828,8 @@ enum FigmaLayoutImporter {
                         layer.strokeWidth = try number(e, "strokeWidth")
                     }
                 } else { throw invalid("Unsupported layer kind. Export it again with the Typefield bridge.") }
+                guard ["flipX", "flipY"].allSatisfy({ e[$0] == nil || e[$0] is Bool }) else { throw invalid("Invalid reflection.") }
+                layer.flipX = e["flipX"] as? Bool; layer.flipY = e["flipY"] as? Bool
                 layers.append(layer)
             }
             let layout = ImportedLayout(width: width, height: height, layers: layers)

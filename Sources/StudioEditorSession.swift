@@ -3,7 +3,7 @@ import SwiftUI
 /// Editor state shared by the canvas and a detached inspector window.
 /// Keeping the selections here lets either window update the other immediately.
 final class StudioEditorSession: ObservableObject {
-    @Published var interactionTool = CanvasInteractionTool.select
+    @Published var interactionTool = CanvasInteractionTool.auto
     @Published var selectedObjects: Set<String> = []
     @Published var arrangementExpanded = true
     @Published var selectionRevealToken = 0

@@ -34,6 +34,7 @@ function validate(data) {
     for (const e of frame.elements) {
       if (!e || !shortText(e.section, 256) || (e.name !== undefined && !shortText(e.name, 256)) || (e.role !== undefined && !shortText(e.role, 256))) throw Error('Invalid layer name.');
       if (!['x', 'y'].every(k => number(e[k], 0, 100000)) || !['width', 'height'].every(k => number(e[k], 1, 100000))) throw Error('Invalid layer bounds.');
+      if (["flipX", "flipY"].some(k => e[k] !== undefined && typeof e[k] !== "boolean")) throw Error("Invalid reflection.");
       paint(e.color);
       if (e.kind === 'text') {
         if (e.stroke !== undefined || e.strokeWidth !== undefined) throw Error('Text strokes are not supported.');
@@ -92,6 +93,7 @@ async function importLayout(data, api) {
           node.strokeAlign = 'CENTER';
         }
         node.name = e.section + (e.role ? ' / ' + e.role : ' / Shape'); node.x = e.x; node.y = e.y; node.fills = paint(e.color);
+        if (e.flipX || e.flipY) node.relativeTransform = [[e.flipX ? -1 : 1, 0, e.x + (e.flipX ? e.width : 0)], [0, e.flipY ? -1 : 1, e.y + (e.flipY ? e.height : 0)]];
       }
       x += layout.width + 80;
     }
@@ -131,7 +133,7 @@ function exportSelection(api) {
       if ((node.effects || []).some(e => e.visible !== false)) warnings.add(node.name + ': effects are omitted.');
       if (node.layoutMode && node.layoutMode !== 'NONE') warnings.add(node.name + ': auto layout is captured as fixed positions.');
       const color = solid(node, opacity);
-      const base = { name: node.name, section: node.name, x: t[0][2] - origin[0][2], y: t[1][2] - origin[1][2], width: Math.max(.01, node.width), height: Math.max(.01, node.height), color };
+      const base = { name: node.name, section: node.name, flipX: t[0][0] < 0, flipY: t[1][1] < 0, x: t[0][2] - origin[0][2] - (t[0][0] < 0 ? node.width : 0), y: t[1][2] - origin[1][2] - (t[1][1] < 0 ? node.height : 0), width: Math.max(.01, node.width), height: Math.max(.01, node.height), color };
       if (base.x < 0 || base.y < 0) { warnings.add(node.name + ': layers outside the top or left of the frame are omitted.'); return; }
       if (node.type === 'TEXT') {
         if (Array.isArray(node.strokes) && node.strokes.some(p => p.visible !== false)) warnings.add(node.name + ': text strokes are omitted.');

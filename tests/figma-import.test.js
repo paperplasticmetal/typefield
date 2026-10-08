@@ -13,6 +13,10 @@ function mock(failFont = false, failText = false) {
   return { frames, currentPage: { selection: [] }, viewport: { center: { x: 0, y: 0 }, scrollAndZoomIntoView() {} }, createFrame() { const n = node(); frames.push(n); return n; }, createText() { if (failText) throw Error('simulated creation failure'); return node(); }, createRectangle: node, async loadFontAsync(font) { if (failFont && font.family !== 'Inter') throw Error('missing font'); } };
 }
 (async () => {
+  const mirrored = fixture(); mirrored.frames[0].elements[0].flipX = true;
+  const mirroredAPI = mock(); await importLayout(mirrored, mirroredAPI);
+  assert.deepEqual(mirroredAPI.frames[0].children[0].relativeTransform, [[-1,0,366],[0,1,24]]);
+  mirrored.frames[0].elements[0].flipX = 'yes'; assert.throws(() => validate(mirrored), /reflection/);
   const data = fixture(); validate(data);
   const api = mock(); const result = await importLayout(data, api);
   assert.match(result, /1 editable frames/); assert.equal(api.frames[0].children[0].characters, 'Editable text'); assert.equal(api.frames[0].children[0].textAlignHorizontal, 'CENTER'); assert.equal(api.frames[0].children[0].lineHeight.value, 80); assert.equal(api.currentPage.selection.length, 1);
@@ -47,6 +51,9 @@ function mock(failFont = false, failText = false) {
   assert.equal(reverse.frames[0].elements[1].strokeWidth, 4);
   assert.equal(reverse.frames[0].elements[1].stroke.a, .75);
   assert.equal(reverse.frames[0].elements[1].color.a, 0);
+  const mirrorReturn = exportSelection({ root: { name: 'Mirror' }, currentPage: { selection: [{ ...frame, children: [{ ...text, absoluteTransform: [[-1,0,440],[0,-1,350]] }] }] }, mixed: Symbol('mixed') });
+  assert.equal(mirrorReturn.frames[0].elements[0].x, 40); assert.equal(mirrorReturn.frames[0].elements[0].y, 60);
+  assert.equal(mirrorReturn.frames[0].elements[0].flipX, true); assert.equal(mirrorReturn.frames[0].elements[0].flipY, true);
   const oversized = { ...frame, name: 'Too wide', width: 10001 };
   assert.throws(() => exportSelection({ root: { name: 'Round trip' }, currentPage: { selection: [oversized] }, mixed: Symbol('mixed') }), /10,000/);
   assert.throws(() => exportSelection({ currentPage: { selection: [] } }), /Select/);

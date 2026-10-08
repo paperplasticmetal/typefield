@@ -21,9 +21,11 @@ enum AdobeTypeSystemExporter {
         case invalidCanvas(String)
         case tooMuchContent
         case encodingFailed
+        case mirroredObjects
 
         var errorDescription: String? {
             switch self {
+            case .mirroredObjects: return "Use Preview PDF or Figma to preserve mirrored objects."
             case .emptySelection:
                 return "Select at least one canvas to export."
             case .tooManyCanvases:
@@ -162,6 +164,7 @@ enum AdobeTypeSystemExporter {
             guard direction.isValid else { throw ExportError.invalidCanvas(direction.name) }
             let plan = CanvasPlan(direction: direction)
             guard plan.size.width.isFinite, plan.size.height.isFinite, plan.size.width > 0, plan.size.height > 0 else { throw ExportError.invalidCanvas(direction.name) }
+            guard !plan.elements.contains(where: { $0.flipX || $0.flipY }) else { throw ExportError.mirroredObjects }
             let exportElements = plan.elements.filter { $0.image == nil }
             totalItems += exportElements.count
             var items: [Item] = []

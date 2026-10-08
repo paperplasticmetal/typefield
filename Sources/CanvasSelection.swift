@@ -1,16 +1,20 @@
 import AppKit
 
 enum CanvasInteractionTool: String, CaseIterable {
-    case select = "Select", marquee = "Marquee", text = "Text", frame = "Canvas"
+    case auto = "Auto", select = "Select", marquee = "Marquee", text = "Text", frame = "Canvas"
     var symbol: String {
-        switch self { case .select: return "cursorarrow"; case .marquee: return "rectangle.dashed"; case .text: return "text.cursor"; case .frame: return "rectangle" }
+        switch self { case .auto: return "cursorarrow.rays"; case .select: return "cursorarrow"; case .marquee: return "rectangle.dashed"; case .text: return "text.cursor"; case .frame: return "rectangle" }
     }
 }
 struct CanvasObjectTransform: Codable, Equatable {
     var scale = 1.0
     var x = 0.0
     var y = 0.0
-    var isValid: Bool { scale.isFinite && (0.02...50).contains(scale) && x.isFinite && y.isFinite && abs(x) <= 100_000 && abs(y) <= 100_000 }
+    var stretchX: Double?
+    var stretchY: Double?
+    var flipX: Bool?
+    var flipY: Bool?
+    var isValid: Bool { [stretchX ?? 1, stretchY ?? 1].allSatisfy { $0.isFinite && (0.02...50).contains($0) } && scale.isFinite && (0.02...50).contains(scale) && x.isFinite && y.isFinite && abs(x) <= 100_000 && abs(y) <= 100_000 }
 }
 struct CanvasObjectGroup: Codable, Equatable, Identifiable {
     var id = UUID()
@@ -37,7 +41,7 @@ enum CanvasSelection {
             let old = transforms[id] ?? CanvasObjectTransform()
             let next = CanvasObjectTransform(scale: old.scale * scale,
                 x: old.x * scale + (anchor.x * (1 - scale) + delta.width) / canvasScale,
-                y: old.y * scale + (anchor.y * (1 - scale) + delta.height) / canvasScale)
+                y: old.y * scale + (anchor.y * (1 - scale) + delta.height) / canvasScale, stretchX: old.stretchX, stretchY: old.stretchY, flipX: old.flipX, flipY: old.flipY)
             guard next.isValid else { return direction }
             transforms[id] = next
         }
@@ -59,7 +63,9 @@ enum CanvasSelection {
     static func transformed(_ source: CanvasElement, by transform: CanvasObjectTransform) -> CanvasElement {
         var element = source
         let factor = transform.scale
-        element.rect = CGRect(x: source.rect.minX * factor + transform.x, y: source.rect.minY * factor + transform.y, width: source.rect.width * factor, height: source.rect.height * factor)
+        let sx = factor * (transform.stretchX ?? 1), sy = factor * (transform.stretchY ?? 1)
+        element.flipX = source.flipX != (transform.flipX ?? false); element.flipY = source.flipY != (transform.flipY ?? false)
+        element.rect = CGRect(x: source.rect.minX * sx + transform.x, y: source.rect.minY * sy + transform.y, width: source.rect.width * sx, height: source.rect.height * sy)
         element.radius *= factor; element.strokeWidth *= factor
         if let style = source.style { element.style = style.scaledForCanvas(factor) }
         if let text = source.text, factor != 1 {
@@ -109,6 +115,7 @@ extension CanvasPlan {
 extension CanvasNativeView {
     override func selectAll(_ sender: Any?) {
         guard directionID != nil, tool != .frame else { return }
+        if plan.isArrangement { onObjectCommand?("selectAll"); return }
         objectSelection = Set(plan.elements.map(\.objectID).filter { !$0.isEmpty })
         onObjectSelection?(objectSelection); needsDisplay = true
     }
@@ -119,8 +126,9 @@ extension CanvasNativeView {
         let start = convert(event.locationInWindow, from: nil)
         let origin = CGPoint(x: start.x / zoom, y: start.y / zoom)
         let additive = event.modifierFlags.contains(.shift)
-        let initialBounds = CanvasSelection.bounds(objectSelection, in: plan)
-        let resize = tool == .select && initialBounds.map { hypot(origin.x - $0.maxX, origin.y - $0.maxY) < 9 / zoom } == true
+        let handle = resizeHandles().first { hypot(origin.x - $0.1.x, origin.y - $0.1.y) < 8 / zoom }?.0
+        let resize = handle != nil
+        let independent = plan.elements.filter { objectSelection.contains($0.objectID) }.allSatisfy { $0.text == nil }
         let hit = plan.elements.last { $0.rect.contains(origin) && !$0.objectID.isEmpty }
         let marquee = !resize && (tool == .marquee || hit == nil)
         if !marquee && !resize, let hit {
@@ -131,6 +139,7 @@ extension CanvasNativeView {
         let selected = objectSelection
         let box = CanvasSelection.bounds(selected, in: originalPlan)
         var factor = 1.0, delta = CGSize.zero, moved = false
+        var resizedBox: CGRect?
         defer { selectionMarquee = nil; plan = originalPlan; needsDisplay = true; window.invalidateCursorRects(for: self) }
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp, .keyDown], until: .distantFuture, inMode: .eventTracking, dequeue: true) {
             if next.type == .keyDown { if next.keyCode == 53 { objectSelection = originalSelection; return }; continue }
@@ -143,12 +152,18 @@ extension CanvasNativeView {
                 let hits = moved ? CanvasSelection.expanded(CanvasSelection.marquee(rect, in: originalPlan), groups: objectGroups) : []
                 objectSelection = additive ? originalSelection.union(hits) : hits
             } else if moved, let box {
-                if resize {
+                if resize && independent, let handle {
+                    resizedBox = handle.resized(box, delta: CGSize(width: point.x-origin.x, height: point.y-origin.y), within: originalPlan.artboardSize)
+                } else if resize {
                     factor = min((originalPlan.artboardSize.width-box.minX)/max(1,box.width), (originalPlan.artboardSize.height-box.minY)/max(1,box.height), max(0.05, max((point.x-box.minX)/max(1,box.width), (point.y-box.minY)/max(1,box.height))))
                 } else {
                     delta = CGSize(width: min(max(point.x-origin.x,-box.minX), max(0,originalPlan.artboardSize.width-box.maxX)), height: min(max(point.y-origin.y,-box.minY), max(0,originalPlan.artboardSize.height-box.maxY)))
                 }
-                let transform = CanvasObjectTransform(scale: factor, x: box.minX*(1-factor)+delta.width, y: box.minY*(1-factor)+delta.height)
+                var transform = CanvasObjectTransform(scale: factor, x: box.minX*(1-factor)+delta.width, y: box.minY*(1-factor)+delta.height)
+                if let target = resizedBox {
+                    let sx = target.width / box.width, sy = target.height / box.height
+                    transform = CanvasObjectTransform(x: target.minX-box.minX*sx, y: target.minY-box.minY*sy, stretchX: sx, stretchY: sy)
+                }
                 plan = originalPlan
                 for i in plan.elements.indices where selected.contains(plan.elements[i].objectID) { plan.elements[i] = CanvasSelection.transformed(originalPlan.elements[i], by: transform) }
                 (resize ? NSCursor.resizeLeftRight : NSCursor.closedHand).set()
@@ -157,22 +172,22 @@ extension CanvasNativeView {
             if next.type == .leftMouseUp {
                 plan = originalPlan
                 onObjectSelection?(objectSelection)
-                if moved, !marquee, let box { onObjectTransform?(selected, box.origin, factor, delta) }
+                if moved, !marquee, let box { if let resizedBox { onObjectResize?(selected, resizedBox) } else { onObjectTransform?(selected, box.origin, factor, delta) } }
                 return
             }
         }
         objectSelection = originalSelection
     }
     func drawObjectSelection() {
-        guard directionID != nil, tool == .select || tool == .marquee else { return }
+        guard directionID != nil, tool == .auto || tool == .select || tool == .marquee else { return }
         ShelfPalette.nativeAccent.setStroke()
         for element in plan.elements where objectSelection.contains(element.objectID) {
             let outline = NSBezierPath(rect: element.rect); outline.lineWidth = 1 / zoom; outline.stroke()
         }
         if let box = CanvasSelection.bounds(objectSelection, in: plan) {
             let outline = NSBezierPath(rect: box); outline.lineWidth = 1.5 / zoom; outline.stroke()
-            if tool == .select {
-                let handle = CGRect(x: box.maxX-5/zoom, y: box.maxY-5/zoom, width: 10/zoom, height: 10/zoom)
+            for (_, point) in resizeHandles() {
+                let handle = CGRect(x: point.x-4/zoom, y: point.y-4/zoom, width: 8/zoom, height: 8/zoom)
                 NSColor.controlBackgroundColor.setFill(); handle.fill(); ShelfPalette.nativeAccent.setStroke(); NSBezierPath(rect: handle).stroke()
             }
         }

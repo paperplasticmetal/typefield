@@ -158,6 +158,8 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     var textPositions: [String: CanvasTextPosition]?
     var objectTransforms: [String: CanvasObjectTransform]?
     var objectGroups: [CanvasObjectGroup]?
+    var objectLayers: [ImportedLayer]?
+    var hiddenObjectIDs: Set<String>?
     var canvasDisplayName: String { canvas == .imported ? (importedSource ?? .figma).displayName : canvas.rawValue }
     var canvasUnitLabel: String { canvas == .imported ? (importedSource ?? .figma).unitLabel : "px" }
     var artworkLayersAreValid: Bool {
@@ -168,10 +170,10 @@ struct TypeDirection: Codable, Identifiable, Equatable {
     }
     var maximumCanvasScale: Double {
         let widest = max(width, canvasWidth ?? width, importedLayout?.layers.map { $0.x + $0.width }.max() ?? width,
-                         artworkLayers?.map { $0.x + $0.width }.max() ?? width) + 12
+                         artworkLayers?.map { $0.x + $0.width }.max() ?? width, objectLayers?.map { $0.x + $0.width }.max() ?? width) + 12
         let tallest = max(canvasHeight ?? 0, importedLayout?.height ?? 1, importedLayout?.layers.map { $0.y + $0.height }.max() ?? 1,
-                          artworkLayers?.map { $0.y + $0.height }.max() ?? 1) + 12
-        let fontSize = (canvas == .imported ? importedLayout?.layers.compactMap { $0.style?.size }.max() : styles.values.map(\.size).max()) ?? 1
+                          artworkLayers?.map { $0.y + $0.height }.max() ?? 1, objectLayers?.map { $0.y + $0.height }.max() ?? 1) + 12
+        let fontSize = max((canvas == .imported ? importedLayout?.layers.compactMap { $0.style?.size }.max() : styles.values.map(\.size).max()) ?? 1, objectLayers?.compactMap { $0.style?.size }.max() ?? 1)
         let strokeWidth = importedLayout?.layers.map(\.visibleStrokeWidth).max() ?? 0
         let exportSafe = min(4, 10_000 / max(1, widest), 10_000 / max(1, tallest),
                              1_000 / max(1, fontSize), 1_000 / max(1, strokeWidth))
@@ -253,6 +255,8 @@ struct ImportedLayer: Codable, Identifiable, Equatable {
     /// Missing in existing projects; newly imported artwork sits behind the
     /// template until the user explicitly brings it in front.
     var artworkInFront: Bool?
+    var flipX: Bool?
+    var flipY: Bool?
     var isValidArtwork: Bool {
         guard let artworkData, artworkData.count > 8,
               artworkData.count <= SpacesArtworkImport.maximumEmbeddedBytes else { return false }
@@ -485,6 +489,7 @@ struct StudioTransferReport {
         if format == .typeSystemPDF && directions.contains(where: { $0.canvas == .imported }) {
             return "The selection includes an imported Figma or Adobe canvas. Choose only native canvases or use Preview PDF for the imported layout."
         }
+        if format == .adobeBuilder && directions.contains(where: { CanvasPlanCache.plan(for: $0).elements.contains { $0.flipX || $0.flipY } }) { return "Mirrored objects are supported by Preview PDF and Figma. Choose one of those formats to retain the reflection." }
         if format == .adobeBuilder && directions.count > 100 { return "Adobe builders support up to 100 selected canvases." }
         return nil
     }

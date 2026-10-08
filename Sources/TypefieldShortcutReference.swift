@@ -25,7 +25,9 @@ struct TypefieldShortcutReference: View {
             .init(action: "Open Library", keys: "⌘1"),
             .init(action: "Open Spaces", keys: "⌘2"),
             .init(action: "Open Letterform Editor", keys: "⌘3"),
-            .init(action: "Show or hide sidebar", keys: "⌃⌘S")
+            .init(action: "Show or hide sidebar", keys: "⌃⌘S"),
+            .init(action: "Pop out Spaces / Letterform Editor", keys: "⇧⌥⌘2 / ⇧⌥⌘3"),
+            .init(action: "Dock the active editor window", keys: "⇧⌥⌘0")
         ]),
         .init(title: "Library", symbol: "textformat", shortcuts: [
             .init(action: "Find fonts", keys: "⌘F"),
@@ -35,6 +37,14 @@ struct TypefieldShortcutReference: View {
             .init(action: "Reset preview size", keys: "⌘0")
         ]),
         .init(title: "Spaces", symbol: "square.stack.3d.up", shortcuts: [
+            .init(action: "Copy / cut / paste objects (or text while typing)", keys: "⌘C / ⌘X / ⌘V"),
+            .init(action: "Duplicate / paste in place", keys: "⌘D / ⇧⌘V"),
+            .init(action: "New text box / rectangle", keys: "⇧⌘T / ⇧⌘R"),
+            .init(action: "Auto / Select / Marquee / Text / Canvas tools", keys: "A / V / M / T / C · ⇧⌘0…4"),
+            .init(action: "Group / ungroup objects", keys: "⌘G / ⇧⌘G"),
+            .init(action: "Flip horizontally / vertically", keys: "⇧⌘H / ⌥⌘V"),
+            .init(action: "Mirror copies: vertical / horizontal / quadrants", keys: "⇧⌥⌘H / ⇧⌥⌘V / ⇧⌥⌘B"),
+            .init(action: "Delete selected objects / nudge by 1 or 10", keys: "⌫ / arrows / ⇧arrows"),
             .init(action: "Previous or next canvas", keys: "⌥⌘← / ⌥⌘→"),
             .init(action: "Fit canvas width", keys: "⌘0"),
             .init(action: "Show or hide inspector", keys: "⌥⌘I"),
@@ -91,7 +101,7 @@ struct TypefieldShortcutReference: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Keyboard Shortcuts").font(.system(size: 25, weight: .semibold, design: .rounded))
-                    Text("Commands follow the active workspace. Letterform tool keys work while its drawing canvas has focus.")
+                    Text("Commands follow the active workspace. Single-letter tool keys work while the drawing canvas has focus.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
