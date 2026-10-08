@@ -209,7 +209,7 @@ enum FontLabInteractionChecks {
         let unfinished = pen.editor.glyph
         pen.cancelOperation(nil)
         try check(pen.editor.glyph == unfinished && pen.editor.paths.count == 2 && pen.editor.activePath == nil &&
-                  pen.editor.tool == .select && penCommits == 5,
+                  pen.editor.tool == .pen && penCommits == 5,
                   "Escape between Bézier gestures must finish the path without deleting committed nodes")
         pen.editor.selection = Set(pen.editor.paths[0].nodes.map(\.id))
         let beforeReversal = pen.editor.paths
@@ -280,6 +280,8 @@ enum FontLabInteractionChecks {
         try check(FontLabShortcutAction.resolve(key:"c",modifiers:.command) == .copyContours &&
                   FontLabShortcutAction.resolve(key:"v",modifiers:.command) == .pasteContours &&
                   FontLabShortcutAction.resolve(key:"a",modifiers:.command) == .selectAllContours &&
+                  FontLabShortcutAction.resolve(key:"j",modifiers:.command) == .joinEndpoints &&
+                  FontLabShortcutAction.resolve(key:"j",modifiers:[]) == nil &&
                   FontLabShortcutAction.resolve(key:"v",modifiers:[.command,.shift]) == nil &&
                   FontLabShortcutAction.resolve(key:"v",modifiers:[]) == nil,
                   "Workspace contour commands must match only their unmodified Command shortcuts")

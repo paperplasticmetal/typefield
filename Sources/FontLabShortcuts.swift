@@ -9,8 +9,9 @@ enum FontLabShortcutAction: Equatable {
     case copyContours
     case pasteContours
     case selectAllContours
+    case joinEndpoints
 
-    var isVectorCommand: Bool { self == .copyContours || self == .pasteContours || self == .selectAllContours }
+    var isVectorCommand: Bool { self == .copyContours || self == .pasteContours || self == .selectAllContours || self == .joinEndpoints }
 
     static func resolve(key: String?, keyCode: UInt16? = nil, modifiers: NSEvent.ModifierFlags) -> Self? {
         let relevant = modifiers.intersection([.command, .option, .control, .shift])
@@ -27,6 +28,7 @@ enum FontLabShortcutAction: Equatable {
         case ("c", .command): return .copyContours
         case ("v", .command): return .pasteContours
         case ("a", .command): return .selectAllContours
+        case ("j", .command): return .joinEndpoints
         default: return nil
         }
     }
@@ -61,7 +63,7 @@ struct FontLabShortcutBridge: NSViewRepresentable {
                 onSelectMode(true)
             case .sketchEditor:
                 if canSketch { onSelectMode(false) }
-            case .copyContours, .pasteContours, .selectAllContours:
+            case .copyContours, .pasteContours, .selectAllContours, .joinEndpoints:
                 // The focused canvas finishes any gesture before its native
                 // key equivalent. Only fill the workspace-focus gap here.
                 guard !(event.window?.firstResponder is FontLabVectorNSView) else { return false }

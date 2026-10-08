@@ -2126,6 +2126,7 @@ struct FontLabView: View {
         case .copyContours: editor.copyPaths()
         case .pasteContours: editor.pastePaths()
         case .selectAllContours: editor.selectAll()
+        case .joinEndpoints: editor.joinEndpoints()
         default: return false
         }
         return true
