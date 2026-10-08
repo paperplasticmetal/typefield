@@ -2,7 +2,7 @@
 
 Date: 2026-10-08 (Pacific). Starting revision: `7a0f393`, installed/public 0.59.24 (104).
 
-Status: integrated 0.59.27 (107) candidate passed native, window, Figma and disposable live checks. Canonical installation and public distribution are pending.
+Status: 0.59.27 (107) installed and locally verified. Native, window, Figma, disposable live and website checks passed. Public distribution verification is pending.
 
 ## Scope and coordination
 
@@ -63,3 +63,12 @@ A separately identified disposable app verified:
 - Read-only Font Health inspection completed for 2,922 distinct files. Immediately dismissing a repeat scan returned to the correct Library query. The scan completed before the UI tool could observe its Cancel button; deterministic native tests verify cancellation and stale-result rejection. No repair was performed.
 
 All 31 saved-data hashes still matched this pass's baseline before canonical installation. The two paused evaluator edits remain untouched.
+
+## Canonical installation and package
+
+`./install-local.sh` rebuilt the frozen integrated source with the complete optimized native suite and installed the single `/Applications/Typefield.app`. The app reopened the existing Letterform project (26/76 drawn glyphs). All 31 saved-data files and both paused evaluator-file hashes remained unchanged after restart. Strict deep signature checks and full bundle-manifest equality passed for installed and built apps. The read-only mounted DMG matches that app, and the signed feed/archive validation passed. Website JavaScript syntax checks and all eight website tests passed after packaging.
+
+- Executable SHA-256: `749992f348f608d55acdc76b4057865ea42fd2a3da1a437d2fad8dc3ceb2f2af`.
+- DMG: 8,464,152 bytes; SHA-256 `a87e2a7bbb6e0d178cab1db16f5ccfe814e8d97696a9d0151fa152de1912dd6d`.
+
+The website's release-asset test initially rejected the not-yet-packaged 0.59.27 DMG as expected; the complete test run passed after the verified package and feed were prepared.

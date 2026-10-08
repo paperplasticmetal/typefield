@@ -6,6 +6,30 @@
     <description>Signed public beta updates for Typefield.</description>
     <language>en</language>
     <item>
+      <title>Typefield 0.59.27</title>
+      <link>https://typefield.app/download/</link>
+      <sparkle:version>107</sparkle:version>
+      <sparkle:shortVersionString>0.59.27</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <pubDate>Thu, 08 Oct 2026 09:01:32 +0000</pubDate>
+      <description sparkle:format="plain-text">Library responsiveness and background-work refinement:
+
+- Reuse Library sidebar counts, matching styles and exact preview measurements during search, selection and scrolling.
+- Preserve body specimen text selection and layout when unrelated inspector controls change.
+- Keep Font Health scans off the UI thread, support cancellation and reject stale background results.
+- Preserve recursive folder-change detection while cancelling obsolete scans.
+- Retain the completed Spaces cursor/image and Letterform toolbar/proof/canvas refinements.
+
+Native, window, Figma and focused performance checks are recorded in the repository QA report. Timings are specific path measurements, not a universal frame-rate claim.
+
+Apple silicon, macOS 13 or later. Ad hoc signed public beta; not Developer ID notarized.
+
+DMG SHA-256: `a87e2a7bbb6e0d178cab1db16f5ccfe814e8d97696a9d0151fa152de1912dd6d`
+</description>
+      <enclosure url="https://github.com/paperplasticmetal/typefield/releases/download/v0.59.27-beta.1/Typefield-0.59.27-beta.dmg" length="8464152" type="application/octet-stream" sparkle:edSignature="PLcj57GczIZUKnA6JGWAovKQU5DH6Q6hduTTQOIp60y9BbGTdq7pyAMlBLpZ6zYwz0xdHpo+x2VMA57ZgoFKAg==" />
+    </item>
+    <item>
       <title>Typefield 0.59.26</title>
       <link>https://typefield.app/download/</link>
       <sparkle:version>106</sparkle:version>
@@ -62,6 +86,6 @@ Existing copies without an Updates page need one manual download from typefield.
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: uDGEJ5ZtMhxjv4dv8J98Nh8LACExEiwae+YM3lo+z4vW3jv1dRHjWBf0TcPTe1SnH9ijv449qb1QkVnODZ14DA==
-length: 4572
+edSignature: xYFBgAYqm4/cp+OkL12cAkBrltKObubSMHbTHPYoc7tMc/qqGo8kGYziLqfuhK2GCfwxSCkP1wJ+cWPyYbkxCQ==
+length: 6240
 -->
