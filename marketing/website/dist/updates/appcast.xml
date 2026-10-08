@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Typefield Updates</title>
+    <link>https://typefield.app/updates/appcast.xml</link>
+    <description>Signed public beta updates for Typefield.</description>
+    <language>en</language>
+    <item>
+      <title>Typefield 0.59.24</title>
+      <link>https://typefield.app/download/</link>
+      <sparkle:version>104</sparkle:version>
+      <sparkle:shortVersionString>0.59.24</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <pubDate>Thu, 08 Oct 2026 07:01:52 +0000</pubDate>
+      <description sparkle:format="plain-text">Typefield now checks for published updates automatically. Open Settings → Updates or Typefield → Check for Updates to check manually. Automatic downloading and installation are optional.
+
+This release also includes the latest Spaces tools, alignment guides and effects, plus improved Letterform Line, Pen and path construction. Your saved fonts, library and projects stay in place.
+
+Existing copies without an Updates page need one manual download from typefield.app to enable future in-app updates.
+</description>
+      <enclosure url="https://github.com/paperplasticmetal/typefield/releases/download/v0.59.24-beta.1/Typefield-0.59.24-beta.dmg" length="8279531" type="application/octet-stream" sparkle:edSignature="qhhJx9kiNWKQt97jeC46ab4W4Lt6Ci9RVkwBgCyyRmsttx9N5zTQ8cIAess+isFJUv2R42DgRDsC7VY0GiIwDg==" />
+    </item>
+  </channel>
+</rss><!-- sparkle-signatures:
+edSignature: 62bxOmIHgcTh5i1cKLHlgJcTiZ350RhjbySeJQN7R6hu7BLX66CoZBd6Pe828fApSAOYWEQ7Xbj+VEXfCmaNDQ==
+length: 1646
+-->

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.24 (2026-10-08)
+
+- Add Check for Updates in Settings → Updates and the Typefield menu, daily background checks and optional automatic downloading/installation.
+- Authenticate the public release feed and downloaded app with Typefield’s update-signing key. Published GitHub betas are offered through the canonical website feed; development branches and older builds are not offered as upgrades.
+- Validate signed appcasts and immutable DMGs in every release check. Preserve Store distribution, local fonts, library data and projects.
+- Retain the completed Spaces refinement and Letterform path-construction improvements. Existing pre-updater installations need one manual download to enable future in-app updates.
+
 ## 0.59.23 (2026-10-07)
 
 - Add a Line tool with 45-degree constraints and endpoint snapping, plus Pen continuation from either end, connected paths, curve-preserving point insertion and next-segment previews.
