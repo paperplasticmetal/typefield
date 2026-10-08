@@ -20,7 +20,7 @@ This is a targeted construction pass, not Illustrator/FontLab feature parity or 
 
 The complete candidate native suite passed, including FontLabPathConstructionChecks, FontLabPathDrawingChecks and existing editor/import/export checks. The new checks cover all four endpoint orientations, straight and curved bridges, coincident merges, counters, curve samples, width across aspect ratios, invalid geometry, event transactions, undo/redo, saved-store reopening and TrueType/SVG export.
 
-Figma bridge mock suite and native window self-test passed. Live UI results are recorded below; final release verification remains pending. Private evidence and original data hashes remain in `.context/qa-artifacts/letterform-paths-05922/`; that directory was named before concurrent release coordination and does not determine the shipped version.
+Figma bridge mock suite and native window self-test passed. Live UI and completed release verification are recorded below. Private evidence and original data hashes remain in `.context/qa-artifacts/letterform-paths-05922/`; that directory was named before concurrent release coordination and does not determine the shipped version.
 
 ## Live candidate checks
 
@@ -32,7 +32,7 @@ All three glyphs exported through the real TrueType save workflow, installed via
 
 Live QA also reproduced canvas resizing while the first open path appeared. The open-path notice now overlays the canvas instead of consuming new layout height. A hosted SwiftUI/AppKit regression checks the canvas identity, frame and design rectangle during a provisional Line gesture at wide and compact sizes. Both hosted sizes passed in the complete native run. A subsequent live replay confirmed that the notice appears inside the canvas without shifting the grid or existing A. Undo removed the test segment.
 
-The final candidate reopened the saved A/B/C project with byte-for-byte equivalent JSON and the same visible outlines and proof.
+The final candidate reopened the saved A/B/C project with identical saved glyph data and the same visible outlines and proof.
 
 Initial native candidate compilation succeeded and geometry/existing editor checks passed. A new Pen crossbar fixture failed because its start point lay exactly on an existing diagonal, intentionally triggering point insertion; the separate-path fixture was moved into empty space while retaining the dedicated curve-insertion check.
 
