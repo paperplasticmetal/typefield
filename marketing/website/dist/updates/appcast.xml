@@ -6,6 +6,29 @@
     <description>Signed public beta updates for Typefield.</description>
     <language>en</language>
     <item>
+      <title>Typefield 0.59.25</title>
+      <link>https://typefield.app/download/</link>
+      <sparkle:version>105</sparkle:version>
+      <sparkle:shortVersionString>0.59.25</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <pubDate>Thu, 08 Oct 2026 08:20:50 +0000</pubDate>
+      <description sparkle:format="plain-text">Spaces cursor and image refinement:
+
+- A named active cursor selector with Auto by default and quick mode choices.
+- Labeled Text, Shape and Image add controls beside the existing inspector panels.
+- Imported images are selected immediately and support proportional corner resizing; Shift stretches freely.
+- Image selection survives canvas switches, copied images retain appearance controls, and deletion releases embedded image data.
+
+Native, window, Figma and disposable live interaction checks passed.
+
+Apple silicon, macOS 13 or later. Ad hoc signed beta, not Developer ID notarized.
+
+DMG SHA-256: `706f23eee00553797a4fc72b7f9d565a9154aa6bcae0bc0bb5d0228921e2a9c6`
+</description>
+      <enclosure url="https://github.com/paperplasticmetal/typefield/releases/download/v0.59.25-beta.1/Typefield-0.59.25-beta.dmg" length="8329696" type="application/octet-stream" sparkle:edSignature="UB/47K+GBnfuH7Rq0rc7OVLxz2wDlsHvohOR1xESOJ9rFaCHzBGYK3V7mCyon9fetta93nEsJ6LiVTCp2Z5zAQ==" />
+    </item>
+    <item>
       <title>Typefield 0.59.24</title>
       <link>https://typefield.app/download/</link>
       <sparkle:version>104</sparkle:version>
@@ -23,6 +46,6 @@ Existing copies without an Updates page need one manual download from typefield.
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 62bxOmIHgcTh5i1cKLHlgJcTiZ350RhjbySeJQN7R6hu7BLX66CoZBd6Pe828fApSAOYWEQ7Xbj+VEXfCmaNDQ==
-length: 1646
+edSignature: ZX80ue0yaOFLA+BcNEpVxi5tdbwU7yyZVR/QoITTjjL+ccO8KeK3CGb0wurKs0DVV+h/N91UzPw8k3o82Md1Cw==
+length: 3103
 -->

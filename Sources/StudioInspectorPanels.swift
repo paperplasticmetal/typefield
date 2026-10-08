@@ -21,7 +21,7 @@ extension TypeBoardEditor {
                     else if inspectorTab == "Arrangement" { layoutSections }
                     else if inspectorTab == "Canvas" { canvasInspector }
                     else {
-                        if selectedObjects.count > 1 || importedNonTextSelected || selectedArtworkIndex != nil {
+                        if selectedObjects.count > 1 || importedNonTextSelected || selectedArtwork != nil {
                             Text("Select a text box to edit its typography.").font(.callout).foregroundStyle(.secondary)
                             Button("Object properties") { inspectorTab = "Properties" }.buttonStyle(.borderless)
                         } else {
@@ -53,7 +53,7 @@ extension TypeBoardEditor {
         VStack(alignment: .leading, spacing: 14) {
             if selectedObjects.isEmpty {
                 Label("Select an object", systemImage: "cursorarrow").font(.callout.weight(.medium))
-                Text("Click text or a shape to inspect it. Use Marquee to select several objects.").font(.caption).foregroundStyle(.secondary)
+                Text("Click text, a shape or an image to inspect it. Use Marquee to select several objects.").font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack {
                     Text(selectedObjects.count == 1 ? (selectedImportedShape?.name ?? selectedArtwork?.name ?? (selectedTextID == nil ? "Object" : "Text box")) : "\(selectedObjects.count) objects")
@@ -66,7 +66,7 @@ extension TypeBoardEditor {
                 canvasAlignmentPanel
                 symmetryControls
                 if selectedImportedShape != nil { Divider(); selectedShapeAppearance }
-                if selectedArtworkIndex != nil { Divider(); selectedArtworkAppearance }
+                if selectedArtwork != nil { Divider(); selectedArtworkAppearance }
                 if selectedObjects.count == 1 && CanvasPlanCache.plan(for: direction).elements.contains(where: { selectedObjects.contains($0.objectID) && $0.text != nil }) {
                     Button { inspectorTab = "Typography" } label: { Label("Typography", systemImage: "textformat") }.buttonStyle(.borderless)
                 }

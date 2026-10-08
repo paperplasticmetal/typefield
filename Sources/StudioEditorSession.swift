@@ -5,6 +5,7 @@ import SwiftUI
 final class StudioEditorSession: ObservableObject {
     @Published var interactionTool = CanvasInteractionTool.auto
     @Published var selectedObjects: Set<String> = []
+    private(set) var selectionCanvasID: UUID?
     @Published var arrangementExpanded = true
     @Published var selectionRevealToken = 0
     @Published var board: TypeBoard
@@ -18,6 +19,7 @@ final class StudioEditorSession: ObservableObject {
     @Published var showFontPicker = false
 
     func selectObjects(_ ids: Set<String>, in direction: TypeDirection) {
+        selectionCanvasID = direction.id
         let plan = CanvasPlanCache.plan(for: direction)
         selectedObjects = ids.intersection(Set(plan.elements.map(\.objectID)))
         let elements = plan.elements.filter { selectedObjects.contains($0.objectID) }
@@ -25,6 +27,10 @@ final class StudioEditorSession: ObservableObject {
         selectedSection = sections.count == 1 ? sections.first : nil
         selectedTextID = elements.count == 1 ? elements.first?.textID : nil
         if elements.count == 1, let role = elements.first?.role { self.role = role }
+    }
+
+    func reconcileSelection(in direction: TypeDirection) {
+        selectObjects(selectionCanvasID == direction.id ? selectedObjects : [], in: direction)
     }
 
     init(board: TypeBoard) {
