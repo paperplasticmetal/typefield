@@ -67,6 +67,7 @@ enum CanvasSelection {
         element.flipX = source.flipX != (transform.flipX ?? false); element.flipY = source.flipY != (transform.flipY ?? false)
         element.rect = CGRect(x: source.rect.minX * sx + transform.x, y: source.rect.minY * sy + transform.y, width: source.rect.width * sx, height: source.rect.height * sy)
         element.radius *= factor; element.strokeWidth *= factor
+        element.effects = source.effects.scaledForCanvas(factor)
         if let style = source.style { element.style = style.scaledForCanvas(factor) }
         if let text = source.text, factor != 1 {
             let result = NSMutableAttributedString(attributedString: text)
@@ -138,9 +139,11 @@ extension CanvasNativeView {
         }
         let selected = objectSelection
         let box = CanvasSelection.bounds(selected, in: originalPlan)
+        let guideTargets = originalPlan.elements.map { CanvasAlignmentTarget(id: $0.objectID, rect: $0.rect) }
         var factor = 1.0, delta = CGSize.zero, moved = false
         var resizedBox: CGRect?
-        defer { selectionMarquee = nil; plan = originalPlan; needsDisplay = true; window.invalidateCursorRects(for: self) }
+        alignmentGuides = []
+        defer { selectionMarquee = nil; alignmentGuides = []; plan = originalPlan; needsDisplay = true; window.invalidateCursorRects(for: self) }
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp, .keyDown], until: .distantFuture, inMode: .eventTracking, dequeue: true) {
             if next.type == .keyDown { if next.keyCode == 53 { objectSelection = originalSelection; return }; continue }
             let screen = convert(next.locationInWindow, from: nil)
@@ -153,11 +156,17 @@ extension CanvasNativeView {
                 objectSelection = additive ? originalSelection.union(hits) : hits
             } else if moved, let box {
                 if resize && independent, let handle {
-                    resizedBox = handle.resized(box, delta: CGSize(width: point.x-origin.x, height: point.y-origin.y), within: originalPlan.artboardSize)
+                    let proposed = handle.resized(box, delta: CGSize(width: point.x-origin.x, height: point.y-origin.y), within: originalPlan.artboardSize)
+                    let result = CanvasAlignmentGuides.resized(proposed, handle: handle.unit, canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
+                    resizedBox = result.rect; alignmentGuides = result.guides
                 } else if resize {
                     factor = min((originalPlan.artboardSize.width-box.minX)/max(1,box.width), (originalPlan.artboardSize.height-box.minY)/max(1,box.height), max(0.05, max((point.x-box.minX)/max(1,box.width), (point.y-box.minY)/max(1,box.height))))
+                    let result = CanvasAlignmentGuides.scaled(box, factor: factor, canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
+                    factor = result.rect.width / box.width; alignmentGuides = result.guides
                 } else {
-                    delta = CGSize(width: min(max(point.x-origin.x,-box.minX), max(0,originalPlan.artboardSize.width-box.maxX)), height: min(max(point.y-origin.y,-box.minY), max(0,originalPlan.artboardSize.height-box.maxY)))
+                    let result = CanvasAlignmentGuides.translated(box, delta: CGSize(width: point.x-origin.x, height: point.y-origin.y), canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
+                    delta = CGSize(width: result.rect.minX - box.minX, height: result.rect.minY - box.minY)
+                    alignmentGuides = result.guides
                 }
                 var transform = CanvasObjectTransform(scale: factor, x: box.minX*(1-factor)+delta.width, y: box.minY*(1-factor)+delta.height)
                 if let target = resizedBox {
@@ -179,7 +188,9 @@ extension CanvasNativeView {
         objectSelection = originalSelection
     }
     func drawObjectSelection() {
-        guard directionID != nil, tool == .auto || tool == .select || tool == .marquee else { return }
+        guard directionID != nil else { return }
+        defer { drawAlignmentGuides() }
+        guard tool == .auto || tool == .select || tool == .marquee else { return }
         ShelfPalette.nativeAccent.setStroke()
         for element in plan.elements where objectSelection.contains(element.objectID) {
             let outline = NSBezierPath(rect: element.rect); outline.lineWidth = 1 / zoom; outline.stroke()
@@ -194,6 +205,23 @@ extension CanvasNativeView {
         if let rect = selectionMarquee {
             ShelfPalette.nativeAccent.withAlphaComponent(0.1).setFill(); rect.fill()
             ShelfPalette.nativeAccent.setStroke(); let outline = NSBezierPath(rect: rect); outline.lineWidth = 1/zoom; outline.setLineDash([4/zoom,3/zoom], count: 2, phase: 0); outline.stroke()
+        }
+    }
+    private func drawAlignmentGuides() {
+        guard !alignmentGuides.isEmpty else { return }
+        NSColor.systemPink.withAlphaComponent(0.9).setStroke()
+        let scale = max(0.01, zoom), tick = 3 / scale
+        for guide in alignmentGuides {
+            let line = NSBezierPath()
+            if guide.axis == .vertical {
+                line.move(to: CGPoint(x: guide.position, y: guide.start)); line.line(to: CGPoint(x: guide.position, y: guide.end))
+                for y in [guide.start, guide.end] { line.move(to: CGPoint(x: guide.position - tick, y: y)); line.line(to: CGPoint(x: guide.position + tick, y: y)) }
+            } else {
+                line.move(to: CGPoint(x: guide.start, y: guide.position)); line.line(to: CGPoint(x: guide.end, y: guide.position))
+                for x in [guide.start, guide.end] { line.move(to: CGPoint(x: x, y: guide.position - tick)); line.line(to: CGPoint(x: x, y: guide.position + tick)) }
+            }
+            line.lineWidth = 1 / scale
+            line.stroke()
         }
     }
 }

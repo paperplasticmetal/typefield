@@ -179,6 +179,8 @@ enum StudioChecks {
     }
     static func run(catalog: [Family]) throws {
         try CanvasSelectionChecks.run()
+        try CanvasAlignmentGuideChecks.run()
+        try CanvasObjectEffectsChecks.run()
         try SpacesInteractionChecks.run()
         try SpacesObjectChecks.run()
         // Scope filtering preserves board order, never exports stale IDs or checkpoints.
