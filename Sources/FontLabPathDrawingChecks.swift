@@ -262,6 +262,12 @@ enum FontLabPathDrawingChecks {
         cancelling.key("\u{1b}", code: 53)
         try check(cancelling.editor.glyph == saved && cancelling.editor.activePath == nil && cancelling.commits == savedCommits,
                   "Idle Escape must finish a Pen path without deleting its saved nodes")
+        cancelling.editor.objectSelection = false
+        cancelling.key("\u{1b}", code: 53)
+        try check(cancelling.editor.tool == .select && cancelling.editor.objectSelection &&
+                  cancelling.editor.selection.isEmpty && cancelling.editor.message.isEmpty &&
+                  cancelling.editor.glyph == saved && cancelling.commits == savedCommits,
+                  "A second Escape must return to Select, clear stale drawing hints and preserve saved geometry")
 
         let resumable = FontLabVectorPath(nodes: points.map { FontLabVectorNode(point: $0) })
         let resume = Harness(glyph([resumable])); resume.editor.tool = .pen

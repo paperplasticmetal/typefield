@@ -12,6 +12,9 @@ enum FontLabVectorChecks {
         try FontLabDirectCurveChecks.run()
         try FontLabPathConstructionChecks.run()
         try FontLabPathDrawingChecks.run()
+        try FontLabToolbarChecks.run()
+        try FontLabCanvasPerformanceChecks.run()
+        try FontLabProofGeometryChecks.run()
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
         let densePoints = (0..<10_000).map { index -> FontLabPoint in

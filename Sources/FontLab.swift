@@ -1003,10 +1003,11 @@ enum FontLabCharacterPanelLayout {
 }
 
 enum FontLabProofStripLayout {
-    static let minimumHeight = 126.0
+    static let minimumHeight = 144.0
     static let defaultHeight = 166.0
     static let maximumHeight = 340.0
     static let emptyHeight = 88.0
+    static let collapsedHeight = 52.0
 
     static func clamped(_ height: Double) -> Double {
         min(max(height, minimumHeight), maximumHeight)
@@ -1606,7 +1607,7 @@ struct FontLabView: View {
             Divider()
             GeometryReader { proxy in
                 let hasProofText = !project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                let proofHeight = session.focusEditor ? 0 : proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(proofStripHeight) : FontLabProofStripLayout.emptyHeight) : 44.0
+                let proofHeight = session.focusEditor ? 0 : proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(proofStripHeight) : FontLabProofStripLayout.emptyHeight) : FontLabProofStripLayout.collapsedHeight
                 // Focused editors fit the window, including their expanded metrics.
                 // A horizontal scroll view would propose an unbounded panel width.
                 let compactEditor = session.focusEditor || proxy.size.width < 1_200
@@ -2013,21 +2014,24 @@ struct FontLabView: View {
     private func preview(_ project: FontLabProject) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Word proof").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Button { proofStripExpanded.toggle() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: proofStripExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .semibold)).frame(width: 10)
+                        Text("Word proof").font(.caption.weight(.semibold))
+                    }
+                    .padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help(proofStripExpanded ? "Collapse word proof" : "Expand word proof")
+                .accessibilityLabel(proofStripExpanded ? "Collapse word proof" : "Expand word proof")
+                .accessibilityIdentifier("font-lab-word-proof-toggle")
                 Spacer()
                 if proofStripExpanded {
                     Text(project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Enter text to preview your letterforms together." : "Click a letter to edit it; outlines mark missing characters.")
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                Button {
-                    proofStripExpanded.toggle()
-                } label: {
-                    Image(systemName: proofStripExpanded ? "chevron.up" : "chevron.down")
-                }
-                .buttonStyle(.plain)
-                .help(proofStripExpanded ? "Collapse word proof" : "Expand word proof")
-                .accessibilityLabel(proofStripExpanded ? "Collapse word proof" : "Expand word proof")
             }
             if proofStripExpanded {
                 TextField("Proof text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
@@ -2036,6 +2040,7 @@ struct FontLabView: View {
                     FontLabLiveVectorProof(project: project, editor: session.vector(for: vectorSessionKey(project), glyph: project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter), metrics: project.metrics), vectorEditing: vectorEditing || project.glyphs[selectedCharacter]?.components?.isEmpty == false, selectedCharacter: selectedCharacter, onSelect: { character in
                         if project.characters.contains(character) { selectedCharacter = character }
                     })
+                        .id(vectorSessionKey(project))
                         .frame(minHeight: 50, maxHeight: .infinity)
                         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -2981,19 +2986,29 @@ final class FontLabPreviewNSView: NSView {
     }
 }
 
-/// Observe only the proof while dragging; provisional outlines never enter the
-/// saved project or undo history until the canvas finishes its transaction.
+/// Tool, selection and viewport changes do not invalidate word geometry.
+/// Provisional outlines still update live, before the gesture is committed.
 private struct FontLabLiveVectorProof: View {
     let project: FontLabProject
-    @ObservedObject var editor: FontLabVectorEditor
+    let editor: FontLabVectorEditor
     let vectorEditing: Bool
     let selectedCharacter: String
     let onSelect: (String) -> Void
+    @State private var liveGlyph: FontLabGlyph
+    init(project: FontLabProject, editor: FontLabVectorEditor, vectorEditing: Bool, selectedCharacter: String, onSelect: @escaping (String) -> Void) {
+        self.project = project; self.editor = editor; self.vectorEditing = vectorEditing
+        self.selectedCharacter = selectedCharacter; self.onSelect = onSelect
+        _liveGlyph = State(initialValue: editor.glyph)
+    }
     var body: some View {
         FontLabPreviewCanvas(text: project.previewText,
-            glyphs: vectorEditing ? editor.proofGlyphs(in: project) : project.outputProject.glyphs,
+            glyphs: FontLabProofGeometry.glyphs(in: project, liveGlyph: vectorEditing ? liveGlyph : nil),
             metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [],
             previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: onSelect)
+            .onReceive(editor.$glyph.removeDuplicates()) { value in
+                // @Published emits before editor.glyph itself changes.
+                if value != liveGlyph { liveGlyph = value }
+            }
     }
 }
 
