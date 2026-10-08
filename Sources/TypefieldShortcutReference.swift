@@ -61,6 +61,8 @@ struct TypefieldShortcutReference: View {
             .init(action: "Previous or next glyph", keys: "⌘[ / ⌘]"),
             .init(action: "Vector or Sketch view", keys: "⇧⌘1 / ⇧⌘2"),
             .init(action: "Vector tools: Select / Pen / Rectangle / Ellipse / Hand", keys: "V / P / R / O / H"),
+            .init(action: "Vector canvas: edit nodes", keys: "A"),
+            .init(action: "Vector canvas: show or hide fill", keys: "F"),
             .init(action: "Sketch tools: Pen / Eraser / Reshape", keys: "P / E / V"),
             .init(action: "Nudge selected vector points", keys: "← / → / ↑ / ↓"),
             .init(action: "Select previous or next contour or node", keys: "⌥← / ⌥→"),

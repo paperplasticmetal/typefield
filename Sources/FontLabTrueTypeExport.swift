@@ -26,6 +26,9 @@ struct FontLabTrueTypeArtifact: Equatable {
 struct FontLabTrueTypeExportScope: Equatable {
     let mappedArtworkCharacters: [String]
     let skippedCharacters: [String]
+    /// Mapped glyphs whose unfinished vector paths prevent TrueType export.
+    /// Components are resolved before this scope is calculated.
+    let mappedOpenContourCharacters: [String]
 }
 
 struct FontLabFontValidation: Equatable {
@@ -178,15 +181,13 @@ enum FontLabTrueTypeExporter {
         var project = project.outputProject
         if let masterName { project.name += " — " + masterName }
         let mappings = mappedGlyphs(project)
+        let scope = exportScope(in: project, mappings: mappings)
         // Unsupported and unlisted glyphs are omitted by the reviewed export
         // scope. Their unfinished paths must not block the mapped characters.
-        for glyph in mappings.compactMap(\.glyph) where glyph.strokes.contains(where: { $0.vectorPaths?.contains(where: { !$0.closed }) == true }) {
-            throw ExportError.openContours(glyph.character)
-        }
+        if let character = scope.mappedOpenContourCharacters.first { throw ExportError.openContours(character) }
         let revision = try fontRevision(for: project, weightClass: weightClass)
         let familyName = uniqueFamilyName(project.name, projectID: project.id, fingerprint: revision.fingerprint)
         let postScriptName = sanitizedPostScriptName(familyName)
-        let scope = exportScope(in: project, mappings: mappings)
         guard mappings.contains(where: { $0.glyph?.hasArtwork == true }) else { throw ExportError.noDrawnCharacters }
 
         var simplificationCount = 0
@@ -426,6 +427,7 @@ enum FontLabTrueTypeExporter {
         }
         let scope = exportScope(for: project)
         guard scope.mappedArtworkCharacters == ["A", "x", "é", "😀"],
+              scope.mappedOpenContourCharacters.isEmpty,
               scope.skippedCharacters == first.skippedCharacters,
               first.exportedArtworkCharacterCount == scope.mappedArtworkCharacters.count else {
             throw ExportError.malformedFont("the export review scope disagreed with the generated font")
@@ -448,14 +450,30 @@ enum FontLabTrueTypeExporter {
         ])])
         limited.glyphs[decomposed]?.strokes = [unfinished]
         limited.glyphs["Q"]?.strokes = [unfinished]
+        guard exportScope(for: limited).mappedOpenContourCharacters.isEmpty else {
+            throw ExportError.malformedFont("omitted unfinished artwork blocked the reviewed export scope")
+        }
         let limitedArtifact = try artifact(for: limited)
         guard limitedArtifact.mappedCharacters == [" ", "A"], limitedArtifact.skippedCharacters == [decomposed, "Z"] else {
             throw ExportError.malformedFont("omitted unfinished artwork changed the reviewed export scope")
         }
-        limited.glyphs["A"]?.strokes = [unfinished]
+        limited.glyphs["A"]?.strokes = [diagonal, unfinished]
+        guard exportScope(for: limited).mappedOpenContourCharacters == ["A"] else {
+            throw ExportError.malformedFont("the export review did not identify mapped unfinished artwork")
+        }
         do {
             _ = try artifact(for: limited)
             throw ExportError.malformedFont("an open contour in a mapped character was accepted")
+        } catch ExportError.openContours("A") { }
+        var componentProject = limited
+        componentProject.glyphs["A"] = FontLabGlyph(character: "A", components: [FontLabComponentUse(source: "Q")])
+        guard componentProject.isValid,
+              exportScope(for: componentProject).mappedOpenContourCharacters == ["A"] else {
+            throw ExportError.malformedFont("the export review missed an unfinished mapped component")
+        }
+        do {
+            _ = try artifact(for: componentProject)
+            throw ExportError.malformedFont("a mapped component with an open contour was accepted")
         } catch ExportError.openContours("A") { }
         let validation = try validate(first)
         guard validation.glyphCount == 8, validation.verifiedCharacters == first.mappedCharacters else {
@@ -768,7 +786,11 @@ enum FontLabTrueTypeExporter {
         let mapped = Set(mappings.map(\.character))
         return FontLabTrueTypeExportScope(
             mappedArtworkCharacters: mappings.compactMap { $0.glyph == nil ? nil : $0.character },
-            skippedCharacters: project.characters.filter { !mapped.contains($0) }
+            skippedCharacters: project.characters.filter { !mapped.contains($0) },
+            mappedOpenContourCharacters: mappings.compactMap { mapping in
+                guard mapping.glyph?.strokes.contains(where: { $0.vectorPaths?.contains(where: { !$0.closed }) == true }) == true else { return nil }
+                return mapping.character
+            }
         )
     }
 

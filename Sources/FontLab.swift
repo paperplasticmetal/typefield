@@ -1191,6 +1191,7 @@ final class FontLabEditorSession: ObservableObject {
     @Published var designUndo: (before: FontLabProject, after: FontLabProject)?
     @Published var glyphEditRevision = UUID()
     @Published var compactMetricsExpanded = false
+    private var openContourExportWarning: (projectID: UUID, message: String)?
     private var vectorKey = ""
     private var vectorEditor: FontLabVectorEditor?
     func vector(for key: String, glyph: FontLabGlyph, metrics: FontLabMetrics) -> FontLabVectorEditor {
@@ -1198,6 +1199,28 @@ final class FontLabEditorSession: ObservableObject {
         let value = FontLabVectorEditor(glyph: glyph, metrics: metrics)
         vectorKey = key; vectorEditor = value
         return value
+    }
+
+    func warnAboutOpenContours(_ characters: [String], projectID: UUID) -> String {
+        let shown = characters.prefix(12).joined(separator: ", ")
+        let remainder = characters.count > 12 ? " and \(characters.count - 12) more" : ""
+        let message = "Close or remove the open paths in \(shown)\(remainder) before exporting TrueType. Use Contours → Select open paths in the vector editor to review them. SVG can preserve unfinished paths."
+        openContourExportWarning = (projectID, message)
+        return message
+    }
+
+    /// Refresh only our preflight warning; never erase a persistence or read error.
+    func refreshedOpenContourWarning(in state: FontLabState, currentError: String) -> String? {
+        guard let warning = openContourExportWarning else { return nil }
+        guard currentError == warning.message else { openContourExportWarning = nil; return nil }
+        let selectedProjectID = state.selectedProject ?? state.projects.first?.id
+        guard selectedProjectID == warning.projectID,
+              let project = state.projects.first(where: { $0.id == warning.projectID }) else {
+            openContourExportWarning = nil; return ""
+        }
+        let characters = FontLabTrueTypeExporter.exportScope(for: project).mappedOpenContourCharacters
+        guard !characters.isEmpty else { openContourExportWarning = nil; return "" }
+        return warnAboutOpenContours(characters, projectID: project.id)
     }
 }
 
@@ -1321,6 +1344,11 @@ struct FontLabView: View {
             syncMenuHistory()
         }
         .onChange(of: menuHistorySignature) { _ in syncMenuHistory() }
+        .onReceive(store.$state) { snapshot in
+            if let message = session.refreshedOpenContourWarning(in: snapshot, currentError: store.error), message != store.error {
+                store.error = message
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: FontLabEditMenuBridge.commandNotification)) { event in
             guard let project, FontLabEditMenuBridge.shared.projectID == project.id,
                   FontLabEditMenuBridge.shared.character == selectedCharacter else { return }
@@ -1392,7 +1420,16 @@ struct FontLabView: View {
         }
         .sheet(isPresented: $showSmoothing) {
             if let current = store.selectedProject, let glyph = current.glyphs[selectedCharacter] {
-                FontLabSmoothingView(original: glyph, metrics: current.metrics) { edited in recordGlyphEdit(edited, projectID: current.id) }
+                FontLabSmoothingView(original: glyph, metrics: current.metrics) { edited in
+                    guard recordGlyphEdit(edited, projectID: current.id) else { return false }
+                    vectorEditing = true
+                    let editor = session.vector(for: vectorSessionKey(current), glyph: edited, metrics: current.metrics)
+                    editor.receive(edited)
+                    editor.tool = .select; editor.objectSelection = false
+                    editor.selection = []; editor.activePath = nil
+                    editor.message = "Outline simplified. Drag an anchor to move it, or drag an edge to bend the letter."
+                    return true
+                }
             }
         }
         .sheet(isPresented: $showExamples) {
@@ -1758,7 +1795,7 @@ struct FontLabView: View {
                     .accessibilityIdentifier("font-lab-compact-metrics")
                 }
                 if vectorEditing || glyph.components?.isEmpty == false {
-                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, retainedEditor: session.vector(for: project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString, glyph: glyph, metrics: project.metrics), componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex, compact: compact,
+                    FontLabVectorEditorView(glyph: glyph, metrics: project.metrics, retainedEditor: session.vector(for: vectorSessionKey(project), glyph: glyph, metrics: project.metrics), componentStrokes: Array((project.resolvedGlyph(glyph.character)?.strokes ?? []).dropFirst(glyph.strokes.count)), previewInkHex: project.previewInkHex, compact: compact,
                         onChange: { edited in recordGlyphEdit(edited, projectID: project.id) },
                         onUndo: { undoStroke(glyph, projectID: project.id) },
                         onRedo: { redoGlyph(projectID: project.id) },
@@ -1766,7 +1803,7 @@ struct FontLabView: View {
                             store.updateProject(project.id, save: false) { $0.previewInkHex = hex }
                             store.scheduleSave()
                         })
-                        .id(project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString)
+                        .id(vectorSessionKey(project))
                         .disabled(store.readBlocked)
                 } else {
                 HStack(spacing: 12) {
@@ -1996,7 +2033,7 @@ struct FontLabView: View {
                 TextField("Proof text", text: previewBinding(project.id)).textFieldStyle(.roundedBorder)
                     .onSubmit { store.flushPendingSave() }.disabled(store.readBlocked)
                 if !project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    FontLabPreviewCanvas(text: project.previewText, glyphs: project.outputProject.glyphs, metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [], previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: { character in
+                    FontLabLiveVectorProof(project: project, editor: session.vector(for: vectorSessionKey(project), glyph: project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter), metrics: project.metrics), vectorEditing: vectorEditing || project.glyphs[selectedCharacter]?.components?.isEmpty == false, selectedCharacter: selectedCharacter, onSelect: { character in
                         if project.characters.contains(character) { selectedCharacter = character }
                     })
                         .frame(minHeight: 50, maxHeight: .infinity)
@@ -2008,6 +2045,10 @@ struct FontLabView: View {
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
         .accessibilityIdentifier("font-lab-proof-strip")
+    }
+
+    private func vectorSessionKey(_ project: FontLabProject) -> String {
+        project.id.uuidString + (project.activeMasterID?.uuidString ?? "") + selectedCharacter + glyphEditRevision.uuidString
     }
 
     private var emptyState: some View {
@@ -2076,7 +2117,7 @@ struct FontLabView: View {
         guard command.isVectorCommand, !store.readBlocked, let project = store.selectedProject else { return false }
         let glyph = project.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
         guard vectorEditing || glyph.components?.isEmpty == false else { return false }
-        let editor = session.vector(for: project.id.uuidString + selectedCharacter + glyphEditRevision.uuidString,
+        let editor = session.vector(for: vectorSessionKey(project),
                                     glyph: glyph, metrics: project.metrics)
         editor.receive(glyph)
         editor.metrics = project.metrics
@@ -2159,6 +2200,10 @@ struct FontLabView: View {
             message = "Export all \(characters.count) drawn glyphs as separate SVG outlines. \(undrawn) undrawn \(undrawn == 1 ? "character is" : "characters are") omitted. Kerning pairs are not part of SVG glyph files."
         case .trueType:
             let scope = FontLabTrueTypeExporter.exportScope(for: project)
+            guard scope.mappedOpenContourCharacters.isEmpty else {
+                store.error = session.warnAboutOpenContours(scope.mappedOpenContourCharacters, projectID: project.id)
+                return
+            }
             message = "Export a static TrueType font from the active master: \(scope.mappedArtworkCharacters.count) outlined \(scope.mappedArtworkCharacters.count == 1 ? "character" : "characters") mapped, plus a blank space. \(scope.skippedCharacters.count) empty or unsupported project \(scope.skippedCharacters.count == 1 ? "character is" : "characters are") omitted. Kerning uses the legacy kern table, which some apps ignore."
         case .variableTrueType:
             message = "Export one variable TrueType font with a weight axis between two compatible masters. Every mapped character must have corresponding contours and matching winding. Vertical metrics and kerning must match; incompatible masters are rejected before saving."
@@ -2245,6 +2290,10 @@ struct FontLabView: View {
         let scope = FontLabTrueTypeExporter.exportScope(for: project)
         guard variable || !scope.mappedArtworkCharacters.isEmpty else {
             store.status = "Draw or import at least one supported, single-scalar character before exporting an installable font."
+            return
+        }
+        guard variable || scope.mappedOpenContourCharacters.isEmpty else {
+            store.error = session.warnAboutOpenContours(scope.mappedOpenContourCharacters, projectID: project.id)
             return
         }
         let panel = NSSavePanel()
@@ -2928,6 +2977,22 @@ final class FontLabPreviewNSView: NSView {
             let glyph = glyphs[character]
             return result + em * (CGFloat(glyph?.resolvedDesignWidth ?? 0.62) + CGFloat(glyph?.leftSideBearing ?? 0.08) + CGFloat(glyph?.rightSideBearing ?? 0.08))
         }
+    }
+}
+
+/// Observe only the proof while dragging; provisional outlines never enter the
+/// saved project or undo history until the canvas finishes its transaction.
+private struct FontLabLiveVectorProof: View {
+    let project: FontLabProject
+    @ObservedObject var editor: FontLabVectorEditor
+    let vectorEditing: Bool
+    let selectedCharacter: String
+    let onSelect: (String) -> Void
+    var body: some View {
+        FontLabPreviewCanvas(text: project.previewText,
+            glyphs: vectorEditing ? editor.proofGlyphs(in: project) : project.outputProject.glyphs,
+            metrics: project.metrics, kerningGroups: project.kerningGroups ?? [], kerningPairs: project.kerningPairs ?? [],
+            previewInkHex: project.previewInkHex, selectedCharacter: selectedCharacter, onSelect: onSelect)
     }
 }
 

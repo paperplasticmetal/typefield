@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import SwiftUI
 
 /// Clipboard objects use rendered coordinates, so pasting between differently
@@ -99,6 +100,26 @@ enum SpacesObjects {
         result.objectTransforms = transforms
         return result.isValid ? result : source
     }
+    /// Mirror around the current canvas center. Unlike a regular paste, this
+    /// must never slide a copy to fit: doing so would break the symmetry.
+    static func mirroredCopies(_ source: TypeDirection, ids: Set<String>, vertical: Bool, horizontal: Bool) -> (TypeDirection, Set<String>)? {
+        guard vertical || horizontal, let clip = clip(source, ids: ids) else { return nil }
+        let size = CanvasPlanCache.plan(for: source).artboardSize
+        guard clip.layers.allSatisfy({ $0.rect.minX >= -0.000001 && $0.rect.minY >= -0.000001 &&
+            $0.rect.maxX <= size.width + 0.000001 && $0.rect.maxY <= size.height + 0.000001 }) else { return nil }
+        let axes = vertical && horizontal ? [(true, false), (false, true), (true, true)] : [(vertical, horizontal)]
+        var candidate = source, selection = Set<String>()
+        for (x, y) in axes {
+            var copy = clip
+            for i in copy.layers.indices {
+                if x { copy.layers[i].x = size.width - copy.layers[i].rect.maxX; copy.layers[i].flipX = !(copy.layers[i].flipX ?? false) }
+                if y { copy.layers[i].y = size.height - copy.layers[i].rect.maxY; copy.layers[i].flipY = !(copy.layers[i].flipY ?? false) }
+            }
+            guard let (next, ids) = paste(copy, into: candidate, offset: 0) else { return nil }
+            candidate = next; selection.formUnion(ids)
+        }
+        return (candidate, selection)
+    }
     static func resized(_ source: TypeDirection, ids: Set<String>, to target: CGRect) -> TypeDirection {
         let plan = CanvasPlanCache.plan(for: source)
         guard let box = CanvasSelection.bounds(ids, in: plan), box.width > 0, box.height > 0,
@@ -148,21 +169,16 @@ extension TypeBoardEditor {
             if save(command == "duplicate" ? "Duplicate Objects" : "Paste Objects") { selectObjects(selection); editorSession.selectionRevealToken += 1 }; return
         }
         if command == "flipHorizontal" || command == "flipVertical" {
-            board.directions[directionIndex] = SpacesObjects.reflected(direction, ids: ids, horizontal: command == "flipHorizontal")
+            let next = SpacesObjects.reflected(direction, ids: ids, horizontal: command == "flipHorizontal")
+            guard next != direction else { return }
+            board.directions[directionIndex] = next
             _ = save("Flip Objects"); return
         }
-        if ["mirrorVertical", "mirrorHorizontal", "mirrorBoth"].contains(command), let clip = SpacesObjects.clip(direction, ids: ids) {
-            let size = CanvasPlanCache.plan(for: direction).artboardSize
-            var candidate = direction, selection = Set<String>()
-            let axes = command == "mirrorBoth" ? [(true,false),(false,true),(true,true)] : [(command == "mirrorVertical",command == "mirrorHorizontal")]
-            for (x,y) in axes {
-                var copy = clip
-                for i in copy.layers.indices {
-                    if x { copy.layers[i].x = size.width - copy.layers[i].x - copy.layers[i].width; copy.layers[i].flipX = !(copy.layers[i].flipX ?? false) }
-                    if y { copy.layers[i].y = size.height - copy.layers[i].y - copy.layers[i].height; copy.layers[i].flipY = !(copy.layers[i].flipY ?? false) }
-                }
-                guard let (next, ids) = SpacesObjects.paste(copy, into: candidate, offset: 0) else { status = "Mirrored copies exceed document limits."; return }
-                candidate = next; selection.formUnion(ids)
+        if ["mirrorVertical", "mirrorHorizontal", "mirrorBoth"].contains(command) {
+            guard !ids.isEmpty else { return }
+            guard let (candidate, selection) = SpacesObjects.mirroredCopies(direction, ids: ids,
+                vertical: command != "mirrorHorizontal", horizontal: command != "mirrorVertical") else {
+                status = "Mirrored copies must fit inside the canvas and document limits."; return
             }
             board.directions[directionIndex] = candidate
             if save("Mirror Copies") { selectObjects(selection); editorSession.selectionRevealToken += 1 }
@@ -181,15 +197,46 @@ extension TypeBoardEditor {
             Button("Duplicate") { objectCommand("duplicate") }.disabled(selectedObjects.isEmpty)
             Button("Delete") { objectCommand("delete") }.disabled(selectedObjects.isEmpty)
             Divider()
-            Menu("Symmetry") {
-                Button("Flip horizontally") { objectCommand("flipHorizontal") }
-                Button("Flip vertically") { objectCommand("flipVertical") }
-                Divider()
-                Button("Mirror copy across vertical canvas axis") { objectCommand("mirrorVertical") }
-                Button("Mirror copy across horizontal canvas axis") { objectCommand("mirrorHorizontal") }
-                Button("Mirror copies into four quadrants") { objectCommand("mirrorBoth") }
-            }.disabled(selectedObjects.isEmpty)
+            Menu("Symmetry") { symmetryActions }.disabled(selectedObjects.isEmpty)
         }
+    }
+    var symmetryActions: some View {
+        Group {
+            Button("Flip horizontally") { objectCommand("flipHorizontal") }
+            Button("Flip vertically") { objectCommand("flipVertical") }
+            Divider()
+            Button("Mirror copy across vertical canvas axis") { objectCommand("mirrorVertical") }
+            Button("Mirror copy across horizontal canvas axis") { objectCommand("mirrorHorizontal") }
+            Button("Mirror copies into four quadrants") { objectCommand("mirrorBoth") }
+        }
+    }
+    var symmetryControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Symmetry").font(.caption.weight(.semibold))
+            HStack(spacing: 6) {
+                Text("Flip selection").font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Button("Horizontal") { objectCommand("flipHorizontal") }
+                    .help("Reflect the selection left to right around its center. Text is reflected too.")
+                    .accessibilityLabel("Flip selection horizontally")
+                Button("Vertical") { objectCommand("flipVertical") }
+                    .help("Reflect the selection top to bottom around its center. Text is reflected too.")
+                    .accessibilityLabel("Flip selection vertically")
+            }
+            Text("Mirror copies across canvas center").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Button("Vertical axis") { objectCommand("mirrorVertical") }
+                    .help("Keep the original and create a reflected copy on the other side of the canvas’s vertical center line.")
+                    .accessibilityLabel("Mirror copy across vertical canvas axis")
+                Button("Horizontal axis") { objectCommand("mirrorHorizontal") }
+                    .help("Keep the original and create a reflected copy on the other side of the canvas’s horizontal center line.")
+                    .accessibilityLabel("Mirror copy across horizontal canvas axis")
+                Button("Both axes") { objectCommand("mirrorBoth") }
+                    .help("Keep the original and create three reflected copies across both canvas center lines.")
+                    .accessibilityLabel("Mirror copies into four quadrants")
+            }
+        }.controlSize(.small).disabled(selectedObjects.isEmpty || library.studio.readBlocked)
+            .accessibilityIdentifier("spaces-symmetry-controls")
     }
 }
 
@@ -295,6 +342,183 @@ enum SpacesObjectChecks {
         try check(commands.last == "selectAll", "Arrangement must select actual canvas objects, not preview labels")
         let old = try JSONDecoder().decode(CanvasObjectTransform.self, from: Data("{\"scale\":1,\"x\":2,\"y\":3}".utf8))
         try check(old.isValid && old.stretchX == nil && old.flipX == nil, "Older object transforms must decode")
+        try checkSymmetry()
         print("PASS: \(cases) cross-format/scaled clipboard round trips, fresh grouped IDs, delete, eight shape handles, alignment, double reflection, Figma mirror round trip and malformed clipboard")
+    }
+
+    private static func checkSymmetry() throws {
+        func check(_ value: Bool, _ message: String) throws {
+            if !value { throw NSError(domain: "SpacesSymmetry", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        func close(_ a: CGRect, _ b: CGRect) -> Bool {
+            abs(a.minX-b.minX) < 0.000001 && abs(a.minY-b.minY) < 0.000001 &&
+            abs(a.width-b.width) < 0.000001 && abs(a.height-b.height) < 0.000001
+        }
+        var cases = 0
+        for scale in [0.75, 1.0, 2.0] {
+            var source = SpacesInteractionChecks.importedFixture(); source.canvasScale = scale
+            let original = CanvasPlan(direction: source), ids = Set(original.elements.map(\.objectID))
+            source.objectGroups = [CanvasObjectGroup(members: ids)]
+            source = CanvasSelection.change(direction: source, ids: ids, anchor: .zero, scale: 0.83,
+                                            delta: CGSize(width: 13 * scale, height: 19 * scale))
+            source = SpacesObjects.reflected(source, ids: ids, horizontal: true)
+            let plan = CanvasPlan(direction: source)
+            for (vertical, horizontal) in [(true, false), (false, true), (true, true)] {
+                guard let (result, selected) = SpacesObjects.mirroredCopies(source, ids: ids, vertical: vertical, horizontal: horizontal) else {
+                    throw NSError(domain: "SpacesSymmetry", code: 2, userInfo: [NSLocalizedDescriptionKey: "Valid symmetry fixture was rejected"])
+                }
+                let mirrored = CanvasPlan(direction: result)
+                let copies = mirrored.elements.filter { selected.contains($0.objectID) }
+                let axes = vertical && horizontal ? [(true, false), (false, true), (true, true)] : [(vertical, horizontal)]
+                try check(copies.count == plan.elements.count * axes.count && selected.isDisjoint(with: ids), "Mirroring must create the expected fresh objects")
+                try check(mirrored.artboardSize == plan.artboardSize, "Symmetry must not resize the canvas")
+                for (before, after) in zip(plan.elements, mirrored.elements.prefix(plan.elements.count)) {
+                    try check(close(before.rect, after.rect) && before.flipX == after.flipX && before.flipY == after.flipY, "Mirroring must preserve every original")
+                }
+                for (axisIndex, axis) in axes.enumerated() {
+                    for (index, before) in plan.elements.enumerated() {
+                        let after = copies[axisIndex * plan.elements.count + index]
+                        let expected = CGRect(x: axis.0 ? plan.artboardSize.width-before.rect.maxX : before.rect.minX,
+                                              y: axis.1 ? plan.artboardSize.height-before.rect.maxY : before.rect.minY,
+                                              width: before.rect.width, height: before.rect.height)
+                        try check(close(after.rect, expected) && after.flipX == (before.flipX != axis.0) && after.flipY == (before.flipY != axis.1), "Copies must reflect around the canvas center after previous scale/flip transforms")
+                        try check(before.text?.string == after.text?.string && before.color == after.color, "Symmetry must preserve editable text and shape appearance")
+                        if let style = before.style {
+                            try check(after.style?.fontName == style.fontName && abs((after.style?.size ?? 0)-style.size) < 0.000001 &&
+                                      after.style?.axes == style.axes && after.style?.features == style.features,
+                                      "Mirrored text must preserve font selection, size, axes and OpenType settings")
+                        }
+                    }
+                }
+                try check(result.objectGroups?.count == 1 + axes.count && result.objectGroups?.dropFirst().allSatisfy { $0.members.isSubset(of: selected) && $0.members.count == ids.count } == true, "Each reflected group must use its own copied IDs")
+                let reloaded = try JSONDecoder().decode(TypeDirection.self, from: JSONEncoder().encode(result))
+                try check(reloaded == result, "Symmetry must retain its geometry and orientation through save/reload")
+                cases += 1
+            }
+            for horizontal in [false, true] {
+                let flipped = SpacesObjects.reflected(source, ids: ids, horizontal: horizontal)
+                let restored = CanvasPlan(direction: SpacesObjects.reflected(flipped, ids: ids, horizontal: horizontal))
+                for (before, after) in zip(plan.elements, restored.elements) {
+                    try check(close(before.rect, after.rect) && before.flipX == after.flipX && before.flipY == after.flipY, "Both flip axes must be reversible after existing transforms")
+                }
+            }
+            let hv = CanvasPlan(direction: SpacesObjects.reflected(SpacesObjects.reflected(source, ids: ids, horizontal: true), ids: ids, horizontal: false))
+            let vh = CanvasPlan(direction: SpacesObjects.reflected(SpacesObjects.reflected(source, ids: ids, horizontal: false), ids: ids, horizontal: true))
+            for (a, b) in zip(hv.elements, vh.elements) {
+                try check(close(a.rect, b.rect) && a.flipX == b.flipX && a.flipY == b.flipY,
+                          "Combining both flips must produce the same half-turn regardless of order")
+            }
+            let textIDs = Set(plan.elements.filter { $0.text != nil }.map(\.objectID))
+            let atRight = CanvasSelection.aligned(direction: source, ids: textIDs, alignment: .right)
+            let atCorner = CanvasSelection.aligned(direction: atRight, ids: textIDs, alignment: .bottom)
+            let cornerPlan = CanvasPlan(direction: atCorner), text = cornerPlan.elements.first { textIDs.contains($0.objectID) }!
+            guard let (cornerResult, cornerCopies) = SpacesObjects.mirroredCopies(atCorner, ids: textIDs, vertical: true, horizontal: true) else {
+                throw NSError(domain: "SpacesSymmetry", code: 4, userInfo: [NSLocalizedDescriptionKey: "Fractional text at the canvas corner must allow symmetry"])
+            }
+            let cornerAfter = CanvasPlan(direction: cornerResult)
+            let opposite = cornerAfter.elements.first { cornerCopies.contains($0.objectID) && $0.flipX != text.flipX && $0.flipY != text.flipY }!
+            try check(close(opposite.rect, CGRect(origin: .zero, size: text.rect.size)) && cornerAfter.artboardSize == cornerPlan.artboardSize,
+                      "Fractional text mirrored from the far corner must retain exact size at the origin without growing the canvas")
+        }
+        let shortStyle = TypeStyle(fontName: "Helvetica", size: 24, text: "fit")
+        let fractionalText = CanvasElement(rect: CGRect(x: 0, y: 0, width: 149.4, height: 40), text: shortStyle.attributed(color: .black), style: shortStyle)
+        try check(abs(CanvasBoardLayout.minimumTextFrameWidth(for: fractionalText)-149.4) < 0.000001,
+                  "A fractional frame wider than its text must retain its existing width")
+        var longStyle = shortStyle; longStyle.text = "UnbreakableTypographySpecification"
+        let longText = CanvasElement(rect: fractionalText.rect, text: longStyle.attributed(color: .black), style: longStyle)
+        let required = CTLineGetTypographicBounds(CTLineCreateWithAttributedString(longText.text! as CFAttributedString), nil, nil, nil)
+        try check(required > fractionalText.rect.width && CanvasBoardLayout.minimumTextFrameWidth(for: longText) == ceil(required),
+                  "A genuinely oversized unbreakable token must still expand the frame to its measured width")
+        var edge = SpacesInteractionChecks.importedFixture()
+        edge.importedLayout?.layers = [ImportedLayer(id: "edge", name: "At edge", x: 0, y: 0, width: 160, height: 120, color: "222222")]
+        let edgeIDs = Set(CanvasPlan(direction: edge).elements.map(\.objectID))
+        guard let (edgeResult, edgeCopies) = SpacesObjects.mirroredCopies(edge, ids: edgeIDs, vertical: true, horizontal: true) else {
+            throw NSError(domain: "SpacesSymmetry", code: 3, userInfo: [NSLocalizedDescriptionKey: "An exact edge fit must allow symmetry"])
+        }
+        let rectangles = Set(CanvasPlan(direction: edgeResult).elements.filter { edgeCopies.contains($0.objectID) }.map { "\($0.rect.minX),\($0.rect.minY)" })
+        try check(rectangles == ["480.0,0.0", "0.0,360.0", "480.0,360.0"], "Edge copies must land exactly against the opposite edges")
+        var overflow = edge; overflow.importedLayout?.layers[0].x = -10
+        let overflowData = try JSONEncoder().encode(overflow)
+        try check(SpacesObjects.mirroredCopies(overflow, ids: edgeIDs, vertical: true, horizontal: true) == nil,
+                  "An out-of-canvas original must be rejected rather than shifting reflected copies")
+        try check(try JSONDecoder().decode(TypeDirection.self, from: overflowData) == overflow, "A rejected mirror must preserve its source")
+        try check(SpacesObjects.mirroredCopies(edge, ids: [], vertical: true, horizontal: false) == nil &&
+                  SpacesObjects.mirroredCopies(edge, ids: edgeIDs, vertical: false, horizontal: false) == nil, "Empty selection or no axes must not create copies")
+        var full = edge
+        full.objectLayers = (0..<999).map { ImportedLayer(id: "limit-\($0)", name: "Limit fixture", x: 12, y: 12, width: 1, height: 1, color: "222222") }
+        try check(full.isValid && SpacesObjects.mirroredCopies(full, ids: edgeIDs, vertical: true, horizontal: true) == nil && full.objectLayers?.count == 999,
+                  "Exceeding the object limit on a later mirrored copy must reject the entire operation")
+        try checkSymmetryHistory(source: edge, result: edgeResult)
+        try checkSymmetryArtwork()
+        print("PASS: \(cases) scaled text/shape/group mirror cases, both flip axes, exact canvas boundaries, rejected overflow, undo/redo and counter artwork reflection")
+    }
+
+    private static func checkSymmetryHistory(source: TypeDirection, result: TypeDirection) throws {
+        func check(_ value: Bool, _ message: String) throws {
+            if !value { throw NSError(domain: "SpacesSymmetryHistory", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("typefield-symmetry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = StudioStore(url: root.appendingPathComponent("spaces.json"))
+        guard let space = store.addSpace("Symmetry fixture"), store.addBoard(space: space) != nil else {
+            throw NSError(domain: "SpacesSymmetryHistory", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create temporary symmetry fixture"])
+        }
+        store.undoManager.groupsByEvent = false
+        var before = store.state.spaces[0].boards[0]; before.directions = [source]; before.selectedDirection = source.id
+        try check(store.update(space: space, board: before, action: "Set Up Fixture"), "Could not save symmetry fixture")
+        store.undoManager.removeAllActions()
+        var after = before; after.directions = [result]
+        try check(store.update(space: space, board: after, action: "Mirror Copies"), "Could not save reflected copies")
+        store.undoManager.undo()
+        try check(store.state.spaces[0].boards[0] == before && !store.undoManager.canUndo, "All three mirror copies must undo together")
+        store.undoManager.redo()
+        try check(store.state.spaces[0].boards[0] == after && StudioStore(url: store.url).state.spaces[0].boards[0] == after,
+                  "Redo must restore and persist exact mirror copies")
+    }
+
+    private static func checkSymmetryArtwork() throws {
+        func check(_ value: Bool, _ message: String) throws {
+            if !value { throw NSError(domain: "SpacesSymmetryArtwork", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        let art = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32, bitsPerSample: 8,
+                                  samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        // An off-center transparent counter and detached mark reveal both axes.
+        for y in 0..<32 { for x in 0..<32 {
+            let ring = (3..<29).contains(x) && (3..<29).contains(y) && !((12..<26).contains(x) && (9..<23).contains(y))
+            let mark = (0..<2).contains(x) && (0..<2).contains(y)
+            art.setColor(ring || mark ? .black : .clear, atX: x, y: y)
+        } }
+        var source = SpacesInteractionChecks.importedFixture()
+        source.width = 128; source.canvasWidth = 128; source.canvasHeight = 128
+        source.importedLayout = ImportedLayout(width: 128, height: 128, layers: [])
+        var layer = ImportedLayer(name: "Counter artwork", x: 16, y: 24, width: 32, height: 32, color: "000000")
+        layer.artworkData = art.representation(using: .png, properties: [:]); source.objectLayers = [layer]
+        let original = CanvasPlan(direction: source), ids = Set(original.elements.map(\.objectID))
+        func render(_ plan: CanvasPlan) -> NSBitmapImageRep {
+            let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 128, pixelsHigh: 128, bitsPerSample: 8,
+                                          samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+            let view = CanvasNativeView(plan: plan); view.draw(view.bounds)
+            NSGraphicsContext.current?.flushGraphics()
+            NSGraphicsContext.restoreGraphicsState()
+            return bitmap
+        }
+        let before = render(original)
+        for (vertical, horizontal) in [(true, false), (false, true), (true, true)] {
+            let (result, selected) = SpacesObjects.mirroredCopies(source, ids: ids, vertical: vertical, horizontal: horizontal)!
+            var plan = CanvasPlan(direction: result)
+            plan.elements = plan.elements.filter { selected.contains($0.objectID) && $0.flipX == vertical && $0.flipY == horizontal }
+            let after = render(plan)
+            var differingPixels = 0
+            for y in 0..<128 { for x in 0..<128 {
+                let a = before.colorAt(x: x, y: y)!.usingColorSpace(.deviceRGB)!
+                let b = after.colorAt(x: vertical ? 127-x : x, y: horizontal ? 127-y : y)!.usingColorSpace(.deviceRGB)!
+                if abs(a.redComponent-b.redComponent) > 0.05 { differingPixels += 1 }
+            } }
+            try check(differingPixels < 16, "Artwork reflection must preserve its transparent counter and detached mark on both axes")
+            try check(result.objectLayers?.allSatisfy { $0.artworkData == layer.artworkData } == true,
+                      "Symmetry must preserve embedded source artwork bytes")
+        }
     }
 }

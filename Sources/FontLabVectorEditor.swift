@@ -98,7 +98,7 @@ struct FontLabVectorClipboard: Codable {
 }
 
 final class FontLabVectorEditor: ObservableObject {
-    static let defaultMessage = "V: Select, P: Bézier, R: Rectangle, O: Ellipse. Hold Space and drag to pan."
+    static let defaultMessage = ""
     @Published var glyph: FontLabGlyph {
         didSet { cachedPaths = nil }
     }
@@ -116,7 +116,7 @@ final class FontLabVectorEditor: ObservableObject {
     @Published var grid = true
     @Published var snap = true
     @Published var fill = true
-    @Published var objectSelection = true {
+    @Published var objectSelection = false {
         didSet { if objectSelection && !oldValue { selectCompleteObjects() } }
     }
     @Published var inkColor = Color(nsColor: .labelColor)
@@ -159,6 +159,56 @@ final class FontLabVectorEditor: ObservableObject {
         return FontLabVectorMath.bounds(geometry)
     }
     var openCount: Int { paths.filter { !$0.closed }.count }
+    func proofGlyphs(in project: FontLabProject) -> [String: FontLabGlyph] {
+        var preview = project
+        if preview.characters.contains(glyph.character) { preview.glyphs[glyph.character] = glyph }
+        return preview.outputProject.glyphs
+    }
+    var interactionHint: String {
+        switch tool {
+        case .select:
+            return objectSelection
+                ? "Drag a shape to move it. Choose Nodes (A) to edit its outline. Space-drag pans."
+                : "Drag an anchor to move it, a handle to adjust curvature, or an edge to bend it. Double-click an edge to add a node."
+        case .pen: return "Click to draw a new contour; drag to add curve handles. Click its first node to close it. A edits existing points."
+        case .rectangle: return "Drag to draw a rectangle. Hold Shift for a square. A edits its points."
+        case .ellipse: return "Drag to draw an ellipse. Hold Shift for a circle. A edits its points."
+        case .hand: return "Drag to pan the canvas. Choose Nodes (A) to edit points or F to toggle the fill."
+        }
+    }
+    func selectContours(closed: Bool) {
+        tool = .select; objectSelection = false; activePath = nil
+        selection = Set(paths.filter { $0.closed == closed }.flatMap(\.nodes).map(\.id))
+        message = closed ? "Selected the filled outlines. Drag their anchors or handles to change the letter."
+            : "Selected open paths. These do not fill; close them to make shapes, or delete them if unwanted."
+    }
+    func selectContour(_ id: UUID) {
+        guard let path = paths.first(where: { $0.id == id }) else { return }
+        tool = .select; objectSelection = false; activePath = nil
+        selection = Set(path.nodes.map(\.id))
+        message = path.closed ? "Closed contour selected. Its outline controls the filled letter."
+            : "Open path selected. It does not fill until closed."
+    }
+    var selectedContourIDs: Set<UUID> {
+        Set(paths.filter { !$0.nodes.isEmpty && $0.nodes.allSatisfy { selection.contains($0.id) } }.map(\.id))
+    }
+    var canCloseSelectedContours: Bool {
+        let ids = selectedContourIDs
+        return paths.contains { ids.contains($0.id) && !$0.closed && $0.nodes.count >= 3 }
+    }
+    func closeSelectedContours() {
+        let ids = selectedContourIDs
+        var value = paths
+        for index in value.indices where ids.contains(value[index].id) && value[index].nodes.count >= 3 {
+            value[index].closed = true
+        }
+        if apply(value) { activePath = nil }
+    }
+    func deleteSelectedContours() {
+        let ids = selectedContourIDs
+        guard !ids.isEmpty else { return }
+        if apply(paths.filter { !ids.contains($0.id) }) { activePath = nil }
+    }
     func receive(_ value: FontLabGlyph) {
         guard value != glyph else { return }
         glyph=value;selection.formIntersection(Set(paths.flatMap(\.nodes).map(\.id)))
@@ -647,6 +697,7 @@ struct FontLabVectorEditorView: View {
     @State private var angle = "0"
     @State private var showSelectionInspector = false
     @State private var showCanvasAppearance = false
+    @State private var showContours = false
     init(glyph:FontLabGlyph,metrics:FontLabMetrics,retainedEditor:FontLabVectorEditor?=nil,componentStrokes:[FontLabStroke]=[],previewInkHex:String?=nil,compact:Bool=false,onChange:@escaping(FontLabGlyph)->Void,onUndo:@escaping()->Void,onRedo:@escaping()->Void,onPreviewInkChange:@escaping(String)->Void={_ in}) {
         self.glyph=glyph;self.metrics=metrics;self.componentStrokes=componentStrokes;self.compact=compact;self.onChange=onChange;self.onUndo=onUndo;self.onRedo=onRedo;self.onPreviewInkChange=onPreviewInkChange
         let value=retainedEditor ?? FontLabVectorEditor(glyph:glyph,metrics:metrics)
@@ -674,20 +725,23 @@ struct FontLabVectorEditorView: View {
                 .background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:12))
                 .clipShape(RoundedRectangle(cornerRadius:12))
                 .overlay(RoundedRectangle(cornerRadius:12).strokeBorder(Color.primary.opacity(0.15)))
-            HStack(spacing: 10) {
-                Menu("Canvas") {
-                    Toggle("Show grid", isOn: $editor.grid)
-                    Toggle("Snap to grid", isOn: $editor.snap)
-                    Toggle("Show fill", isOn: $editor.fill)
-                    Divider()
-                    Button("Preview appearance…") { showCanvasAppearance = true }
-                }.menuStyle(.borderlessButton).fixedSize()
-                Spacer(minLength: 0)
-                vectorZoomControls
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { canvasDisplayControls; Spacer(minLength: 0); vectorZoomControls }
+                VStack(alignment: .leading, spacing: 8) {
+                    canvasDisplayControls
+                    HStack { Spacer(minLength: 0); vectorZoomControls }
+                }
             }.font(.caption).controlSize(.small)
             .popover(isPresented: $showCanvasAppearance) { canvasAppearance.padding(16).frame(width: 310) }
-            Text(editor.openCount > 0 ? "\(editor.openCount) open \(editor.openCount == 1 ? "contour" : "contours"). \(editor.message)" : editor.message)
-                .font(.caption2).foregroundStyle(editor.openCount > 0 ? .orange : .secondary).fixedSize(horizontal: false, vertical: true)
+            if editor.openCount > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(editor.openCount) open \(editor.openCount == 1 ? "path does" : "paths do") not fill. Dashed outlines are separate from the solid letter.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Select open paths") { editor.selectContours(closed: false) }.fixedSize()
+                }.font(.caption).foregroundStyle(.orange)
+            }
+            Text(editor.message.isEmpty ? editor.interactionHint : editor.message)
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .help("Objects: edit whole shapes. Nodes: edit points and handles. Paths contains contour operations. Selection contains coordinates and transforms.")
         }
         .onChange(of:glyph) { editor.receive($0);updateCoordinates() }
@@ -697,6 +751,57 @@ struct FontLabVectorEditorView: View {
         .onChange(of:editor.selection) {_ in updateCoordinates()}
         .onChange(of:editor.glyph) {_ in updateCoordinates()}
         .onChange(of:editor.inkColor) { color in onPreviewInkChange(NSColor(color).rgbHex) }
+    }
+    private var canvasDisplayControls: some View {
+        HStack(spacing: 10) {
+            Toggle(isOn: $editor.fill) { Label("Fill", systemImage: "circle.lefthalf.filled") }
+                .toggleStyle(.button).help("Show or hide the filled letter (F). This changes the preview only.")
+                .accessibilityLabel("Show fill")
+            Button("Contours (\(editor.paths.count))") { showContours = true }
+                .popover(isPresented: $showContours) { contourInspector.padding(16).frame(width: 360) }
+            Menu("Canvas") {
+                Toggle("Show grid", isOn: $editor.grid)
+                Toggle("Snap to grid", isOn: $editor.snap)
+                Divider()
+                Button("Preview appearance…") { showCanvasAppearance = true }
+            }.menuStyle(.borderlessButton).fixedSize()
+        }.fixedSize()
+    }
+    private var contourInspector: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("Contours").font(.headline); Spacer(); Button("Done") { showContours = false } }
+            Text("Closed contours form the letter and its counters. Open paths are unfinished lines.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("Select filled outlines") { editor.selectContours(closed: true) }
+                    .disabled(editor.paths.allSatisfy { !$0.closed })
+                Button("Select open paths") { editor.selectContours(closed: false) }.disabled(editor.openCount == 0)
+            }.controlSize(.small)
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(Array(editor.paths.enumerated()), id: \.element.id) { index, path in
+                        Button { editor.selectContour(path.id) } label: {
+                            HStack {
+                                Image(systemName: path.closed ? "seal" : "point.topleft.down.to.point.bottomright.curvepath")
+                                    .foregroundStyle(path.closed ? Color.accentColor : .orange)
+                                Text("Contour \(index + 1) · \(path.closed ? "Closed" : "Open")")
+                                Spacer()
+                                Text("\(path.nodes.count) nodes").foregroundStyle(.secondary)
+                                if !path.nodes.isEmpty && path.nodes.allSatisfy({ editor.selection.contains($0.id) }) {
+                                    Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                                }
+                            }.padding(6).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }.frame(maxHeight: 200)
+            HStack {
+                Button("Close contours") { editor.closeSelectedContours() }.disabled(!editor.canCloseSelectedContours)
+                Spacer()
+                Button("Delete contours", role: .destructive) { editor.deleteSelectedContours() }.disabled(editor.selectedContourIDs.isEmpty)
+            }.controlSize(.small)
+            Text("Selection is highlighted on the canvas. Deleting can be undone with ⌘Z.").font(.caption).foregroundStyle(.secondary)
+        }
     }
     private var selectionInspectorButton: some View {
         Button("Selection") { showSelectionInspector = true }
@@ -773,17 +878,24 @@ struct FontLabVectorEditorView: View {
     private var vectorToolButtons: some View {
         HStack(spacing:6) {
             ForEach(FontLabVectorTool.allCases) { tool in
-                Button {editor.tool=tool;editor.activePath=nil} label: { Image(systemName:tool.icon).frame(width:28,height:24) }
+                Button {editor.tool=tool;editor.activePath=nil;editor.message=""} label: { Image(systemName:tool.icon).frame(width:28,height:24) }
                     .buttonStyle(.plain).padding(4).background(editor.tool == tool ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6)).foregroundStyle(editor.tool == tool ? Color.accentColor : Color.primary).help(tool.rawValue).accessibilityLabel(tool.rawValue)
             }
         }.padding(3).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
     }
     private var selectionPicker: some View {
-        Picker("Selection", selection: $editor.objectSelection) { Text("Objects").tag(true); Text("Nodes").tag(false) }
+        Picker("Selection", selection: Binding(get: { editor.objectSelection }, set: {
+            editor.objectSelection = $0; editor.tool = .select; editor.activePath = nil; editor.message = ""
+        })) { Text("Objects").tag(true); Text("Nodes").tag(false) }
             .pickerStyle(.segmented).labelsHidden().frame(width:140)
+            .help("Nodes edits anchors, handles and curves (A). Objects moves whole shapes.")
     }
     private var pathsMenu: some View {
         Menu("Paths") {
+                    Button("Select filled outlines") { editor.selectContours(closed: true) }.disabled(editor.paths.allSatisfy { !$0.closed })
+                    Button("Select open paths") { editor.selectContours(closed: false) }.disabled(editor.openCount == 0)
+                    Button("Manage contours…") { showContours = true }
+                    Divider()
                     Button("Smooth nodes") {editor.smooth(true)}.disabled(editor.selection.isEmpty)
                     Button("Corner nodes") {editor.smooth(false)}.disabled(editor.selection.isEmpty)
                     Button("Make selected segments straight") {editor.lines()}.disabled(!editor.canStraightenSegments)

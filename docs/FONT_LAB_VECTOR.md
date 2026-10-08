@@ -2,14 +2,16 @@
 
 Letterform Editor now opens glyphs in **Vector** mode. **Sketch** retains the existing freehand pens, pressure input and eraser. Imported polygon contours become editable nodes on their first vector edit; opening a project does not rewrite its artwork.
 
+Single-letter shortcuts work only while the drawing canvas has focus. Typing in proof text or other text fields keeps normal text input.
+
 ## Workflow
 
 1. Draw a closed outline with **Bézier (P)**. Click for corners; drag for curve handles. Click the first node to close. Escape finishes an open path and returns to Select; click its final node with Bézier to continue it later.
-2. Use **Select (V)** to move anchors and handles. Shift-click adds/removes nodes, dragging empty space makes a rectangular selection, and clicking a segment selects its contour. Double-click a segment to insert a node without changing its curve. Double-click a node or press Return to switch smooth/corner behavior. Option-drag breaks a smooth handle connection; Shift constrains movement.
+2. Use **Nodes (A)** to edit anchors and handles; **Select (V)** retains the current Objects/Nodes selection mode. Shift-click adds/removes nodes, dragging empty space makes a rectangular selection, and dragging an edge bends its curve while keeping both anchors fixed. Double-click a segment to insert a node without changing its curve. Double-click a node or press Return to switch smooth/corner behavior. Option-drag breaks a smooth handle connection; Shift constrains movement.
 3. Draw rectangles or ellipses with **R/O**, holding Shift for equal physical dimensions. Put an inner contour inside the outer shape and choose **Paths → Make counter**. Reverse direction, open/close, convert segments to lines/curves, add extrema, duplicate, copy/paste or delete nodes from Paths. Delete joins surviving anchors with straight segments; it does not promise to reconstruct the old curve.
 4. **Remove overlaps** resolves the selected closed contours, or all contours when nothing is selected. **Subtract later contours** subtracts contours in drawing order from the first selected contour. **Intersect contours** keeps the shared filled area. These operations replace the selected geometry and can be undone.
 5. Arrow keys nudge by one font unit; Shift uses ten. X/Y place the selection’s lower-left anchor bounds in a 1,000-unit em, with Y measured from the baseline. Transform aligns, mirrors, scales and rotates around the selection center. Anchors must stay in the design box; invalid transformations are rejected intact.
-6. Scroll or Space-drag to pan, Option-scroll or pinch to zoom, and use Fit / Command-0 to reset. Grid, magnetic snapping and fill are independent switches. Control temporarily bypasses snapping. The current grid uses 50-unit divisions, switching to 10 at close zoom; coordinates snap to whole font units and nearby metric/node alignments.
+6. Scroll or Space-drag to pan, Option-scroll or pinch to zoom, and use Fit / Command-0 to reset. Grid, magnetic snapping and fill are independent switches. **F** shows or hides the fill preview without changing saved artwork. Control temporarily bypasses snapping. The current grid uses 50-unit divisions, switching to 10 at close zoom; coordinates snap to whole font units and nearby metric/node alignments.
 7. Inspect the word preview and click a letter to edit it. Undo/Redo work across completed canvas operations for the current glyph. Changing glyph/project resets the editing history. Saved project files retain exact cubic handles; SVG exports preserve cubic curves, while TrueType export adaptively approximates them. Open vector contours block font export and remain open in SVG.
 
 ## Research and scope

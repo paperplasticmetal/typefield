@@ -660,7 +660,7 @@ enum CanvasBoardLayout {
         guard let text = element.text, text.length > 0 else { return Double(element.rect.width) }
         let source = text.string as NSString
         let tokenMatcher = try? NSRegularExpression(pattern: #"\S+"#)
-        var required = Double(element.rect.width)
+        var required = 0.0
         var paragraphEnd = 0
         var tokenWidths: [NSAttributedString: Double] = [:]
         tokenMatcher?.enumerateMatches(in: text.string, range: NSRange(location: 0, length: source.length)) { match, _, _ in
@@ -680,7 +680,9 @@ enum CanvasBoardLayout {
             let indent = isFirstToken ? max(0, paragraphStyle?.firstLineHeadIndent ?? 0) : 0
             required = max(required, tokenWidth + Double(indent))
         }
-        return ceil(required)
+        // Round the measured token requirement, not an already wide enough
+        // frame. Rounding the frame itself shifts fractional mirrored copies.
+        return max(Double(element.rect.width), ceil(required))
     }
 }
 
@@ -1079,6 +1081,9 @@ struct TypeBoardEditor: View {
                 } label: { Text(selectedObjects.isEmpty ? "Selection" : "\(selectedObjects.count) selected") }
                 .menuStyle(.borderlessButton).fixedSize()
                 .help("Shift-click adds objects. Drag the selection to move; drag its handles to resize shapes or scale text. Escape cancels a drag.")
+                Menu("Symmetry") { symmetryActions }
+                    .menuStyle(.borderlessButton).fixedSize().disabled(selectedObjects.isEmpty || library.studio.readBlocked)
+                    .help("Flip the selection or create mirrored copies across the canvas center")
             }
         }
     }
@@ -1629,6 +1634,7 @@ struct TypeBoardEditor: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
                         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                 }
+                if !selectedObjects.isEmpty { symmetryControls; Divider() }
                 if selectedImportedShape != nil { selectedShapeAppearance; Divider() }
                 if selectedArtworkIndex != nil { selectedArtworkAppearance; Divider() }
                 if inspectorTab == "Arrangement" { layoutSections }

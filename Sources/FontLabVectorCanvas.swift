@@ -16,7 +16,7 @@ final class FontLabVectorNSView: NSView {
     private var accessibilityContours: [UUID: FontLabVectorAccessibilityElement] = [:]
     private var accessibilityNodes: [UUID: FontLabVectorAccessibilityElement] = [:]
     private var navigatedID: UUID?
-    private enum Drag { case none, nodes, handle(Int,Int,Bool), pen(Int,Int), shape, marquee, pan, resize(Int) }
+    private enum Drag { case none, nodes, handle(Int,Int,Bool), segment(Int,Int,Double), pen(Int,Int), shape, marquee, pan, resize(Int) }
     private var drag = Drag.none
     init(editor:FontLabVectorEditor) {
         self.editor=editor;super.init(frame:.zero)
@@ -192,22 +192,42 @@ final class FontLabVectorNSView: NSView {
             let line=NSBezierPath();line.move(to:CGPoint(x:0,y:position));line.line(to:CGPoint(x:bounds.width,y:position));line.lineWidth=0.7;line.stroke()
             (label as NSString).draw(at:CGPoint(x:8,y:position+3),withAttributes:[.font:NSFont.systemFont(ofSize:9),.foregroundColor:NSColor.secondaryLabelColor])
         }
-        fontLabDrawStrokes(editor.componentStrokes,in:r,color:.systemTeal)
+        if editor.fill { fontLabDrawStrokes(editor.componentStrokes,in:r,color:.systemTeal) }
+        else {
+            NSColor.systemTeal.setStroke()
+            let componentGlyph = FontLabGlyph(character: editor.glyph.character, strokes: editor.componentStrokes)
+            for path in FontLabVectorMath.paths(in: componentGlyph) { let outline=path.bezier(in:r);outline.lineWidth=1;outline.stroke() }
+            drawPenCenterlines(editor.componentStrokes,in:r,color:.systemTeal)
+        }
         let paths=editor.paths
         let pens=editor.glyph.strokes.filter {$0.contours == nil && $0.vectorPaths == nil}
-        fontLabDrawStrokes(pens,in:r,color:NSColor(editor.inkColor))
+        if editor.fill {fontLabDrawStrokes(pens,in:r,color:NSColor(editor.inkColor))}
+        else {drawPenCenterlines(pens,in:r,color:.secondaryLabelColor)}
         if editor.fill {
             // Counters share winding within their source stroke. Independent
             // imported/drawn strokes paint separately, just as in the proof.
-            fontLabDrawStrokes(editor.glyph.strokes.filter { $0.contours != nil || $0.vectorPaths != nil },in:r,color:NSColor(editor.inkColor))
+            let closedStrokes = editor.glyph.strokes.compactMap { stroke -> FontLabStroke? in
+                if let paths = stroke.vectorPaths {
+                    var closed = stroke; closed.vectorPaths = paths.filter(\.closed)
+                    return closed.vectorPaths!.isEmpty ? nil : closed
+                }
+                return stroke.contours != nil ? stroke : nil
+            }
+            fontLabDrawStrokes(closedStrokes,in:r,color:NSColor(editor.inkColor))
         }
         for path in paths {
-            NSColor.systemBlue.withAlphaComponent(0.75).setStroke();let outline=path.bezier(in:r);outline.lineWidth=1;outline.stroke()
+            (path.closed ? NSColor.systemBlue.withAlphaComponent(0.75) : NSColor.systemOrange).setStroke()
+            let outline=path.bezier(in:r);outline.lineWidth=path.closed ? 1:1.3
+            if !path.closed { outline.setLineDash([5,3],count:2,phase:0) }
+            outline.stroke()
             if editor.objectSelection && editor.tool == .select && path.nodes.count > 1 { continue }
             for (index,node) in path.nodes.enumerated() {
                 let p=screen(node.point)
                 if editor.selection.contains(node.id) {
-                    for h in [node.incoming,node.outgoing].compactMap({$0}) {
+                    let handles = [(false,node.incoming),(true,node.outgoing)].compactMap { outgoing,handle in
+                        handleIsActive(path,index:index,outgoing:outgoing) ? handle : nil
+                    }
+                    for h in handles {
                         let handle=screen(h);let line=NSBezierPath();line.move(to:p);line.line(to:handle);NSColor.systemOrange.setStroke();line.lineWidth=1;line.stroke()
                         NSColor.textBackgroundColor.setFill();let dot=NSBezierPath(ovalIn:CGRect(x:handle.x-3,y:handle.y-3,width:6,height:6));dot.fill();dot.stroke()
                     }
@@ -238,6 +258,19 @@ final class FontLabVectorNSView: NSView {
             focus.stroke()
         }
     }
+    private func drawPenCenterlines(_ strokes:[FontLabStroke],in rect:CGRect,color:NSColor) {
+        color.setStroke()
+        for stroke in strokes where stroke.contours == nil && stroke.vectorPaths == nil {
+            func point(_ p:FontLabPoint)->CGPoint {CGPoint(x:rect.minX+p.x*rect.width,y:rect.minY+p.y*rect.height)}
+            if stroke.points.count == 1,let sample=stroke.points.first {
+                let p=point(sample);NSBezierPath(ovalIn:CGRect(x:p.x-2,y:p.y-2,width:4,height:4)).stroke()
+            } else {
+                let outline=NSBezierPath()
+                for (index,sample) in stroke.points.enumerated() { if index == 0 {outline.move(to:point(sample))} else {outline.line(to:point(sample))} }
+                outline.lineWidth=1;outline.stroke()
+            }
+        }
+    }
     private func corners(_ r: CGRect) -> [CGPoint] { [CGPoint(x:r.minX,y:r.minY),CGPoint(x:r.maxX,y:r.minY),CGPoint(x:r.maxX,y:r.maxY),CGPoint(x:r.minX,y:r.maxY)] }
     private var selectionBox: CGRect? {
         let chosen = editor.paths.filter { !$0.nodes.isEmpty && $0.nodes.allSatisfy { editor.selection.contains($0.id) } }
@@ -245,19 +278,29 @@ final class FontLabVectorNSView: NSView {
         let box = chosen.reduce(CGRect.null) { $0.union($1.bezier(in:designRect).bounds) }
         return box.width > 0.1 && box.height > 0.1 ? box : nil
     }
+    private func handleIsActive(_ path: FontLabVectorPath, index: Int, outgoing: Bool) -> Bool {
+        path.closed || (outgoing ? index < path.nodes.count-1 : index > 0)
+    }
     private func hitNode(_ p:CGPoint)->(Int,Int,Bool?)? {
         let paths=editor.paths
-        for a in paths.indices.reversed() {for b in paths[a].nodes.indices where editor.selection.contains(paths[a].nodes[b].id) {
+        var best: (Int,Int,Bool?)?, distance = Double.infinity
+        // Prefer the nearest visible target, with anchors winning a tie. A
+        // short handle must not steal a click at its anchor's exact center.
+        for a in paths.indices.reversed() {for b in paths[a].nodes.indices.reversed() {
+            let q=screen(paths[a].nodes[b].point),d=hypot(q.x-p.x,q.y-p.y)
+            let chosenSelected=best.map {editor.selection.contains(paths[$0.0].nodes[$0.1].id)} ?? false
+            let selectedTie=abs(d-distance)<1e-7 && editor.selection.contains(paths[a].nodes[b].id) && !chosenSelected
+            if d<8,d<distance-1e-7 || selectedTie {distance=d;best=(a,b,nil)}
+        }}
+        for a in paths.indices.reversed() {for b in paths[a].nodes.indices.reversed() where editor.selection.contains(paths[a].nodes[b].id) {
             let node=paths[a].nodes[b]
             for (outgoing,h) in [(false,node.incoming),(true,node.outgoing)] {
-                if let h, hypot(screen(h).x-screen(node.point).x,screen(h).y-screen(node.point).y)>0.5,
-                   hypot(screen(h).x-p.x,screen(h).y-p.y)<7 {return (a,b,outgoing)}
+                guard handleIsActive(paths[a],index:b,outgoing:outgoing),let h else {continue}
+                let handle=screen(h),anchor=screen(node.point),d=hypot(handle.x-p.x,handle.y-p.y)
+                if hypot(handle.x-anchor.x,handle.y-anchor.y)>0.5,d<7,d<distance-1e-7 {distance=d;best=(a,b,outgoing)}
             }
         }}
-        for a in paths.indices.reversed() {for b in paths[a].nodes.indices.reversed() {
-            let q=screen(paths[a].nodes[b].point);if hypot(q.x-p.x,q.y-p.y)<8 {return (a,b,nil)}
-        }}
-        return nil
+        return best
     }
     func hitSegment(_ p:CGPoint)->(Int,Int,Double)? {
         var best:(Int,Int,Double)?,distance=7.0
@@ -284,6 +327,40 @@ final class FontLabVectorNSView: NSView {
         }}
         return best
     }
+    private func reshapingSegment(_ original: [FontLabVectorPath], path a: Int, segment b: Int,
+                                  t: Double, delta: FontLabPoint, breakSmooth: Bool) -> [FontLabVectorPath] {
+        var paths=original
+        let next=(b+1)%original[a].nodes.count
+        var controls=original[a].controls(b)
+        if !original[a].isCurve(b) {
+            controls[1]=FontLabVectorMath.mix(controls[0],controls[3],1/3)
+            controls[2]=FontLabVectorMath.mix(controls[0],controls[3],2/3)
+        }
+        // The least-squares control displacement moves B(t) by the requested
+        // delta while leaving both anchors fixed. Bound t away from an
+        // endpoint so a near-anchor miss cannot create enormous handles.
+        let t=min(0.95,max(0.05,t)),u=1-t
+        let b1=3*u*u*t,b2=3*u*t*t,denominator=b1*b1+b2*b2
+        controls[1].x += delta.x*b1/denominator;controls[1].y += delta.y*b1/denominator
+        controls[2].x += delta.x*b2/denominator;controls[2].y += delta.y*b2/denominator
+        paths[a].nodes[b].outgoing=controls[1]
+        paths[a].nodes[next].incoming=controls[2]
+        for (index,outgoing) in [(b,true),(next,false)] {
+            if breakSmooth { paths[a].nodes[index].smooth=false;continue }
+            let node=original[a].nodes[index]
+            guard node.smooth,handleIsActive(original[a],index:index,outgoing:!outgoing),
+                  let opposite=outgoing ? node.incoming:node.outgoing else {continue}
+            let moved=outgoing ? controls[1]:controls[2],width=editor.glyph.resolvedDesignWidth
+            let dx=(moved.x-node.point.x)*width,dy=moved.y-node.point.y,length=hypot(dx,dy)
+            guard length>1e-9 else {continue}
+            let oppositeLength=hypot((opposite.x-node.point.x)*width,opposite.y-node.point.y)
+            var reflected=opposite
+            reflected.x=node.point.x-dx/length*oppositeLength/width
+            reflected.y=node.point.y-dy/length*oppositeLength
+            if outgoing {paths[a].nodes[index].incoming=reflected} else {paths[a].nodes[index].outgoing=reflected}
+        }
+        return paths
+    }
     override func mouseDown(with event:NSEvent) {
         endGesture(commit: true)
         window?.makeFirstResponder(self)
@@ -293,10 +370,18 @@ final class FontLabVectorNSView: NSView {
         switch editor.tool {
         case .pen:
             var paths=editor.paths
+            if let a=paths.firstIndex(where:{$0.id==editor.activePath && !$0.closed}),paths[a].nodes.count>=3,
+               hypot(screen(paths[a].nodes[0].point).x-start.x,screen(paths[a].nodes[0].point).y-start.y)<9 {
+                paths[a].closed=true;_=editor.apply(paths);editor.activePath=nil;drag = .none;return
+            }
+            if let (a,b,handle)=hitNode(start),paths[a].closed {
+                let node=paths[a].nodes[b]
+                editor.selection=[node.id];editor.activePath=nil;draggedNodeID=node.id;navigatedID=node.id
+                if let handle {drag = .handle(a,b,handle)} else {drag = .nodes}
+                editor.message="Editing an existing outline. Drag its anchor or handle; click empty space to start a new Bézier contour."
+                needsDisplay=true;return
+            }
             if let a=paths.firstIndex(where:{$0.id==editor.activePath && !$0.closed}) {
-                if paths[a].nodes.count>=3,hypot(screen(paths[a].nodes[0].point).x-start.x,screen(paths[a].nodes[0].point).y-start.y)<9 {
-                    paths[a].closed=true;_=editor.apply(paths);editor.activePath=nil;drag = .none;return
-                }
                 paths[a].nodes.append(.init(point:point));editor.selection=[paths[a].nodes.last!.id];_=editor.apply(paths,commit:false);drag = .pen(a,paths[a].nodes.count-1)
             } else if let (a,b,_) = hitNode(start),!paths[a].closed,b==paths[a].nodes.count-1 {
                 editor.activePath=paths[a].id;editor.selection=[paths[a].nodes[b].id];drag = .none
@@ -342,7 +427,10 @@ final class FontLabVectorNSView: NSView {
                 if event.clickCount==2 {
                     var paths=editor.paths;paths[a].insertNode(segment:b,t:t);_=editor.apply(paths);editor.selection=[paths[a].nodes[b+1].id];drag = .none
                 } else {
-                    let ids=Set(originalPaths[a].nodes.map(\.id));editor.selection=event.modifierFlags.contains(.shift) ? editor.selection.union(ids):ids;drag = .nodes
+                    let next=(b+1)%originalPaths[a].nodes.count
+                    let ids:Set<UUID>=[originalPaths[a].nodes[b].id,originalPaths[a].nodes[next].id]
+                    editor.selection=event.modifierFlags.contains(.shift) ? editor.selection.union(ids):ids
+                    drag = .segment(a,b,t)
                 }
             } else {
                 if !event.modifierFlags.contains(.shift) {editor.selection=[];navigatedID=nil}
@@ -404,6 +492,16 @@ final class FontLabVectorNSView: NSView {
                 if paths[p].nodes[n].outgoing != nil {paths[p].nodes[n].outgoing!.x += dx;paths[p].nodes[n].outgoing!.y += dy}
             }}
             _=editor.apply(paths,commit:false)
+        case let .segment(a,b,t):
+            if hypot(end.x-start.x,end.y-start.y)<3 {
+                if let previousGlyph {editor.receive(previousGlyph)}
+                break
+            }
+            var delta=FontLabPoint(x:(end.x-start.x)/designRect.width,y:(end.y-start.y)/designRect.height)
+            if event.modifierFlags.contains(.shift) {
+                if abs(end.x-start.x)>abs(end.y-start.y) {delta.y=0} else {delta.x=0}
+            }
+            _=editor.apply(reshapingSegment(originalPaths,path:a,segment:b,t:t,delta:delta,breakSmooth:event.modifierFlags.contains(.option)),commit:false)
         case let .handle(a,b,outgoing):
             var paths=editor.paths
             guard paths.indices.contains(a), paths[a].nodes.indices.contains(b) else { previousGlyph=nil; endGesture(commit: false); return }
@@ -458,7 +556,7 @@ final class FontLabVectorNSView: NSView {
         // transaction first so a responder callback cannot commit it twice.
         previousGlyph=nil;gestureGlyph=nil;originalPaths=[];draggedNodeID=nil;initialSelection=[];initialActivePath=nil;marquee=nil;drag = .none;needsDisplay=true
         if isCurrentGlyph { switch completedDrag {
-        case .nodes, .handle, .pen, .shape, .resize:
+        case .nodes, .handle, .segment, .pen, .shape, .resize:
             if let before {
                 if commit { editor.finishGesture(from: before) }
                 else { editor.receive(before); editor.selection = restoreSelection; editor.activePath = restoreActivePath }
@@ -485,7 +583,7 @@ final class FontLabVectorNSView: NSView {
         guard modifiers.isEmpty || modifiers == .shift else {super.keyDown(with:event);return}
         let key=event.charactersIgnoringModifiers?.lowercased() ?? ""
         if key == " ", spaceDown { return }
-        guard [UInt16(51), 117, 36, 123, 124, 125, 126].contains(event.keyCode) || [" ", "v", "p", "r", "o", "h"].contains(key) else {
+        guard [UInt16(51), 117, 36, 123, 124, 125, 126].contains(event.keyCode) || [" ", "v", "a", "f", "p", "r", "o", "h"].contains(key) else {
             super.keyDown(with: event); return
         }
         endGesture(commit: true)
@@ -500,9 +598,12 @@ final class FontLabVectorNSView: NSView {
         case 126:editor.move(dx:0,dy:unit);return
         default:break
         }
+        if ["v","a","f","p","r","o","h"].contains(key) {editor.message=FontLabVectorEditor.defaultMessage}
         switch key {
         case " ":spaceDown=true
         case "v":editor.tool = .select;editor.activePath=nil
+        case "a":editor.objectSelection=false;editor.tool = .select;editor.activePath=nil
+        case "f":editor.fill.toggle()
         case "p":editor.tool = .pen
         case "r":editor.tool = .rectangle;editor.activePath=nil
         case "o":editor.tool = .ellipse;editor.activePath=nil

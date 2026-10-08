@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.21 (2026-10-07)
+
+- Make closed-outline anchors directly draggable, bend segments with fixed endpoints, and keep the filled letter and word proof live during edits. Bézier clicks on existing nodes edit them instead of creating stray paths.
+- Expose Fill and Contours controls; distinguish unfilled open paths, with explicit undoable selection, closing and deletion. Simplification returns to individual node editing.
+- Explain unfinished contours before TrueType export and refresh the warning as paths are repaired. Preserve project and SVG artwork.
+- Expose Spaces flips and mirrored copies in the toolbar and inspector. Preserve precise text placement at fractional scales and reject mirrors that would need to shift to fit.
+
 ## 0.59.20 (2026-10-07)
 
 - Show Hello in the welcome specimen with a shared visible x-height, baseline and horizontal center across fonts; remove the decorative wordmark dot.
