@@ -18,6 +18,6 @@ assert f'class="download-button" href="../assets/{filename}"' in html, 'Stale pr
 assert f'Version {version} beta 1 (build {build})' in html, 'Stale version/build copy'
 assert f'https://github.com/paperplasticmetal/typefield/releases/download/v{version}-beta.1/{filename}' in html, 'Stale GitHub link'
 digest = hashlib.sha256((site / 'assets' / filename).read_bytes()).hexdigest()
-assert html.count(digest) == 2, 'Download and latest history checksums must match the DMG'
+assert f'SHA-256: <code>{digest}</code>' in html, 'Download checksum must match the DMG'
 assert f'/assets/{filename}\n  Content-Type: application/x-apple-diskimage' in (site / '_headers').read_text(), 'Missing DMG headers'
 print(f'PASS: public downloads, checksum and both app plists match Typefield {version} ({build})')

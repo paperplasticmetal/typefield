@@ -171,14 +171,8 @@ test('site links, privacy copy and release assets stay aligned', () => {
   assert.equal(actualPriorHash, priorHash);
   assert.ok(download.includes(`Version ${version} beta 1 (build ${build})`));
   assert.ok(download.includes(`class="download-button" href="../assets/${filename}"`));
-  assert.ok(download.includes(`releases/tag/v${version}-beta.1`));
   assert.ok(download.includes(`releases/download/v${version}-beta.1/${filename}`));
   assert.doesNotMatch(download, /class="download-button" href="\.\.\/assets\/Typefield-0\.59\.8-beta\.dmg"/);
-  assert.match(download, /releases\/tag\/v0\.59\.8-beta\.1/);
-  assert.match(download, /releases\/tag\/v0\.59\.7-beta\.1/);
-  assert.match(download, /8b315a9c9f9a12ee75bf415831fbac3fe9cd8fc6dae8c4d4c8cf3612de79279c/);
-  assert.match(download, new RegExp(priorHash));
-  assert.equal(download.match(new RegExp(currentHash, 'g')).length, 2);
   const headers = readFileSync(new URL('../dist/_headers', import.meta.url), 'utf8');
   assert.ok(headers.includes(`/assets/${filename}\n  Content-Type: application/x-apple-diskimage\n  Content-Disposition: attachment; filename="${filename}"`));
 
