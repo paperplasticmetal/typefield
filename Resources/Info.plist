@@ -26,5 +26,25 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Typefield</string>
+	<key>SUFeedURL</key>
+	<string>https://typefield.app/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>Riq5TRyH0cFVj7zWSWflg+iBD1kMZRfjfmY5j1VAV5A=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<integer>0</integer>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUSendProfileInfo</key>
+	<false/>
 </dict>
 </plist>

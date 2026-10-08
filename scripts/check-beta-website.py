@@ -4,6 +4,8 @@ import hashlib
 import pathlib
 import plistlib
 import re
+import subprocess
+import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
 app = plistlib.loads((root / 'Resources/Info.plist').read_bytes())
@@ -20,4 +22,6 @@ assert f'https://github.com/paperplasticmetal/typefield/releases/download/v{vers
 digest = hashlib.sha256((site / 'assets' / filename).read_bytes()).hexdigest()
 assert f'SHA-256: <code>{digest}</code>' in html, 'Download checksum must match the DMG'
 assert f'/assets/{filename}\n  Content-Type: application/x-apple-diskimage' in (site / '_headers').read_text(), 'Missing DMG headers'
+subprocess.run([sys.executable, str(root / 'scripts/updater/validate-appcast.py'), '--plist', str(root / 'Resources/Info.plist'), '--dmg', str(site / 'assets' / filename), '--feed', str(site / 'updates/appcast.xml')], check=True)
+assert '/updates/appcast.xml\n  Content-Type: application/rss+xml' in (site / '_headers').read_text(), 'Missing appcast headers'
 print(f'PASS: public downloads, checksum and both app plists match Typefield {version} ({build})')

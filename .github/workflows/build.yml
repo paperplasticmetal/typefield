@@ -29,6 +29,8 @@ jobs:
         run: codesign --verify --deep --strict dist/Typefield.app
       - name: Figma importer contract tests
         run: node tests/figma-import.test.js
+      - name: Signed updater feed regression checks
+        run: python3 scripts/updater/test-appcast.py
       - name: Public beta download matches app version
         run: python3 scripts/check-beta-website.py
       - name: Archive Store target without distribution signing

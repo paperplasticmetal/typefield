@@ -10,7 +10,7 @@ final class TypefieldSettingsSelection: ObservableObject {
     @Published var page: TypefieldSettingsPage = .appearance
 }
 enum TypefieldSettingsPage: String, CaseIterable, Identifiable {
-    case appearance = "Appearance", icon = "App Icon", folders = "Live Folders", library = "Library", shortcuts = "Keyboard Shortcuts", privacy = "Privacy & Permissions", about = "About Typefield"
+    case appearance = "Appearance", icon = "App Icon", folders = "Live Folders", library = "Library", shortcuts = "Keyboard Shortcuts", privacy = "Privacy & Permissions", updates = "Updates", about = "About Typefield"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -20,6 +20,7 @@ enum TypefieldSettingsPage: String, CaseIterable, Identifiable {
         case .library: return "textformat"
         case .shortcuts: return "keyboard"
         case .privacy: return "hand.raised"
+        case .updates: return "arrow.down.circle"
         case .about: return "info.circle"
         }
     }
@@ -48,6 +49,7 @@ final class TypefieldSettingsWindow {
 struct TypefieldSettingsView: View {
     @ObservedObject var library: Library
     @ObservedObject var selection: TypefieldSettingsSelection
+    @ObservedObject private var updater = TypefieldUpdater.shared
     @AppStorage("appearance") private var appearance = "Dark"
     @AppStorage("typefield.palette") private var palette = "neutral"
     @AppStorage("typefield.iconPalette") private var iconPalette = "neutral"
@@ -115,6 +117,7 @@ struct TypefieldSettingsView: View {
         case .library: libraryPane
         case .shortcuts: TypefieldShortcutReference(dismiss: {}, embedded: true)
         case .privacy: privacyPane
+        case .updates: updatesPane
         case .about: aboutPane
         }
     }
@@ -204,12 +207,52 @@ struct TypefieldSettingsView: View {
                 section("Live-folder permissions", "You grant access through the macOS folder picker. Local builds pause saved watches that include Desktop, Documents or Downloads when Typefield opens, avoiding repeated system permission prompts. Resume a paused watch from Live Folders when you need it. Stopping a watch leaves the original font files in place.")
                 Button("Manage Live Folders") { selection.page = .folders }
                 section("Google Fonts & network access", "Browsing Google Fonts contacts Google’s public font repository on GitHub for previews. Downloads also retrieve font files and licenses. GitHub receives normal connection information such as your IP address and the requested public file path. Preview text is rendered locally and is not sent. Remote previews use an ephemeral network session and an in-memory font cache; explicit downloads are saved locally.")
+                if TypefieldUpdateConfiguration.isDirectDistribution {
+                section("App updates", "When automatic checks are enabled, Typefield contacts typefield.app to look for published updates. Installing an update downloads a signed app from our public GitHub releases. These services receive normal connection information; your fonts, library, and projects are never sent. You can turn automatic checks off in Updates.")
+                }
                 section("Exports & licensing", "Exports are saved where you choose. Figma, Adobe, and developer handoffs refer to fonts by name and do not contain font binaries. Adobe scripts are saved for you to run manually. Use or export only fonts and artwork you have permission to use; Typefield cannot verify redistribution, embedding, or commercial-use rights.")
             }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
         }
     }
     private func section(_ title: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+    }
+    private var updatesPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("Keep Typefield up to date.").font(.title3)
+                Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                    .foregroundStyle(.secondary)
+                if updater.isAvailable {
+                    Text("Get the latest published Typefield release, including new features and fixes. Your fonts, library, and projects stay on this Mac.")
+                        .foregroundStyle(.secondary)
+                    Button("Check for Updates…") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
+                        .accessibilityIdentifier("typefield-check-for-updates")
+                    if let date = updater.lastUpdateCheckDate {
+                        Text("Last checked: \(date.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    Toggle("Automatically check for updates", isOn: Binding(
+                        get: { updater.automaticallyChecksForUpdates },
+                        set: { updater.setAutomaticallyChecksForUpdates($0) }))
+                        .accessibilityIdentifier("typefield-automatic-update-checks")
+                    Toggle("Automatically download and install updates", isOn: Binding(
+                        get: { updater.automaticallyDownloadsUpdates },
+                        set: { updater.setAutomaticallyDownloadsUpdates($0) }))
+                        .disabled(!updater.automaticallyChecksForUpdates || !updater.allowsAutomaticUpdates)
+                        .accessibilityIdentifier("typefield-automatic-update-downloads")
+                    Text("Automatic checks run daily. With automatic installation enabled, updates can install when you quit Typefield. You can always check manually.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(updater.unavailableReason ?? "Update checks are unavailable.").foregroundStyle(.secondary)
+                }
+                if TypefieldUpdateConfiguration.isDirectDistribution {
+                    Link("View Downloads & Release Information", destination: URL(string: "https://typefield.app/download/")!)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
     private var aboutPane: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -221,6 +264,7 @@ struct TypefieldSettingsView: View {
                 NSApp.windows.first(where: { $0.title == "Typefield" })?.makeKeyAndOrderFront(nil)
                 NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "tour")
             }
+            Button("Updates…") { selection.page = .updates }
             Button("Keyboard Shortcuts") { selection.page = .shortcuts }
             Button("Privacy & Permissions") { selection.page = .privacy }
             Divider()

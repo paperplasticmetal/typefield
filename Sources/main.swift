@@ -1338,6 +1338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let theme = UserDefaults.standard.string(forKey: "appearance") ?? "Dark"
         NSApp.appearance = theme == "System" ? nil : NSAppearance(named: theme == "Dark" ? .darkAqua : .aqua)
         TypefieldIcon.apply()
+        TypefieldUpdater.shared.start()
         let root = ContentView(library: library, windows: workspaceWindows)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -1351,6 +1352,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let appItem = NSMenuItem(title: "Typefield", action: nil, keyEquivalent: ""); menu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         addCommand("About Typefield", "about", to: appMenu)
+        if TypefieldUpdater.shared.isAvailable {
+            addCommand("Check for Updates…", "checkForUpdates", to: appMenu)
+        }
         addCommand("Privacy & Permissions…", "privacy", to: appMenu)
         addCommand("Settings…", "settings", to: appMenu, key: ",")
         appMenu.addItem(.separator())
@@ -1524,6 +1528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return NSApp.isActive && activeEditorWindow.attachedSheet == nil
         }
         guard let command = item.representedObject as? String else { return true }
+        if command == "checkForUpdates" { return TypefieldUpdater.shared.canCheckForUpdates }
         if ["settings", "about", "privacy", "shortcuts", "feedback", "bugReport"].contains(command) { return true }
         let inspectorIsKey = NSApp.keyWindow?.title == "Typefield: Inspector" && activeWorkspace == .spaces
         if command == "dockInspector" { return NSApp.isActive && inspectorIsKey && window.attachedSheet == nil }
@@ -1595,6 +1600,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "dockInspector":
             NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.full")
             if workspaceWindows.detached.contains(.spaces) { workspaceWindows.detach(.spaces) } else { window.makeKeyAndOrderFront(nil) }
+        case "checkForUpdates": Task { @MainActor in TypefieldUpdater.shared.checkForUpdates() }
         case "settings": settingsWindow.show(library: library)
         case "about": settingsWindow.show(library: library, page: .about)
         case "privacy": settingsWindow.show(library: library, page: .privacy)
@@ -1773,7 +1779,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     catch { fputs("Stress regression failed: \(error.localizedDescription)\n",stderr);exit(1) }
 } else if CommandLine.arguments.contains("--window-self-test") {
     WorkspaceWindowChecks.run()
+} else if CommandLine.arguments.contains("--updater-self-test") {
+    try TypefieldUpdaterChecks.run()
 } else if CommandLine.arguments.contains("--self-test") {
+    try TypefieldUpdaterChecks.run()
     for pointSize in [52.0, 131.0] {
         let views = ["Helvetica", "Times-Roman"].map { name -> BaselineTextView in
             let view = BaselineTextView()
