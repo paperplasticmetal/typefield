@@ -6,6 +6,22 @@
     <description>Signed public beta updates for Typefield.</description>
     <language>en</language>
     <item>
+      <title>Typefield 0.59.26</title>
+      <link>https://typefield.app/download/</link>
+      <sparkle:version>106</sparkle:version>
+      <sparkle:shortVersionString>0.59.26</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <pubDate>Thu, 08 Oct 2026 08:41:02 +0000</pubDate>
+      <description sparkle:format="plain-text">Letterform tools now have larger, fixed hitboxes and visible shortcuts: Select (V), Nodes (A), Pen (P), Line (L), Rectangle (R), Ellipse (O), and Hand (H). Paths and Transform sit together beside the drawing tools, and the Word Proof disclosure is beside its title.
+
+Tool switching preserves the canvas position and restores keyboard focus. Word Proof rebuilds only the visible letters when geometry changes; dense outlines reuse bounded drawing and hit-test caches. Anchor/curve edits, live fill/proof, undo, and saved geometry remain intact.
+
+Includes the completed Spaces cursor-picker and image-resizing refinement, plus signed in-app updates. Apple silicon, macOS 13 or later.
+</description>
+      <enclosure url="https://github.com/paperplasticmetal/typefield/releases/download/v0.59.26-beta.1/Typefield-0.59.26-beta.dmg" length="8404277" type="application/octet-stream" sparkle:edSignature="PKi3gGJrdrSyHiKKnyIYp/sko2SEKM9tpdfD5RP6q91omgUOwHGyLDR7x137Hifgt8MB26HaPz5rO+kwCVOhCA==" />
+    </item>
+    <item>
       <title>Typefield 0.59.25</title>
       <link>https://typefield.app/download/</link>
       <sparkle:version>105</sparkle:version>
@@ -46,6 +62,6 @@ Existing copies without an Updates page need one manual download from typefield.
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: ZX80ue0yaOFLA+BcNEpVxi5tdbwU7yyZVR/QoITTjjL+ccO8KeK3CGb0wurKs0DVV+h/N91UzPw8k3o82Md1Cw==
-length: 3103
+edSignature: uDGEJ5ZtMhxjv4dv8J98Nh8LACExEiwae+YM3lo+z4vW3jv1dRHjWBf0TcPTe1SnH9ijv449qb1QkVnODZ14DA==
+length: 4572
 -->
