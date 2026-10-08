@@ -31,6 +31,7 @@ enum SpacesObjects {
                 layer.style = nil; layer.artworkInFront = true
             }
             layer.flipX = e.flipX; layer.flipY = e.flipY
+            layer.effects = e.effects == CanvasObjectEffects() ? nil : e.effects
             return layer
         }
         let groups = (direction.objectGroups ?? []).compactMap { group -> [Int]? in
@@ -63,6 +64,7 @@ enum SpacesObjects {
             layers[i].width /= scale; layers[i].height /= scale; layers[i].radius /= scale
             if let width = layers[i].strokeWidth { layers[i].strokeWidth = width / scale }
             layers[i].style = layers[i].style?.scaledForCanvas(1 / scale)
+            layers[i].effects = layers[i].effects?.scaledForCanvas(1 / scale)
         }
         result.objectLayers = (result.objectLayers ?? []) + layers
         let idsByLayer = Dictionary(uniqueKeysWithValues: CanvasPlan(direction: result).elements.filter { e in layers.contains { $0.id == e.sectionID } }.map { ($0.sectionID, $0.objectID) })
@@ -78,7 +80,7 @@ enum SpacesObjects {
         let looseSections = Set((source.objectLayers ?? []).map(\.id))
         let looseIDs = Set(CanvasPlanCache.plan(for: source).elements.filter { looseSections.contains($0.sectionID) }.map(\.objectID))
         result.hiddenObjectIDs = (result.hiddenObjectIDs ?? []).union(ids.subtracting(looseIDs))
-        for id in ids { result.objectTransforms?.removeValue(forKey: id) }
+        for id in ids { result.objectTransforms?.removeValue(forKey: id); result.objectEffects?.removeValue(forKey: id) }
         let sections = Set(CanvasPlanCache.plan(for: source).elements.filter { ids.contains($0.objectID) }.map(\.sectionID))
         result.objectLayers?.removeAll { sections.contains($0.id) }
         result.objectGroups = result.objectGroups?.compactMap { group in
@@ -211,33 +213,24 @@ extension TypeBoardEditor {
         }
     }
     var symmetryControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Symmetry").font(.caption.weight(.semibold))
-            HStack(spacing: 6) {
-                Text("Flip selection").font(.caption).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Button("Horizontal") { objectCommand("flipHorizontal") }
-                    .help("Reflect the selection left to right around its center. Text is reflected too.")
-                    .accessibilityLabel("Flip selection horizontally")
-                Button("Vertical") { objectCommand("flipVertical") }
-                    .help("Reflect the selection top to bottom around its center. Text is reflected too.")
-                    .accessibilityLabel("Flip selection vertically")
-            }
-            Text("Mirror copies across canvas center").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                Button("Vertical axis") { objectCommand("mirrorVertical") }
-                    .help("Keep the original and create a reflected copy on the other side of the canvas’s vertical center line.")
-                    .accessibilityLabel("Mirror copy across vertical canvas axis")
-                Button("Horizontal axis") { objectCommand("mirrorHorizontal") }
-                    .help("Keep the original and create a reflected copy on the other side of the canvas’s horizontal center line.")
-                    .accessibilityLabel("Mirror copy across horizontal canvas axis")
-                Button("Both axes") { objectCommand("mirrorBoth") }
-                    .help("Keep the original and create three reflected copies across both canvas center lines.")
-                    .accessibilityLabel("Mirror copies into four quadrants")
-            }
+        HStack(spacing: 6) {
+            StudioInspectorIcon(title: "Flip selection horizontally", icon: "arrow.left.and.right.righttriangle.left.righttriangle.right") { objectCommand("flipHorizontal") }.frame(width: 34)
+            Button { objectCommand("flipVertical") } label: {
+                Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right").font(.system(size: 14)).rotationEffect(.degrees(90)).frame(width: 34, height: 30).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 6))
+            }.buttonStyle(.plain).help("Flip selection vertically").accessibilityLabel("Flip selection vertically")
+            Divider().frame(height: 20)
+            Menu {
+                Button("Across vertical canvas axis") { objectCommand("mirrorVertical") }
+                Button("Across horizontal canvas axis") { objectCommand("mirrorHorizontal") }
+                Button("Into all four quadrants") { objectCommand("mirrorBoth") }
+            } label: { Image(systemName: "plus.square.on.square").font(.system(size: 14)).frame(width: 34, height: 30).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 6)) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("Create mirrored copies across the canvas center").accessibilityLabel("Create mirrored copies")
+            Spacer(minLength: 0)
         }.controlSize(.small).disabled(selectedObjects.isEmpty || library.studio.readBlocked)
-            .accessibilityIdentifier("spaces-symmetry-controls")
+        .accessibilityIdentifier("spaces-symmetry-controls")
     }
+
 }
 
 /// Eight handles resize non-text objects independently. Text selections retain

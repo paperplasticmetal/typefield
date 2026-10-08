@@ -179,6 +179,16 @@ private struct EditorWindowRoot: View {
                     Toggle("Show metrics & spacing", isOn: $fontLabSession.compactMetricsExpanded)
                     Divider()
                 }
+                if mode == .spaces {
+                    Menu("Inspector") {
+                        Button("Tools & inspector") { NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.full") }
+                        Button("Tools only") { NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.slim") }
+                        Button("Hide tools & inspector") { NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.hidden") }
+                        Button("Float inspector") { NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.inspector.floating") }
+                    }
+                    Button("Toggle canvas focus") { NotificationCenter.default.post(name: Notification.Name("TypefieldMenu"), object: "studio.canvasFocus") }
+                    Divider()
+                }
                 Button("Open font browser…") { windows.openBrowser() }
                 Button(windows.detached.contains(mode) ? "Dock window" : "Pop out editor") {
                     if windows.detached.contains(mode) { windows.dock(mode) } else { windows.detach(mode) }

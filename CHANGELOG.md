@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.22 — Spaces tools, guides and effects
+
+- Consolidates editing into one icon rail and focused Properties, Typography, Layers and Canvas panels. Flip buttons use icons; mirrored copies have a separate menu.
+- Adds live edge/center alignment guides and gentle snapping while moving or resizing objects and groups. Hold Option to move freely.
+- Adds per-object blur and colored shadows for text and shapes, preserved through editing, clipboard operations and preview PDF exports.
+
+
 ## 0.59.21 (2026-10-07)
 
 - Make closed-outline anchors directly draggable, bend segments with fixed endpoints, and keep the filled letter and word proof live during edits. Bézier clicks on existing nodes edit them instead of creating stray paths.

@@ -11,7 +11,7 @@ final class StudioEditorSession: ObservableObject {
     @Published var role: TypeRole = .display
     @Published var selectedTextID: String?
     @Published var selectedSection: String?
-    @Published var inspectorTab = "Typography"
+    @Published var inspectorTab = "Properties"
     @Published var fontSearch = ""
     @Published var fontCollection = "All fonts"
     @Published var fontCategory = "All categories"

@@ -343,14 +343,7 @@ extension TypeBoardEditor {
                     StudioInspectorIcon(title: alignment.rawValue + " to canvas", icon: alignment.icon) { alignElement(alignment) }
                 }
             }.disabled(alignmentObjectIDs.isEmpty)
-            Text(alignmentObjectIDs.isEmpty ? "Select content on the canvas to align it." : "Moves the selection within the current canvas.")
-                .font(.caption2).foregroundStyle(.secondary)
-            if !alignmentObjectIDs.isEmpty {
-                Button("Reset frame position") {
-                    for id in alignmentObjectIDs { board.directions[directionIndex].objectTransforms?[id]?.x = 0; board.directions[directionIndex].objectTransforms?[id]?.y = 0; board.directions[directionIndex].textPositions?.removeValue(forKey: id) }
-                    save("Reset Object Position")
-                }.font(.caption)
-            }
+
         }
     }
     func alignElement(_ alignment: StudioCanvasAlignment) {
