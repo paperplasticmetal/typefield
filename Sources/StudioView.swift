@@ -58,6 +58,176 @@ enum WorkspaceHeaderLayout {
     static let titleSize = 22.0
     static let titleHeight = 30.0
     static let rowHeight = 40.0
+    static let actionHeight = 36.0
+    static let actionSpacing = 8.0
+    static let sectionSpacing = 16.0
+}
+
+/// Resizing changes placement, not the identity of search fields, rename fields,
+/// popover anchors or native menus. Actions remain visible on additional rows.
+struct WorkspaceHeader<Identity: View, Actions: View>: View {
+    let sidebarCollapsed: Bool
+    private let identity: Identity
+    private let actions: Actions
+
+    init(sidebarCollapsed: Bool = false, @ViewBuilder identity: () -> Identity, @ViewBuilder actions: () -> Actions) {
+        self.sidebarCollapsed = sidebarCollapsed
+        self.identity = identity()
+        self.actions = actions()
+    }
+
+    var body: some View {
+        WorkspaceHeaderRows {
+            HStack(spacing: WorkspaceHeaderLayout.actionSpacing) { identity }
+                .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
+                .frame(minHeight: WorkspaceHeaderLayout.titleHeight, alignment: .leading)
+            WorkspaceHeaderActionLayout { actions }
+                .font(.system(size: 12, weight: .medium))
+                .controlSize(.regular)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
+        .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
+        .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
+        .accessibilityIdentifier("workspace-header")
+    }
+}
+
+struct WorkspaceHeaderActionLabel: View {
+    private let title: Text
+    let systemImage: String
+    let showsMenuIndicator: Bool
+    let iconOnly: Bool
+    let titleMaxWidth: CGFloat?
+
+    init(_ title: LocalizedStringKey, systemImage: String, showsMenuIndicator: Bool = false, iconOnly: Bool = false) {
+        self.title = Text(title)
+        self.systemImage = systemImage
+        self.showsMenuIndicator = showsMenuIndicator
+        self.iconOnly = iconOnly
+        self.titleMaxWidth = nil
+    }
+
+    init(verbatim title: String, systemImage: String, showsMenuIndicator: Bool = false, titleMaxWidth: CGFloat? = nil) {
+        self.title = Text(verbatim: title)
+        self.systemImage = systemImage
+        self.showsMenuIndicator = showsMenuIndicator
+        self.iconOnly = false
+        self.titleMaxWidth = titleMaxWidth
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage).frame(width: 16).accessibilityHidden(true)
+            if !iconOnly { title.lineLimit(1).truncationMode(.middle).frame(maxWidth: titleMaxWidth) }
+            if showsMenuIndicator { Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).accessibilityHidden(true) }
+        }
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, iconOnly ? 10 : 11)
+        .frame(minWidth: WorkspaceHeaderLayout.actionHeight, minHeight: WorkspaceHeaderLayout.actionHeight)
+        .foregroundStyle(.primary)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.primary.opacity(0.09), lineWidth: 1))
+        .contentShape(Rectangle())
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel(title)
+    }
+}
+
+extension View {
+    /// The borderless native menu style discards custom label drawing and
+    /// shrinks its hit region. Button-style menus preserve the full label while
+    /// keeping native menu navigation, disabled items and accessibility.
+    func workspaceHeaderMenu() -> some View {
+        menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+    }
+}
+
+struct WorkspaceHeaderRows: Layout {
+    struct Placement {
+        var identity: CGRect
+        var actions: CGRect
+        var size: CGSize
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        placement(width: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let result = placement(width: bounds.width, subviews: subviews)
+        for (index, frame) in [result.identity, result.actions].enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                                 proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func placement(width proposedWidth: CGFloat?, subviews: Subviews) -> Placement {
+        guard subviews.count == 2 else { return Placement(identity: .zero, actions: .zero, size: .zero) }
+        let identityIdeal = subviews[0].sizeThatFits(.unspecified)
+        let actionsIdeal = subviews[1].sizeThatFits(.unspecified)
+        // Long user names truncate before controls move; short titles do not
+        // reserve a large empty column at the narrowest supported window size.
+        let identityPreferred = min(320, max(160, identityIdeal.width))
+        let gap = WorkspaceHeaderLayout.sectionSpacing
+        let idealWidth = identityPreferred + gap + actionsIdeal.width
+        let width = max(0, proposedWidth.flatMap { $0.isFinite ? $0 : nil } ?? idealWidth)
+        if width >= idealWidth {
+            let identityWidth = width - gap - actionsIdeal.width
+            let identitySize = subviews[0].sizeThatFits(ProposedViewSize(width: identityWidth, height: nil))
+            let height = max(WorkspaceHeaderLayout.rowHeight, identitySize.height, actionsIdeal.height)
+            return Placement(identity: CGRect(x: 0, y: (height - identitySize.height) / 2, width: identityWidth, height: identitySize.height),
+                             actions: CGRect(x: identityWidth + gap, y: (height - actionsIdeal.height) / 2, width: actionsIdeal.width, height: actionsIdeal.height),
+                             size: CGSize(width: width, height: height))
+        }
+        let identitySize = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let actionsSize = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let firstHeight = max(WorkspaceHeaderLayout.rowHeight, identitySize.height)
+        let secondHeight = max(WorkspaceHeaderLayout.rowHeight, actionsSize.height)
+        return Placement(identity: CGRect(x: 0, y: (firstHeight - identitySize.height) / 2, width: width, height: identitySize.height),
+                         actions: CGRect(x: 0, y: firstHeight + WorkspaceHeaderLayout.actionSpacing + (secondHeight - actionsSize.height) / 2, width: width, height: actionsSize.height),
+                         size: CGSize(width: width, height: firstHeight + WorkspaceHeaderLayout.actionSpacing + secondHeight))
+    }
+}
+
+struct WorkspaceHeaderActionLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrangement(width: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrangement(width: bounds.width, subviews: subviews)
+        for (index, frame) in result.frames.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                                 proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrangement(width proposedWidth: CGFloat?, subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let gap = WorkspaceHeaderLayout.actionSpacing
+        let idealWidth = sizes.reduce(0) { $0 + $1.width } + CGFloat(max(0, sizes.count - 1)) * gap
+        let width = max(0, proposedWidth.flatMap { $0.isFinite ? $0 : nil } ?? idealWidth)
+        var frames: [CGRect] = [], rows: [Range<Int>] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, rowStart = 0
+        for (index, ideal) in sizes.enumerated() {
+            let size = subviews[index].sizeThatFits(ProposedViewSize(width: min(width, ideal.width), height: nil))
+            if x > 0 && x + size.width > width + 0.5 {
+                rows.append(rowStart..<index)
+                y += rowHeight + gap; x = 0; rowHeight = 0; rowStart = index
+            }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + gap
+            rowHeight = max(rowHeight, size.height)
+        }
+        if rowStart < frames.count { rows.append(rowStart..<frames.count) }
+        for row in rows {
+            let height = row.map { frames[$0].height }.max() ?? 0
+            for index in row { frames[index].origin.y += (height - frames[index].height) / 2 }
+        }
+        return (frames, CGSize(width: min(width, idealWidth), height: frames.isEmpty ? 0 : y + rowHeight))
+    }
 }
 enum StudioTransferDialog {
     static func confirm(_ report: StudioTransferReport) -> Bool {
@@ -309,7 +479,10 @@ struct StudioView: View {
                         Button("Import space…") { importSpace() }.disabled(store.readBlocked)
                         Divider()
                         Button("Delete space…", role: .destructive) { confirmDelete = true }
-                    } label: { Text(space.displayName).lineLimit(1).frame(maxWidth: 160, alignment: .leading) }.menuStyle(.borderlessButton).help("Space actions").accessibilityLabel("Space: " + space.displayName)
+                    } label: { WorkspaceHeaderActionLabel(verbatim: space.displayName, systemImage: "folder", showsMenuIndicator: true, titleMaxWidth: 120) }
+                    .workspaceHeaderMenu()
+                    .help("Space actions").accessibilityLabel("Space: " + space.displayName)
+                    .accessibilityIdentifier("workspace-project-actions")
 
     }
     var navigation: some View {
@@ -879,19 +1052,15 @@ struct TypeBoardEditor: View {
     }
     func directionBinding<T>(_ key: WritableKeyPath<TypeDirection, T>) -> Binding<T> { Binding(get: { direction[keyPath: key] }, set: { board.directions[directionIndex][keyPath: key] = $0; save() }) }
     func styleBinding<T>(_ key: WritableKeyPath<TypeStyle, T>) -> Binding<T> { Binding(get: { style[keyPath: key] }, set: { var updated = style; updated[keyPath: key] = $0; setStyle(updated); save(key == \TypeStyle.size ? "Change Size" : key == \TypeStyle.tracking ? "Change Letter Spacing" : key == \TypeStyle.text ? "Change Sample Text" : "Edit Typography") }) }
-    func typeboardToolbar(compact: Bool) -> some View {
-        return HStack(spacing: compact ? 8 : 14) {
-                projectMenu
-                Text("/").foregroundStyle(.tertiary)
-                ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") })
-                    .font(.headline).lineLimit(1).frame(minWidth: compact ? 90 : 110, maxWidth: .infinity, alignment: .leading)
-                Spacer(minLength: compact ? 4 : 12)
-                Menu("Export") {
-                    ForEach(StudioExportKind.allCases) { kind in
-                        Button(kind.rawValue + "…") { exportRequest = kind }
-                    }
-                }.menuStyle(.borderlessButton).fixedSize()
-                Menu("Board") {
+    var typeboardToolbar: some View {
+        WorkspaceHeader(sidebarCollapsed: sidebarCollapsed) {
+            projectMenu
+            Text("/").font(.system(size: 16)).foregroundStyle(.tertiary)
+            ShelfEditableName(name: board.name, onRename: { name in board.name = name; return save("Rename Typeboard") })
+                .lineLimit(1).frame(minWidth: 110, maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("workspace-title")
+        } actions: {
+                Menu {
                     Button("Rename typeboard…") { if let name = ShelfRename.prompt("Rename typeboard", current: board.name) { board.name = name; save("Rename Typeboard") } }
                     Divider()
                     Button("Save checkpoint") { saveCheckpoint() }.help("Keeps the latest 50 checkpoints; saving another replaces the oldest.")
@@ -907,23 +1076,23 @@ struct TypeBoardEditor: View {
                     Divider()
                     Button("Delete canvas", role: .destructive) { let id = direction.id; board.directions.removeAll { $0.id == id }; shownCanvasIDs.remove(id); summaryCanvasIDs.remove(id); board.selectedDirection = board.directions.first?.id; if let selected = board.selectedDirection { shownCanvasIDs.insert(selected); if summaryCanvasIDs.isEmpty { summaryCanvasIDs.insert(selected) } }; abID = nil; save("Delete Canvas") }.disabled(board.directions.count < 2)
                     Button("Delete typeboard…", role: .destructive) { showDelete = true }
-                }.menuStyle(.borderlessButton).fixedSize().help("Typeboard actions")
-                editorToolbar
-            }
-            .controlSize(.small)
-            .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
-            .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
-            .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
-            .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
-            .fixedSize(horizontal: false, vertical: true)
+                } label: { WorkspaceHeaderActionLabel("Board", systemImage: "rectangle.3.group", showsMenuIndicator: true) }
+                .workspaceHeaderMenu().help("Typeboard actions")
+                .accessibilityIdentifier("workspace-board-actions")
+            Menu {
+                ForEach(StudioExportKind.allCases) { kind in
+                    Button(kind.rawValue + "…") { exportRequest = kind }
+                }
+            } label: { WorkspaceHeaderActionLabel("Export", systemImage: "square.and.arrow.up", showsMenuIndicator: true) }
+            .workspaceHeaderMenu()
+            .accessibilityIdentifier("workspace-export")
+            editorToolbar
+        }
     }
     var body: some View {
         VStack(spacing: 0) {
             if !focusCanvas {
-            ViewThatFits(in: .horizontal) {
-                typeboardToolbar(compact: false)
-                typeboardToolbar(compact: true)
-            }
+            typeboardToolbar
             Divider()
             HStack(spacing: 8) {
                 ScrollView(.horizontal, showsIndicators: false) {

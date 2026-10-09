@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.30 (2026-10-09)
+
+- Put Letterform Import beside Export and expose an iPad/tablet setup guide with a direct Sketch entry point.
+- Make Metrics & spacing visibility consistent in wide, compact, focused and detached Letterform editors.
+- Standardize Library, Spaces and Letterform header typography, action targets and wrapping without recreating focused controls.
+- Stabilize character-list and proof resizing with window-coordinate drags, persistent visible handles, bounded layouts and preferences saved on release.
+
 ## 0.59.29 (2026-10-08)
 
 - Retain bounded canvas dimensions independently of rendered plans, avoiding repeated hidden-canvas layout and cache churn on larger boards.

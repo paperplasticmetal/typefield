@@ -2,6 +2,10 @@
 
 Letterform Editor now opens glyphs in **Vector** mode. **Sketch** retains the existing freehand pens, pressure input and eraser. Imported polygon contours become editable nodes on their first vector edit; opening a project does not rewrite its artwork.
 
+Use **Import** in the top bar for letter artwork, alphabet sheets and SVGs. **iPad & tablet** in the same bar opens device setup and a **Start sketching** action. On iPad, use Sidecar to show the Mac window and draw with Apple Pencil; a connected macOS pen tablet uses the same Sketch canvas. Pressure applies when the device and macOS report it.
+
+**View → Show metrics & spacing** controls the panel at every window width. Resize the character list with its vertical divider and Word Proof with its horizontal divider. Both stay bounded by the editor; double-click resets, arrow keys adjust and Escape cancels an active drag.
+
 Single-letter shortcuts work only while the drawing canvas has focus. Choosing a tool returns focus to the canvas. Typing in proof text or other text fields keeps normal text input. The tool row shows each shortcut: **Select V**, **Nodes A**, **Pen P**, **Line L**, **Rectangle R**, **Ellipse O**, and **Hand H**.
 
 ## Workflow

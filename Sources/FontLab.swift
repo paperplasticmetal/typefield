@@ -996,6 +996,13 @@ enum FontLabCharacterPanelLayout {
     static let minimumWidth = 184.0
     static let defaultWidth = 270.0
     static let maximumWidth = 420.0
+    static let dividerWidth = 16.0
+
+    static func limits(workspaceWidth: Double) -> ClosedRange<Double> {
+        // Reserve the drawing tools/canvas and editor insets at narrow widths.
+        let upper = min(maximumWidth, max(152, workspaceWidth - 530))
+        return min(minimumWidth, upper)...upper
+    }
 
     static func clamped(_ width: Double) -> Double {
         min(max(width, minimumWidth), maximumWidth)
@@ -1074,102 +1081,6 @@ final class FontLabEditMenuBridge {
     }
 }
 
-private struct FontLabProofStripDivider: View {
-    @Binding var height: Double
-    @State private var dragStart: Double?
-    @State private var hovered = false
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(Color.primary.opacity(hovered ? 0.08 : 0.025))
-            Capsule().fill(Color.secondary.opacity(hovered ? 0.8 : 0.45)).frame(width: 42, height: 3)
-        }
-        .frame(height: 12)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    let start = dragStart ?? height
-                    if dragStart == nil { dragStart = height }
-                    height = FontLabProofStripLayout.clamped(start + value.translation.height)
-                }
-                .onEnded { _ in dragStart = nil }
-        )
-        .onTapGesture(count: 2) { height = FontLabProofStripLayout.defaultHeight }
-        .onHover { inside in
-            guard hovered != inside else { return }
-            hovered = inside
-            if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
-        }
-        .onDisappear { if hovered { NSCursor.pop(); hovered = false } }
-        .help("Drag to resize the proof strip. Double-click to reset.")
-        .accessibilityElement()
-        .accessibilityLabel("Proof strip height")
-        .accessibilityValue("\(Int(height)) points")
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: height = FontLabProofStripLayout.clamped(height + 24)
-            case .decrement: height = FontLabProofStripLayout.clamped(height - 24)
-            @unknown default: break
-            }
-        }
-        .accessibilityIdentifier("font-lab-proof-divider")
-    }
-}
-
-private struct FontLabCharacterPanelDivider: View {
-    @Binding var width: Double
-    @State private var dragStart: Double?
-    @State private var hovered = false
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(Color.primary.opacity(hovered ? 0.08 : 0.025))
-            Capsule()
-                .fill(Color.secondary.opacity(hovered ? 0.8 : 0.45))
-                .frame(width: 3, height: 38)
-            Image(systemName: "arrow.left.and.right")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Color.secondary)
-                .padding(4)
-                .background(Color(nsColor: .controlBackgroundColor), in: Circle())
-                .offset(y: 31)
-        }
-        .frame(width: 14)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    let start = dragStart ?? width
-                    if dragStart == nil { dragStart = width }
-                    width = FontLabCharacterPanelLayout.clamped(start + value.translation.width)
-                }
-                .onEnded { _ in dragStart = nil }
-        )
-        .onTapGesture(count: 2) { width = FontLabCharacterPanelLayout.defaultWidth }
-        .onHover { inside in
-            guard hovered != inside else { return }
-            hovered = inside
-            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-        }
-        .onDisappear {
-            if hovered { NSCursor.pop(); hovered = false }
-        }
-        .help("Drag to resize the character list. Double-click to reset.")
-        .accessibilityElement()
-        .accessibilityLabel("Character list width")
-        .accessibilityValue("\(Int(width)) points")
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: width = FontLabCharacterPanelLayout.clamped(width + 24)
-            case .decrement: width = FontLabCharacterPanelLayout.clamped(width - 24)
-            @unknown default: break
-            }
-        }
-        .accessibilityIdentifier("font-lab-character-divider")
-    }
-}
-
 /// Window-independent interaction state; docking must not erase undo or selection.
 final class FontLabEditorSession: ObservableObject {
     @Published var focusEditor = false
@@ -1191,7 +1102,7 @@ final class FontLabEditorSession: ObservableObject {
     @Published var vectorEditing = true
     @Published var designUndo: (before: FontLabProject, after: FontLabProject)?
     @Published var glyphEditRevision = UUID()
-    @Published var compactMetricsExpanded = false
+    @Published var showMetrics = false
     private var openContourExportWarning: (projectID: UUID, message: String)?
     private var vectorKey = ""
     private var vectorEditor: FontLabVectorEditor?
@@ -1200,6 +1111,15 @@ final class FontLabEditorSession: ObservableObject {
         let value = FontLabVectorEditor(glyph: glyph, metrics: metrics)
         vectorKey = key; vectorEditor = value
         return value
+    }
+
+    @discardableResult func startSketching(glyph: FontLabGlyph) -> Bool {
+        guard glyph.components?.isEmpty != false else { return false }
+        vectorEditing = false
+        drawingTool = .pen
+        nibStyle = .round
+        usesTabletPressure = true
+        return true
     }
 
     func warnAboutOpenContours(_ characters: [String], projectID: UUID) -> String {
@@ -1247,6 +1167,8 @@ struct FontLabView: View {
     @AppStorage("fontLabCharacterBrowserWidth") private var characterBrowserWidth = FontLabCharacterPanelLayout.defaultWidth
     @AppStorage("fontLabProofStripHeight") private var proofStripHeight = FontLabProofStripLayout.defaultHeight
     @AppStorage("fontLabProofStripExpanded") private var proofStripExpanded = true
+    @State private var resizingCharacterWidth: Double?
+    @State private var resizingProofHeight: Double?
     @State private var showInputHelp = false
     @State private var showBrushSettings = false
     @State private var showMetricsGuide = false
@@ -1265,7 +1187,6 @@ struct FontLabView: View {
     private var designUndo: (before: FontLabProject, after: FontLabProject)? { get { session.designUndo } nonmutating set { session.designUndo = newValue } }
     private var glyphEditRevision: UUID { get { session.glyphEditRevision } nonmutating set { session.glyphEditRevision = newValue } }
     @State private var exportRequest: ExportRequest?
-    private var compactMetricsExpanded: Bool { get { session.compactMetricsExpanded } nonmutating set { session.compactMetricsExpanded = newValue } }
 
     private struct ExportRequest {
         enum Kind { case glyphSVG, selectedSVGs, allSVGs, trueType, variableTrueType }
@@ -1304,7 +1225,13 @@ struct FontLabView: View {
                 if let project {
                     projectWorkspace(project)
                 } else {
-                    HStack { Spacer(); editorToolbar }.padding()
+                    WorkspaceHeader(sidebarCollapsed: sidebarCollapsed) {
+                        Text("Letterform Editor")
+                    } actions: {
+                        drawingDevicesButton
+                        artworkImportButton
+                        editorToolbar
+                    }
                     emptyState
                 }
             }
@@ -1383,6 +1310,17 @@ struct FontLabView: View {
             Button("Cancel", role: .cancel) { deleteRequest = nil }
         } message: {
             Text("“\(deleteRequest?.name ?? "This project")” will move to Deleted projects, where you can restore it. Source fonts and exported font files stay in place.")
+        }
+        .typefieldSheet(isPresented: $showInputHelp) {
+            let glyph = store.selectedProject?.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
+            FontLabDrawingDeviceGuide(canStartSketch: !store.readBlocked && glyph.components?.isEmpty != false,
+                                      inputDetected: tabletInputDetected) {
+                guard !store.readBlocked else { return }
+                if store.selectedProject == nil {
+                    guard store.addProject(name: "Untitled font") != nil else { return }
+                }
+                _ = session.startSketching(glyph: glyph)
+            }
         }
         .typefieldSheet(isPresented: $showMetricsGuide) {
             let currentProject = store.selectedProject
@@ -1506,27 +1444,44 @@ struct FontLabView: View {
         }
     }
 
+    private var drawingDevicesButton: some View {
+        Button { showInputHelp = true } label: {
+            WorkspaceHeaderActionLabel("iPad & tablet", systemImage: "ipad")
+        }
+        .buttonStyle(.plain).help("Draw with Apple Pencil through Sidecar or a connected pen tablet")
+        .accessibilityIdentifier("font-lab-drawing-devices")
+    }
+
+    private var artworkImportButton: some View {
+        Button { showArtworkImporter = true } label: {
+            WorkspaceHeaderActionLabel("Import", systemImage: "square.and.arrow.down")
+        }
+        .buttonStyle(.plain).disabled(store.readBlocked)
+        .help("Import a letter, alphabet sheet, SVG or Procreate artwork")
+        .accessibilityIdentifier("font-lab-import")
+    }
+
     private func projectWorkspace(_ project: FontLabProject) -> some View {
         let selectedDrawnCharacters = project.characters.filter { selectedCharacters.contains($0) && project.resolvedGlyph($0)?.hasArtwork == true }
         let allDrawnCharacters = project.characters.filter { project.resolvedGlyph($0)?.hasArtwork == true }
         let trueTypeScope = FontLabTrueTypeExporter.exportScope(for: project)
         return VStack(spacing: 0) {
-            HStack(spacing: 14) {
+            WorkspaceHeader(sidebarCollapsed: sidebarCollapsed && !session.focusEditor) {
+                HStack(spacing: 12) {
                     TextField("Project name", text: projectNameBinding(project.id))
                         .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold)).textFieldStyle(.plain)
-                        .frame(minHeight: WorkspaceHeaderLayout.titleHeight)
+                        .frame(minWidth: 150, idealWidth: 230, maxWidth: 360, minHeight: WorkspaceHeaderLayout.titleHeight)
                         .onSubmit { store.flushPendingSave() }
                         .disabled(store.readBlocked)
                         .layoutPriority(1)
                     Text("\(project.completedCount)/\(project.characters.count) glyphs")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: true, vertical: false)
-                    Spacer(minLength: 8)
-                    Menu("Project") {
+                }
+            } actions: {
+                    Menu {
                     Button("Components & masters…", systemImage: "square.stack.3d.up") { showFontDesign = true }
                         .help("Components, masters, kerning groups and glyph set")
                         .disabled(store.readBlocked || isExportingFont)
-                    Button("Import artwork", systemImage: "doc.viewfinder") { showArtworkImporter = true }
-                        .disabled(store.readBlocked).help("Trace a letter, alphabet sheet, SVG or Procreate artwork")
                     Divider()
                         if let undo = designUndo, undo.after == project {
                             Button("Undo project setup") {
@@ -1549,8 +1504,11 @@ struct FontLabView: View {
                         if designUndo?.after == project || artworkUndo?.after == project { Divider() }
                         Button("Delete project…", role: .destructive) { deleteRequest = project }
                             .disabled(store.readBlocked || isExportingFont)
-                    }.menuStyle(.borderlessButton).fixedSize()
-                        .help("Import artwork, font setup and project history")
+                    } label: { WorkspaceHeaderActionLabel("Project", systemImage: "folder", showsMenuIndicator: true) }
+                        .workspaceHeaderMenu()
+                        .help("Font setup and project history")
+                    drawingDevicesButton
+                    artworkImportButton
                     Menu {
                         Button("Export \(selectedCharacter) as SVG…") { prepareExport(.glyphSVG, characters: [selectedCharacter], project: project) }
                             .disabled(project.resolvedGlyph(selectedCharacter)?.hasArtwork != true)
@@ -1566,15 +1524,10 @@ struct FontLabView: View {
                         Button("Export variable TrueType (.ttf)…") { prepareExport(.variableTrueType, characters: trueTypeScope.mappedArtworkCharacters, project: project) }
                             .disabled((project.masters?.count ?? 0) < 2 || isExportingFont)
                             .help("Interpolate two compatible masters on a weight axis. Incompatible glyphs are rejected with a reason.")
-                    } label: { Text("Export") }
-                        .menuStyle(.borderlessButton).fixedSize().disabled(store.readBlocked)
+                    } label: { WorkspaceHeaderActionLabel("Export", systemImage: "square.and.arrow.up", showsMenuIndicator: true) }
+                        .workspaceHeaderMenu().disabled(store.readBlocked)
                     editorToolbar
             }
-            .controlSize(.small)
-            .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
-            .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
-            .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
-            .padding(.leading, sidebarCollapsed && !session.focusEditor ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
             if !store.error.isEmpty {
                 HStack(alignment: .top) {
                     Text(store.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
@@ -1607,34 +1560,43 @@ struct FontLabView: View {
             Divider()
             GeometryReader { proxy in
                 let hasProofText = !project.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                let proofHeight = session.focusEditor ? 0 : proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(proofStripHeight) : FontLabProofStripLayout.emptyHeight) : FontLabProofStripLayout.collapsedHeight
-                // Focused editors fit the window, including their expanded metrics.
-                // A horizontal scroll view would propose an unbounded panel width.
+                let proofHeight = session.focusEditor ? 0 : proofStripExpanded ? (hasProofText ? FontLabProofStripLayout.clamped(resizingProofHeight ?? proofStripHeight) : FontLabProofStripLayout.emptyHeight) : FontLabProofStripLayout.collapsedHeight
+                // Keep a bounded viewport at every width. An unbounded horizontal
+                // proposal makes a panel drag grow its containing scroll view.
                 let compactEditor = session.focusEditor || proxy.size.width < 1_200
-                let availableBrowserWidth = max(152, Double(proxy.size.width) - 644)
-                let displayedBrowserWidth = min(characterBrowserWidth, availableBrowserWidth)
+                let browserLimits = FontLabCharacterPanelLayout.limits(workspaceWidth: proxy.size.width)
+                let displayedBrowserWidth = min(max(resizingCharacterWidth ?? characterBrowserWidth, browserLimits.lowerBound), browserLimits.upperBound)
                 let metricsWidth = proxy.size.width - ((!session.focusEditor || session.showCharacters) ? displayedBrowserWidth + 16 : 0) - 60
                 VStack(spacing: 0) {
                     if !session.focusEditor {
                     preview(project).frame(height: proofHeight)
-                    if proofStripExpanded && hasProofText { FontLabProofStripDivider(height: $proofStripHeight) }
+                    if proofStripExpanded && hasProofText {
+                        FontLabPanelResizeHandle(axis: .vertical, value: proofHeight,
+                            limits: FontLabProofStripLayout.minimumHeight...FontLabProofStripLayout.maximumHeight,
+                            defaultValue: FontLabProofStripLayout.defaultHeight, label: "Proof strip height", identifier: "font-lab-proof-divider",
+                            onPreview: { resizingProofHeight = $0 },
+                            onCommit: { proofStripHeight = $0; resizingProofHeight = nil },
+                            onCancel: { resizingProofHeight = nil })
+                            .frame(height: 12)
+                    }
                     Divider()
                     }
-                    ScrollView(compactEditor ? .vertical : [.horizontal, .vertical]) {
+                    ScrollView(.vertical) {
                         HStack(spacing: 0) {
                             if !session.focusEditor || session.showCharacters {
                             characterBrowser(project)
                                 .frame(width: displayedBrowserWidth)
-                            if displayedBrowserWidth < characterBrowserWidth {
-                                Divider()
-                            } else {
-                                FontLabCharacterPanelDivider(width: $characterBrowserWidth)
-                            }
+                            FontLabPanelResizeHandle(axis: .horizontal, value: displayedBrowserWidth,
+                                limits: browserLimits, defaultValue: FontLabCharacterPanelLayout.defaultWidth,
+                                label: "Character list width", identifier: "font-lab-character-divider",
+                                onPreview: { resizingCharacterWidth = $0 },
+                                onCommit: { characterBrowserWidth = FontLabCharacterPanelLayout.clamped($0); resizingCharacterWidth = nil },
+                                onCancel: { resizingCharacterWidth = nil })
+                                .frame(width: FontLabCharacterPanelLayout.dividerWidth)
                             }
                             glyphEditor(project, compact: compactEditor, metricsColumns: metricsWidth >= 640 ? 3 : 1)
                         }
-                        .frame(width: compactEditor ? max(0, proxy.size.width - 16) : nil, alignment: .topLeading)
-                        .frame(minWidth: compactEditor ? nil : max(720, proxy.size.width), alignment: .topLeading)
+                        .frame(width: max(0, proxy.size.width - 16), alignment: .topLeading)
                         .frame(minHeight: max(compactEditor ? 440 : 520, proxy.size.height - proofHeight - (proofStripExpanded && hasProofText ? 13 : 1)), alignment: .topLeading)
                     }
                 }
@@ -1787,7 +1749,7 @@ struct FontLabView: View {
                     }.padding(10).background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 }
                 if compact || session.focusEditor {
-                    DisclosureGroup(isExpanded: $session.compactMetricsExpanded) {
+                    DisclosureGroup(isExpanded: $session.showMetrics) {
                         metricsPanel(project, glyph: glyph, expanded: true, columns: metricsColumns).padding(.top, 8)
                     } label: {
                         Label("Metrics & spacing", systemImage: "ruler")
@@ -1827,7 +1789,7 @@ struct FontLabView: View {
                     nibStyle: nibStyle,
                     smoothing: smoothing,
                     usesTabletPressure: usesTabletPressure,
-                    onTabletInput: { tabletInputDetected = true },
+                    onTabletInput: { if !tabletInputDetected { tabletInputDetected = true } },
                     onUndo: { undoStroke(glyph, projectID: project.id) },
                     onRedo: { redoGlyph(projectID: project.id) },
                     onSelectTool: { drawingTool = $0 }
@@ -1842,7 +1804,7 @@ struct FontLabView: View {
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.12)))
                 }
             }
-            if !compact && !session.focusEditor { metricsPanel(project, glyph: glyph) }
+            if !compact && !session.focusEditor && session.showMetrics { metricsPanel(project, glyph: glyph) }
         }
         .padding(compact ? 6 : 20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -1876,12 +1838,11 @@ struct FontLabView: View {
                             .toggleStyle(.switch).controlSize(.small).disabled(drawingTool != .pen)
                         Spacer(minLength: 4)
                         Button { showInputHelp.toggle() } label: {
-                            Label(tabletInputDetected ? "Tablet active" : "Tablet & iPad", systemImage: tabletInputDetected ? "checkmark.circle.fill" : "ipad.and.apple.pencil")
+                            Label(tabletInputDetected ? "Pen input detected" : "iPad & tablet", systemImage: tabletInputDetected ? "checkmark.circle.fill" : "ipad")
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(tabletInputDetected ? Color.green : Color.secondary)
                         .help("Set up Apple Pencil with Sidecar or a macOS drawing tablet")
-                        .typefieldPopover(isPresented: $showInputHelp, arrowEdge: .bottom) { FontLabInputHelp() }
                     }
                     Text(drawingTool == .reshape ? "Drag a blue point to reshape a stroke or outline. Use Vector editor for curve handles. ⌘Z undoes the last canvas edit." : drawingTool == .pen ? "Draw with a mouse, trackpad, Apple Pencil through Sidecar, or a macOS-compatible pen tablet. ⌘Z undoes the last canvas edit." : "Drag across a line or filled shape to erase it. ⌘Z restores the last canvas edit.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -2350,39 +2311,6 @@ struct FontLabView: View {
         let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>").union(.newlines).union(.controlCharacters)
         let cleaned = value.components(separatedBy: invalid).filter { !$0.isEmpty }.joined(separator: "-")
         return cleaned.isEmpty ? "glyph" : String(cleaned.prefix(80))
-    }
-}
-
-private struct FontLabInputHelp: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Drawing input", systemImage: "ipad.and.apple.pencil")
-                .font(.headline)
-            inputSection(
-                "Apple Pencil + iPad",
-                icon: "ipad",
-                text: "Set up Sidecar in macOS Displays, wirelessly or over USB, then put the Typefield window on the iPad. Sidecar sends Apple Pencil input to the Mac app."
-            )
-            inputSection(
-                "Pen tablet",
-                icon: "rectangle.and.pencil.and.ellipsis",
-                text: "Connect the tablet as its maker recommends and install its macOS driver when required. Typefield uses the standard tablet events macOS provides."
-            )
-            Divider()
-            Text("Typefield does not pair Bluetooth or USB hardware itself. With Pressure enabled, reported pressure changes the round pen's thickness. Reported tilt is retained with the stroke, although the current round nib does not rotate with tilt.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(18).frame(width: 390)
-    }
-
-    private func inputSection(_ title: String, icon: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: 11) {
-            Image(systemName: icon).frame(width: 24).foregroundStyle(ShelfPalette.ink)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline.weight(.semibold))
-                Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }
 

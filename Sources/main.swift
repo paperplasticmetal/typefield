@@ -1151,40 +1151,46 @@ struct ContentView: View {
         library.pairSelection(seed.fonts, source: seed.source)
     }
     var header: some View {
-        HStack(spacing: 12) {
+        WorkspaceHeader(sidebarCollapsed: sidebarCollapsed) {
             if library.selection.hasPrefix("collection:") {
                 let name = String(library.selection.dropFirst(11))
                 ShelfEditableName(name: name, onRename: { library.renameCollection(name, to: $0) })
-                    .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
-                    .frame(minWidth: 110, maxWidth: 165, minHeight: WorkspaceHeaderLayout.titleHeight)
-                    .help(name)
+                    .lineLimit(1).frame(minWidth: 110, maxWidth: .infinity, minHeight: WorkspaceHeaderLayout.titleHeight)
+                    .help(name).accessibilityIdentifier("workspace-title")
                 let count = library.saved.collections[name]?.count ?? 0
-                Text("\(count) \(count == 1 ? "family" : "families")").font(.caption).foregroundStyle(.secondary)
+                Text("\(count) \(count == 1 ? "family" : "families")").font(.caption).foregroundStyle(.secondary).fixedSize()
                 Menu {
                     Button("Rename collection…") { renameCollection(name) }
                     Button("Delete collection…", role: .destructive) { confirmDeleteCollection(name) }
-                } label: { Image(systemName: "ellipsis.circle") }
-                    .shelfIconMenu().accessibilityLabel("Actions for collection \(name)")
+                } label: { WorkspaceHeaderActionLabel("Collection", systemImage: "ellipsis", iconOnly: true) }
+                    .workspaceHeaderMenu()
+                    .accessibilityLabel("Actions for collection \(name)")
+                    .accessibilityIdentifier("workspace-collection-actions")
             } else {
                 (library.selection.hasPrefix("tag:") ? Text(verbatim: String(library.selection.dropFirst(4))) : Text(localizedKey(library.selection)))
-                    .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
-                    .frame(maxWidth: 170, minHeight: WorkspaceHeaderLayout.titleHeight)
+                    .frame(maxWidth: .infinity, minHeight: WorkspaceHeaderLayout.titleHeight, alignment: .leading)
+                    .accessibilityIdentifier("workspace-title")
             }
-            Spacer()
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    Button("Rediscover", systemImage: "shuffle") { showDiscovery = true }.help("Find local fonts you have not applied recently")
-                    Button("New typeboard", systemImage: "text.badge.plus") { createContextualTypeboard() }.help("Create a typeboard and choose the initial font for every role")
-                }
-                HStack(spacing: 8) {
-                    Button { showDiscovery = true } label: { Image(systemName: "shuffle") }.help("Rediscover local fonts").accessibilityLabel("Rediscover local fonts")
-                    Button { createContextualTypeboard() } label: { Image(systemName: "text.badge.plus") }.help("New typeboard").accessibilityLabel("New typeboard")
-                }
+        } actions: {
+            Button { showDiscovery = true } label: { WorkspaceHeaderActionLabel("Rediscover", systemImage: "shuffle") }
+                .buttonStyle(.plain).help("Find local fonts you have not applied recently")
+                .accessibilityIdentifier("workspace-library-rediscover")
+            Button { createContextualTypeboard() } label: { WorkspaceHeaderActionLabel("New typeboard", systemImage: "text.badge.plus") }
+                .buttonStyle(.plain).help("Create a typeboard and choose the initial font for every role")
+                .accessibilityIdentifier("workspace-library-new-typeboard")
+            Button { library.showAdvanced.toggle() } label: {
+                WorkspaceHeaderActionLabel("Advanced filters", systemImage: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle", iconOnly: true)
             }
-            Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").accessibilityLabel("Advanced filters").accessibilityValue(library.showAdvanced ? "Open" : "Closed").typefieldPopover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
-            Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").accessibilityLabel("Preview colors").typefieldPopover(isPresented: $showColors) { PreviewColorsView() }
-            Menu("Tools") {
+            .buttonStyle(.plain).help("Advanced filters").accessibilityLabel("Advanced filters")
+            .accessibilityValue(library.showAdvanced ? "Open" : "Closed")
+            .accessibilityIdentifier("workspace-library-filters")
+            .typefieldPopover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
+            Button { showColors.toggle() } label: { WorkspaceHeaderActionLabel("Preview colors", systemImage: "paintpalette", iconOnly: true) }
+                .buttonStyle(.plain).help("Preview colors").accessibilityLabel("Preview colors")
+                .accessibilityIdentifier("workspace-library-colors")
+                .typefieldPopover(isPresented: $showColors) { PreviewColorsView() }
+            Menu {
                 Menu("Organization") {
                     Button("Tags…") { library.openTools("Tags") }
                     Button("Families…") { library.openTools("Families") }
@@ -1206,13 +1212,12 @@ struct ContentView: View {
                     Button("Import earlier preferences…") { StoreMigration.choosePreferences(for: library) }
                     Button("Show automatic backups") { NSWorkspace.shared.open(library.saveURL.deletingLastPathComponent().appendingPathComponent("Backups")) }
                 }
-            }.menuStyle(.borderlessButton).foregroundStyle(Color.primary).padding(8).shelfGlass(radius: 16).frame(width: 85)
-            LibrarySearchView(library: library).focused($searchFocused).frame(minWidth: 165, idealWidth: 250, maxWidth: 350)
+            } label: { WorkspaceHeaderActionLabel("Tools", systemImage: "slider.horizontal.3", showsMenuIndicator: true) }
+            .workspaceHeaderMenu()
+            .accessibilityIdentifier("workspace-library-tools")
+            LibrarySearchView(library: library, compact: true).focused($searchFocused)
+                .frame(width: 190).accessibilityIdentifier("workspace-library-search")
         }
-        .frame(minHeight: WorkspaceHeaderLayout.rowHeight)
-        .padding(.horizontal, WorkspaceHeaderLayout.horizontalPadding)
-        .padding(.vertical, WorkspaceHeaderLayout.verticalPadding)
-        .padding(.leading, sidebarCollapsed ? WorkspaceSidebarLayout.revealWidth + 8 : 0)
     }
     struct LibraryRowPreviewMetrics {
         let baseline: Double

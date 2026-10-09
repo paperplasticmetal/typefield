@@ -356,6 +356,7 @@ struct SearchTokenChips: View {
 }
 struct LibrarySearchView: View {
     @ObservedObject var library: Library
+    var compact = false
     @State private var suggestions = false
     @State private var exclude = false
     var body: some View {
@@ -368,7 +369,8 @@ struct LibrarySearchView: View {
                 .accessibilityLabel("Search tags and font properties")
                 .accessibilityValue(suggestions ? "Open" : "Closed")
                 .typefieldPopover(isPresented: $suggestions, arrowEdge: .bottom) { panel }
-        }.padding(10).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        }.padding(.horizontal, 10).padding(.vertical, compact ? 4 : 10)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         .onChange(of: library.search) { value in if value.hasSuffix("#") || value.hasSuffix("#!") { suggestions = true; exclude = value.hasSuffix("#!") } }
     }
     func add(_ name: String) {

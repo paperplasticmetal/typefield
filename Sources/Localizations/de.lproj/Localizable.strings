@@ -370,6 +370,7 @@
 "Paths" = "Pfade";
 "Pause" = "Pausieren";
 "Pen" = "Zeichenstift";
+"Pen input detected" = "Stifteingabe erkannt";
 "Pen width" = "Stiftbreite";
 "Plain text (.txt)" = "Nur Text (.txt)";
 "Plum" = "Pflaume";
@@ -475,6 +476,7 @@
 "Show fill" = "Füllung anzeigen";
 "Show grid" = "Raster anzeigen";
 "Show in Finder" = "Im Finder zeigen";
+"Show metrics & spacing" = "Metriken und Abstände anzeigen";
 "Show sidebar" = "Seitenleiste einblenden";
 "Show window" = "Fenster anzeigen";
 "Shown canvases" = "Sichtbare Zeichenflächen";
@@ -496,6 +498,7 @@
 "Spaces" = "Spaces";
 "Spaces Objects" = "Spaces-Objekte";
 "Spaces Tools" = "Spaces-Werkzeuge";
+"Start sketching" = "Skizzieren starten";
 "Step %lld of 4: %@" = "Schritt %lld von 4: %@";
 "Stop" = "Stoppen";
 "Stored on this Mac" = "Auf diesem Mac gespeichert";
@@ -588,6 +591,7 @@
 "format" = "Format";
 "grid" = "Raster";
 "height" = "Höhe";
+"iPad & tablet" = "iPad & Stifttablett";
 "image" = "Bild";
 "inspect" = "Untersuchen";
 "justified" = "Blocksatz";

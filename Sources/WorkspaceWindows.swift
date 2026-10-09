@@ -171,12 +171,12 @@ private struct EditorWindowRoot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var editorToolbar: some View {
         HStack(spacing: 8) {
-            Menu("View") {
+            Menu {
                 if mode == .fontLab {
                     Toggle("Focus editor", isOn: $fontLabSession.focusEditor)
                     Toggle("Show characters", isOn: $fontLabSession.showCharacters)
                         .disabled(!fontLabSession.focusEditor)
-                    Toggle("Show metrics & spacing", isOn: $fontLabSession.compactMetricsExpanded)
+                    Toggle("Show metrics & spacing", isOn: $fontLabSession.showMetrics)
                     Divider()
                 }
                 if mode == .spaces {
@@ -193,8 +193,8 @@ private struct EditorWindowRoot: View {
                 Button(windows.detached.contains(mode) ? "Dock window" : "Pop out editor") {
                     if windows.detached.contains(mode) { windows.dock(mode) } else { windows.detach(mode) }
                 }
-            }
-            .menuStyle(.borderlessButton).fixedSize()
+            } label: { WorkspaceHeaderActionLabel("View", systemImage: "sidebar.right", showsMenuIndicator: true) }
+            .workspaceHeaderMenu()
             .help("Editor layout, font browser and window options")
             .accessibilityLabel("Workspace view")
         }

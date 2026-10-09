@@ -370,6 +370,7 @@
 "Paths" = "Paths";
 "Pause" = "Pause";
 "Pen" = "Pen";
+"Pen input detected" = "Pen input detected";
 "Pen width" = "Pen width";
 "Plain text (.txt)" = "Plain text (.txt)";
 "Plum" = "Plum";
@@ -475,6 +476,7 @@
 "Show fill" = "Show fill";
 "Show grid" = "Show grid";
 "Show in Finder" = "Show in Finder";
+"Show metrics & spacing" = "Show metrics & spacing";
 "Show sidebar" = "Show sidebar";
 "Show window" = "Show window";
 "Shown canvases" = "Shown canvases";
@@ -496,6 +498,7 @@
 "Spaces" = "Spaces";
 "Spaces Objects" = "Spaces Objects";
 "Spaces Tools" = "Spaces Tools";
+"Start sketching" = "Start sketching";
 "Step %lld of 4: %@" = "Step %lld of 4: %@";
 "Stop" = "Stop";
 "Stored on this Mac" = "Stored on this Mac";
@@ -588,6 +591,7 @@
 "format" = "format";
 "grid" = "grid";
 "height" = "height";
+"iPad & tablet" = "iPad & tablet";
 "image" = "image";
 "inspect" = "inspect";
 "justified" = "justified";

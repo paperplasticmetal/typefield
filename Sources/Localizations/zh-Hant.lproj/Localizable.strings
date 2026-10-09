@@ -370,6 +370,7 @@
 "Paths" = "路徑";
 "Pause" = "暫停";
 "Pen" = "鋼筆";
+"Pen input detected" = "已偵測到筆輸入";
 "Pen width" = "筆寬";
 "Plain text (.txt)" = "純文字 (.txt)";
 "Plum" = "梅紫";
@@ -475,6 +476,7 @@
 "Show fill" = "顯示填色";
 "Show grid" = "顯示格線";
 "Show in Finder" = "在 Finder 中顯示";
+"Show metrics & spacing" = "顯示度量與間距";
 "Show sidebar" = "顯示側邊欄";
 "Show window" = "顯示視窗";
 "Shown canvases" = "可見畫布";
@@ -496,6 +498,7 @@
 "Spaces" = "空間";
 "Spaces Objects" = "空間物件";
 "Spaces Tools" = "空間工具";
+"Start sketching" = "開始手繪";
 "Step %lld of 4: %@" = "第 %lld 步，共 4 步：%@";
 "Stop" = "停止";
 "Stored on this Mac" = "儲存在此 Mac 上";
@@ -588,6 +591,7 @@
 "format" = "格式";
 "grid" = "格線";
 "height" = "高度";
+"iPad & tablet" = "iPad 與繪圖板";
 "image" = "影像";
 "inspect" = "檢查";
 "justified" = "左右對齊";

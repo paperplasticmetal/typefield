@@ -6,6 +6,25 @@
     <description>Signed public beta updates for Typefield.</description>
     <language>en</language>
     <item>
+      <title>Typefield 0.59.30</title>
+      <link>https://typefield.app/download/</link>
+      <sparkle:version>110</sparkle:version>
+      <sparkle:shortVersionString>0.59.30</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <pubDate>Fri, 09 Oct 2026 08:17:43 +0000</pubDate>
+      <description sparkle:format="plain-text">Typefield 0.59.30 beta 1
+
+- Consistent Library, Spaces and Letterform headers with comfortable controls and wrapping.
+- Letterform Import appears beside Export. A visible iPad &amp; tablet guide explains Sidecar and opens Sketch ready for pen input.
+- Metrics &amp; spacing can be shown or hidden at every editor width.
+- Character-list and proof-strip resizing stays stable at window limits, with preferences saved on release.
+
+Apple silicon, macOS 13 or later. Direct-download beta with signed in-app updates. Ad hoc signed; first-open approval may be required. Physical iPad/pen-tablet pressure testing remains a user hardware test.
+</description>
+      <enclosure url="https://github.com/paperplasticmetal/typefield/releases/download/v0.59.30-beta.1/Typefield-0.59.30-beta.dmg" length="8812678" type="application/octet-stream" sparkle:edSignature="8f96WRizivH/Q8LirUl3dthwZQYC5zS9ERdbWODk94+WgBptbrsYLHxjdvjZcoaOW3I/egPLcnLf05KSQ+HOAA==" />
+    </item>
+    <item>
       <title>Typefield 0.59.29</title>
       <link>https://typefield.app/download/</link>
       <sparkle:version>109</sparkle:version>
@@ -120,6 +139,6 @@ Existing copies without an Updates page need one manual download from typefield.
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: ag9DxMvFbcMAOrhHyFKLjNVfj+2YdG1MqWOIRkeyMRnaVgA8AEDuxJwrOUMHg8ccrY7Nw/WnNREPUfhpgTSqDg==
-length: 8670
+edSignature: lUOB2rvRLInOB+jEf98mwiJJQfF9oSkXJUQmfld5eM+ZyD4XxxYAah4itwm88Dni/po6WkRHNwtxi9LGO5KUDg==
+length: 10093
 -->

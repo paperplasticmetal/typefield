@@ -13,6 +13,9 @@ enum FontLabVectorChecks {
         try FontLabPathConstructionChecks.run()
         try FontLabPathDrawingChecks.run()
         try FontLabToolbarChecks.run()
+        try FontLabPanelResizeChecks.run()
+        try FontLabWorkspaceControlsChecks.run()
+        try WorkspaceHeaderChecks.run()
         try FontLabCanvasPerformanceChecks.run()
         try FontLabProofGeometryChecks.run()
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}

@@ -370,6 +370,7 @@
 "Paths" = "パス";
 "Pause" = "一時停止";
 "Pen" = "ペン";
+"Pen input detected" = "ペン入力を検出";
 "Pen width" = "ペンの幅";
 "Plain text (.txt)" = "標準テキスト（.txt）";
 "Plum" = "プラム";
@@ -475,6 +476,7 @@
 "Show fill" = "塗りを表示";
 "Show grid" = "グリッドを表示";
 "Show in Finder" = "Finderで表示";
+"Show metrics & spacing" = "メトリクスと間隔を表示";
 "Show sidebar" = "サイドバーを表示";
 "Show window" = "ウインドウを表示";
 "Shown canvases" = "表示中のキャンバス";
@@ -496,6 +498,7 @@
 "Spaces" = "スペース";
 "Spaces Objects" = "スペースのオブジェクト";
 "Spaces Tools" = "スペースのツール";
+"Start sketching" = "スケッチを開始";
 "Step %lld of 4: %@" = "ステップ %lld/4：%@";
 "Stop" = "停止";
 "Stored on this Mac" = "このMacに保存";
@@ -588,6 +591,7 @@
 "format" = "形式";
 "grid" = "グリッド";
 "height" = "高さ";
+"iPad & tablet" = "iPad・ペンタブレット";
 "image" = "画像";
 "inspect" = "詳細を見る";
 "justified" = "両端揃え";

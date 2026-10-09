@@ -370,6 +370,7 @@
 "Paths" = "패스";
 "Pause" = "일시 정지";
 "Pen" = "펜";
+"Pen input detected" = "펜 입력 감지됨";
 "Pen width" = "펜 너비";
 "Plain text (.txt)" = "일반 텍스트 (.txt)";
 "Plum" = "플럼";
@@ -475,6 +476,7 @@
 "Show fill" = "채우기 표시";
 "Show grid" = "격자 표시";
 "Show in Finder" = "Finder에서 보기";
+"Show metrics & spacing" = "메트릭 및 간격 표시";
 "Show sidebar" = "사이드바 보기";
 "Show window" = "윈도우 보기";
 "Shown canvases" = "표시된 캔버스";
@@ -496,6 +498,7 @@
 "Spaces" = "스페이스";
 "Spaces Objects" = "스페이스 객체";
 "Spaces Tools" = "스페이스 도구";
+"Start sketching" = "스케치 시작";
 "Step %lld of 4: %@" = "4단계 중 %lld단계: %@";
 "Stop" = "중지";
 "Stored on this Mac" = "이 Mac에 저장됨";
@@ -588,6 +591,7 @@
 "format" = "형식";
 "grid" = "격자";
 "height" = "높이";
+"iPad & tablet" = "iPad 및 태블릿";
 "image" = "이미지";
 "inspect" = "검사";
 "justified" = "양쪽 맞춤";
