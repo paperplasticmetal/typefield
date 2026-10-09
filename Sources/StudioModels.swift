@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import CoreText
 import ImageIO
+import Darwin
 
 enum CanvasKind: String, Codable, CaseIterable { case website = "Website", product = "Product UI", editorial = "Editorial", poster = "Poster", specimen = "Type system", custom = "Custom layout", imported = "Figma layout" }
 enum ImportedLayoutSource: String, Codable {
@@ -546,6 +547,76 @@ struct StudioState: Codable {
     var selectedSpace: UUID?
     var selectedBoard: UUID?
 }
+
+/// Navigation belongs to the current document file, not to a restored or
+/// replaced copy that happens to contain the same project identifiers.
+struct StudioDocumentStamp: Codable, Equatable {
+    let device: Int32
+    let inode: UInt64
+    let size: Int64
+    let modifiedSeconds: Int64
+    let modifiedNanoseconds: Int64
+
+    static func read(_ url: URL) throws -> Self {
+        var metadata = stat()
+        guard url.path.withCString({ Darwin.lstat($0, &metadata) }) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        guard metadata.st_mode & S_IFMT == S_IFREG else {
+            throw NSError(domain: "Typefield.SpacesNavigation", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "The saved Spaces document is no longer a regular file. Reopen Spaces before continuing."])
+        }
+        return Self(device: metadata.st_dev, inode: metadata.st_ino, size: metadata.st_size,
+                    modifiedSeconds: Int64(metadata.st_mtimespec.tv_sec), modifiedNanoseconds: Int64(metadata.st_mtimespec.tv_nsec))
+    }
+}
+
+struct StudioNavigationSnapshot: Codable {
+    static let maximumBytes = 4 * 1024 * 1024
+    static let maximumBoards = 10_000
+    struct BoardSelection: Codable {
+        let space: UUID
+        let board: UUID
+        let canvas: UUID?
+    }
+    var version = 1
+    let document: StudioDocumentStamp
+    let selectedSpace: UUID?
+    let selectedBoard: UUID?
+    let boards: [BoardSelection]
+
+    func boardIndices(in state: StudioState) -> [(space: Int, board: Int)]? {
+        guard version == 1, boards.count <= Self.maximumBoards else { return nil }
+        var spaces: [UUID: Int] = [:], boardIndices: [UUID: [UUID: Int]] = [:]
+        var totalBoards = 0
+        for (spaceIndex, space) in state.spaces.enumerated() {
+            guard spaces.updateValue(spaceIndex, forKey: space.id) == nil else { return nil }
+            totalBoards += space.boards.count
+            guard totalBoards <= Self.maximumBoards else { return nil }
+            var indices: [UUID: Int] = [:]
+            for (boardIndex, board) in space.boards.enumerated() {
+                guard indices.updateValue(boardIndex, forKey: board.id) == nil else { return nil }
+            }
+            boardIndices[space.id] = indices
+        }
+        guard boards.count == totalBoards else { return nil }
+        if let selectedSpace {
+            guard spaces[selectedSpace] != nil else { return nil }
+            if let selectedBoard, boardIndices[selectedSpace]?[selectedBoard] == nil { return nil }
+        } else if selectedBoard != nil { return nil }
+        var seen: [UUID: Set<UUID>] = [:]
+        var result: [(space: Int, board: Int)] = []
+        for selection in boards {
+            guard seen[selection.space, default: []].insert(selection.board).inserted,
+                  let spaceIndex = spaces[selection.space],
+                  let boardIndex = boardIndices[selection.space]?[selection.board] else { return nil }
+            let board = state.spaces[spaceIndex].boards[boardIndex]
+            guard selection.canvas.map({ canvas in board.directions.contains { $0.id == canvas } }) ?? true else { return nil }
+            result.append((spaceIndex, boardIndex))
+        }
+        return result
+    }
+}
 /// Keep document persistence and Foundation's history movement in one transaction.
 /// Failed writes put the same group back on its original stack for retry.
 final class StudioUndoManager: UndoManager {
@@ -565,7 +636,7 @@ final class StudioUndoManager: UndoManager {
 final class StudioStore: ObservableObject {
     @Published var focusedSpace: UUID?
     @Published var focusedBoard: UUID?
-    @Published var state = StudioState()
+    @Published var state = StudioState() { didSet { documentIsDirty = true } }
     @Published var error = ""
     @Published var savedAt: Date?
     let url: URL
@@ -577,6 +648,10 @@ final class StudioStore: ObservableObject {
     private var replayedActions: [HistoryAction] = []
     private var historyRegistrations = 0
     private var lastEdit: (board: UUID, action: String, date: Date)?
+    private var documentIsDirty = true
+    private var documentStamp: StudioDocumentStamp?
+    private var navigationSidecarBlocked = false
+    var navigationURL: URL { url.appendingPathExtension("navigation") }
     private(set) var readBlocked = false
     init(url: URL, recoveryError: String? = nil) {
         self.url = url
@@ -590,15 +665,103 @@ final class StudioStore: ObservableObject {
         do {
             try TypefieldInputFile.requireRegularFileIfPresent(url)
             guard FileManager.default.fileExists(atPath: url.path) else { return }
+            let beforeRead = try? StudioDocumentStamp.read(url)
             let loaded = try JSONDecoder().decode(StudioState.self, from: Data(contentsOf: url))
             guard loaded.version == 1, loaded.spaces.allSatisfy({ $0.boards.allSatisfy(\.isValid) }) else { throw NSError(domain: "FontShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: "The workspace has invalid data or requires a newer Typefield version."]) }
             state = loaded
             focusedSpace = loaded.selectedSpace; focusedBoard = loaded.selectedBoard
+            let afterRead = try? StudioDocumentStamp.read(url)
+            documentStamp = beforeRead == afterRead ? afterRead : nil
+            documentIsDirty = false
+            restoreNavigation()
         } catch { readBlocked = true; self.error = "Spaces could not be opened. The saved file has been preserved. " + error.localizedDescription }
     }
     func blockForBackupRecovery(_ message: String) {
         readBlocked = true
         error = message
+    }
+    /// Called only after the backup journal has committed these exact bytes.
+    func acceptSavedBackupImport(_ imported: StudioState) {
+        state = imported
+        savedAt = Date(); error = ""
+        documentStamp = try? StudioDocumentStamp.read(url)
+        documentIsDirty = false
+    }
+
+    private func restoreNavigation() {
+        do {
+            try TypefieldInputFile.requireRegularFileIfPresent(navigationURL)
+            guard FileManager.default.fileExists(atPath: navigationURL.path) else { return }
+            let data = try TypefieldInputFile.read(navigationURL, maximumBytes: StudioNavigationSnapshot.maximumBytes)
+            let navigation = try JSONDecoder().decode(StudioNavigationSnapshot.self, from: data)
+            guard navigation.version == 1, navigation.boards.count <= StudioNavigationSnapshot.maximumBoards else {
+                navigationSidecarBlocked = true; return
+            }
+            guard navigation.document == documentStamp else { return }
+            guard let indices = navigation.boardIndices(in: state) else { navigationSidecarBlocked = true; return }
+            var restored = state
+            for (selection, index) in zip(navigation.boards, indices) {
+                restored.spaces[index.space].boards[index.board].selectedDirection = selection.canvas
+            }
+            focusedSpace = navigation.selectedSpace; focusedBoard = navigation.selectedBoard
+            restored.selectedSpace = focusedSpace; restored.selectedBoard = focusedBoard
+            state = restored
+            documentIsDirty = false
+        } catch {
+            // Focus is recoverable from the document. Preserve unreadable or
+            // unfamiliar navigation data and use the existing full-save path.
+            navigationSidecarBlocked = true
+        }
+    }
+
+    private func normalizeFocus() {
+        if let focusedSpace, let space = state.spaces.first(where: { $0.id == focusedSpace }) {
+            if let focusedBoard, !space.boards.contains(where: { $0.id == focusedBoard }) { self.focusedBoard = nil }
+        } else {
+            focusedSpace = nil; focusedBoard = nil
+        }
+        state.selectedSpace = focusedSpace; state.selectedBoard = focusedBoard
+    }
+
+    private func saveNavigation() -> Bool {
+        guard let documentStamp else { return save() }
+        do {
+            guard try StudioDocumentStamp.read(url) == documentStamp else {
+                throw NSError(domain: "Typefield.SpacesNavigation", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "The saved Spaces document changed outside this window. Reopen it before changing projects or canvases."])
+            }
+            if navigationSidecarBlocked { return save() }
+            try TypefieldInputFile.requireRegularFileIfPresent(navigationURL)
+            if FileManager.default.fileExists(atPath: navigationURL.path) {
+                do {
+                    let old = try JSONDecoder().decode(StudioNavigationSnapshot.self,
+                        from: TypefieldInputFile.read(navigationURL, maximumBytes: StudioNavigationSnapshot.maximumBytes))
+                    guard old.version == 1, old.boards.count <= StudioNavigationSnapshot.maximumBoards else {
+                        navigationSidecarBlocked = true; return save()
+                    }
+                    if old.document == documentStamp && old.boardIndices(in: state) == nil {
+                        navigationSidecarBlocked = true; return save()
+                    }
+                } catch { navigationSidecarBlocked = true; return save() }
+            }
+            normalizeFocus()
+            guard state.spaces.reduce(0, { $0 + $1.boards.count }) <= StudioNavigationSnapshot.maximumBoards else { return save() }
+            let selections = state.spaces.flatMap { space in space.boards.map {
+                StudioNavigationSnapshot.BoardSelection(space: space.id, board: $0.id, canvas: $0.selectedDirection)
+            } }
+            guard selections.count <= StudioNavigationSnapshot.maximumBoards else { return save() }
+            let navigation = StudioNavigationSnapshot(document: documentStamp, selectedSpace: focusedSpace,
+                                                       selectedBoard: focusedBoard, boards: selections)
+            guard navigation.boardIndices(in: state) != nil else { return save() }
+            let data = try JSONEncoder().encode(navigation)
+            guard data.count <= StudioNavigationSnapshot.maximumBytes else { return save() }
+            try data.write(to: navigationURL, options: .atomic)
+            documentIsDirty = false; savedAt = Date(); error = ""
+            return true
+        } catch {
+            self.error = "Spaces navigation could not be saved: " + error.localizedDescription
+            return false
+        }
     }
     @discardableResult func save() -> Bool {
         guard !readBlocked else { return false }
@@ -607,24 +770,20 @@ final class StudioStore: ObservableObject {
                 throw NSError(domain: "Typefield", code: 1, userInfo: [NSLocalizedDescriptionKey: "A typeboard contains invalid data."])
             }
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if let focusedSpace, let space = state.spaces.first(where: { $0.id == focusedSpace }) {
-                if let focusedBoard, !space.boards.contains(where: { $0.id == focusedBoard }) { self.focusedBoard = nil }
-            } else {
-                focusedSpace = nil
-                focusedBoard = nil
-            }
-            state.selectedSpace = focusedSpace; state.selectedBoard = focusedBoard
+            normalizeFocus()
             let data = try JSONEncoder().encode(state)
             try LibraryBackupTools.preserve(url)
             if FileManager.default.fileExists(atPath: url.path) {
                 try Data(contentsOf: url).write(to: url.appendingPathExtension("backup"), options: .atomic)
             }
-            try data.write(to: url, options: .atomic); savedAt = Date(); error = ""; return true
+            try data.write(to: url, options: .atomic)
+            documentStamp = try? StudioDocumentStamp.read(url)
+            documentIsDirty = false; savedAt = Date(); error = ""; return true
         } catch { self.error = "Spaces could not be saved: " + error.localizedDescription; return false }
     }
     fileprivate func replayHistory(_ replay: () -> Void, restoringHistory restore: () -> Void) {
         let previousState = state, previousSpace = focusedSpace, previousBoard = focusedBoard
-        let previousSavedAt = savedAt, previousEdit = lastEdit
+        let previousSavedAt = savedAt, previousEdit = lastEdit, previousDirty = documentIsDirty
         replayingHistory = true; historyFailed = false; replayedActions = []
         defer { replayingHistory = false; restoringHistory = false; replayedActions = [] }
         replay()
@@ -632,6 +791,7 @@ final class StudioStore: ObservableObject {
         if historyFailed && error.isEmpty { error = "Spaces history could not be applied. The document and history were preserved." }
         state = previousState; focusedSpace = previousSpace; focusedBoard = previousBoard
         savedAt = previousSavedAt; lastEdit = previousEdit
+        documentIsDirty = previousDirty
         // Every replayed action registered an inverse, including a placeholder
         // for rejected actions. Move that group back while restoring only its
         // callbacks; never attempt a second disk write or document mutation.
@@ -658,19 +818,22 @@ final class StudioStore: ObservableObject {
         undoManager.setActionName(name)
     }
     /// A failed write must not leave a space or typeboard visible only in memory.
-    @discardableResult private func persist(_ edit: () -> Void) -> Bool {
+    @discardableResult private func persist(navigationOnly: Bool = false, _ edit: () -> Void) -> Bool {
         guard !readBlocked else { return false }
         let previousState = state
         let previousSpace = focusedSpace
         let previousBoard = focusedBoard
         let previousSavedAt = savedAt
+        let previousDirty = documentIsDirty
+        let canSaveNavigation = navigationOnly && !previousDirty
         edit()
         if replayingHistory { return true }
-        guard save() else {
+        guard canSaveNavigation ? saveNavigation() : save() else {
             state = previousState
             focusedSpace = previousSpace
             focusedBoard = previousBoard
             savedAt = previousSavedAt
+            documentIsDirty = previousDirty
             return false
         }
         return true
@@ -712,7 +875,7 @@ final class StudioStore: ObservableObject {
         let contentChanged = content != board
         let replaying = undoManager.isUndoing || undoManager.isRedoing
         let coalesced = contentChanged && !replaying && !undoManager.canRedo && undoManager.canUndo && action.hasPrefix("Change ") && action != "Change Font" && lastEdit?.board == board.id && lastEdit?.action == action && Date().timeIntervalSince(lastEdit!.date) < 0.8
-        guard persist({
+        guard persist(navigationOnly: !contentChanged, {
             state.spaces[i].boards[j] = board
             if focus { focusedSpace = space; focusedBoard = board.id }
         }) else { return false }
@@ -788,7 +951,7 @@ final class StudioStore: ObservableObject {
     @discardableResult func select(space: UUID, board: UUID? = nil) -> Bool {
         guard !readBlocked, let existing = state.spaces.first(where: { $0.id == space }), board.map({ id in existing.boards.contains { $0.id == id } }) ?? true else { return false }
         guard focusedSpace != space || focusedBoard != board else { return true }
-        guard persist({ focusedSpace = space; focusedBoard = board }) else { return false }
+        guard persist(navigationOnly: true, { focusedSpace = space; focusedBoard = board }) else { return false }
         // Returning to a board starts a fresh editing interaction, even when
         // navigation was quicker than the numeric-field coalescing interval.
         endUndoCoalescing()

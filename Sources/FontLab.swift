@@ -232,14 +232,17 @@ enum FontLabSVGExporter {
     }
 
     static func string(projectName: String, glyph: FontLabGlyph, metrics: FontLabMetrics) -> String {
+        let formatter = FontLabSVGNumberFormatter(fractionDigits: 3)
+        let vectorFormatter = FontLabSVGNumberFormatter(fractionDigits: 4)
+        func number(_ value: Double) -> String { formatter.string(value) }
         let xScale = glyph.contourDesignWidth ?? 1
         let penScale = min(xScale, 1)
         let elements = glyph.strokes.compactMap { stroke -> String? in
             if let paths = stroke.vectorPaths {
-                let closed = paths.filter(\.closed).map { $0.svg(xScale: xScale) }.joined(separator: " ")
+                let closed = paths.filter(\.closed).map { $0.svg(xScale: xScale, formatter: vectorFormatter) }.joined(separator: " ")
                 var elements: [String] = []
                 if !closed.isEmpty { elements.append("  <path d=\"\(closed)\" fill=\"#111111\" fill-rule=\"nonzero\"/>") }
-                for path in paths where !path.closed { elements.append("  <path d=\"\(path.svg(xScale: xScale))\" fill=\"none\" stroke=\"#111111\" stroke-width=\"1\"/>") }
+                for path in paths where !path.closed { elements.append("  <path d=\"\(path.svg(xScale: xScale, formatter: vectorFormatter))\" fill=\"none\" stroke=\"#111111\" stroke-width=\"1\"/>") }
                 return elements.joined(separator: "\n")
             }
             if let contours = stroke.contours {
@@ -263,7 +266,7 @@ enum FontLabSVGExporter {
                     return "  <circle cx=\"\(number(first.x * xScale * 1_000))\" cy=\"\(number((1 - first.y) * 1_000))\" r=\"\(number(firstWidth / 2))\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(number(max(2, firstWidth * 0.14)))\"/>"
                 }
             }
-            if stroke.resolvedNibStyle == .outline { return outlineElements(for: stroke, xScale: xScale) }
+            if stroke.resolvedNibStyle == .outline { return outlineElements(for: stroke, xScale: xScale, formatter: formatter) }
             let marker = stroke.resolvedNibStyle == .marker
             let widthScale = marker ? 1.28 : 1
             let cap = marker ? "square" : "round"
@@ -290,7 +293,8 @@ enum FontLabSVGExporter {
     /// Turns a centerline into two independent edge paths. Unlike painting a
     /// white line over a black one, the space between these paths remains
     /// transparent when the SVG is placed over color.
-    private static func outlineElements(for stroke: FontLabStroke, xScale: Double) -> String {
+    private static func outlineElements(for stroke: FontLabStroke, xScale: Double, formatter: FontLabSVGNumberFormatter) -> String {
+        func number(_ value: Double) -> String { formatter.string(value) }
         let mapped = stroke.points.map { (x: $0.x * xScale * 1_000, y: (1 - $0.y) * 1_000, pressure: FontLabDrawingOperations.pressureScale(for: $0)) }
         guard mapped.count > 1 else { return "" }
         var leading: [(Double, Double)] = []
@@ -312,10 +316,6 @@ enum FontLabSVGExporter {
             let points = edge.map { "\(number($0.0)),\(number($0.1))" }.joined(separator: " ")
             return "  <polyline points=\"\(points)\" fill=\"none\" stroke=\"#111111\" stroke-width=\"\(lineWidth)\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
         }.joined(separator: "\n")
-    }
-
-    private static func number(_ value: Double) -> String {
-        String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     private static func escaped(_ value: String) -> String {

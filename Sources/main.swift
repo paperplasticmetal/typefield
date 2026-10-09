@@ -2028,7 +2028,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try BackgroundWorkChecks.run(); try PreviewRenderingChecks.run(); try GlyphBrowserChecks.run(); try TypefieldSettingsChecks.run(); try TypefieldLanguageChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try StudioNavigationChecks.run(); try StudioNavigationChecks.backupIntegration(); try CanvasPlanCacheChecks.run(); try FontLabPerformanceChecks.run(); try BackgroundWorkChecks.run(); try PreviewRenderingChecks.run(); try GlyphBrowserChecks.run(); try TypefieldSettingsChecks.run(); try TypefieldLanguageChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")
@@ -2045,6 +2045,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
             _ = fixture.studio.update(space: space.id, board: board)
         }
         _ = fixture.fontLab.addProject(name: "Window QA")
+        if CommandLine.arguments.contains("--workspace-stress-qa") {
+            do { try WorkspaceStressFixtures.populate(fixture) }
+            catch { fputs("Workspace stress fixture failed: \(error.localizedDescription)\n", stderr); exit(1) }
+        }
         fixture.comparison = ["Helvetica", "Times"]
         fixture.workspace = .spaces
         delegate = AppDelegate(library: fixture)

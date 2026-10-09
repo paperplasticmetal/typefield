@@ -750,10 +750,11 @@ final class FontLabVectorNSView: NSView {
                 }
             } else { editor.selection.formUnion(ids) }
         case .nodes:
+            let selection = editor.selection
             let a=design(start,clamp:false),b=design(end,clamp:false)
             var dx=b.x-a.x,dy=b.y-a.y
             let horizontal = abs(dx*designRect.width)>abs(dy*designRect.height)
-            let selected = originalPaths.flatMap(\.nodes).filter { editor.selection.contains($0.id) }
+            let selected = originalPaths.flatMap(\.nodes).filter { selection.contains($0.id) }
             if let reference=selected.first(where: { $0.id == draggedNodeID }) ?? selected.first {
                 let p=snapped(.init(x:reference.point.x+dx,y:reference.point.y+dy),event:event);dx=p.x-reference.point.x;dy=p.y-reference.point.y
             }
@@ -767,7 +768,7 @@ final class FontLabVectorNSView: NSView {
                 }
             }
             var paths=originalPaths
-            for p in paths.indices {for n in paths[p].nodes.indices where editor.selection.contains(paths[p].nodes[n].id) {
+            for p in paths.indices {for n in paths[p].nodes.indices where selection.contains(paths[p].nodes[n].id) {
                 paths[p].nodes[n].point.x += dx;paths[p].nodes[n].point.y += dy
                 if paths[p].nodes[n].incoming != nil {paths[p].nodes[n].incoming!.x += dx;paths[p].nodes[n].incoming!.y += dy}
                 if paths[p].nodes[n].outgoing != nil {paths[p].nodes[n].outgoing!.x += dx;paths[p].nodes[n].outgoing!.y += dy}

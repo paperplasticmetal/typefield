@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.29 (2026-10-08)
+
+- Retain bounded canvas dimensions independently of rendered plans, avoiding repeated hidden-canvas layout and cache churn on larger boards.
+- Save Spaces project and canvas navigation without rewriting embedded artwork; preserve failed-save rollback, undo and backup restoration.
+- Reuse SVG number formatting within each export and avoid rebuilding per-anchor ownership during ordinary Letterform outline edits.
+- Add navigation recovery, cache-bound/invalidation and export-equivalence regression checks, plus disposable many-canvas and dense-outline live QA fixtures.
+
 ## 0.59.28 (2026-10-08)
 
 - Add a persistent language picker to onboarding and Settings, with automatic system-language matching and immediate updates across open workspaces.

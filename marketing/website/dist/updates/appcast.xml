@@ -6,6 +6,30 @@
     <description>Signed public beta updates for Typefield.</description>
     <language>en</language>
     <item>
+      <title>Typefield 0.59.29</title>
+      <link>https://typefield.app/download/</link>
+      <sparkle:version>109</sparkle:version>
+      <sparkle:shortVersionString>0.59.29</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <pubDate>Fri, 09 Oct 2026 06:13:44 +0000</pubDate>
+      <description sparkle:format="plain-text">Spaces and Letterform responsiveness refinement:
+
+- Cache canvas dimensions independently and retain more bounded visible plans, avoiding repeated layout on larger boards.
+- Save Spaces navigation without rewriting the complete artwork document, retaining reopen and failed-save recovery.
+- Reuse SVG number formatting and skip unnecessary per-anchor stroke lookup during ordinary outline edits.
+- Preserve exact exported SVG bytes, edited Unicode text, editable geometry, undo and backup restoration.
+- Include all built-in language support from 0.59.28.
+
+Native, window, Figma, disposable live workflows and measured path comparisons are documented in the repository QA report. These are specific path timings, not a universal frame-rate claim.
+
+Apple silicon, macOS 13 or later. Ad hoc signed public beta; not Developer ID notarized.
+
+DMG SHA-256: `d4963dae246b03ebcdbcaa98a992206799ad9cdec080e6f626d974a4ce781118`
+</description>
+      <enclosure url="https://github.com/paperplasticmetal/typefield/releases/download/v0.59.29-beta.1/Typefield-0.59.29-beta.dmg" length="8712258" type="application/octet-stream" sparkle:edSignature="YM1VR1MqMDaAvir4hv7gaRy5YqFlskT7ciokPDemaFYOlSL/FAEFHGWVOrI79GADCRzYS4lNgfxCKsXqwH9VAA==" />
+    </item>
+    <item>
       <title>Typefield 0.59.28</title>
       <link>https://typefield.app/download/</link>
       <sparkle:version>108</sparkle:version>
@@ -96,6 +120,6 @@ Existing copies without an Updates page need one manual download from typefield.
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: ljWSAg8KfW87wdVsYsHLg8cLlTGahnKHxEEwtrRzLhWhKgmMoxSeL2XXM3vxda4FIkdtD+/ba2/yagzQT9F8BQ==
-length: 6965
+edSignature: ag9DxMvFbcMAOrhHyFKLjNVfj+2YdG1MqWOIRkeyMRnaVgA8AEDuxJwrOUMHg8ccrY7Nw/WnNREPUfhpgTSqDg==
+length: 8670
 -->

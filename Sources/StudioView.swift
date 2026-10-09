@@ -508,7 +508,7 @@ enum CanvasBoardLayout {
         for canvas in canvases {
             let position = canvas.boardPosition ?? CanvasBoardPosition(x: nextX, y: 52)
             result[canvas.id] = position
-            nextX = max(nextX, position.x + CanvasPlanCache.plan(for: canvas).size.width + 32)
+            nextX = max(nextX, position.x + CanvasPlanCache.dimensions(for: canvas).size.width + 32)
         }
         return result
     }
@@ -1178,8 +1178,8 @@ struct TypeBoardEditor: View {
                     let positions = CanvasBoardLayout.positions(for: board.directions)
                     let calculatedOffset = CanvasBoardLayout.visibleOffset(for: visible, positions: positions)
                     let visibleOffset = workspaceOffset ?? (visible.count == 1 && soloViewport?.id == visible.first?.id ? soloViewport!.offset : calculatedOffset)
-                    let committedWidth = visible.count == 1 ? (CanvasPlanCache.plan(for: visible[0]).size.width + 48) : visible.reduce(48.0) { current, item in
-                        max(current, (positions[item.id]?.x ?? 24) + visibleOffset.width + CanvasPlanCache.plan(for: item).size.width + 24)
+                    let committedWidth = visible.count == 1 ? (CanvasPlanCache.dimensions(for: visible[0]).size.width + 48) : visible.reduce(48.0) { current, item in
+                        max(current, (positions[item.id]?.x ?? 24) + visibleOffset.width + CanvasPlanCache.dimensions(for: item).size.width + 24)
                     }
                     // Leave space for the vertical scroller and the right-hand resize handle.
                     let fittingWidth = max(1, geometry.size.width - 32)
@@ -1199,7 +1199,7 @@ struct TypeBoardEditor: View {
                                height: max(geometry.size.height, extent.height * scale), alignment: .topLeading)
                     }.coordinateSpace(name: "canvas-workspace").background(Color.primary.opacity(0.07)).background(CanvasZoomInput { factor in zoom = CanvasZoomInput.clamped((zoom == 0 ? scale : zoom) * factor) })
                     }
-                    if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B: " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.plan(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.plan(for: direction).artboardSize.height)) \(direction.canvasUnitLabel), " + (zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
+                    if !focusCanvas { HStack { Text(!library.studio.error.isEmpty ? "Changes could not be saved" : status.isEmpty ? "Saved" : status).lineLimit(2); Spacer(); if let partner = board.directions.first(where: { $0.id == abID }) { Text("A/B: " + partner.name).lineLimit(1) }; Text("\(Int(CanvasPlanCache.dimensions(for: direction).artboardSize.width)) × \(Int(CanvasPlanCache.dimensions(for: direction).artboardSize.height)) \(direction.canvasUnitLabel), " + (zoom == 0 ? "Fit width" : "\(Int(zoom * 100))%" )).monospacedDigit() }.font(.caption).foregroundStyle(.secondary).padding(7) }
         }.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topTrailing) { if focusCanvas { focusControls.padding(12) } }
     }
@@ -1371,7 +1371,7 @@ struct TypeBoardEditor: View {
     }
     private func canvasWorkspaceExtent(_ displays: [CanvasFrameDisplay], visibleOffset: CGSize) -> CGSize {
         displays.reduce(CGSize(width: 48, height: 120)) { extent, display in
-            let size = CanvasPlanCache.plan(for: display.direction).size
+            let size = CanvasPlanCache.dimensions(for: display.direction).size
             return CGSize(width: max(extent.width, display.position.x + visibleOffset.width + size.width + 24),
                           height: max(extent.height, display.position.y + visibleOffset.height + size.height + 58))
         }
@@ -2211,7 +2211,26 @@ struct CanvasElement {
 }
 struct CanvasSection: Identifiable { var id: String; var title: String; var rect: CGRect }
 enum CanvasPlanCache {
-    private struct Entry { let direction: TypeDirection; let plan: CanvasPlan; let textLength: Int; let imageBytes: Int; var used: UInt64 }
+    private struct Entry { let direction: TypeDirection; let plan: CanvasPlan; let textLength: Int; let imageBytes: Int; let elements: Int; var used: UInt64 }
+    struct Dimensions: Equatable {
+        let size: CGSize
+        let artboardSize: CGSize
+        init(_ plan: CanvasPlan) { size = plan.size; artboardSize = plan.artboardSize }
+    }
+    private struct SourceCost { var textLength = 0; var imageBytes = 0; var elements = 0 }
+    private struct DimensionEntry {
+        let direction: TypeDirection
+        let dimensions: Dimensions
+        let cost: SourceCost
+        var used: UInt64
+    }
+    struct Statistics {
+        let plans: Int, dimensions: Int, elements: Int, dimensionSourceElements: Int, textLength: Int, imageBytes: Int
+    }
+    static let maximumPlans = 64
+    static let maximumElements = 16_000
+    static let maximumDimensions = 256
+    static let maximumTextLength = 2_000_000
     static let maximumImageBytes = 128 * 1024 * 1024
     /// Account for every representation without forcing bitmap rendering. A
     /// normal RGBA decode needs four bytes per pixel; retain larger actual row
@@ -2230,44 +2249,174 @@ enum CanvasPlanCache {
     }
     private static let lock = NSLock()
     private static var entries: [UUID: Entry] = [:]
+    private static var dimensionEntries: [UUID: DimensionEntry] = [:]
     private static var clock: UInt64 = 0
-    static func plan(for direction: TypeDirection) -> CanvasPlan {
+    private static var generation: UInt64 = 0
+
+    static var statistics: Statistics {
+        lock.lock(); defer { lock.unlock() }
+        return Statistics(plans: entries.count, dimensions: dimensionEntries.count,
+                          elements: entries.values.reduce(0) { $0 + $1.elements } + dimensionEntries.values.reduce(0) { $0 + $1.cost.elements },
+                          dimensionSourceElements: dimensionEntries.values.reduce(0) { $0 + $1.cost.elements },
+                          textLength: entries.values.reduce(0) { $0 + $1.textLength } + dimensionEntries.values.reduce(0) { $0 + $1.cost.textLength },
+                          imageBytes: entries.values.reduce(0) { $0 + $1.imageBytes } + dimensionEntries.values.reduce(0) { $0 + $1.cost.imageBytes })
+    }
+
+    /// Geometry reads must not retain every hidden canvas's decoded artwork or
+    /// evict a visible plan. Exact source snapshots invalidate edited canvases.
+    static func dimensions(for direction: TypeDirection,
+                           makePlan: (TypeDirection) -> CanvasPlan = { CanvasPlan(direction: $0) }) -> Dimensions {
         lock.lock()
         clock &+= 1
         let used = clock
-        if var entry = entries[direction.id], entry.direction == direction {
+        if var entry = dimensionEntries[direction.id], sameRenderInputs(entry.direction, direction) {
+            entry.used = used; dimensionEntries[direction.id] = entry
+            lock.unlock()
+            return entry.dimensions
+        }
+        if let entry = entries[direction.id], sameRenderInputs(entry.direction, direction) {
+            lock.unlock()
+            return Dimensions(entry.plan)
+        }
+        let startingGeneration = generation
+        lock.unlock()
+        let plan = makePlan(direction)
+        let dimensions = Dimensions(plan)
+        let cost = sourceCost(direction)
+        let candidateEntry = cacheEntry(plan, for: direction, cost: cost, used: used)
+        lock.lock()
+        if generation == startingGeneration {
+            // A cold visible canvas should use the plan just measured. Admit
+            // it only when replacing its own old entry or using spare space;
+            // a hidden geometry read must never evict another visible plan.
+            if let entry = candidateEntry, fitsWithoutEviction(entry) {
+                entries[direction.id] = entry
+            }
+            storeDimensions(dimensions, for: direction, cost: cost, used: used)
+            trimDimensions()
+        }
+        lock.unlock()
+        return dimensions
+    }
+
+    static func plan(for direction: TypeDirection,
+                     makePlan: (TypeDirection) -> CanvasPlan = { CanvasPlan(direction: $0) }) -> CanvasPlan {
+        lock.lock()
+        clock &+= 1
+        let used = clock
+        if var entry = entries[direction.id], sameRenderInputs(entry.direction, direction) {
             entry.used = used
             entries[direction.id] = entry
             lock.unlock()
             return entry.plan
         }
+        let startingGeneration = generation
         lock.unlock()
-        let plan = CanvasPlan(direction: direction)
+        let plan = makePlan(direction)
+        let cost = sourceCost(direction)
+        let candidateEntry = cacheEntry(plan, for: direction, cost: cost, used: used)
+        lock.lock()
+        guard generation == startingGeneration else { lock.unlock(); return plan }
+        entries.removeValue(forKey: direction.id)
+        if let entry = candidateEntry { entries[direction.id] = entry }
+        while entries.count > maximumPlans || entries.values.reduce(0, { $0 + $1.elements }) > maximumElements || entries.values.reduce(0, { $0+$1.textLength }) > maximumTextLength || entries.values.reduce(0, { $0+$1.imageBytes }) > maximumImageBytes {
+            guard let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key else { break }
+            entries.removeValue(forKey: oldest)
+        }
+        storeDimensions(Dimensions(plan), for: direction, cost: cost, used: used)
+        trimDimensions()
+        lock.unlock()
+        return plan
+    }
+    private static func cacheEntry(_ plan: CanvasPlan, for direction: TypeDirection, cost: SourceCost, used: UInt64) -> Entry? {
         let textLength = plan.elements.reduce(0) { $0 + ($1.text?.length ?? 0) }
         var imageBytes = 0
         for element in plan.elements {
             if let image = element.image { imageBytes = min(maximumImageBytes + 1, imageBytes + self.imageBytes(image)) }
         }
-        // The cached direction also retains compressed artwork, including
-        // hidden layers. Overcount shared data instead of underbudgeting it.
-        for layer in (direction.objectLayers ?? []) + (direction.artworkLayers ?? []) + (direction.importedLayout?.layers ?? []) {
-            imageBytes += min(maximumImageBytes + 1 - imageBytes, layer.artworkData?.count ?? 0)
+        // Source snapshots also retain original text and compressed artwork,
+        // including hidden layers. Overcount shared data to preserve the limits.
+        imageBytes += min(maximumImageBytes + 1 - imageBytes, cost.imageBytes)
+        let retainedTextLength = min(maximumTextLength + 1, textLength + cost.textLength)
+        let retainedElements = plan.elements.count + cost.elements
+        guard plan.elements.count <= 1_000, textLength <= 1_000_000,
+              retainedTextLength <= maximumTextLength, imageBytes <= maximumImageBytes, retainedElements <= maximumElements else { return nil }
+        return Entry(direction: direction, plan: plan, textLength: retainedTextLength, imageBytes: imageBytes, elements: retainedElements, used: used)
+    }
+    private static func fitsWithoutEviction(_ entry: Entry) -> Bool {
+        let others = entries.values.filter { $0.direction.id != entry.direction.id }
+        return others.count < maximumPlans &&
+            others.reduce(entry.elements, { $0 + $1.elements }) <= maximumElements &&
+            others.reduce(entry.textLength, { $0 + $1.textLength }) <= maximumTextLength &&
+            others.reduce(entry.imageBytes, { $0 + $1.imageBytes }) <= maximumImageBytes
+    }
+    private static func sameRenderInputs(_ a: TypeDirection, _ b: TypeDirection) -> Bool {
+        guard a == b else { return false }
+        // Swift String equality accepts canonically equivalent Unicode. Text
+        // editing/export and accessibility must retain the actual source bytes.
+        func exact(_ a: String, _ b: String) -> Bool { a.utf8.elementsEqual(b.utf8) }
+        func sameStyle(_ a: TypeStyle, _ b: TypeStyle) -> Bool {
+            exact(a.text, b.text) && exact(a.fontName, b.fontName)
         }
-        lock.lock()
-        entries.removeValue(forKey: direction.id)
-        if plan.elements.count <= 1_000 && textLength <= 1_000_000 && imageBytes <= maximumImageBytes {
-            entries[direction.id] = Entry(direction: direction, plan: plan, textLength:textLength, imageBytes:imageBytes, used: used)
+        for (role, style) in a.styles {
+            guard let other = b.styles[role], sameStyle(style, other) else { return false }
         }
-        while entries.count > 16 || entries.values.reduce(0, { $0+$1.textLength }) > 2_000_000 || entries.values.reduce(0, { $0+$1.imageBytes }) > maximumImageBytes {
-            guard let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key else { break }
-            entries.removeValue(forKey: oldest)
+        for (id, text) in a.textOverrides ?? [:] {
+            guard let other = b.textOverrides?[id], exact(text, other) else { return false }
         }
-        lock.unlock()
-        return plan
+        func sameLayers(_ a: [ImportedLayer]?, _ b: [ImportedLayer]?) -> Bool {
+            for (layer, other) in zip(a ?? [], b ?? []) {
+                guard exact(layer.id, other.id), exact(layer.name, other.name) else { return false }
+                if let style = layer.style, let otherStyle = other.style, !sameStyle(style, otherStyle) { return false }
+            }
+            return true
+        }
+        return sameLayers(a.importedLayout?.layers, b.importedLayout?.layers) &&
+            sameLayers(a.artworkLayers, b.artworkLayers) && sameLayers(a.objectLayers, b.objectLayers)
+    }
+    private static func sourceCost(_ direction: TypeDirection) -> SourceCost {
+        var result = SourceCost()
+        func addText(_ text: String) {
+            result.textLength += min(maximumTextLength + 1 - result.textLength, text.utf16.count)
+        }
+        addText(direction.name); addText(direction.notes)
+        for warning in direction.importWarnings ?? [] { addText(warning) }
+        for style in direction.styles.values { addText(style.text); addText(style.fontName) }
+        for (id, text) in direction.textOverrides ?? [:] { addText(id); addText(text) }
+        let layers = (direction.objectLayers ?? []) + (direction.artworkLayers ?? []) + (direction.importedLayout?.layers ?? [])
+        result.elements = layers.count + (direction.blocks?.count ?? 0) + (direction.addedBlocks?.count ?? 0)
+        for layer in layers {
+            addText(layer.id); addText(layer.name)
+            if let style = layer.style { addText(style.text); addText(style.fontName) }
+            result.imageBytes += min(maximumImageBytes + 1 - result.imageBytes, layer.artworkData?.count ?? 0)
+        }
+        return result
+    }
+    /// Called with the lock held. Source budgets include hidden artwork and
+    /// text; decoded plans and geometry snapshots share the existing ceilings.
+    private static func storeDimensions(_ dimensions: Dimensions, for direction: TypeDirection, cost: SourceCost, used: UInt64) {
+        dimensionEntries.removeValue(forKey: direction.id)
+        if cost.elements <= maximumElements && cost.textLength <= maximumTextLength && cost.imageBytes <= maximumImageBytes {
+            dimensionEntries[direction.id] = DimensionEntry(direction: direction, dimensions: dimensions, cost: cost, used: used)
+        }
+    }
+    private static func trimDimensions() {
+        let planText = entries.values.reduce(0) { $0 + $1.textLength }
+        let planImages = entries.values.reduce(0) { $0 + $1.imageBytes }
+        let planElements = entries.values.reduce(0) { $0 + $1.elements }
+        while dimensionEntries.count > maximumDimensions ||
+                dimensionEntries.values.reduce(planElements, { $0 + $1.cost.elements }) > maximumElements ||
+                dimensionEntries.values.reduce(planText, { $0 + $1.cost.textLength }) > maximumTextLength ||
+                dimensionEntries.values.reduce(planImages, { $0 + $1.cost.imageBytes }) > maximumImageBytes {
+            guard let oldest = dimensionEntries.min(by: { $0.value.used < $1.value.used })?.key else { break }
+            dimensionEntries.removeValue(forKey: oldest)
+        }
     }
     static func removeAll() {
         lock.lock()
+        generation &+= 1
         entries.removeAll(keepingCapacity: true)
+        dimensionEntries.removeAll(keepingCapacity: true)
         lock.unlock()
     }
 }

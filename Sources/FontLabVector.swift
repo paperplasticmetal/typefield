@@ -1,5 +1,29 @@
 import AppKit
 
+/// SVG numbers use fixed POSIX decimal rounding. Keep the configured formatter
+/// local to one export so individual coordinates do not rebuild its ICU state.
+struct FontLabSVGNumberFormatter {
+    private let formatter: NumberFormatter
+    private let fractionDigits: Int
+
+    init(fractionDigits: Int) {
+        self.fractionDigits = fractionDigits
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = fractionDigits
+        formatter.maximumFractionDigits = fractionDigits
+        formatter.roundingMode = .halfEven
+        self.formatter = formatter
+    }
+
+    func string(_ value: Double) -> String {
+        formatter.string(from: NSNumber(value: value)) ??
+            String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), fractionDigits, value)
+    }
+}
+
 /// Cubic outlines stay editable in project files. Coordinates use the existing
 /// glyph design box; handles may extend beyond it while anchors stay inside.
 struct FontLabVectorNode: Codable, Equatable, Identifiable {
@@ -95,8 +119,9 @@ struct FontLabVectorPath: Codable, Equatable, Identifiable {
         if closed || index > 0 { nodes[index].incoming = FontLabPoint(x:p.x-dx/length*a,y:p.y-dy/length*a) }
         if closed || index < nodes.count-1 { nodes[index].outgoing = FontLabPoint(x:p.x+dx/length*b,y:p.y+dy/length*b) }
     }
-    func svg(xScale: Double) -> String {
-        func p(_ p: FontLabPoint) -> String { String(format: "%.4f,%.4f", locale: Locale(identifier: "en_US_POSIX"), p.x*xScale*1000, (1-p.y)*1000) }
+    func svg(xScale: Double, formatter: FontLabSVGNumberFormatter? = nil) -> String {
+        let formatter = formatter ?? FontLabSVGNumberFormatter(fractionDigits: 4)
+        func p(_ p: FontLabPoint) -> String { formatter.string(p.x*xScale*1000) + "," + formatter.string((1-p.y)*1000) }
         guard let first = nodes.first else { return "" }
         var d = "M" + p(first.point)
         for i in 0..<segmentCount {
@@ -160,13 +185,13 @@ enum FontLabVectorMath {
     /// Explicit path groups are reserved for operations that combine contours.
     static func replacingPaths(in glyph: FontLabGlyph, with paths: [FontLabVectorPath], pathGroups: [[UUID]] = []) -> FontLabGlyph {
         let outlineIndices = glyph.strokes.indices.filter { glyph.strokes[$0].contours != nil || glyph.strokes[$0].vectorPaths != nil }
-        var owners: [UUID: Int] = [:], nodeOwners: [UUID: Int] = [:]
-        for (group, index) in outlineIndices.enumerated() {
+        let sourcePaths = outlineIndices.map { index -> [FontLabVectorPath] in
             var source = glyph; source.strokes = [glyph.strokes[index]]
-            for path in self.paths(in: source) {
-                owners[path.id] = group
-                for node in path.nodes { nodeOwners[node.id] = group }
-            }
+            return self.paths(in: source)
+        }
+        var owners: [UUID: Int] = [:]
+        for (group, paths) in sourcePaths.enumerated() {
+            for path in paths { owners[path.id] = group }
         }
         // A fresh path joins the last outline group, preserving the existing
         // drawing workflow for making a counter inside a shape. Splits retain
@@ -180,6 +205,14 @@ enum FontLabVectorMath {
             // its paths. Reapplying Make counter then remains a true no-op.
             let reusable = outlineIndices.indices.first { owner in owners.filter { $0.value == owner }.keys.allSatisfy { idSet.contains($0) } }
             for id in ids { explicitOwners[id] = reusable ?? existingCount + group }
+        }
+        // Ordinary drags retain every path identity. Only a new or split path
+        // needs the more expensive per-node lookup to recover its stroke group.
+        var nodeOwners: [UUID: Int] = [:]
+        if paths.contains(where: { explicitOwners[$0.id] == nil && owners[$0.id] == nil }) {
+            for (group, paths) in sourcePaths.enumerated() {
+                for path in paths { for node in path.nodes { nodeOwners[node.id] = group } }
+            }
         }
         for path in paths {
             let owner = explicitOwners[path.id] ?? owners[path.id] ?? path.nodes.lazy.compactMap { nodeOwners[$0.id] }.first ?? existingCount - 1

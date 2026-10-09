@@ -429,9 +429,7 @@ enum LibraryBackupTools {
         func acceptMergedState() {
             library.saved = mergedLibrary
             library.pro = mergedPro
-            library.studio.state = mergedSpaces
-            library.studio.savedAt = Date()
-            library.studio.error = ""
+            library.studio.acceptSavedBackupImport(mergedSpaces)
             if let mergedFontLab {
                 library.fontLab.acceptSavedBackupImport(mergedFontLab)
             }
