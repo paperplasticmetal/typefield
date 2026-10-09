@@ -6,6 +6,16 @@
     <description>Signed public beta updates for Typefield.</description>
     <language>en</language>
     <item>
+      <title>Typefield 0.59.28</title>
+      <link>https://typefield.app/download/</link>
+      <sparkle:version>108</sparkle:version>
+      <sparkle:shortVersionString>0.59.28</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <pubDate>Fri, 09 Oct 2026 04:23:25 +0000</pubDate>
+      <enclosure url="https://github.com/paperplasticmetal/typefield/releases/download/v0.59.28-beta.1/Typefield-0.59.28-beta.dmg" length="8603482" type="application/octet-stream" sparkle:edSignature="t0u1YWMTC/tunFDA/N94mmaP+IANOMiy777OPXNtCVzuZHzuQiHsW+mCg0ps42dHFmWgqYVmOZ3Y+LByB/4BBA==" />
+    </item>
+    <item>
       <title>Typefield 0.59.27</title>
       <link>https://typefield.app/download/</link>
       <sparkle:version>107</sparkle:version>
@@ -86,6 +96,6 @@ Existing copies without an Updates page need one manual download from typefield.
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: xYFBgAYqm4/cp+OkL12cAkBrltKObubSMHbTHPYoc7tMc/qqGo8kGYziLqfuhK2GCfwxSCkP1wJ+cWPyYbkxCQ==
-length: 6240
+edSignature: ljWSAg8KfW87wdVsYsHLg8cLlTGahnKHxEEwtrRzLhWhKgmMoxSeL2XXM3vxda4FIkdtD+/ba2/yagzQT9F8BQ==
+length: 6965
 -->

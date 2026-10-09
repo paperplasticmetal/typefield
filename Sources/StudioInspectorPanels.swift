@@ -6,7 +6,7 @@ extension TypeBoardEditor {
     var inspector: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(inspectorTab == "Arrangement" ? "Layers" : inspectorTab).font(.subheadline.weight(.semibold))
+                Text(localizedKey(inspectorTab == "Arrangement" ? "Layers" : inspectorTab)).font(.subheadline.weight(.semibold))
                 Spacer()
                 if inspectorTab == "Properties" {
                     Menu { selectionMenu } label: { Image(systemName: "ellipsis") }
@@ -156,8 +156,8 @@ extension TypeBoardEditor {
             binding.wrappedValue = min(range.upperBound, max(range.lowerBound, input / multiplier))
         })
         return HStack(spacing: 7) {
-            Text(title).frame(width: 50, alignment: .leading)
-            Slider(value: value, in: (range.lowerBound * multiplier)...(range.upperBound * multiplier), onEditingChanged: { editing in if !editing { library.studio.endUndoCoalescing() } }).labelsHidden().accessibilityLabel(title)
+            Text(localizedKey(title)).frame(width: 50, alignment: .leading)
+            Slider(value: value, in: (range.lowerBound * multiplier)...(range.upperBound * multiplier), onEditingChanged: { editing in if !editing { library.studio.endUndoCoalescing() } }).labelsHidden().accessibilityLabel(localizedKey(title))
             StudioEffectNumberField(title: title + " value", value: mixed ? nil : values.first) { input in
                 updateEffects(key, value: min(range.upperBound, max(range.lowerBound, input / multiplier)), ids: ids, canvasID: canvasID)
             }.frame(width: 52)
@@ -169,7 +169,7 @@ extension TypeBoardEditor {
         let values = selectedEffects.map { $0[keyPath: key] }
         let mixed = values.dropFirst().contains { $0 != values.first }
         return HStack(spacing: 5) {
-            Text(title).foregroundStyle(.secondary)
+            Text(localizedKey(title)).foregroundStyle(.secondary)
             StudioEffectNumberField(title: "Shadow " + title + " offset", value: mixed ? nil : values.first) { input in
                 updateEffects(key, value: min(200, max(-200, input)), ids: ids, canvasID: canvasID)
             }
@@ -200,7 +200,7 @@ struct StudioEffectNumberField: View {
     var body: some View {
         TextField(value == nil ? "Mixed" : title, text: $draft)
             .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).focused($focused)
-            .accessibilityLabel(title).onSubmit { commit() }
+            .accessibilityLabel(localizedKey(title)).onSubmit { commit() }
             .onAppear { refresh() }
             .onChange(of: value) { _ in if !focused { refresh() } }
             .onChange(of: focused) { if !$0 { commit() } }

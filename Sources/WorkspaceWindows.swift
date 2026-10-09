@@ -57,7 +57,7 @@ final class WorkspaceWindows: NSObject, ObservableObject, NSWindowDelegate {
     func isBrowser(_ window: NSWindow?) -> Bool { browsers.contains { $0 === window } }
     func host(_ mode: WorkspaceMode) -> NSView {
         if let host = hosts[mode] { return host }
-        let controller = NSHostingController(rootView: EditorWindowRoot(library: library, windows: self, fontLabSession: fontLabSession, mode: mode))
+        let controller = NSHostingController(rootView: EditorWindowRoot(library: library, windows: self, fontLabSession: fontLabSession, mode: mode).typefieldLocalized())
         let container = NSView()
         controller.view.frame = container.bounds
         controller.view.autoresizingMask = [.width, .height]
@@ -106,7 +106,7 @@ final class WorkspaceWindows: NSObject, ObservableObject, NSWindowDelegate {
     }
     func openBrowser(scope: String = "All Fonts") {
         let window = makeWindow(title: "Typefield: Font Browser", size: NSSize(width: 520, height: 720), minimum: NSSize(width: 360, height: 360))
-        let host = NSHostingView(rootView: FontBrowserWindow(library: library, initialScope: scope))
+        let host = NSHostingView(rootView: FontBrowserWindow(library: library, initialScope: scope).typefieldLocalized())
         host.sizingOptions = []
         window.contentView = host
         browsers.append(window)

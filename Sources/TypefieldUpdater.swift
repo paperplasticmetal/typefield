@@ -230,7 +230,7 @@ extension TypefieldUpdater: SPUUpdaterDelegate {
             alert.messageText = "Typefield Update Check — Test Session"
             alert.informativeText = result + "\n\nThis test session only checks release information. It cannot download or install updates."
             alert.alertStyle = failed ? .warning : .informational
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: TypefieldL10n.text("OK"))
             alert.runModal()
         }
     }

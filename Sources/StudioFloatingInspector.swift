@@ -32,7 +32,7 @@ final class StudioFloatingInspector: NSObject, NSWindowDelegate {
         panel.collectionBehavior.insert(.fullScreenAuxiliary)
         panel.delegate = self
 
-        let host = NSHostingView(rootView: content)
+        let host = NSHostingView(rootView: content.typefieldLocalized())
         host.sizingOptions = []
         panel.contentView = host
         self.panel = panel

@@ -1384,12 +1384,12 @@ struct FontLabView: View {
         } message: {
             Text("“\(deleteRequest?.name ?? "This project")” will move to Deleted projects, where you can restore it. Source fonts and exported font files stay in place.")
         }
-        .sheet(isPresented: $showMetricsGuide) {
+        .typefieldSheet(isPresented: $showMetricsGuide) {
             let currentProject = store.selectedProject
             let currentGlyph = currentProject?.glyphs[selectedCharacter] ?? FontLabGlyph(character: selectedCharacter)
             FontLabMetricsGuideSheet(metrics: currentProject?.metrics ?? FontLabMetrics(), glyph: currentGlyph)
         }
-        .sheet(isPresented: $showArtworkImporter) {
+        .typefieldSheet(isPresented: $showArtworkImporter) {
             FontLabArtworkImportSheet(currentProject: store.selectedProject, selectedCharacter: selectedCharacter) { result, original in
                 if let original {
                     guard store.replaceArtworkProject(original, with: result) else { return false }
@@ -1406,7 +1406,7 @@ struct FontLabView: View {
                 return true
             }
         }
-        .sheet(isPresented: $showFontDesign) {
+        .typefieldSheet(isPresented: $showFontDesign) {
             if let original = store.selectedProject {
                 FontLabDesignView(project: original, character: selectedCharacter) { updated, openCharacter in
                     guard store.replaceArtworkProject(original, with: updated) else { return false }
@@ -1419,7 +1419,7 @@ struct FontLabView: View {
                 }
             }
         }
-        .sheet(isPresented: $showSmoothing) {
+        .typefieldSheet(isPresented: $showSmoothing) {
             if let current = store.selectedProject, let glyph = current.glyphs[selectedCharacter] {
                 FontLabSmoothingView(original: glyph, metrics: current.metrics) { edited in
                     guard recordGlyphEdit(edited, projectID: current.id) else { return false }
@@ -1433,7 +1433,7 @@ struct FontLabView: View {
                 }
             }
         }
-        .sheet(isPresented: $showExamples) {
+        .typefieldSheet(isPresented: $showExamples) {
             FontLabExamplesView { project in
                 if store.addGeneratedProject(project) != nil {
                     selectedCharacter = project.characters.first(where: { project.glyphs[$0]?.hasArtwork == true }) ?? "A"
@@ -1656,7 +1656,7 @@ struct FontLabView: View {
             }
             HStack(spacing: 6) {
                 Picker("Filter", selection: $session.characterFilter) {
-                    ForEach(FontLabCharacterFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
+                    ForEach(FontLabCharacterFilter.allCases) { filter in Text(localizedKey(filter.rawValue)).tag(filter) }
                 }
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity)
@@ -1810,14 +1810,14 @@ struct FontLabView: View {
                 HStack(spacing: 12) {
                         Picker("Tool", selection: $session.drawingTool) {
                             ForEach(FontLabDrawingTool.allCases) { tool in
-                                Label(tool.title, systemImage: tool.systemImage).tag(tool)
+                                Label(localizedKey(tool.title), systemImage: tool.systemImage).tag(tool)
                             }
                         }
                         .labelsHidden().pickerStyle(.segmented).frame(width: 240)
                     Spacer(minLength: 0)
                     Button("Brush settings") { showBrushSettings = true }
                         .buttonStyle(.borderless)
-                        .popover(isPresented: $showBrushSettings) { brushSettings.frame(width: 440).padding(12) }
+                        .typefieldPopover(isPresented: $showBrushSettings) { brushSettings.frame(width: 440).padding(12) }
                 }.controlSize(.small)
                 FontLabGlyphCanvas(
                     glyph: glyph,
@@ -1853,7 +1853,7 @@ struct FontLabView: View {
                         Text("Nib").font(.caption).foregroundStyle(.secondary)
                         Picker("Nib", selection: $session.nibStyle) {
                             ForEach(FontLabNibStyle.allCases) { style in
-                                Label(style.title, systemImage: style.systemImage).tag(style)
+                                Label(localizedKey(style.title), systemImage: style.systemImage).tag(style)
                             }
                         }
                         .labelsHidden().pickerStyle(.menu).frame(width: 124)
@@ -1867,7 +1867,7 @@ struct FontLabView: View {
                             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
                         Spacer(minLength: 0)
                         Picker("Smoothing", selection: $session.smoothing) {
-                            ForEach(FontLabSmoothingLevel.allCases) { level in Text(level.title).tag(level) }
+                            ForEach(FontLabSmoothingLevel.allCases) { level in Text(localizedKey(level.title)).tag(level) }
                         }
                         .pickerStyle(.menu).frame(width: 138).disabled(drawingTool != .pen)
                     }
@@ -1881,7 +1881,7 @@ struct FontLabView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(tabletInputDetected ? Color.green : Color.secondary)
                         .help("Set up Apple Pencil with Sidecar or a macOS drawing tablet")
-                        .popover(isPresented: $showInputHelp, arrowEdge: .bottom) { FontLabInputHelp() }
+                        .typefieldPopover(isPresented: $showInputHelp, arrowEdge: .bottom) { FontLabInputHelp() }
                     }
                     Text(drawingTool == .reshape ? "Drag a blue point to reshape a stroke or outline. Use Vector editor for curve handles. ⌘Z undoes the last canvas edit." : drawingTool == .pen ? "Draw with a mouse, trackpad, Apple Pencil through Sidecar, or a macOS-compatible pen tablet. ⌘Z undoes the last canvas edit." : "Drag across a line or filled shape to erase it. ⌘Z restores the last canvas edit.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

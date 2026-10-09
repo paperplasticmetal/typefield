@@ -823,7 +823,7 @@ struct FontLabVectorEditorView: View {
                     HStack { Spacer(minLength: 0); vectorZoomControls }
                 }
             }.font(.caption).controlSize(.small)
-            .popover(isPresented: $showCanvasAppearance) { canvasAppearance.padding(16).frame(width: 310) }
+            .typefieldPopover(isPresented: $showCanvasAppearance) { canvasAppearance.padding(16).frame(width: 310) }
             Text(editor.message.isEmpty ? editor.interactionHint : editor.message)
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(3)
                 .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40, alignment: .topLeading)
@@ -851,7 +851,7 @@ struct FontLabVectorEditorView: View {
             Spacer(minLength: 0)
         }
         .frame(height: 32, alignment: .leading)
-        .popover(isPresented: $showStrokeOutline) { strokeOutlineInspector.padding(16).frame(width: 320) }
+        .typefieldPopover(isPresented: $showStrokeOutline) { strokeOutlineInspector.padding(16).frame(width: 320) }
     }
     @ViewBuilder private var continuationButton: some View {
         if editor.activePath != nil {
@@ -923,7 +923,7 @@ struct FontLabVectorEditorView: View {
                 .toggleStyle(.button).help("Show or hide the filled letter (F). This changes the preview only.")
                 .accessibilityLabel("Show fill")
             Button("Contours (\(editor.paths.count))") { showContours = true }
-                .popover(isPresented: $showContours) { contourInspector.padding(16).frame(width: 360) }
+                .typefieldPopover(isPresented: $showContours) { contourInspector.padding(16).frame(width: 360) }
             Menu("Canvas") {
                 Toggle("Show grid", isOn: $editor.grid)
                 Toggle("Snap to grid", isOn: $editor.snap)
@@ -975,7 +975,7 @@ struct FontLabVectorEditorView: View {
         }
             .buttonStyle(.plain).fixedSize().help("Transform the selection: coordinates, alignment, scale and rotation")
             .accessibilityIdentifier("font-lab-transform")
-            .popover(isPresented: $showSelectionInspector) { selectionInspector.padding(16).frame(width: 400) }
+            .typefieldPopover(isPresented: $showSelectionInspector) { selectionInspector.padding(16).frame(width: 400) }
     }
     private var selectionInspector: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1063,8 +1063,8 @@ struct FontLabVectorEditorView: View {
             .frame(width: 44, height: 44).contentShape(Rectangle())
         }
         .buttonStyle(FontLabToolButtonStyle(selected: selected))
-        .help("\(title) (\(shortcut))")
-        .accessibilityLabel(title).accessibilityValue(selected ? "Selected" : "Not selected")
+        .help(Text(localizedKey(title)) + Text(verbatim: " (\(shortcut))"))
+        .accessibilityLabel(localizedKey(title)).accessibilityValue(localizedKey(selected ? "Selected" : "Not selected"))
         .accessibilityIdentifier("font-lab-tool-\(title.lowercased())")
     }
     private var activeToolDescription: String {
@@ -1171,7 +1171,7 @@ private final class FontLabPathMenuPresenter: NSObject, ObservableObject {
         let menu = NSMenu(); menu.autoenablesItems = false
         for (index, action) in actions.enumerated() {
             guard let title = action.title else { menu.addItem(.separator()); continue }
-            let item = NSMenuItem(title: title, action: #selector(invoke(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: TypefieldL10n.text(title), action: #selector(invoke(_:)), keyEquivalent: "")
             item.target = self; item.tag = index; item.isEnabled = action.enabled
             menu.addItem(item)
         }

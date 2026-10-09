@@ -367,7 +367,7 @@ struct LibrarySearchView: View {
             Button { suggestions.toggle() } label: { Image(systemName: "tag").frame(minWidth: 28, minHeight: 28) }.buttonStyle(.plain).help("Search tags and font properties")
                 .accessibilityLabel("Search tags and font properties")
                 .accessibilityValue(suggestions ? "Open" : "Closed")
-                .popover(isPresented: $suggestions, arrowEdge: .bottom) { panel }
+                .typefieldPopover(isPresented: $suggestions, arrowEdge: .bottom) { panel }
         }.padding(10).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         .onChange(of: library.search) { value in if value.hasSuffix("#") || value.hasSuffix("#!") { suggestions = true; exclude = value.hasSuffix("#!") } }
     }

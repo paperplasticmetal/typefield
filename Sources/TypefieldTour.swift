@@ -5,12 +5,19 @@ struct TypefieldTour: View {
     let dismiss: () -> Void
     let open: (WorkspaceMode) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var step = 0
     @State private var face = 0
     @State private var word = "Hello"
     @State private var poster = false
     @State private var curve = TourCurveGeometry()
     @State private var forward = true
+
+    init(dismiss: @escaping () -> Void, open: @escaping (WorkspaceMode) -> Void, initialStep: Int = 0) {
+        self.dismiss = dismiss
+        self.open = open
+        _step = State(initialValue: min(3, max(0, initialStep)))
+    }
 
     private static let names = TourSpecimens.faces.map(\.name)
     private static let fonts = TourSpecimens.faces.map(\.postScriptName)
@@ -31,19 +38,19 @@ struct TypefieldTour: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            HStack(spacing: 30) {
+            HStack(spacing: 24) {
                 playground
-                    .frame(width: 402, height: 346)
+                    .frame(width: 350, height: 346)
                     .background(paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(ink.opacity(0.09)))
                     .clipped()
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(Self.titles[step])
-                        .font(.system(size: 35, weight: .semibold))
-                        .tracking(-1.3).lineSpacing(-1)
+                    Text(localizedKey(Self.titles[step]))
+                        .font(.system(size: 30, weight: .semibold))
+                        .tracking(["hi", "ja", "ko", "zh"].contains(where: { locale.identifier.hasPrefix($0) }) ? 0 : -1.3).lineSpacing(-1)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
-                    Text(Self.details[step])
+                    Text(localizedKey(Self.details[step]))
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                         .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                     if step == 3 { fontGuides }
@@ -56,7 +63,7 @@ struct TypefieldTour: View {
             footer
         }
         .padding(28)
-        .frame(width: 760, height: 540)
+        .frame(width: 840, height: 600)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityIdentifier("typefield-onboarding")
     }
@@ -73,7 +80,7 @@ struct TypefieldTour: View {
         ]
         return VStack(alignment: .leading, spacing: 5) {
             ForEach(guides.indices, id: \.self) { index in
-                (Text(guides[index].0).fontWeight(.semibold) + Text(" · " + guides[index].1))
+                (Text(localizedKey(guides[index].0)).fontWeight(.semibold) + Text(" · ") + Text(localizedKey(guides[index].1)))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -93,6 +100,7 @@ struct TypefieldTour: View {
         HStack(spacing: 8) {
             Text("Typefield").font(.system(size: 15, weight: .semibold)).tracking(-0.3)
             Spacer()
+            TypefieldLanguagePicker().frame(width: 230)
             Button("Skip tour", action: dismiss)
                 .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(.secondary)
                 .keyboardShortcut(.cancelAction)
@@ -107,7 +115,7 @@ struct TypefieldTour: View {
                     Button { navigate(to: index) } label: {
                         HStack(spacing: 6) {
                             Text(String(format: "%02d", index + 1)).monospacedDigit().opacity(0.55)
-                            Text(Self.labels[index])
+                            Text(localizedKey(Self.labels[index]))
                         }
                         .font(.system(size: 11, weight: step == index ? .semibold : .regular))
                         .padding(.horizontal, 10).frame(height: 30)
@@ -115,7 +123,7 @@ struct TypefieldTour: View {
                         .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Step \(index + 1) of 4: \(Self.labels[index])")
+                    .accessibilityLabel("Step \(index + 1) of 4: \(TypefieldL10n.text(Self.labels[index], language: TypefieldLanguage.resolve("system", preferred: [locale.identifier])))")
                     .accessibilityAddTraits(step == index ? .isSelected : [])
                 }
                 Spacer(minLength: 0)
@@ -123,7 +131,7 @@ struct TypefieldTour: View {
                     Button("Back") { navigate(to: step - 1) }
                         .buttonStyle(.plain).font(.system(size: 12)).padding(.trailing, 8)
                 }
-                Button(step == 0 ? "Let's play" : step == 3 ? "Finish tour" : "Next") {
+                Button(localizedKey(step == 0 ? "Let's play" : step == 3 ? "Finish tour" : "Next")) {
                     if step == 3 { dismiss() } else { navigate(to: step + 1) }
                 }
                 .buttonStyle(TourPrimaryButton())
@@ -225,7 +233,7 @@ struct TypefieldTour: View {
                 } label: {
                     VStack(spacing: 5) {
                         Text("Ag").font(.custom(Self.fonts[index], size: 24))
-                        Text(["Serif", "Sans", "Mono"][index]).font(.system(size: 10))
+                        Text(localizedKey(["Serif", "Sans", "Mono"][index])).font(.system(size: 10))
                     }
                     .frame(maxWidth: .infinity).frame(height: 64)
                     .background(face == index ? .white : ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
@@ -245,7 +253,7 @@ struct TypefieldTour: View {
                     Button {
                         withAnimation(motion) { poster = value }
                     } label: {
-                        Text(value ? "Poster" : "Editorial")
+                        Text(localizedKey(value ? "Poster" : "Editorial"))
                             .font(.system(size: 11, weight: .medium))
                             .padding(.horizontal, 14).padding(.vertical, 7)
                             .background(poster == value ? ink : .clear, in: Capsule())

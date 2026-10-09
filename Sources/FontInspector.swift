@@ -494,6 +494,6 @@ struct DetailView: View {
                     }.padding(18) }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }.sheet(isPresented: $showLicenseSources) { FontLicenseSourcesView(face: face) }.padding(20).frame(width: 980, height: min(820, (NSScreen.main?.visibleFrame.height ?? 920) - 90)).onAppear { chosen = library.chosenFace(family).name }
+        }.typefieldSheet(isPresented: $showLicenseSources) { FontLicenseSourcesView(face: face) }.padding(20).frame(width: 980, height: min(820, (NSScreen.main?.visibleFrame.height ?? 920) - 90)).onAppear { chosen = library.chosenFace(family).name }
     }
 }

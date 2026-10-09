@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.28 (2026-10-08)
+
+- Add a persistent language picker to onboarding and Settings, with automatic system-language matching and immediate updates across open workspaces.
+- Bundle French, Spanish, German, Japanese, Hindi, Simplified and Traditional Chinese, Brazilian Portuguese, Italian and Korean alongside English.
+- Translate onboarding, Settings, common Library navigation/actions and core Spaces/Letterform controls. Keep font metadata, typed specimens, saved project text and storage identifiers unchanged.
+- Use native string tables with safe English fallback for untranslated advanced tools and diagnostics; system dialogs follow macOS.
+
 ## 0.59.27 (2026-10-08)
 
 - Reduce repeated Library filtering, sidebar counting, style lookup and mixed-script preview layout work while preserving exact search and coverage results.

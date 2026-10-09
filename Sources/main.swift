@@ -769,7 +769,7 @@ struct ContentView: View {
                 topControls
                 libraryContent(visibleFamilies)
                 Divider()
-                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("\(visibleFamilies.count) \(visibleFamilies.count == 1 ? "family" : "families") with \(matchingStyleCount) matching styles; \(library.styleCount) styles in library"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
+                HStack { Circle().fill(Color.accentColor).frame(width: 6, height: 6); Text("Families: \(visibleFamilies.count) · Matching styles: \(matchingStyleCount) · Library styles: \(library.styleCount)"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
                 }.accessibilityIdentifier("library-workspace")
             }
         }
@@ -811,13 +811,13 @@ struct ContentView: View {
         }
         .onChange(of: library.message) { _ in presentInitialTourIfReady() }
         .onChange(of: preview) { value in library.requiredText = value == "{family}" ? "" : value; if value == "{family}" { library.requireCoverage = false } }
-        .sheet(item: $licenseFace) { FontLicenseSourcesView(face: $0) }
-        .sheet(isPresented: $library.showTools) { LibraryToolsView(library: library) }
-        .sheet(isPresented: $library.showCompare) { CompareView(library: library, preview: preview, size: size) }
-        .sheet(item: $library.typeboardDraft) { draft in TypeboardRoleMapper(library: library, draft: draft) }
-        .sheet(isPresented: $showDiscovery) { FontDiscoveryView(library: library, eligibleFamilies: library.filtered, preview: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
-        .sheet(item: $library.detail) { family in DetailView(library: library, family: family, preview: preview == "{family}" ? family.name : preview, size: size) }
-        .sheet(isPresented: $showTour, onDismiss: {
+        .typefieldSheet(item: $licenseFace) { FontLicenseSourcesView(face: $0) }
+        .typefieldSheet(isPresented: $library.showTools) { LibraryToolsView(library: library) }
+        .typefieldSheet(isPresented: $library.showCompare) { CompareView(library: library, preview: preview, size: size) }
+        .typefieldSheet(item: $library.typeboardDraft) { draft in TypeboardRoleMapper(library: library, draft: draft) }
+        .typefieldSheet(isPresented: $showDiscovery) { FontDiscoveryView(library: library, eligibleFamilies: library.filtered, preview: preview == "{family}" ? "Hamburgefontsiv 0123456789" : preview) }
+        .typefieldSheet(item: $library.detail) { family in DetailView(library: library, family: family, preview: preview == "{family}" ? family.name : preview, size: size) }
+        .typefieldSheet(isPresented: $showTour, onDismiss: {
             onboardingComplete = true
             if let destination = pendingTourWorkspace {
                 pendingTourWorkspace = nil
@@ -954,8 +954,8 @@ struct ContentView: View {
                 else if visibleFamilies.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "text.magnifyingglass").font(.system(size: 38)).foregroundStyle(.secondary)
-                        Text(emptyLibraryTitle).font(.title2)
-                        Text(emptyLibraryHint).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 440)
+                        Text(localizedKey(emptyLibraryTitle)).font(.title2)
+                        Text(localizedKey(emptyLibraryHint)).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 440)
                         if library.hasActiveFilters { Button("Clear filters") { library.clearFiltersPreservingSection() } }
                         if library.selection != "All Fonts" { Button("Browse all fonts") { library.selection = "All Fonts" } }
                     }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1075,16 +1075,16 @@ struct ContentView: View {
             Spacer(minLength: 4)
             Button { library.addFolder() } label: { Label("Add font folder", systemImage: "folder.badge.plus").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(systemScheme == .dark ? Color.black : Color.white).padding(10).background(ShelfPalette.ink, in: RoundedRectangle(cornerRadius: 12)).padding(12)
             Button { library.openTools("Folders") } label: { Label("Live folders (\(library.saved.folders.count))", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.horizontal, 22).padding(.bottom, 8).help("Manage folders that update automatically, including subfolders")
-            HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").accessibilityLabel("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
+            HStack { Button { (NSApp.delegate as? AppDelegate)?.settingsWindow.show(library: library) } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings"); ShelfDropdown(title: "Appearance", selection: $appearance, options: ["Dark", "Light", "System"].map { ($0, $0) }, showsTitle: false, localizesOptions: true); Button { library.reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(6).help("Refresh installed fonts").accessibilityLabel("Refresh installed fonts").disabled(library.loading) }.padding(.horizontal, 12).padding(.bottom, 14)
         }
     }
     private var tagFilterControl: some View {
-        Button(library.tagQuery.active ? "Tag filters (active)" : "Tag filters") { showTagFilters.toggle() }
-            .popover(isPresented: $showTagFilters) { TagFilterView(library: library) }
+        Button(localizedKey(library.tagQuery.active ? "Tag filters (active)" : "Tag filters")) { showTagFilters.toggle() }
+            .typefieldPopover(isPresented: $showTagFilters) { TagFilterView(library: library) }
             .fixedSize(horizontal: true, vertical: false)
     }
     private var sourceFilterControl: some View {
-        ShelfDropdown(title: "Source", selection: $library.source, options: ["All sources", "User / third-party", "System"].map { ($0, $0) }, showsTitle: false)
+        ShelfDropdown(title: "Source", selection: $library.source, options: ["All sources", "User / third-party", "System"].map { ($0, $0) }, showsTitle: false, localizesOptions: true)
             .frame(width: 165)
     }
     private var variableFilterControl: some View {
@@ -1092,7 +1092,7 @@ struct ContentView: View {
             .fixedSize(horizontal: true, vertical: false)
     }
     private var sortFilterControl: some View {
-        ShelfDropdown(title: "Sort", selection: $library.sort, options: ["Name A–Z", "Name Z–A", "Most styles", "Category"].map { ($0, $0) })
+        ShelfDropdown(title: "Sort", selection: $library.sort, options: ["Name A–Z", "Name Z–A", "Most styles", "Category"].map { ($0, $0) }, localizesOptions: true)
             .frame(width: 180)
     }
     private var layoutFilterControl: some View {
@@ -1101,7 +1101,7 @@ struct ContentView: View {
             Image(systemName: "square.grid.2x2").help("Adaptive grid: cards fit your preview text").tag(true)
         }.pickerStyle(.segmented).labelsHidden().frame(width: 70)
     }
-    func sectionLabel(_ title: String) -> some View { Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 5) }
+    func sectionLabel(_ title: String) -> some View { Text(localizedKey(title)).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 5) }
     @ViewBuilder func navIcon(_ icon: String, key: String) -> some View {
         if key == Category.serif.rawValue {
             Text("A")
@@ -1119,7 +1119,7 @@ struct ContentView: View {
     }
     func nav(_ title: String, icon: String, key: String, count: Int) -> some View {
         Button { library.workspace = .library; library.selection = key } label: {
-            HStack { navIcon(icon, key: key); Text(title).lineLimit(1); Spacer(); Text("\(count)").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
+            HStack { navIcon(icon, key: key); (key.hasPrefix("tag:") ? Text(verbatim: title) : Text(localizedKey(title))).lineLimit(1); Spacer(); Text("\(count)").font(.caption).monospacedDigit().foregroundStyle(.secondary) }.padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
         }.buttonStyle(.plain).background(library.workspace == .library && library.selection == key ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 8)
             .accessibilityAddTraits(library.workspace == .library && library.selection == key ? .isSelected : [])
     }
@@ -1134,8 +1134,8 @@ struct ContentView: View {
         let alert = NSAlert()
         alert.messageText = "Delete collection “\(name)”?"
         alert.informativeText = "Remove this collection and its \(count) saved \(count == 1 ? "family" : "families")? The font files and other collections stay in place."
-        alert.addButton(withTitle: "Delete Collection")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: TypefieldL10n.text("Delete Collection"))
+        alert.addButton(withTitle: TypefieldL10n.text("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         if library.deleteCollection(name) { library.resultNotice = "Collection “\(name)” deleted. Font files were not changed." }
         else if library.message.isEmpty { library.message = "The collection could not be deleted." }
@@ -1166,7 +1166,7 @@ struct ContentView: View {
                 } label: { Image(systemName: "ellipsis.circle") }
                     .shelfIconMenu().accessibilityLabel("Actions for collection \(name)")
             } else {
-                Text(library.selection.replacingOccurrences(of: "tag:", with: ""))
+                (library.selection.hasPrefix("tag:") ? Text(verbatim: String(library.selection.dropFirst(4))) : Text(localizedKey(library.selection)))
                     .font(.system(size: WorkspaceHeaderLayout.titleSize, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: 170, minHeight: WorkspaceHeaderLayout.titleHeight)
@@ -1182,8 +1182,8 @@ struct ContentView: View {
                     Button { createContextualTypeboard() } label: { Image(systemName: "text.badge.plus") }.help("New typeboard").accessibilityLabel("New typeboard")
                 }
             }
-            Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").accessibilityLabel("Advanced filters").accessibilityValue(library.showAdvanced ? "Open" : "Closed").popover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
-            Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").accessibilityLabel("Preview colors").popover(isPresented: $showColors) { PreviewColorsView() }
+            Button { library.showAdvanced.toggle() } label: { Image(systemName: library.advanced.active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Advanced filters").accessibilityLabel("Advanced filters").accessibilityValue(library.showAdvanced ? "Open" : "Closed").typefieldPopover(isPresented: $library.showAdvanced) { AdvancedFiltersView(library: library) }
+            Button { showColors.toggle() } label: { Image(systemName: "paintpalette") }.buttonStyle(.plain).foregroundStyle(ShelfPalette.ink).padding(8).shelfGlass(radius: 16).help("Preview colors").accessibilityLabel("Preview colors").typefieldPopover(isPresented: $showColors) { PreviewColorsView() }
             Menu("Tools") {
                 Menu("Organization") {
                     Button("Tags…") { library.openTools("Tags") }
@@ -1256,7 +1256,7 @@ struct ContentView: View {
                     .accessibilityAddTraits(library.selectedFamilies.contains(family.name) ? .isSelected : [])
                 VStack(alignment: .leading, spacing: 3) {
                     Text(family.name).font(.system(size: 14, weight: .medium)).lineLimit(2)
-                    Text(library.category(family).rawValue + (family.variable ? " (variable)" : "")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    (Text(localizedKey(library.category(family).rawValue)) + (family.variable ? Text(" (variable)") : Text(""))).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }.frame(height: 42, alignment: .top)
@@ -1364,8 +1364,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         window.titlebarAppearsTransparent = false
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.title = "Typefield"; window.minSize = NSSize(width: 980, height: 660)
-        window.contentView = NSHostingView(rootView: root)
+        window.contentView = NSHostingView(rootView: root.typefieldLocalized())
         window.center(); window.setFrameAutosaveName("TypefieldWindow"); window.makeKeyAndOrderFront(nil)
+        rebuildMenus()
+        NotificationCenter.default.addObserver(self, selector: #selector(languageDidChange), name: TypefieldLanguageSettings.changed, object: nil)
+        NSApp.addWindowsItem(window, title: "Typefield", filename: false)
+        NSApp.activate(ignoringOtherApps: true)
+        let activationErrors = CommandLine.arguments.contains("--window-qa") ? [] : ActivationManager.shared.clear(restore: false)
+        if !activationErrors.isEmpty { library.message = "Some previous temporary activations could not be cleared: " + activationErrors.joined(separator: "\n") }
+        library.reload(register: !CommandLine.arguments.contains("--window-qa"))
+    }
+    @MainActor @objc private func languageDidChange() {
+        rebuildMenus()
+        settingsWindow.refreshLanguage()
+    }
+    @MainActor private func rebuildMenus() {
         let menu = NSMenu()
         let appItem = NSMenuItem(title: "Typefield", action: nil, keyEquivalent: ""); menu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
@@ -1376,12 +1389,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Privacy & Permissions…", "privacy", to: appMenu)
         addCommand("Settings…", "settings", to: appMenu, key: ",")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Typefield", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: TypefieldL10n.text("Hide Typefield"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthers = appMenu.addItem(withTitle: TypefieldL10n.text("Hide Others"), action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
-        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: TypefieldL10n.text("Show All"), action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Typefield", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: TypefieldL10n.text("Quit Typefield"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let fileMenu = addMenu("File", to: menu)
         addCommand("Add Font Folder…", "folder", to: fileMenu, key: "o")
         addCommand("New Font Browser Window", "newWindow", to: fileMenu, key: "n")
@@ -1392,10 +1405,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Import Library Backup…", "restoreBackup", to: fileMenu)
         addCommand("Export Selected Fonts…", "export", to: fileMenu)
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        let editItem = NSMenuItem(); menu.addItem(editItem); let editMenu = NSMenu(title: "Edit"); editItem.submenu = editMenu
-        for (title, action, key) in [("Undo", "undo:", "z"), ("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] { editMenu.addItem(withTitle: title, action: Selector(action), keyEquivalent: key) }
-        let redo = editMenu.insertItem(withTitle: "Redo", action: NSSelectorFromString("redo:"), keyEquivalent: "z", at: 1)
+        fileMenu.addItem(withTitle: TypefieldL10n.text("Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let editItem = NSMenuItem(); menu.addItem(editItem); let editMenu = NSMenu(title: TypefieldL10n.text("Edit")); editItem.submenu = editMenu
+        for (title, action, key) in [("Undo", "undo:", "z"), ("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] { editMenu.addItem(withTitle: TypefieldL10n.text(title), action: Selector(action), keyEquivalent: key) }
+        let redo = editMenu.insertItem(withTitle: TypefieldL10n.text("Redo"), action: NSSelectorFromString("redo:"), keyEquivalent: "z", at: 1)
         redo.keyEquivalentModifierMask = [.command, .shift]
         editMenu.item(at: 0)?.target = self; redo.target = self
         editMenu.addItem(.separator())
@@ -1473,7 +1486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Refresh Fonts", "refresh", to: libraryViewMenu, key: "r")
         let windowItem = NSMenuItem()
         menu.addItem(windowItem)
-        let windowMenu = NSMenu(title: "Window")
+        let windowMenu = NSMenu(title: TypefieldL10n.text("Window"))
         windowItem.submenu = windowMenu
         NSApp.windowsMenu = windowMenu
         addCommand("Pop Out Spaces", "popSpaces", to: windowMenu, key: "2", modifiers: [.command, .option, .shift])
@@ -1481,9 +1494,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Dock Editor Window", "dockEditor", to: windowMenu, key: "0", modifiers: [.command, .option, .shift])
         addCommand("New Font Browser Window", "newWindow", to: windowMenu)
         windowMenu.addItem(.separator())
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
-        let fullScreenItem = windowMenu.addItem(withTitle: "Enter Full Screen", action: #selector(toggleMainFullScreen(_:)), keyEquivalent: "f")
+        windowMenu.addItem(withTitle: TypefieldL10n.text("Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: TypefieldL10n.text("Zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        let fullScreenItem = windowMenu.addItem(withTitle: TypefieldL10n.text("Enter Full Screen"), action: #selector(toggleMainFullScreen(_:)), keyEquivalent: "f")
         fullScreenItem.target = self
         fullScreenItem.keyEquivalentModifierMask = [.command, .control]
         windowMenu.addItem(.separator())
@@ -1496,18 +1509,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         addCommand("Report a Bug…", "bugReport", to: helpMenu)
         NSApp.helpMenu = helpMenu
         NSApp.mainMenu = menu
-        NSApp.addWindowsItem(window, title: "Typefield", filename: false)
-        NSApp.activate(ignoringOtherApps: true)
-        let activationErrors = CommandLine.arguments.contains("--window-qa") ? [] : ActivationManager.shared.clear(restore: false)
-        if !activationErrors.isEmpty { library.message = "Some previous temporary activations could not be cleared: " + activationErrors.joined(separator: "\n") }
-        library.reload(register: !CommandLine.arguments.contains("--window-qa"))
     }
     func addMenu(_ title: String, to parent: NSMenu) -> NSMenu {
         let item = NSMenuItem(); parent.addItem(item)
-        let submenu = NSMenu(title: title); item.submenu = submenu; return submenu
+        let submenu = NSMenu(title: TypefieldL10n.text(title)); item.submenu = submenu; return submenu
     }
     @discardableResult func addCommand(_ title: String, _ command: String, to menu: NSMenu, key: String = "", modifiers: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
-        let item = menu.addItem(withTitle: title, action: #selector(runMenuCommand(_:)), keyEquivalent: key)
+        let item = menu.addItem(withTitle: TypefieldL10n.text(title), action: #selector(runMenuCommand(_:)), keyEquivalent: key)
         item.target = self; item.representedObject = command; item.keyEquivalentModifierMask = modifiers
         return item
     }
@@ -1532,17 +1540,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if item.action == #selector(undo(_:)) {
             if let manager = activeUndoManager { item.title = manager.undoMenuItemTitle; return manager.canUndo }
             let editorOwnsHistory = activeWorkspace == .fontLab && editorIsKey && activeEditorWindow.attachedSheet == nil && !(activeEditorWindow.firstResponder is NSTextView)
-            item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.undoTitle : "Undo"
+            item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.undoTitle : TypefieldL10n.text("Undo")
             return editorOwnsHistory && FontLabEditMenuBridge.shared.canUndo
         }
         if item.action == #selector(redo(_:)) {
             if let manager = activeUndoManager { item.title = manager.redoMenuItemTitle; return manager.canRedo }
             let editorOwnsHistory = activeWorkspace == .fontLab && editorIsKey && activeEditorWindow.attachedSheet == nil && !(activeEditorWindow.firstResponder is NSTextView)
-            item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.redoTitle : "Redo"
+            item.title = editorOwnsHistory ? FontLabEditMenuBridge.shared.redoTitle : TypefieldL10n.text("Redo")
             return editorOwnsHistory && FontLabEditMenuBridge.shared.canRedo
         }
         if item.action == #selector(toggleMainFullScreen(_:)) {
-            item.title = activeEditorWindow.styleMask.contains(.fullScreen) ? "Exit Full Screen" : "Enter Full Screen"
+            item.title = TypefieldL10n.text(activeEditorWindow.styleMask.contains(.fullScreen) ? "Exit Full Screen" : "Enter Full Screen")
             return NSApp.isActive && activeEditorWindow.attachedSheet == nil
         }
         guard let command = item.representedObject as? String else { return true }
@@ -1563,7 +1571,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "export", "tagSelected", "familySelected", "favorite", "copyNames", "deselect": return inLibrary && !selected.isEmpty
         case "compareSelected": return inLibrary && (2...6).contains(selected.count)
         case "select": return inLibrary && !library.filtered.isEmpty
-        case "find": item.title = activeWorkspace == .spaces ? "Choose Font…" : "Find Fonts…"; return inLibrary || activeWorkspace == .spaces
+        case "find": item.title = TypefieldL10n.text(activeWorkspace == .spaces ? "Choose Font…" : "Find Fonts…"); return inLibrary || activeWorkspace == .spaces
         case "list", "grid":
             item.state = (UserDefaults.standard.object(forKey: "adaptiveGridView") as? Bool ?? true) == (command == "grid") ? .on : .off
             return inLibrary
@@ -1572,7 +1580,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "studio.previousCanvas", "studio.nextCanvas", "studio.canvas.fit", "studio.inspector.full", "studio.inspector.slim", "studio.inspector.hidden", "studio.inspector.floating", "studio.inspector.toggle", "studio.inspector.typography", "studio.inspector.arrangement", "studio.canvasFocus":
             return activeWorkspace == .spaces && !(NSApp.keyWindow?.firstResponder is NSTextView)
         case "refresh": return inLibrary && !library.loading
-        case "toggleSidebar": item.title = WorkspaceSidebarPreference.collapsed() ? "Show Sidebar" : "Hide Sidebar"
+        case "toggleSidebar": item.title = TypefieldL10n.text(WorkspaceSidebarPreference.collapsed() ? "Show Sidebar" : "Hide Sidebar")
         default: break
         }
         return true
@@ -1821,6 +1829,8 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
 } else if CommandLine.arguments.contains("--stress-regression-check") {
     do { try StudioChecks.stress(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run() }
     catch { fputs("Stress regression failed: \(error.localizedDescription)\n",stderr);exit(1) }
+} else if let index = CommandLine.arguments.firstIndex(of: "--language-snapshots"), CommandLine.arguments.indices.contains(index + 1) {
+    try MainActor.assumeIsolated { try TypefieldLanguageChecks.snapshots(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
 } else if CommandLine.arguments.contains("--window-self-test") {
     WorkspaceWindowChecks.run()
 } else if CommandLine.arguments.contains("--updater-self-test") {
@@ -2018,7 +2028,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--font-available"), Command
     AdobeTypeSystemExporter.selfTest()
     AdobeTypeSystemReturnBridge.selfTest()
     precondition(FontPairingEngine.selfTest(), "Font pairing engine checks failed")
-    do { try BackgroundWorkChecks.run(); try PreviewRenderingChecks.run(); try GlyphBrowserChecks.run(); try TypefieldSettingsChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
+    do { try BackgroundWorkChecks.run(); try PreviewRenderingChecks.run(); try GlyphBrowserChecks.run(); try TypefieldSettingsChecks.run(); try TypefieldLanguageChecks.run(); try FontLabStore.selfTest(); try FontLabArtworkChecks.run(); try FontLabVectorChecks.run(); try FontLabDesignChecks.run(); try FontLabStarterAssistChecks.run(); try FontLabRemixEngine.selfTest(); try FontLabTrueTypeExporter.selfTest(); try ProChecks.run(catalog: fonts); try GoogleFontDownloadChecks.run(); try StudioChecks.stress(); try StudioChecks.run(catalog: fonts); try FontRepairChecks.run(catalog: fonts) }
     catch { fputs("Regression check failed: \(error.localizedDescription)\n", stderr); exit(1) }
     print("PASS: script probes, combined filters, missing characters, comparison and Adobe export DOM fixtures.")
     print("PASS: \(fonts.count) families, \(fonts.reduce(0) { $0 + $1.faces.count }) styles. Classification, search, filters, sorting, collections, overrides and persistence verified.")

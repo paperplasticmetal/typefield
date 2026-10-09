@@ -90,7 +90,7 @@ struct StudioExportScopeView: View {
             Divider()
             HStack(spacing: 12) {
                 if kind == .summary {
-                    Button(copied ? "Copied" : "Copy summary") {
+                    Button(localizedKey(copied ? "Copied" : "Copy summary")) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(summary.text(detail, markdown: output == .markdown), forType: .string)
                         copied = true
@@ -98,7 +98,7 @@ struct StudioExportScopeView: View {
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(kind == .web ? "Open report" : "Export…") { onContinue(configuration) }
+                Button(localizedKey(kind == .web ? "Open report" : "Export…")) { onContinue(configuration) }
                     .keyboardShortcut(.defaultAction).disabled(ids.isEmpty || report.blockingReason != nil)
             }.controlSize(.large).padding(.horizontal, 24).padding(.vertical, 16)
         }.frame(width: 800)
@@ -110,19 +110,19 @@ struct StudioExportScopeView: View {
     private var settings: some View {
         VStack(alignment: .leading, spacing: 20) {
             setting("Export") {
-                Picker("Export format", selection: $kind) { ForEach(StudioExportKind.allCases) { Text($0.rawValue).tag($0) } }.labelsHidden()
+                Picker("Export format", selection: $kind) { ForEach(StudioExportKind.allCases) { Text(localizedKey($0.rawValue)).tag($0) } }.labelsHidden()
             }
             setting("Include") {
-                Picker("Canvas scope", selection: $scope) { ForEach(StudioExportScope.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden()
+                Picker("Canvas scope", selection: $scope) { ForEach(StudioExportScope.allCases, id: \.self) { Text(localizedKey($0.rawValue)).tag($0) } }.labelsHidden()
             }
             if kind == .summary {
                 Divider()
                 setting("File format") {
-                    Picker("Summary file format", selection: $output) { ForEach(StudioSummaryOutput.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden()
+                    Picker("Summary file format", selection: $output) { ForEach(StudioSummaryOutput.allCases, id: \.self) { Text(localizedKey($0.rawValue)).tag($0) } }.labelsHidden()
                 }
                 if output.supportsDetail {
                     setting("Include in summary") {
-                        Picker("Summary detail", selection: $detail) { ForEach(TypographySummaryDetail.allCases) { Text($0.rawValue).tag($0) } }.labelsHidden()
+                        Picker("Summary detail", selection: $detail) { ForEach(TypographySummaryDetail.allCases) { Text(localizedKey($0.rawValue)).tag($0) } }.labelsHidden()
                     }
                 }
             }

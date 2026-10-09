@@ -228,7 +228,7 @@ extension TypeBoardEditor {
                 .frame(maxWidth: .infinity)
                 .help("Choose font family")
                 .accessibilityLabel("Font family: " + (selectedFace?.originalFamily ?? style.fontName))
-                .popover(isPresented: $editorSession.showFontPicker) { fontPicker }
+                .typefieldPopover(isPresented: $editorSession.showFontPicker) { fontPicker }
                 ShelfPopup(
                     title: "Font style",
                     selection: Binding(get: { style.fontName }, set: { chooseFont($0) }),

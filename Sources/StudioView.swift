@@ -64,12 +64,12 @@ enum StudioTransferDialog {
         let alert = NSAlert()
         alert.messageText = report.blockingReason == nil ? "Export " + report.format.title + "?" : "Export is unavailable"
         alert.informativeText = report.scope
-        let review = NSHostingView(rootView: StudioExportReview(report: report).frame(width: 440))
+        let review = NSHostingView(rootView: StudioExportReview(report: report).typefieldLocalized().frame(width: 440))
         review.frame.size = review.fittingSize
         alert.accessoryView = review
         alert.alertStyle = report.blockingReason == nil ? .informational : .warning
         alert.addButton(withTitle: report.blockingReason == nil ? "Continue to Export" : "OK")
-        if report.blockingReason == nil { alert.addButton(withTitle: "Cancel") }
+        if report.blockingReason == nil { alert.addButton(withTitle: TypefieldL10n.text("Cancel")) }
         return alert.runModal() == .alertFirstButtonReturn && report.blockingReason == nil
     }
     static func showImport(_ report: StudioImportReport, name: String) {
@@ -77,7 +77,7 @@ enum StudioTransferDialog {
         alert.messageText = "Imported “" + name + "”"
         alert.informativeText = report.detail
         alert.alertStyle = report.warnings.isEmpty && report.missingFonts.isEmpty ? .informational : .warning
-        alert.addButton(withTitle: "Done")
+        alert.addButton(withTitle: TypefieldL10n.text("Done"))
         alert.runModal()
     }
 }
@@ -95,7 +95,7 @@ struct WorkspaceSwitcher: View {
                         else { delegate.window.makeKeyAndOrderFront(nil) }
                     }
                 } label: {
-                    Label(workspace.rawValue, systemImage: workspace == .library ? "textformat" : workspace == .spaces ? "square.stack.3d.up" : "pencil.and.outline")
+                    Label(localizedKey(workspace.rawValue), systemImage: workspace == .library ? "textformat" : workspace == .spaces ? "square.stack.3d.up" : "pencil.and.outline")
                         .font(.system(size: 12, weight: selectedWorkspace == workspace ? .semibold : .regular))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10).padding(.vertical, 7)
@@ -448,7 +448,7 @@ struct StudioView: View {
     func figFileHelp() {
         let alert = NSAlert(); alert.messageText = "Bring a .fig file into Typefield"
         alert.informativeText = "Direct .fig decoding is not available yet. Import your .fig file in Figma's file browser, run the Typefield Layout Importer plugin, select the frames you want and choose Export selected frames. Then import the saved JSON here.\n\nThis keeps supported text and shapes editable; review the bridge's notes for unsupported content."
-        alert.addButton(withTitle: "OK"); alert.runModal()
+        alert.addButton(withTitle: TypefieldL10n.text("OK")); alert.runModal()
     }
 }
 
@@ -1002,15 +1002,15 @@ struct TypeBoardEditor: View {
         .alert("Artwork could not be imported", isPresented: Binding(get: { artworkImportError != nil }, set: { if !$0 { artworkImportError = nil } })) {
             Button("OK") { artworkImportError = nil }
         } message: { Text(artworkImportError ?? "") }
-        .sheet(item: $exportRequest, onDismiss: performConfirmedExport) { kind in
+        .typefieldSheet(item: $exportRequest, onDismiss: performConfirmedExport) { kind in
             StudioExportScopeView(kind: kind, board: board, shown: Set(visibleDirections.map(\.id)), current: direction.id,
                                   availableFonts: Set(library.allFaces.map(\.name))) { configuration in
                 confirmedExport = configuration
                 exportRequest = nil
             }
         }
-        .sheet(isPresented: $showWebFontAudit) { WebFontAuditView(board: board, library: library, initialCanvasIDs: summaryCanvasIDs) }
-        .sheet(isPresented: $showPairingSuggestions) {
+        .typefieldSheet(isPresented: $showWebFontAudit) { WebFontAuditView(board: board, library: library, initialCanvasIDs: summaryCanvasIDs) }
+        .typefieldSheet(isPresented: $showPairingSuggestions) {
             if let reference = library.allFaces.first(where: { $0.name == style.fontName }) {
                 FontPairingSuggestionsSheet(library: library, reference: reference, intendedRole: pairingTargetRole, preview: direction.style(pairingTargetRole).text) { face in
                     applyPairingSuggestion(face, to: pairingTargetRole, reference: reference)
@@ -1091,7 +1091,7 @@ struct TypeBoardEditor: View {
         }
     }
     var interactionTools: some View {
-        Menu { interactionToolChoices } label: { Label(interactionTool.rawValue, systemImage: interactionTool.symbol) }
+        Menu { interactionToolChoices } label: { Label(localizedKey(interactionTool.rawValue), systemImage: interactionTool.symbol) }
         .menuStyle(.borderlessButton).fixedSize().help(toolHelp(interactionTool))
         .accessibilityLabel("Cursor mode: " + interactionTool.rawValue)
     }
@@ -1102,7 +1102,7 @@ struct TypeBoardEditor: View {
                     Image(systemName: interactionTool.symbol).font(.system(size: 16, weight: .medium))
                     Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
                 }
-                Text(interactionTool.rawValue).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                Text(localizedKey(interactionTool.rawValue)).font(.system(size: 10, weight: .medium)).lineLimit(1)
             }
             .frame(width: 44, height: 50)
             .foregroundStyle(Color.accentColor)
@@ -1110,7 +1110,7 @@ struct TypeBoardEditor: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showToolPicker, arrowEdge: .trailing) {
+        .typefieldPopover(isPresented: $showToolPicker, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Cursor mode").font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.bottom, 4)
                 ForEach(CanvasInteractionTool.allCases, id: \.self) { tool in
@@ -1272,7 +1272,7 @@ struct TypeBoardEditor: View {
         }
         .padding(.vertical, 6).frame(width: StudioInspectorLayout.slimWidth)
         .background(Color(nsColor: .controlBackgroundColor))
-        .popover(isPresented: $showRailInspector, arrowEdge: .trailing) { inspector.frame(width: 320, height: 600) }
+        .typefieldPopover(isPresented: $showRailInspector, arrowEdge: .trailing) { inspector.frame(width: 320, height: 600) }
         .accessibilityIdentifier("spaces-inspector-rail")
     }
     func toolShortcut(_ tool: CanvasInteractionTool) -> String {
@@ -1282,10 +1282,10 @@ struct TypeBoardEditor: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: symbol).font(.system(size: 16, weight: .medium))
-                Text(title).font(.system(size: 10, weight: .medium))
+                Text(localizedKey(title)).font(.system(size: 10, weight: .medium))
             }.frame(width: 44, height: 44).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(help).accessibilityLabel(help)
+        .buttonStyle(.plain).help(localizedKey(help)).accessibilityLabel(localizedKey(help))
         .disabled(library.studio.readBlocked)
     }
     func railPanel(_ tab: String, symbol: String, title: String? = nil) -> some View {
@@ -1302,7 +1302,7 @@ struct TypeBoardEditor: View {
                 .background(selected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+        .buttonStyle(.plain).help(localizedKey(title)).accessibilityLabel(localizedKey(title))
     }
     var focusControls: some View {
         HStack(spacing: 6) {
@@ -1665,7 +1665,7 @@ struct TypeBoardEditor: View {
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .help("What changes with this selection?")
             .accessibilityLabel("About editing scope")
-            .popover(isPresented: $showEditingScope) {
+            .typefieldPopover(isPresented: $showEditingScope) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(editingScopeLabel).font(.caption.weight(.semibold))
                     if direction.canvas != .imported {
@@ -1714,7 +1714,7 @@ struct TypeBoardEditor: View {
                     Menu {
                         ForEach(TypeRole.allCases) { item in Button(item.rawValue) { selectRole(item) } }
                     } label: {
-                        HStack(spacing: 5) { Text(role.rawValue).fontWeight(.medium); Image(systemName: "chevron.up.chevron.down").font(.caption2) }
+                        HStack(spacing: 5) { Text(localizedKey(role.rawValue)).fontWeight(.medium); Image(systemName: "chevron.up.chevron.down").font(.caption2) }
                     }.fixedSize().accessibilityLabel("Type role: " + role.rawValue)
                 }
                 }

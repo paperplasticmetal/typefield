@@ -43,8 +43,8 @@ struct ShelfEditableName: View {
 
 enum ShelfRename {
     static func prompt(_ title: String, current: String, actionTitle: String = "Rename", validate: (String) -> String? = { _ in nil }) -> String? {
-        let alert = NSAlert(); alert.messageText = title; alert.informativeText = "Choose a name. Existing contents will stay unchanged."
-        alert.addButton(withTitle: actionTitle); alert.addButton(withTitle: "Cancel")
+        let alert = NSAlert(); alert.messageText = TypefieldL10n.text(title); alert.informativeText = TypefieldL10n.text("Choose a name. Existing contents will stay unchanged.")
+        alert.addButton(withTitle: TypefieldL10n.text(actionTitle)); alert.addButton(withTitle: TypefieldL10n.text("Cancel"))
         let field = NSTextField(string: current); field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
         field.setAccessibilityLabel("Name"); alert.accessoryView = field; alert.window.initialFirstResponder = field
         while alert.runModal() == .alertFirstButtonReturn {
@@ -67,7 +67,7 @@ enum ShelfCollectionPrompt {
         let alert = NSAlert(); alert.messageText = "Create font collection"
         alert.informativeText = "Save " + String(count) + " font " + (count == 1 ? "family" : "families") + " used in " + source + " as a Library collection."
         if unavailable > 0 { alert.informativeText += " " + String(unavailable) + " unavailable font " + (unavailable == 1 ? "is" : "styles are") + " not currently in the Library and will be skipped." }
-        alert.addButton(withTitle: "Create"); alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: TypefieldL10n.text("Create")); alert.addButton(withTitle: TypefieldL10n.text("Cancel"))
         let field = NSTextField(string: suggestedName); field.frame = NSRect(x: 0, y: 0, width: 340, height: 24)
         field.setAccessibilityLabel("Collection name"); alert.accessoryView = field; alert.window.initialFirstResponder = field
         while alert.runModal() == .alertFirstButtonReturn {
@@ -326,7 +326,7 @@ struct DuplicateView: View {
         guard let other, let hash = try? DuplicateFinder.hash(URL(fileURLWithPath: path)), let otherHash = try? DuplicateFinder.hash(URL(fileURLWithPath: other)), hash == otherHash else { errors.append("The duplicate changed or could not be read. Scan again before removing it."); return }
         let panel = NSOpenPanel(); panel.directoryURL = URL(fileURLWithPath: path).deletingLastPathComponent(); panel.message = "Select \(URL(fileURLWithPath: path).lastPathComponent) to grant access for moving this duplicate to Trash."
         guard panel.runModal() == .OK, let url = panel.url, url.standardizedFileURL.path == URL(fileURLWithPath: path).standardizedFileURL.path else { return }
-        let alert = NSAlert(); alert.messageText = "Move this duplicate to Trash?"; alert.informativeText = path + "\n\nAn identical copy remains at:\n" + other; alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
+        let alert = NSAlert(); alert.messageText = "Move this duplicate to Trash?"; alert.informativeText = path + "\n\nAn identical copy remains at:\n" + other; alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: TypefieldL10n.text("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         guard let currentHash = try? DuplicateFinder.hash(url), let remainingHash = try? DuplicateFinder.hash(URL(fileURLWithPath: other)), currentHash == remainingHash else { errors.append("The files changed or could not be read. Nothing was removed."); return }
         do { if ActivationManager.shared.owns(url) { try ActivationManager.shared.deactivate(url, restore: false) }; try FileManager.default.trashItem(at: url, resultingItemURL: nil); library.reload(register: true); scan() }

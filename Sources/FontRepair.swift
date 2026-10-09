@@ -568,7 +568,7 @@ struct FontHealthView: View {
         }
         let alert = NSAlert(); alert.messageText = "Repair the original font file?"
         alert.informativeText = "Typefield will first create a .typefield-backup beside the original, then atomically replace the original with the reviewed repair. This can affect every app using this font."
-        alert.alertStyle = .warning; alert.addButton(withTitle: "Repair & Keep Backup"); alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning; alert.addButton(withTitle: "Repair & Keep Backup"); alert.addButton(withTitle: TypefieldL10n.text("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
             let updatedInspection = FontRepairEngine.inspect(item.url)

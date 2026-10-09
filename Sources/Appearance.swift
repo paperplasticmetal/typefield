@@ -113,10 +113,11 @@ struct ShelfDropdown<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [(String, Value)]
     var showsTitle = true
+    var localizesOptions = false
     var body: some View {
         HStack(spacing: 6) {
-            if showsTitle { Text(title).font(.caption).foregroundStyle(.secondary) }
-            ShelfPopup(title: title, selection: $selection, options: options)
+            if showsTitle { Text(localizedKey(title)).font(.caption).foregroundStyle(.secondary) }
+            ShelfPopup(title: title, selection: $selection, options: options, localizesOptions: localizesOptions)
                 .frame(minWidth: 65).frame(height: 26)
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .shelfGlass(radius: 10)
@@ -127,6 +128,8 @@ struct ShelfPopup<Value: Hashable>: NSViewRepresentable {
     let title: String
     @Binding var selection: Value
     let options: [(String, Value)]
+    var localizesOptions = false
+    @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var scheme
     @Environment(\.isEnabled) private var enabled
     func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
@@ -142,9 +145,10 @@ struct ShelfPopup<Value: Hashable>: NSViewRepresentable {
     func updateNSView(_ button: NSPopUpButton, context: Context) {
         context.coordinator.selection = $selection
         context.coordinator.values = options.map { $0.1 }
-        let titles = options.map { $0.0 }
+        let language = TypefieldLanguage.resolve("system", preferred: [locale.identifier])
+        let titles = options.map { localizesOptions ? TypefieldL10n.text($0.0, language: language) : $0.0 }
         if button.itemTitles != titles { button.removeAllItems(); button.addItems(withTitles: titles) }
-        button.setAccessibilityLabel(title)
+        button.setAccessibilityLabel(localizesOptions ? TypefieldL10n.text(title, language: language) : title)
         button.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
         button.contentTintColor = .labelColor
         button.isEnabled = enabled
@@ -196,7 +200,7 @@ struct SidebarSection<Content: View>: View {
             HStack(spacing: 8) {
             Button { expanded.toggle() } label: {
                 HStack {
-                    Text(title).font(.caption.weight(.semibold))
+                    Text(localizedKey(title)).font(.caption.weight(.semibold))
                     Spacer()
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold))
                 }.foregroundStyle(.secondary).contentShape(Rectangle())
@@ -204,7 +208,7 @@ struct SidebarSection<Content: View>: View {
                 .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             if let onAdd {
                 Button(action: onAdd) { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28).contentShape(Rectangle()) }
-                    .buttonStyle(.plain).help(addLabel).accessibilityLabel(addLabel)
+                    .buttonStyle(.plain).help(localizedKey(addLabel)).accessibilityLabel(localizedKey(addLabel))
             }
             }.padding(.horizontal, 14)
             if expanded { content }

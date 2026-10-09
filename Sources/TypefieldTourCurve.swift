@@ -128,7 +128,7 @@ struct TourCurveDemo: View {
         VStack(spacing: 10) {
             HStack {
                 Picker("Edit point", selection: $selected) {
-                    ForEach(TourCurveControl.allCases) { control in Text(control.title).tag(control) }
+                    ForEach(TourCurveControl.allCases) { control in Text(localizedKey(control.title)).tag(control) }
                 }
                 .labelsHidden().pickerStyle(.menu).controlSize(.small)
                 .frame(width: 148, alignment: .leading)
@@ -175,7 +175,7 @@ struct TourCurveDemo: View {
             .stroke(ink.opacity(0.13), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
             .accessibilityHidden(true)
             ForEach(0..<3, id: \.self) { index in
-                Text(["x-height", "Baseline", "Descender"][index])
+                Text(localizedKey(["x-height", "Baseline", "Descender"][index]))
                     .font(.system(size: 8)).foregroundStyle(ink.opacity(0.55))
                     .frame(width: 72, alignment: .leading)
                     .position(x: 50, y: size.height * [0.17, 0.63, 0.91][index] - 7)

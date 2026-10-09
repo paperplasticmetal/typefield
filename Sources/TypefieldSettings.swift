@@ -10,10 +10,11 @@ final class TypefieldSettingsSelection: ObservableObject {
     @Published var page: TypefieldSettingsPage = .appearance
 }
 enum TypefieldSettingsPage: String, CaseIterable, Identifiable {
-    case appearance = "Appearance", icon = "App Icon", folders = "Live Folders", library = "Library", shortcuts = "Keyboard Shortcuts", privacy = "Privacy & Permissions", updates = "Updates", about = "About Typefield"
+    case language = "Language", appearance = "Appearance", icon = "App Icon", folders = "Live Folders", library = "Library", shortcuts = "Keyboard Shortcuts", privacy = "Privacy & Permissions", updates = "Updates", about = "About Typefield"
     var id: String { rawValue }
     var symbol: String {
         switch self {
+        case .language: return "globe"
         case .appearance: return "paintpalette"
         case .icon: return "app"
         case .folders: return "folder"
@@ -29,14 +30,15 @@ enum TypefieldSettingsPage: String, CaseIterable, Identifiable {
 final class TypefieldSettingsWindow {
     private var window: NSWindow?
     private let selection = TypefieldSettingsSelection()
+    func refreshLanguage() { window?.title = TypefieldL10n.text("Typefield Settings") }
     func show(library: Library, page: TypefieldSettingsPage? = nil) {
         if let page { selection.page = page }
         if window == nil {
             let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 880, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            panel.title = "Typefield Settings"
+            panel.title = TypefieldL10n.text("Typefield Settings")
             panel.minSize = NSSize(width: 820, height: 620)
             panel.isReleasedWhenClosed = false
-            panel.contentView = NSHostingView(rootView: TypefieldSettingsView(library: library, selection: selection))
+            panel.contentView = NSHostingView(rootView: TypefieldSettingsView(library: library, selection: selection).typefieldLocalized())
             panel.setFrameAutosaveName("TypefieldSettingsWindow")
             panel.center()
             window = panel
@@ -69,7 +71,7 @@ struct TypefieldSettingsView: View {
                     Button { selection.page = page } label: {
                         HStack(spacing: 10) {
                             Image(systemName: page.symbol).frame(width: 20)
-                            Text(page.rawValue).font(.subheadline.weight(selection.page == page ? .semibold : .regular))
+                            Text(localizedKey(page.rawValue)).font(.subheadline.weight(selection.page == page ? .semibold : .regular))
                                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
                             if selection.page == page {
@@ -91,7 +93,7 @@ struct TypefieldSettingsView: View {
             Divider()
             VStack(alignment: .leading, spacing: 18) {
                 if selection.page != .shortcuts {
-                    Text(selection.page.rawValue).font(.system(size: 27, weight: .semibold)).padding(.top, 6)
+                    Text(localizedKey(selection.page.rawValue)).font(.system(size: 27, weight: .semibold)).padding(.top, 6)
                 }
                 content
             }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -111,6 +113,7 @@ struct TypefieldSettingsView: View {
     }
     @ViewBuilder private var content: some View {
         switch selection.page {
+        case .language: languagePane
         case .appearance: appearancePane
         case .icon: iconPane
         case .folders: WatchedFoldersView(library: library)
@@ -121,12 +124,22 @@ struct TypefieldSettingsView: View {
         case .about: aboutPane
         }
     }
+    private var languagePane: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            TypefieldLanguagePicker().frame(maxWidth: 380)
+            Text("Changes apply immediately to all Typefield windows.").foregroundStyle(.secondary)
+            Text("Font names, preview text, and saved projects keep their original content.")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("Some advanced tools and system dialogs may still appear in English or your macOS language.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
     private var appearancePane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Text("Choose a light or dark workspace. Font previews and saved typeboards keep their own colors.").foregroundStyle(.secondary)
                 Picker("Appearance", selection: $appearance) {
-                    ForEach(["System", "Light", "Dark"], id: \.self) { Text($0).tag($0) }
+                    ForEach(["System", "Light", "Dark"], id: \.self) { Text(localizedKey($0)).tag($0) }
                 }.pickerStyle(.segmented)
                 Text("Accent color").font(.headline)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
@@ -134,7 +147,7 @@ struct TypefieldSettingsView: View {
                         Button { palette = item.rawValue } label: {
                             HStack(spacing: 12) {
                                 Circle().fill(Color(nsColor: item.swatch(dark: scheme == .dark))).frame(width: 26, height: 26)
-                                Text(item.title).foregroundStyle(.primary)
+                                Text(localizedKey(item.title)).foregroundStyle(.primary)
                                 Spacer()
                                 Image(systemName: palette == item.rawValue ? "checkmark.circle.fill" : "circle").foregroundStyle(.secondary)
                             }.padding(16).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
@@ -164,7 +177,7 @@ struct TypefieldSettingsView: View {
                             HStack(spacing: 12) {
                                 Image(nsImage: TypefieldIcon.image(palette: item, dark: darkIcon, size: 128))
                                     .resizable().interpolation(.high).frame(width: 64, height: 64)
-                                Text(item.iconColorTitle).font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
+                                Text(localizedKey(item.iconColorTitle)).font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
                                 Spacer(minLength: 0)
                                 if iconPalette == item.rawValue { Image(systemName: "checkmark.circle.fill").foregroundStyle(ShelfPalette.ink) }
                             }
@@ -215,7 +228,7 @@ struct TypefieldSettingsView: View {
         }
     }
     private func section(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        VStack(alignment: .leading, spacing: 8) { Text(localizedKey(title)).font(.headline); Text(localizedKey(text)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
     }
     private var updatesPane: some View {
         ScrollView {

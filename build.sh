@@ -1,10 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
+python3 scripts/localization/generate.py --check
 SPARKLE="$(bash scripts/updater/prepare-sparkle.sh)"
 APP="dist/Typefield.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks" .build/module-cache
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+for localization in Sources/Localizations/*.lproj; do
+    ditto "$localization" "$APP/Contents/Resources/$(basename "$localization")"
+done
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Resources/PrivacyInfo.xcprivacy "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 cp Resources/GoogleVariableFonts.json "$APP/Contents/Resources/GoogleVariableFonts.json"

@@ -487,7 +487,7 @@ enum LibraryBackupTools {
             alert.messageText = "Merge backup “\(url.lastPathComponent)”?"
             alert.informativeText = summary.description
             alert.addButton(withTitle: "Merge Backup")
-            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: TypefieldL10n.text("Cancel"))
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             try merge(backup, into: library)
             library.message = "Backup merged: \(summary.newCollections) new collections, \(summary.spaces) Spaces copies, \(summary.editorProjects) Letterform Editor project copies. Regrant external font folders if needed."
@@ -592,7 +592,7 @@ enum StoreMigration {
         alert.messageText = "Copy earlier data into Typefield?"
         alert.informativeText = "FontShelf Library, Spaces, Letterform Editor and downloaded Google fonts will be copied. The originals stay in place. External font and WOFF2 folders need access granted again. Files outside this folder are not moved."
         alert.addButton(withTitle: "Copy and Quit")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: TypefieldL10n.text("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
             _ = try migrate(from: source, to: library.saveURL.deletingLastPathComponent())
