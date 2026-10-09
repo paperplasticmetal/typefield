@@ -20,7 +20,11 @@ The parallel catalog covers onboarding, Settings prose, common Library navigatio
 
 ## Distribution
 
-Local package and feed verified; public release/deployment verification pending.
+- Source/assets commit `f62cc54` pushed to both configured origin repositories. [Public prerelease v0.59.28-beta.1](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.28-beta.1) contains the DMG and checksum.
+- Cloudflare Pages deployment `dcbc4579` published the existing website and feedback Function. [The live download page](https://typefield.app/download/) offers 0.59.28 beta 1 (108), its same-origin DMG, the matching GitHub asset and checksum.
+- Unauthenticated GitHub and website downloads have identical verified hashes. The public feed bytes equal the signed local feed and are served as RSS with `Cache-Control: no-cache`. Public feed/archive Ed25519 validation passed against both downloaded DMGs. The live feedback configuration endpoint returns its public widget key successfully.
+- The canonical app's Settings → Updates → Check for Updates reports “Typefield 0.59.28 is currently the newest version available.” The real language preference remains System language, and Language settings is open for the user.
+- Website syntax checks, all eight website tests and the version/checksum/feed release gate passed. Final verification still finds all 32 saved-data hashes and both paused research files unchanged.
 
 DMG: `Typefield-0.59.28-beta.dmg`, 8,603,482 bytes. SHA-256: `a53012aa9673639e9aea9a7690c8e1544e9baf82db33ffc7a2020dada90e31f0`.
 
