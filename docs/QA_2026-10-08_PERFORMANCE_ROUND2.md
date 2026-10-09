@@ -88,9 +88,19 @@ Baseline and candidate opened 1/8/32-canvas boards, showed all 32 canvases, tran
 
 The two live dense SVG exports are byte-for-byte identical (190,409 bytes, SHA-256 `cf704122e8222cf1a8322088e17d413261d8df787f798e258d7df4bd14273d8e`). The live candidate TrueType export passed the application's macOS validation and completed its save. These UI checks establish workflow correctness; automation round-trip durations and physical trackpad frame latency are not reported as performance measurements.
 
-DMG packaging, `hdiutil verify`, read-only mounted full-app comparison, canonical/built bundle equality and signed appcast validation passed. Both app plists and website metadata/checksum match 0.59.29 (109). Website JavaScript syntax and all eight feedback/site tests passed. Public distribution verification is pending.
+DMG packaging, `hdiutil verify`, read-only mounted full-app comparison, canonical/built bundle equality and signed appcast validation passed. Both app plists and website metadata/checksum match 0.59.29 (109). Website JavaScript syntax and all eight feedback/site tests passed. Public distribution verification passed.
 
 - DMG: `Typefield-0.59.29-beta.dmg`, 8,712,258 bytes.
 - DMG SHA-256: `d4963dae246b03ebcdbcaa98a992206799ad9cdec080e6f626d974a4ce781118`.
 - Executable SHA-256: `cfe5c4b82599e88ca450669e3484dde7afad8faad47b1e25f6457b1798a799cd`.
 - Ad hoc signed direct-download beta, Apple silicon / macOS 13+; no Developer ID notarization claim.
+
+
+Public release verification completed:
+
+- Release source/assets commit: `8d7962c66b98ba6a4bf9b04b162a875aa756e667`, pushed to both origin destinations on main and `codex/performance-cleanup`.
+- [Public GitHub prerelease](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.29-beta.1) contains the immutable DMG and SHA-256 file.
+- Existing Cloudflare Pages `typefield` project deployed with its Functions bundle: `https://2b9886b5.typefield.pages.dev`. The canonical `https://typefield.app/download/` advertises 0.59.29 (109), correct same-origin/GitHub assets and checksum. Design and removed website release history remain unchanged.
+- Independently downloaded unauthenticated GitHub and website DMGs match the packaged hash above. Public feed bytes exactly match the signed local feed; feed/archive signature validation passed. RSS content type and no-cache headers are present. `/api/feedback` remains configured and healthy.
+- Canonical About shows 0.59.29 (109). Check for Updates reports “Typefield 0.59.29 is currently the newest version available.” Settings was closed and the app left on the user's Library.
+- Final post-launch verification again finds all 32 baseline saved files and both paused research edits unchanged. All raw evidence remains private under the round-two artifact directory.
