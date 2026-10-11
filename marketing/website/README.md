@@ -144,3 +144,10 @@ For local Function development, keep real secret values only in ignored `.dev.va
 ## App release contract
 
 Every completed app feature release includes the matching public beta DMG and a verified public website update. Follow [the release workflow](../../docs/RELEASE_WORKFLOW.md), including reconciling concurrent app and website changes before assigning the next version. Source pushes alone do not complete a user-visible release.
+
+## Mobile refinement, October 11, 2026
+
+- Reframed the mobile hero and workspace captures to show the typeboard, font comparison and editor without the tall, narrow crop. The screenshot window chrome remains outside each crop.
+- Rebalanced the headline, specimen strip, narrow navigation and two-column footer. Buttons, tabs, type controls and film controls have larger touch targets. The film controls sit below the video on phones.
+- Replaced interface arrow, plus and close characters with SVG, including the CSS arrows beside workspace actions. The download Apple mark uses Apple's global-navigation vector from `https://www.apple.com/`, embedded locally. Wordmark trademarks request text presentation. These icons no longer depend on emoji or Apple-only font glyphs.
+- Checked browser layouts at 320, 390, 430, 768 and 1280 pixels with no horizontal document overflow or clipped headings. Exercised workspace tabs, editable specimen, spacing/reset and film open/close. Download and Features were also checked at 320 pixels. These are responsive browser checks, not a physical-device compatibility certification.

@@ -73,3 +73,33 @@ footer.site-footer small { grid-column: 1 / -1; font-size: 12px; color: inherit;
   footer.site-footer nav { justify-content: flex-start; margin-left: 0; }
   footer.site-footer small { grid-column: 1; }
 }
+
+/* Keep interface marks identical across font and emoji fallbacks. */
+.ui-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -.12em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.faq summary .ui-icon { width: 20px; height: 20px; }
+.film-close .ui-icon { width: 22px; height: 22px; }
+
+.wordmark { white-space: nowrap; flex: none; }
+@media (max-width: 700px) {
+  .nav-shell, .site-header { gap: 12px; }
+  .nav-shell nav > a, .site-nav a { min-height: 44px; }
+  footer.site-footer nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; width: 100%; }
+  footer.site-footer nav a { display: flex; align-items: center; min-height: 44px; }
+  .section-nav a { display: inline-flex; align-items: center; min-height: 44px; }
+}
+@media (max-width: 360px) {
+  .nav-shell .wordmark, .site-header .wordmark { font-size: 22px; }
+  .nav-shell nav, .site-nav { gap: 10px; }
+  .nav-shell nav > .nav-features, .nav-shell nav > .nav-download, .site-nav a { font-size: 12px; }
+}

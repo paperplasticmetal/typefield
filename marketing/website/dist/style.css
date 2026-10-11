@@ -18,7 +18,7 @@ h1,h2,h3{text-wrap:balance}p{font-kerning:normal}.hero-bottom p{line-height:1.5;
 .film-controls{transition:opacity .25s,transform .25s}.film-stage:not(.is-paused):not(.controls-active) .film-controls:not(:focus-within){opacity:0;transform:translateY(6px);pointer-events:none}.film-controls:focus-within{opacity:1;transform:none}
 
 /* More useful product detail without adding another layer of slogans. */
-.workspace-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 30px;list-style:none;margin:30px 0 6px;padding:23px 0 0;border-top:1px solid #20201e38}.workspace-actions li{position:relative;padding-left:23px;font-size:15px;line-height:1.5;max-width:340px}.workspace-actions li::before{content:'↗';position:absolute;left:0;color:var(--coral);font-size:16px}.handoffs{background:var(--paper);margin-top:10px;padding:54px 5.5% 60px;display:grid;grid-template-columns:.9fr 1.4fr;gap:8%}.handoffs-intro h2{font-size:clamp(38px,4vw,62px);line-height:1.1;letter-spacing:-.035em;font-weight:500;max-width:520px}.handoffs-intro p{font-size:17px;line-height:1.5;max-width:480px;margin-top:22px;color:#55554e}.handoff-list{border-top:1px solid var(--line)}.handoff-list article{display:grid;grid-template-columns:180px 1fr;gap:18px;padding:22px 0;border-bottom:1px solid var(--line)}.handoff-list h3{font-size:18px;line-height:1.35;font-weight:550;letter-spacing:-.02em;margin:0}.handoff-list p{font-size:15px;line-height:1.5;max-width:440px;color:#5f5f56}
+.workspace-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 30px;list-style:none;margin:30px 0 6px;padding:23px 0 0;border-top:1px solid #20201e38}.workspace-actions li{position:relative;padding-left:23px;font-size:15px;line-height:1.5;max-width:340px}.workspace-actions li::before{position:absolute;left:0;color:var(--coral)}.handoffs{background:var(--paper);margin-top:10px;padding:54px 5.5% 60px;display:grid;grid-template-columns:.9fr 1.4fr;gap:8%}.handoffs-intro h2{font-size:clamp(38px,4vw,62px);line-height:1.1;letter-spacing:-.035em;font-weight:500;max-width:520px}.handoffs-intro p{font-size:17px;line-height:1.5;max-width:480px;margin-top:22px;color:#55554e}.handoff-list{border-top:1px solid var(--line)}.handoff-list article{display:grid;grid-template-columns:180px 1fr;gap:18px;padding:22px 0;border-bottom:1px solid var(--line)}.handoff-list h3{font-size:18px;line-height:1.35;font-weight:550;letter-spacing:-.02em;margin:0}.handoff-list p{font-size:15px;line-height:1.5;max-width:440px;color:#5f5f56}
 /* Interaction continues from the opening specimen through the final link. */
 .tabs button:hover:not([aria-selected=true]),.type-faces label:hover input:not(:checked)+span{background:#20201e16}.workspace-actions li,.handoff-list article,.principles article,.faq details,footer a,footer button{transition:transform .4s cubic-bezier(.2,.85,.25,1.2),color .25s,background .25s}.workspace-actions li:hover,.handoff-list article:hover,.principles article:hover{transform:translateX(6px)}.handoff-list article:hover h3,.faq summary:hover,footer a:hover,footer button:hover{color:var(--coral)}.collection-demo>p{transition:transform .45s cubic-bezier(.2,.85,.25,1.2),color .25s}.collection-demo>p:hover{transform:translateX(8px);color:var(--coral)}.type-stage textarea{transition:transform .4s cubic-bezier(.2,.85,.25,1.2)}.type-stage:focus-within textarea{transform:scale(1.025)}.faq summary span{transition:transform .35s cubic-bezier(.2,.85,.25,1.2)}.closing .pill{transition:transform .35s cubic-bezier(.2,.85,.25,1.2),background .2s,color .2s}
 @media(max-width:900px){.handoffs{grid-template-columns:1fr;gap:35px}.handoff-list article{grid-template-columns:160px 1fr}}@media(max-width:700px){.workspace-actions{grid-template-columns:1fr;gap:12px}.handoffs{padding:40px 24px}.handoff-list article{grid-template-columns:1fr;gap:5px}.handoff-list h3{font-size:17px}}@media(max-width:480px){.handoffs{padding:32px 20px}.handoffs-intro h2{font-size:38px}.workspace-actions li{font-size:14px}}@media(prefers-reduced-motion:reduce){.workspace-actions li:hover,.handoff-list article:hover,.principles article:hover,.collection-demo>p:hover,.type-stage:focus-within textarea{transform:none}}
@@ -89,4 +89,81 @@ footer nav{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wr
 .hero .specimen-strip{margin-top:30px;height:145px}
 footer nav{max-width:940px;line-height:1.5}
 @media(max-width:850px){.hero-bottom{align-items:flex-start;flex-direction:column}.hero-actions{margin-left:0;justify-content:flex-start}.hero-product{margin-top:30px}.hero-screenshot-viewport{aspect-ratio:1.75}.hero-product img{object-position:center 28%}}
-@media(max-width:480px){.hero-bottom p{font-size:17px}.hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}.hero-actions .pill{padding:12px 9px;gap:7px;font-size:12px}.hero-actions a.pill span:last-child{display:none}.hero-product{margin-top:25px}.hero-screenshot-viewport{aspect-ratio:.86;border-radius:7px}.hero-product img{object-position:30% center;transform:scale(1.05);transform-origin:center bottom}.hero-product figcaption{display:block;font-size:11px}.hero-product figcaption span+span{display:block;margin-top:3px}.hero .specimen-strip{height:108px;margin-top:23px}}
+
+
+/* Draw interface arrows rather than relying on the device's emoji font. */
+.workspace-actions li::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  top: .25em;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 15 15 5M5 5h10v10' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 15 15 5M5 5h10v10' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Phone layouts: a compact introduction, useful app crops and room to tap. */
+@media (max-width: 700px) {
+  .hero { padding-top: 100px; }
+  .hero h1 { margin: 16px 0 26px; font-size: clamp(50px, 14vw, 90px); line-height: 1; }
+  .hero-line { white-space: nowrap; }
+  .hero-bottom { gap: 22px; }
+  .hero-bottom p { max-width: 36ch; font-size: 17px; line-height: 1.5; }
+  .hero-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin: 0; }
+  .hero-actions .pill { min-height: 46px; padding: 12px 10px; font-size: 14px; gap: 8px; }
+  .hero-actions a.pill span:last-child { display: none; }
+  .hero-product { margin-top: 28px; }
+  .hero-screenshot-viewport { position: relative; aspect-ratio: 1.4; border-radius: 8px; }
+  .hero-screenshot-viewport img { position: absolute; width: 145%; max-width: none; height: auto; aspect-ratio: auto; left: -45%; top: -18%; transform: none; }
+  .hero-product figcaption { display: block; font-size: 12px; line-height: 1.45; }
+  .hero-product figcaption span + span { display: block; margin-top: 3px; }
+  .hero .specimen-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; height: 100px; margin-top: 24px; padding-inline: 14px; font-size: clamp(42px, 13.6vw, 76px); }
+  .specimen-letter > span { min-width: 0; }
+  .intro { padding: 56px 20px; gap: 22px; }
+  .intro p { font-size: 17px; }
+  .section-head { margin-bottom: 24px; }
+  .section-head h2 { font-size: clamp(36px, 10.2vw, 58px); margin: 16px 0 20px; }
+  .workspace-copy > p { font-size: 17px; }
+  .tabs { width: 100%; margin-top: 24px; }
+  .tabs button { flex: 1; min-height: 44px; padding: 10px 6px; }
+  .app-preview { margin: 0; }
+  .app-preview[data-view="library"] img { width: 130%; left: -30%; top: -20%; }
+  .app-preview[data-view="spaces"] img { width: 145%; left: -45%; top: -18%; }
+  .app-preview[data-view="editor"] img { width: 145%; left: -40%; top: -28%; }
+  .workspace-caption { display: block; font-size: 12px; }
+  .workspace-caption > span:last-child { display: block; margin-top: 3px; }
+  .workspace-actions li { padding-left: 26px; }
+  .workspace-actions li::before { top: 17px; }
+  .type-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 8px; }
+  .type-faces { min-width: 0; width: 100%; }
+  .type-faces label { flex: 1; text-align: center; }
+  .type-faces span { min-height: 44px; padding: 13px 8px; }
+  .reset-type { min-height: 44px; padding: 10px; }
+  .tracking-control { grid-column: 1 / -1; width: 100%; gap: 12px; font-size: 14px; }
+  .tracking-control input { flex: 1; min-width: 0; width: 100%; height: 44px; margin: 0; }
+  .tracking-control output { flex: none; }
+  .export-links { align-items: flex-start; flex-direction: column; gap: 8px; margin-top: 20px; }
+  .export-links a { min-height: 44px; padding: 10px 0; }
+  .export-art > span { right: 12px; bottom: 12px; left: 12px; justify-content: space-between; min-height: 44px; font-size: 12px; }
+  .faq h2 { font-size: clamp(34px, 9vw, 48px); }
+  .faq summary { align-items: center; min-height: 64px; gap: 18px; }
+  .faq summary span { flex: none; }
+  .closing .pill { min-height: 46px; }
+}
+@media (max-width: 360px) {
+  .hero-actions { grid-template-columns: 1fr; }
+  .hero-actions .pill { width: 100%; }
+  .hero h1 { font-size: 13.5vw; }
+}
+@media (max-width: 600px) {
+  #film-dialog { width: min(calc(100vw - 16px), calc((100dvh - 96px) * 16 / 9)); }
+  .film-close { width: 44px; height: 44px; }
+  .film-controls { position: relative; left: auto; right: auto; bottom: auto; gap: 4px; padding: 6px; border-radius: 0; box-shadow: none; }
+  .film-controls button { width: 44px; height: 44px; padding: 11px; }
+  #film-time { min-width: 0; font-size: 11px; }
+  #film-seek { min-width: 24px; margin-inline: 0; height: 32px; }
+  .film-stage:not(.is-paused):not(.controls-active) .film-controls:not(:focus-within) { opacity: 1; transform: none; pointer-events: auto; }
+  .film-stage:fullscreen { flex-direction: column; justify-content: center; }
+  .film-stage:fullscreen video { height: auto; max-height: calc(100% - 56px); }
+  .film-stage:fullscreen .film-controls { width: 100%; margin: 0; }
+}
