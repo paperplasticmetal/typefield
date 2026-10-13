@@ -43,4 +43,8 @@ All 37 starting user JSON hashes and both paused research hashes remained unchan
 
 ## Distribution
 
-The matching DMG was verified, its enclosed app checked, and its update feed signed and validated. Website version/download/checksum checks passed. Public upload, deployment and unauthenticated verification are pending; this document will be updated after they complete.
+Released as [0.59.31 beta 1](https://github.com/paperplasticmetal/typefield/releases/tag/v0.59.31-beta.1), build 111, from `55b0c68`. Both origin repositories received the source and verified assets. The existing Cloudflare Pages `typefield` project was deployed with its feedback Function; the latest website design was retained.
+
+The canonical [download page](https://typefield.app/download/) and unauthenticated GitHub/website DMGs agree. DMG SHA-256: `82ad3c1adc4db10d591f7559d3df8729519692e7271e8fed60a5607f579b8b71`. The mounted app, archive checksum, signature and signed update feed passed validation. Public feed bytes exactly match the signed local feed, served as RSS with `Cache-Control: no-cache`. The feedback endpoint returns its configured public widget key.
+
+The actual canonical app shows version 0.59.31 (111) and Check for Updates reports 0.59.31 is the newest available version. All 37 original user JSON hashes and both paused research files remained unchanged after this final check. A Python default-user-agent fetch received HTTP 403; standard curl downloads succeeded and provided the verified public bytes.
