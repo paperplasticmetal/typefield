@@ -133,13 +133,15 @@ enum SpacesObjects {
         guard let box = CanvasSelection.bounds(ids, in: plan), box.width > 0, box.height > 0,
               plan.elements.filter({ ids.contains($0.objectID) }).allSatisfy({ $0.text == nil }),
               target.minX >= 0, target.minY >= 0, target.maxX <= plan.artboardSize.width + 0.01, target.maxY <= plan.artboardSize.height + 0.01 else { return source }
+        guard target != box else { return source }
         let sx = target.width / box.width, sy = target.height / box.height, scale = source.canvasScale ?? 1
         var result = source, transforms = source.objectTransforms ?? [:]
         for e in plan.elements where ids.contains(e.objectID) {
             var t = transforms[e.objectID] ?? CanvasObjectTransform()
             t.x = t.x * sx + (target.minX - box.minX * sx) / scale
             t.y = t.y * sy + (target.minY - box.minY * sy) / scale
-            t.stretchX = (t.stretchX ?? 1) * sx; t.stretchY = (t.stretchY ?? 1) * sy
+            t.stretchX = CanvasObjectTransform.normalizedScaleBoundary((t.stretchX ?? 1) * sx)
+            t.stretchY = CanvasObjectTransform.normalizedScaleBoundary((t.stretchY ?? 1) * sy)
             guard t.isValid else { return source }; transforms[e.objectID] = t
         }
         result.objectTransforms = transforms
@@ -174,7 +176,9 @@ extension TypeBoardEditor {
             let clip = command == "duplicate" ? SpacesObjects.clip(direction, ids: ids) : SpacesObjects.read(.general)
             guard let clip, let (next, selection) = SpacesObjects.paste(clip, into: direction, offset: command == "pasteInPlace" ? 0 : 20) else { status = "The clipboard objects cannot fit within this document’s limits."; return }
             board.directions[directionIndex] = next
-            if save(command == "duplicate" ? "Duplicate Objects" : "Paste Objects") { selectObjects(selection); editorSession.selectionRevealToken += 1 }; return
+            if save(command == "duplicate" ? "Duplicate Objects" : "Paste Objects") {
+                interactionTool = .auto; selectObjects(selection); editorSession.selectionRevealToken += 1
+            }; return
         }
         if command == "flipHorizontal" || command == "flipVertical" {
             let next = SpacesObjects.reflected(direction, ids: ids, horizontal: command == "flipHorizontal")
@@ -306,7 +310,13 @@ extension CanvasNativeView {
         return (allShapes ? SpacesResizeHandle.allCases : [.bottomRight]).map { ($0,$0.point(in: box)) }
     }
     func resizeHandle(at point: CGPoint) -> SpacesResizeHandle? {
-        resizeHandles().first { hypot(point.x - $0.1.x, point.y - $0.1.y) < 8 / max(0.01, zoom) }?.0
+        let radius = 8 / max(0.01, zoom)
+        var nearest: SpacesResizeHandle?, distance = radius
+        for (handle, center) in resizeHandles() {
+            let candidate = hypot(point.x - center.x, point.y - center.y)
+            if candidate < distance { nearest = handle; distance = candidate }
+        }
+        return nearest
     }
 }
 
@@ -381,6 +391,7 @@ enum SpacesObjectChecks {
         try check(old.isValid && old.stretchX == nil && old.flipX == nil, "Older object transforms must decode")
         try checkSymmetry()
         try checkArtworkResize()
+        try SpacesImageInteractionChecks.run()
         print("PASS: \(cases) cross-format/scaled clipboard round trips, fresh grouped IDs, delete, eight shape handles, alignment, double reflection, Figma mirror round trip and malformed clipboard")
     }
 

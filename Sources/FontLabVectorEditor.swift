@@ -101,11 +101,27 @@ struct FontLabVectorClipboard: Codable {
 final class FontLabVectorEditor: ObservableObject {
     static let defaultMessage = ""
     @Published var glyph: FontLabGlyph {
-        didSet { cachedPaths = nil }
+        didSet { cachedPaths = nil; objectSelectionGeometry = nil }
     }
     // Legacy polygon outlines require node conversion. Reuse that conversion
     // across drawing, hit testing and selection until the glyph changes.
     private var cachedPaths: [FontLabVectorPath]?
+    // Object marquee selection revisits the same nested contours on every
+    // pointer event. Retain their exact native containment result until any
+    // glyph edit replaces the geometry, including edits that retain all IDs.
+    private final class ObjectSelectionGeometry {
+        let outlines: [CGPath]
+        let bounds: [CGRect]
+        var outerByIndex: [Int: Int] = [:]
+        var contoursByOuter: [Int: [Int]] = [:]
+        init(_ paths: [FontLabVectorPath]) {
+            outlines = paths.map(\.cgPath)
+            bounds = outlines.map(\.boundingBoxOfPath)
+        }
+    }
+    private var objectSelectionGeometry: ObjectSelectionGeometry?
+    private(set) var objectSelectionGeometryBuildCount = 0
+    private(set) var objectSelectionMembershipBuildCount = 0
     @Published var componentStrokes: [FontLabStroke] = []
     @Published var metrics: FontLabMetrics
     @Published var tool = FontLabVectorTool.select {
@@ -339,18 +355,40 @@ final class FontLabVectorEditor: ObservableObject {
     func selectObject(_ index: Int, adding: Bool) {
         let value = paths
         guard value.indices.contains(index) else { return }
-        let outlines = value.map(\.cgPath)
-        let outlineBounds = outlines.map(\.boundingBoxOfPath)
-        var outer = index
-        for i in value.indices where value[i].closed && i != index {
-            if outlineBounds[i].contains(outlineBounds[outer]),
-               let first = value[outer].nodes.first,
-               outlines[i].contains(CGPoint(x: first.point.x * 1000, y: first.point.y * 1000)) { outer = i }
+        let geometry: ObjectSelectionGeometry
+        if let cached = objectSelectionGeometry { geometry = cached }
+        else {
+            geometry = ObjectSelectionGeometry(value)
+            objectSelectionGeometryBuildCount += 1
+            // Cache only within the editor's 256-contour / 30,000-anchor edit
+            // limits. Membership retains indices (at most 256 × 256), not a
+            // copy of every selected node set for every possible hit.
+            if value.count <= 256 && value.reduce(0, { $0 + $1.nodes.count }) <= 30_000 {
+                objectSelectionGeometry = geometry
+            }
         }
-        let chosen = value.indices.filter { i in
-            i == outer || (value[i].closed && value[outer].closed && value[i].nodes.allSatisfy {
-                outlines[outer].contains(CGPoint(x: $0.point.x * 1000, y: $0.point.y * 1000))
-            })
+        let outer: Int
+        if let cached = geometry.outerByIndex[index] { outer = cached }
+        else {
+            var candidate = index
+            for i in value.indices where value[i].closed && i != index {
+                if geometry.bounds[i].contains(geometry.bounds[candidate]),
+                   let first = value[candidate].nodes.first,
+                   geometry.outlines[i].contains(CGPoint(x: first.point.x * 1000, y: first.point.y * 1000)) { candidate = i }
+            }
+            outer = candidate
+            geometry.outerByIndex[index] = candidate
+        }
+        let chosen: [Int]
+        if let cached = geometry.contoursByOuter[outer] { chosen = cached }
+        else {
+            chosen = value.indices.filter { i in
+                i == outer || (value[i].closed && value[outer].closed && value[i].nodes.allSatisfy {
+                    geometry.outlines[outer].contains(CGPoint(x: $0.point.x * 1000, y: $0.point.y * 1000))
+                })
+            }
+            geometry.contoursByOuter[outer] = chosen
+            objectSelectionMembershipBuildCount += 1
         }
         let ids = Set(chosen.flatMap { value[$0].nodes.map(\.id) })
         selection = adding ? selection.union(ids) : ids

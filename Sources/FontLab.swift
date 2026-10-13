@@ -432,6 +432,7 @@ struct FontLabState: Codable, Equatable {
 final class FontLabStore: ObservableObject {
     private struct SnapshotSave {
         let snapshot: FontLabState
+        let projectRevisions: [UUID: UUID]
         let destination: URL
         let revision: Int
     }
@@ -446,6 +447,10 @@ final class FontLabStore: ObservableObject {
     private var pendingSave: DispatchWorkItem?
     private var terminationObserver: NSObjectProtocol?
     private let persistenceQueue = DispatchQueue(label: "Typefield.FontLab.persistence", qos: .utility)
+    private let persistenceEncoder = FontLabPersistenceEncoder()
+    /// Main-thread tokens are invalidated at every project-content mutation,
+    /// including rollback. Background requests capture their own token map.
+    private var projectEncodingRevisions: [UUID: UUID] = [:]
     /// Protects the revision read performed by the background persistence
     /// queue. UI mutations stay on the main thread, but queued save blocks
     /// need a synchronized way to tell whether their captured snapshot has
@@ -504,6 +509,7 @@ final class FontLabStore: ObservableObject {
 
     /// Called only after the journal has committed the matching saved file.
     func acceptSavedBackupImport(_ imported: FontLabState) {
+        projectEncodingRevisions.removeAll()
         state = imported
         savedAt = Date()
         error = ""
@@ -519,6 +525,7 @@ final class FontLabStore: ObservableObject {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let project = FontLabProject(name: cleaned.isEmpty ? nextProjectName : cleaned)
         let previous = state
+        projectEncodingRevisions.removeValue(forKey: project.id)
         state.projects.append(project)
         state.selectedProject = project.id
         guard save() else { state = previous; return nil }
@@ -536,6 +543,7 @@ final class FontLabStore: ObservableObject {
         }
         var project = generated
         if state.projects.contains(where: { $0.id == project.id }) { project.id = UUID() }
+        projectEncodingRevisions.removeValue(forKey: project.id)
         state.projects.append(project)
         state.selectedProject = project.id
         scheduleSave(after: 0.05)
@@ -547,6 +555,7 @@ final class FontLabStore: ObservableObject {
     @discardableResult func replaceArtworkProject(_ expected: FontLabProject, with updated: FontLabProject) -> Bool {
         guard !readBlocked, expected.id == updated.id, updated.isValid,
               let index = state.projects.firstIndex(where: { $0.id == expected.id }), state.projects[index] == expected else { return false }
+        projectEncodingRevisions.removeValue(forKey: updated.id)
         state.projects[index] = updated
         scheduleSave(after: 0.05)
         return true
@@ -592,8 +601,14 @@ final class FontLabStore: ObservableObject {
             error = "Letterform Editor contains invalid project data and was not saved."
             return
         }
+        projectEncodingRevisions.removeValue(forKey: id)
+        projectEncodingRevisions.removeValue(forKey: project.id)
         state.projects[index] = project
-        if shouldSave, !save() { state = previous }
+        if shouldSave, !save() {
+            state = previous
+            projectEncodingRevisions.removeValue(forKey: id)
+            projectEncodingRevisions.removeValue(forKey: project.id)
+        }
     }
 
     func renameProject(_ id: UUID, to name: String) {
@@ -617,9 +632,11 @@ final class FontLabStore: ObservableObject {
         }
         guard !projects.isEmpty else { return true }
         let previous = state
+        projectEncodingRevisions.removeAll()
         state = imported
         guard save() else {
             state = previous
+            projectEncodingRevisions.removeAll()
             return false
         }
         return true
@@ -653,11 +670,12 @@ final class FontLabStore: ObservableObject {
         // deferred older background request is no longer needed.
         deferredSnapshotSave = nil
         let snapshot = state
+        let projectRevisions = encodingRevisions(for: snapshot)
         queuedSaveRevision += 1
         let revision = queuedSaveRevision
         registerLatestPersistenceRevision(revision)
         let result: Result<Date, Error> = Result {
-            try persistenceQueue.sync { try Self.persist(snapshot, to: url) }
+            try persistenceQueue.sync { try persist(snapshot, revisions: projectRevisions, to: url) }
         }
         finishedSaveRevision = max(finishedSaveRevision, revision)
         switch result {
@@ -674,15 +692,20 @@ final class FontLabStore: ObservableObject {
         }
     }
 
-    private static func persist(_ snapshot: FontLabState, to url: URL) throws -> Date {
+    private func encodingRevisions(for snapshot: FontLabState) -> [UUID: UUID] {
+        var current: [UUID: UUID] = [:]
+        for project in snapshot.projects + (snapshot.deletedProjects ?? []) {
+            current[project.id] = projectEncodingRevisions[project.id] ?? UUID()
+        }
+        projectEncodingRevisions = current
+        return current
+    }
+
+    private func persist(_ snapshot: FontLabState, revisions: [UUID: UUID], to url: URL) throws -> Date {
+        dispatchPrecondition(condition: .onQueue(persistenceQueue))
         let folder = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        // Generated starters contain many small editable strokes. Compact,
-        // sorted JSON keeps saves deterministic while avoiding the I/O and
-        // allocation cost of pretty-printing several megabytes of points.
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(snapshot)
+        let data = try persistenceEncoder.encode(snapshot, revisions: revisions)
         try LibraryBackupTools.preserve(url)
         if FileManager.default.fileExists(atPath: url.path) {
             let existing = try Data(contentsOf: url)
@@ -700,11 +723,12 @@ final class FontLabStore: ObservableObject {
             return
         }
         let snapshot = state
+        let projectRevisions = encodingRevisions(for: snapshot)
         let destination = url
         queuedSaveRevision += 1
         let revision = queuedSaveRevision
         registerLatestPersistenceRevision(revision)
-        let request = SnapshotSave(snapshot: snapshot, destination: destination, revision: revision)
+        let request = SnapshotSave(snapshot: snapshot, projectRevisions: projectRevisions, destination: destination, revision: revision)
         if backgroundSaveInFlight {
             deferredSnapshotSave = request
             return
@@ -718,7 +742,7 @@ final class FontLabStore: ObservableObject {
         persistenceQueue.async {
             let result: Result<Date, Error>?
             if self.isLatestPersistenceRevision(revision) {
-                result = Result { try Self.persist(request.snapshot, to: request.destination) }
+                result = Result { try self.persist(request.snapshot, revisions: request.projectRevisions, to: request.destination) }
             } else {
                 result = nil
             }

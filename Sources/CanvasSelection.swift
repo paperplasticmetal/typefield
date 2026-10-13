@@ -15,6 +15,59 @@ struct CanvasObjectTransform: Codable, Equatable {
     var flipX: Bool?
     var flipY: Bool?
     var isValid: Bool { [stretchX ?? 1, stretchY ?? 1].allSatisfy { $0.isFinite && (0.02...50).contains($0) } && scale.isFinite && (0.02...50).contains(scale) && x.isFinite && y.isFinite && abs(x) <= 100_000 && abs(y) <= 100_000 }
+
+    /// Ratios calculated from anchored CGRect edges can cross an exact stored
+    /// boundary by a floating-point step. Do not reject that representable size.
+    static func normalizedScaleBoundary(_ value: Double) -> Double {
+        if value < 0.02 && value >= 0.02 - 1e-12 { return 0.02 }
+        if value > 50 && value <= 50 + 1e-10 { return 50 }
+        return value
+    }
+}
+
+/// A gesture must respect every selected object's accumulated transform, not
+/// merely the size of its last preview. Ratios remain relative to the drag start.
+struct CanvasObjectResizeLimits {
+    let horizontal: ClosedRange<Double>
+    let vertical: ClosedRange<Double>
+
+    init(ids: Set<String>, transforms: [String: CanvasObjectTransform], scaling: Bool = false) {
+        func range(_ values: [Double]) -> ClosedRange<Double> {
+            guard !values.isEmpty, values.allSatisfy({ $0.isFinite && (0.02...50).contains($0) }) else { return 1...1 }
+            return values.map { 0.02 / $0 }.max()!...values.map { 50 / $0 }.min()!
+        }
+        let selected = ids.map { transforms[$0] ?? CanvasObjectTransform() }
+        horizontal = range(selected.map { scaling ? $0.scale : $0.stretchX ?? 1 })
+        vertical = range(selected.map { scaling ? $0.scale : $0.stretchY ?? 1 })
+    }
+
+    func constrained(_ result: CanvasAlignmentResult, from box: CGRect, handle: SpacesResizeHandle,
+                     proportional: Bool) -> CanvasAlignmentResult {
+        guard box.width > 0, box.height > 0 else { return CanvasAlignmentResult(rect: box, guides: []) }
+        let requestedX = result.rect.width / box.width, requestedY = result.rect.height / box.height
+        var sx = min(max(requestedX, horizontal.lowerBound), horizontal.upperBound)
+        var sy = min(max(requestedY, vertical.lowerBound), vertical.upperBound)
+        if proportional {
+            let lower = max(horizontal.lowerBound, vertical.lowerBound)
+            let upper = min(horizontal.upperBound, vertical.upperBound)
+            sx = min(max(requestedX, lower), upper); sy = sx
+        } else {
+            if handle.unit.x == 0.5 { sx = 1 }
+            if handle.unit.y == 0.5 { sy = 1 }
+        }
+        guard sx != requestedX || sy != requestedY else { return result }
+        let width = box.width * sx, height = box.height * sy
+        let rect = sx == 1 && sy == 1 ? box : CGRect(x: handle.unit.x == 0 ? box.maxX - width : box.minX,
+                          y: handle.unit.y == 0 ? box.maxY - height : box.minY,
+                          width: width, height: height)
+        // A guide chosen before the legal-range clamp must not claim an edge
+        // still aligns after the clamp moved it away from that reference.
+        let guides = result.guides.filter { guide in
+            let positions = guide.axis == .vertical ? [rect.minX, rect.midX, rect.maxX] : [rect.minY, rect.midY, rect.maxY]
+            return positions.contains { abs($0 - guide.position) < 0.00001 }
+        }
+        return CanvasAlignmentResult(rect: rect, guides: guides)
+    }
 }
 struct CanvasObjectGroup: Codable, Equatable, Identifiable {
     var id = UUID()
@@ -32,6 +85,7 @@ enum CanvasSelection {
         Set(plan.elements.filter { !$0.objectID.isEmpty && rect.intersects($0.rect) }.map(\.objectID))
     }
     static func change(direction: TypeDirection, ids: Set<String>, anchor: CGPoint, scale: Double, delta: CGSize) -> TypeDirection {
+        guard scale != 1 || delta != .zero else { return direction }
         var result = direction
         let plan = CanvasPlanCache.plan(for: direction)
         let valid = Set(plan.elements.map(\.objectID)).intersection(ids)
@@ -39,7 +93,7 @@ enum CanvasSelection {
         var transforms = direction.objectTransforms ?? [:]
         for id in valid {
             let old = transforms[id] ?? CanvasObjectTransform()
-            let next = CanvasObjectTransform(scale: old.scale * scale,
+            let next = CanvasObjectTransform(scale: CanvasObjectTransform.normalizedScaleBoundary(old.scale * scale),
                 x: old.x * scale + (anchor.x * (1 - scale) + delta.width) / canvasScale,
                 y: old.y * scale + (anchor.y * (1 - scale) + delta.height) / canvasScale, stretchX: old.stretchX, stretchY: old.stretchY, flipX: old.flipX, flipY: old.flipY)
             guard next.isValid else { return direction }
@@ -140,6 +194,7 @@ extension CanvasNativeView {
         }
         let selected = objectSelection
         let box = CanvasSelection.bounds(selected, in: originalPlan)
+        let resizeLimits = CanvasObjectResizeLimits(ids: selected, transforms: objectTransforms, scaling: !independent)
         let guideTargets = originalPlan.elements.map { CanvasAlignmentTarget(id: $0.objectID, rect: $0.rect) }
         var factor = 1.0, delta = CGSize.zero, moved = false
         var resizedBox: CGRect?
@@ -165,11 +220,14 @@ extension CanvasNativeView {
                         let proposed = handle.resized(box, delta: drag, within: originalPlan.artboardSize)
                         result = CanvasAlignmentGuides.resized(proposed, handle: handle.unit, canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
                     }
-                    resizedBox = result.rect; alignmentGuides = result.guides
+                    let limited = resizeLimits.constrained(result, from: box, handle: handle,
+                        proportional: containsImage && handle.isCorner && !next.modifierFlags.contains(.shift))
+                    resizedBox = limited.rect; alignmentGuides = limited.guides
                 } else if resize {
                     factor = min((originalPlan.artboardSize.width-box.minX)/max(1,box.width), (originalPlan.artboardSize.height-box.minY)/max(1,box.height), max(0.05, max((point.x-box.minX)/max(1,box.width), (point.y-box.minY)/max(1,box.height))))
                     let result = CanvasAlignmentGuides.scaled(box, factor: factor, canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
-                    factor = result.rect.width / box.width; alignmentGuides = result.guides
+                    let limited = resizeLimits.constrained(result, from: box, handle: .bottomRight, proportional: true)
+                    factor = limited.rect.width / box.width; alignmentGuides = limited.guides
                 } else {
                     let result = CanvasAlignmentGuides.translated(box, delta: CGSize(width: point.x-origin.x, height: point.y-origin.y), canvas: originalPlan.artboardSize, objects: guideTargets, selected: selected, zoom: zoom, bypass: next.modifierFlags.contains(.option))
                     delta = CGSize(width: result.rect.minX - box.minX, height: result.rect.minY - box.minY)

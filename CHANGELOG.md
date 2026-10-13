@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.31 (2026-10-12)
+
+- Reuse exact contour membership during dense Letterform object selection and marquee gestures.
+- Reuse unchanged Letterform project serialization while retaining synchronous saves, atomic backups and rollback.
+- Choose the nearest Spaces resize handle, keep resize previews within saved transform limits, and return pasted or duplicated objects to Auto mode.
+
 ## 0.59.30 (2026-10-09)
 
 - Put Letterform Import beside Export and expose an iPad/tablet setup guide with a direct Sketch entry point.

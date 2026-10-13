@@ -30,7 +30,7 @@ enum WorkspaceStressFixtures {
         library.studio.focusedBoard = spaces[0].boards[2].id
         guard library.studio.save() else { throw failure(library.studio.error) }
 
-        let projects = [24, 600, 10_000].map { count in
+        var projects = [24, 600, 10_000].map { count in
             var project = FontLabProject(name: "Performance QA \(count) anchors")
             let nodes = (0..<count).map { index -> FontLabVectorNode in
                 let angle = Double(index) * 2 * Double.pi / Double(count)
@@ -44,6 +44,17 @@ enum WorkspaceStressFixtures {
             project.previewText = "A A A"
             return project
         }
+        var counterProject = FontLabProject(name: "Performance QA dense counters")
+        let rings = [0.38, 0.20].enumerated().map { ring, radius in
+            let nodes = (0..<5_000).map { index -> FontLabVectorNode in
+                let angle = Double(index) * 2 * Double.pi / 5_000 * (ring == 0 ? 1 : -1)
+                return .init(point: .init(x: 0.5 + radius * cos(angle), y: 0.5 + radius * sin(angle)))
+            }
+            return FontLabVectorPath(nodes: nodes, closed: true)
+        }
+        counterProject.glyphs["O"] = FontLabGlyph(character: "O", strokes: [FontLabStroke(vectorPaths: rings)], contourDesignWidth: 0.62)
+        counterProject.previewText = "O O O"
+        projects.append(counterProject)
         for project in projects {
             guard library.fontLab.addGeneratedProject(project) != nil else { throw failure(library.fontLab.error) }
         }

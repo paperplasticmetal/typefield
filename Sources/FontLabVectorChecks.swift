@@ -17,6 +17,7 @@ enum FontLabVectorChecks {
         try FontLabWorkspaceControlsChecks.run()
         try WorkspaceHeaderChecks.run()
         try FontLabCanvasPerformanceChecks.run()
+        try FontLabObjectSelectionChecks.run()
         try FontLabProofGeometryChecks.run()
         func check(_ condition:@autoclosure()->Bool,_ message:String)throws {if !condition() {throw FontLabStore.SelfTestError.failed(message)}}
         let glyph=fixture(),metrics=FontLabMetrics()
